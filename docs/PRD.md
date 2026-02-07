@@ -1,6 +1,6 @@
 # Product Requirements Document: Claude Orchestrator
 
-**Version:** 1.4
+**Version:** 1.5
 **Author:** Yudong Qiu
 **Date:** February 7, 2026
 **Status:** Draft
@@ -2039,7 +2039,7 @@ The `my_assistant` project already has a FastAPI backend with LangGraph orchestr
 
 | Aspect | Decision | Rationale |
 |--------|----------|-----------|
-| **Backend** | Separate Python process (Flask/FastAPI) | The orchestrator manages tmux sessions and SSH — fundamentally different from the LangGraph agent orchestration. Coupling them would complicate both. |
+| **Backend** | Separate Python process (FastAPI) | The orchestrator manages tmux sessions and SSH — fundamentally different from the LangGraph agent orchestration. Coupling them would complicate both. |
 | **Database** | Separate SQLite file | The orchestrator's data model (sessions, terminals, tmux state) is disjoint from the main assistant's data model (runs, agents, tools). Separate DBs simplify both. |
 | **Frontend** | Separate web dashboard (can share design system) | The orchestrator dashboard is operational tooling (monitoring, decisions). The main assistant frontend is task-oriented (chat, workflows). Different UX paradigms. |
 | **Future bridge** | REST API interop | The main assistant could invoke the orchestrator's API to spawn sessions. The orchestrator could delegate complex reasoning to the main assistant's agent system. This is a future concern, not a v1 requirement. |
@@ -2050,9 +2050,12 @@ The `my_assistant` project already has a FastAPI backend with LangGraph orchestr
 |-------|-------|----------|
 | **Unit Tests** | State management, decision queue, task scheduling, worker matching, pattern detection | Standard pytest with mocked dependencies. Target > 80% coverage on core logic. |
 | **Integration Tests** | tmux session management, SSH wrapper, MCP server, API endpoints | Use mock tmux sessions (create real tmux windows with scripted "Claude Code" output). Test API endpoints with httpx test client. |
-| **E2E Tests** | Full flow: create session → assign task → detect progress → surface decision → send response | Scripted scenario using real tmux + mock LLM responses. Runs in CI with a tmux fixture. |
+| **E2E Tests (Playwright)** | Full dashboard flows: session cards, decision queue, chat, WebSocket updates | Playwright tests with **screenshot capture**, **HTML dumps**, and **console log capture** per test step. Claude Code reads these artifacts to iteratively develop and fix the UI. |
+| **E2E Tests (Flow)** | Full flow: create session → assign task → detect progress → surface decision → send response | Scripted scenario using real tmux + mock LLM responses. Runs in CI with a tmux fixture. |
 | **Chaos Tests** | SSH drop mid-task, tmux window killed, DB corruption, orchestrator crash/restart | Inject failures during E2E tests. Verify recovery flows work correctly. |
 | **Performance Tests** | 10+ concurrent sessions, polling overhead, LLM call latency | Load test with simulated sessions. Verify memory < 500MB and response time < 10s. |
+
+**Playwright development workflow:** During dashboard development, every Playwright test generates artifacts that Claude Code can read directly: screenshots (`.png` via the Read tool), HTML dumps (`page.content()` to file), and browser console logs (`page.on('console')` to file). This enables iterative UI development where Claude Code "sees" its own output and fixes issues without needing a live browser.
 
 ### 7.9 Skill Installation for Remote Sessions
 
@@ -2244,7 +2247,7 @@ Before diving into components, these principles govern all implementation decisi
 │  │  │   Web UI    │  │    LLM      │  │   State     │  │  Terminal   │  │  │
 │  │  │   Server    │  │   Brain     │  │   Store     │  │   Manager   │  │  │
 │  │  │             │  │             │  │             │  │             │  │  │
-│  │  │ - Flask/    │  │ - Anthropic │  │ - SQLite    │  │ - tmux      │  │  │
+│  │  │ - FastAPI/  │  │ - Anthropic │  │ - SQLite    │  │ - tmux      │  │  │
 │  │  │   FastAPI   │  │   API       │  │ - Sessions  │  │   control   │  │  │
 │  │  │ - WebSocket │  │ - Decision  │  │ - PRs       │  │ - SSH       │  │  │
 │  │  │ - REST API  │  │   logic     │  │ - History   │  │   wrapper   │  │  │
@@ -3159,7 +3162,7 @@ orchestrator/
 │   │
 │   ├── api/                           # REST API (for dashboard + Claude Code reporting)
 │   │   ├── __init__.py
-│   │   ├── app.py                     # Flask/FastAPI app factory
+│   │   ├── app.py                     # FastAPI app factory
 │   │   ├── routes/                    # Route modules (one per domain)
 │   │   │   ├── __init__.py
 │   │   │   ├── sessions.py            # /api/sessions/*
@@ -3171,7 +3174,7 @@ orchestrator/
 │   │   │   ├── costs.py               # /api/costs/*
 │   │   │   ├── prs.py                 # /api/prs/*
 │   │   │   └── health.py              # /api/health
-│   │   ├── websocket.py               # Socket.IO: real-time dashboard updates
+│   │   ├── websocket.py               # Native WebSocket: real-time dashboard updates
 │   │   └── middleware.py              # Auth middleware, request logging
 │   │
 │   ├── web/                           # Web dashboard (served by API module)
@@ -3336,7 +3339,29 @@ To keep the codebase maintainable, modules follow strict dependency rules:
 ─────────────────────────────────────────────────────────────────
 ```
 
-### 9.2 Web Dashboard (Future)
+### 9.2 Direct tmux Access
+
+The orchestrator's tmux session is **globally accessible** from any terminal on the same machine. This provides power users with a direct, no-dashboard-needed interface to browse and interact with sessions.
+
+**How it works:** The orchestrator creates a tmux session (e.g., `orchestrator`) with one window per Claude Code session. Any terminal can attach independently:
+
+```
+# List orchestrator sessions
+$ tmux ls
+orchestrator: 4 windows (created ...)
+
+# Attach and browse all sessions interactively
+$ tmux attach -t orchestrator
+
+# Attach in read-only mode (watch without accidentally typing)
+$ tmux attach -t orchestrator -r
+```
+
+**Multi-client support:** Multiple terminals can attach to the same tmux session simultaneously. Each client independently navigates to different windows — the user can be looking at `voyager-web` (window 0) in one terminal while the orchestrator works with `payments-api` (window 3) in another, without interference.
+
+**Dashboard integration:** The web dashboard shows "Attach Terminal" instructions per session and a global `tmux attach -t orchestrator` command in the header. For users who prefer terminal-native workflows, direct tmux access provides the same capability without a browser.
+
+### 9.3 Web Dashboard
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
@@ -3629,3 +3654,4 @@ Recovery:
 | 1.2 | 2026-02-07 | Yudong Qiu | Added: Core Design Principles (Zero Hard-Coded Context, DB-Driven Everything, Smart Context Selection), Context Management FR section (6.18) with 11 requirements, Smart Context Selection Algorithm (Section 8.5.5) with scoring formula and scaling behavior, updated LLM Brain prompt architecture to be fully DB-driven. Fixed author name. |
 | 1.3 | 2026-02-07 | Yudong Qiu | Final review: Added Section 8.7 Code Structure with full module tree, dependency rules, and design patterns. Added missing DB tables (config, prompt_templates, skill_templates). Fixed Table of Contents ordering and completeness. Expanded glossary with 11 additional terms. |
 | 1.4 | 2026-02-07 | Yudong Qiu | Replaced CLAUDE.md injection with skill-based approach. The orchestrator now installs a custom `/orchestrator` slash command in each session by typing into Claude Code like a real user (via tmux send-keys). Skills persist in .claude/commands/, don't conflict with repo files, survive /compact, and are idempotent. Updated Section 7.9, communication protocol (0.8), recovery flows, risk table, DB schema (claudemd_templates → skill_templates), code structure (added skill_installer.py), and glossary. |
+| 1.5 | 2026-02-07 | Yudong Qiu | Standardized on FastAPI + native WebSocket (removed Flask/Socket.IO references). Added Section 9.2 Direct tmux Access as first-class feature. Updated testing strategy with Playwright development workflow for iterative UI development. Aligned with IMPLEMENTATION.md v2.0. |
