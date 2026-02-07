@@ -1,6 +1,6 @@
 # Product Requirements Document: Claude Orchestrator
 
-**Version:** 1.3
+**Version:** 1.4
 **Author:** Yudong Qiu
 **Date:** February 7, 2026
 **Status:** Draft
@@ -31,7 +31,7 @@
    - 7.6: Schema Migration Strategy
    - 7.7: Integration Strategy with Existing System
    - 7.8: Testing Strategy
-   - 7.9: CLAUDE.md Template
+   - 7.9: Skill Installation for Remote Sessions
 8. [System Architecture](#8-system-architecture)
    - 8.0: Core Design Principles (Zero Hard-Coded Context, DB-Driven Everything, Smart Context Selection)
    - 8.1: High-Level Architecture
@@ -491,11 +491,11 @@ The orchestrator uses **three complementary communication channels** to maximize
 
 | Channel | Direction | Mechanism | Reliability | Use Case |
 |---------|-----------|-----------|-------------|----------|
-| **Active Reporting** | Claude Code → Orchestrator | curl API calls (instructed via CLAUDE.md) | Medium — depends on LLM following instructions | Progress updates, PR creation, decision requests |
+| **Skill (Slash Command)** | Claude Code → Orchestrator | Custom `/orchestrator` skill installed once per session; Claude Code invokes it to report | High — skill persists across restarts; orchestrator types instructions to use it | Progress updates, PR creation, decision requests |
 | **MCP Server** | Bidirectional | Orchestrator exposes MCP tools to Claude Code | High — structured tool interface, not free-text instructions | Preferred channel for structured events (replaces curl when available) |
 | **Hooks** | Claude Code → Orchestrator | `.claude/hooks/` pre/post tool-call hooks | High — automatic, no LLM compliance needed | Auto-fire events on commit, PR creation, file changes |
 | **Passive Monitoring** | Orchestrator → Terminal | `tmux capture-pane` + event-driven file watch | High — no cooperation from Claude Code needed | Fallback detection: errors, idle state, completion signals |
-| **Commands** | Orchestrator → Claude Code | `tmux send-keys` | High — direct terminal input | Sending tasks, decisions, re-briefing |
+| **Commands** | Orchestrator → Claude Code | `tmux send-keys` | High — direct terminal input | Sending tasks, decisions, re-briefing, skill installation |
 
 **Reconciliation principle:** The passive monitor always runs as a safety net. If active reporting or MCP events stop arriving, the passive monitor detects the gap and the orchestrator can re-brief the session or alert the user.
 
@@ -506,13 +506,13 @@ The orchestrator uses **three complementary communication channels** to maximize
 │                                                                             │
 │  ┌─ ACTIVE REPORTING (Claude Code → Orchestrator) ──────────────────────┐  │
 │  │                                                                       │  │
-│  │  Claude Code in each session is instructed to call the orchestrator  │  │
-│  │  API for important events. This is done via CLAUDE.md instructions:  │  │
+│  │  Claude Code in each session has an `/orchestrator` skill installed  │  │
+│  │  that knows how to report to the orchestrator API. The skill is      │  │
+│  │  created once during session setup by the orchestrator typing into   │  │
+│  │  Claude Code like a real user (via tmux send-keys). The skill        │  │
+│  │  persists in .claude/commands/ and survives restarts.                │  │
 │  │                                                                       │  │
-│  │  ```markdown                                                          │  │
-│  │  ## Orchestrator Integration                                          │  │
-│  │                                                                       │  │
-│  │  You are connected to an orchestrator. Report to it using curl:      │  │
+│  │  Skill-based reporting (Claude Code calls /orchestrator):            │  │
 │  │                                                                       │  │
 │  │  ### Report task progress                                            │  │
 │  │  curl -X POST http://localhost:8080/api/report \                     │  │
@@ -636,7 +636,7 @@ The orchestrator exposes itself as an **MCP (Model Context Protocol) server** th
 │  - No network routing issues (MCP uses stdio/SSE transport)                │
 │  - Blocking calls (decisions) are handled natively                         │
 │  - Tool results provide immediate feedback/guidance                        │
-│  - Survives /compact better than CLAUDE.md free-text instructions          │
+│  - No file injection needed — works alongside the skill approach           │
 │                                                                             │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
@@ -722,7 +722,7 @@ Claude Code supports **hooks** — shell commands that execute automatically in 
 │  LAYER 3: Session Recovery                                                 │
 │  ────────────────────────                                                   │
 │  If a session is detected as crashed or restarted:                         │
-│    1. Re-inject CLAUDE.md with orchestrator instructions                   │
+│    1. Check if /orchestrator skill still exists; reinstall if missing      │
 │    2. Re-register MCP server connection                                     │
 │    3. Send "re-brief" message with current task context:                   │
 │       "You are working on [task]. Progress so far: [summary].              │
@@ -1884,7 +1884,7 @@ Success means an engineer can manage 10+ concurrent Claude Code sessions with < 
 | ID | Requirement | Priority |
 |----|-------------|----------|
 | FR-RECV-1 | Detect when Claude Code has compacted context (`/compact`) or restarted | P0 |
-| FR-RECV-2 | Re-inject CLAUDE.md and re-register MCP server on session recovery | P0 |
+| FR-RECV-2 | Verify /orchestrator skill exists (reinstall if missing) and re-register MCP server on session recovery | P0 |
 | FR-RECV-3 | Send "re-brief" message to recovered sessions with current task, progress, and relevant context | P0 |
 | FR-RECV-4 | Maintain a "session context snapshot" in the DB: last known task, progress, key decisions, file paths | P0 |
 | FR-RECV-5 | Auto-recover crashed tmux windows: detect, re-create, SSH, restart Claude Code, re-brief | P1 |
@@ -1963,7 +1963,7 @@ Success means an engineer can manage 10+ concurrent Claude Code sessions with < 
 | FR-CTX-2 | All LLM prompt templates stored in DB or config files, not embedded in code — enabling modification without code changes | P0 |
 | FR-CTX-3 | Worker capability profiles (repo, language, tools) loaded from `worker_capabilities` table, not inferred from code | P0 |
 | FR-CTX-4 | Decision patterns and learned preferences loaded from `learned_patterns` and `decision_history` tables | P0 |
-| FR-CTX-5 | CLAUDE.md template content stored in DB or config, with variable substitution at injection time | P0 |
+| FR-CTX-5 | Skill template content (for /orchestrator slash command) stored in DB or config, with variable substitution at install time | P0 |
 | FR-CTX-6 | Approval policies (which actions need approval at which risk level) stored in DB config, not hard-coded | P1 |
 | FR-CTX-7 | Smart context selection: when total DB context exceeds LLM context window, apply relevance-weighted scoring to select and compact the most critical items (see Section 8.5.5) | P0 |
 | FR-CTX-8 | Context selection scoring weights (recency, relevance, urgency, status) are configurable in DB | P1 |
@@ -2054,112 +2054,151 @@ The `my_assistant` project already has a FastAPI backend with LangGraph orchestr
 | **Chaos Tests** | SSH drop mid-task, tmux window killed, DB corruption, orchestrator crash/restart | Inject failures during E2E tests. Verify recovery flows work correctly. |
 | **Performance Tests** | 10+ concurrent sessions, polling overhead, LLM call latency | Load test with simulated sessions. Verify memory < 500MB and response time < 10s. |
 
-### 7.9 CLAUDE.md Template for Remote Sessions
+### 7.9 Skill Installation for Remote Sessions
 
-When the orchestrator creates a new session and starts Claude Code, it should inject a `CLAUDE.md` file with orchestrator integration instructions. This enables active reporting from Claude Code back to the orchestrator.
+Instead of injecting a CLAUDE.md file (which would conflict with existing repo files on rdevs), the orchestrator installs a **custom slash command (skill)** in each Claude Code session. The orchestrator types into Claude Code like a real user via `tmux send-keys`, instructing it to create the skill. This approach:
 
-**Important robustness notes:**
-- This template is a **fallback** communication channel. The primary channel is the MCP server (see 0.8.1), and automatic hooks (see 0.8.2) handle the most critical events.
-- Claude Code may deprioritize these instructions after `/compact` or under context pressure. The orchestrator's passive monitor and reconciliation protocol (see 0.8.3) ensure no events are permanently lost.
-- The orchestrator can re-inject this file and send a "re-brief" message if it detects a session has lost context.
+- **Doesn't modify any repo files** — the skill lives in `.claude/commands/`, not in the MP workspace
+- **Persists across restarts** — once created, the skill survives `/compact` and session restarts
+- **Is idempotent** — the orchestrator checks if the skill already exists before installing
+- **Is updatable** — when new orchestrator features require skill updates, the orchestrator can type instructions to update it
 
-**Template Content:**
+#### 7.9.1 Skill Installation Flow
 
-~~~markdown
-# Orchestrator Integration
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│  SKILL INSTALLATION (triggered on session creation or update)              │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│  STEP 1: Check if skill already exists                                     │
+│  ─────────────────────────────────────                                      │
+│  The orchestrator checks for the skill file on the remote session:         │
+│                                                                             │
+│    tmux send-keys -t orchestrator:$SESSION \                               │
+│      "ls .claude/commands/orchestrator.md 2>/dev/null && echo EXISTS \      │
+│       || echo MISSING" Enter                                               │
+│                                                                             │
+│  Parse terminal output to determine if skill exists.                       │
+│                                                                             │
+│  STEP 2: If MISSING, install the skill                                     │
+│  ─────────────────────────────────────                                      │
+│  Type into Claude Code like a real user:                                   │
+│                                                                             │
+│    tmux send-keys -t orchestrator:$SESSION \                               │
+│      "Please create a custom slash command at                               │
+│       .claude/commands/orchestrator.md with the following content.          │
+│       This is an orchestrator integration skill that I need you to         │
+│       use for reporting progress. [SKILL CONTENT BELOW]" Enter             │
+│                                                                             │
+│  STEP 3: If EXISTS and version is outdated, update                         │
+│  ────────────────────────────────────────────────                           │
+│  Check the version marker in the skill file. If outdated:                  │
+│                                                                             │
+│    tmux send-keys -t orchestrator:$SESSION \                               │
+│      "Please update .claude/commands/orchestrator.md with the              │
+│       following updated content. [UPDATED SKILL CONTENT]" Enter            │
+│                                                                             │
+│  STEP 4: Verify installation                                               │
+│  ───────────────────────────                                                │
+│  After Claude Code confirms creation, verify:                              │
+│                                                                             │
+│    tmux send-keys -t orchestrator:$SESSION \                               │
+│      "ls .claude/commands/orchestrator.md" Enter                           │
+│                                                                             │
+│  Parse output to confirm file exists.                                      │
+│                                                                             │
+│  TRIGGERS:                                                                  │
+│  • Session creation (new rdev added to orchestrator)                       │
+│  • Session recovery (skill found missing after crash/re-clone)             │
+│  • Orchestrator upgrade (skill version < current version)                  │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
 
-You are connected to an orchestrator system. Please follow these guidelines 
-to report your progress and request decisions.
+#### 7.9.2 Skill Template Content
 
-### Environment
+The skill is stored in the DB (`skill_templates` table) and rendered with session-specific variables at install time. The content instructs Claude Code how to communicate with the orchestrator:
+
+```markdown
+# Orchestrator Integration Skill
+<!-- orchestrator-skill-version: ${SKILL_VERSION} -->
+
+You are connected to an orchestrator system managing multiple Claude Code
+sessions. Use this skill to report your progress and request decisions.
+
+## Environment
 
 - Session Name: ${SESSION_NAME}
-- Orchestrator URL: ${ORCHESTRATOR_URL} (e.g., http://host.docker.internal:8080)
+- Orchestrator URL: ${ORCHESTRATOR_URL}
 
-### Reporting Progress
+## Report Progress
 
-When you complete significant milestones, report them:
+After completing significant milestones, report them:
 
-    curl -X POST ${ORCHESTRATOR_URL}/api/report \
+    curl -sX POST ${ORCHESTRATOR_URL}/api/report \
       -H "Content-Type: application/json" \
-      -d '{
-        "session": "${SESSION_NAME}",
-        "event": "task_progress",
-        "data": {
-          "task": "Implementing OAuth callback handler",
-          "progress": 80,
-          "subtasks": [
-            {"name": "Create callback route", "done": true},
-            {"name": "Implement token exchange", "done": true},
-            {"name": "Add error handling", "done": false}
-          ]
-        }
-      }'
+      -d '{"session":"${SESSION_NAME}","event":"task_progress",
+           "data":{"task":"DESCRIPTION","progress":PERCENT,
+                   "subtasks":[{"name":"...","done":true/false}]}}'
 
-### Reporting PR Creation
+## Report PR Creation
 
 When you create a pull request:
 
-    curl -X POST ${ORCHESTRATOR_URL}/api/report \
+    curl -sX POST ${ORCHESTRATOR_URL}/api/report \
       -H "Content-Type: application/json" \
-      -d '{
-        "session": "${SESSION_NAME}",
-        "event": "pr_created",
-        "data": {
-          "url": "https://github.com/org/repo/pull/123",
-          "title": "Add OAuth callback endpoint"
-        }
-      }'
+      -d '{"session":"${SESSION_NAME}","event":"pr_created",
+           "data":{"url":"PR_URL","title":"PR_TITLE"}}'
 
-### Requesting Decisions
+## Request Decision
 
-For important architectural decisions or when you need user input:
+For architectural decisions or when you need user input:
 
-    curl -X POST ${ORCHESTRATOR_URL}/api/decision \
+    curl -sX POST ${ORCHESTRATOR_URL}/api/decision \
       -H "Content-Type: application/json" \
-      -d '{
-        "session": "${SESSION_NAME}",
-        "question": "Should I use PostgreSQL or MySQL for the new service?",
-        "options": ["PostgreSQL", "MySQL"],
-        "context": "Building new user preferences service.",
-        "urgency": "normal"
-      }'
+      -d '{"session":"${SESSION_NAME}",
+           "question":"YOUR QUESTION","options":["A","B"],
+           "context":"CONTEXT","urgency":"normal"}'
 
-After requesting a decision, wait for the response. The user will respond 
-through the orchestrator, which will send the decision to your terminal.
+Then wait — the user will respond through the orchestrator.
 
-### Checking for Guidance
+## Check for Guidance
 
-Before starting major work, check if there's pending guidance:
+Before starting major work:
 
-    curl "${ORCHESTRATOR_URL}/api/guidance?session=${SESSION_NAME}"
+    curl -s "${ORCHESTRATOR_URL}/api/guidance?session=${SESSION_NAME}"
 
-### Reporting Errors
+## Report Errors
 
-When you encounter errors that block progress:
+When blocked by errors:
 
-    curl -X POST ${ORCHESTRATOR_URL}/api/report \
+    curl -sX POST ${ORCHESTRATOR_URL}/api/report \
       -H "Content-Type: application/json" \
-      -d '{
-        "session": "${SESSION_NAME}",
-        "event": "error",
-        "data": {
-          "type": "test_failure",
-          "message": "Test test_token_refresh is failing"
-        }
-      }'
+      -d '{"session":"${SESSION_NAME}","event":"error",
+           "data":{"type":"ERROR_TYPE","message":"DESCRIPTION"}}'
 
-### Best Practices
+## Best Practices
 
 1. Report progress after completing each significant subtask
-2. Request decisions for architectural choices or tool selection
+2. Request decisions for architectural choices
 3. Check for guidance at the start of each major task
 4. Report PRs immediately after creation
-5. Report errors when you're blocked and need human intervention
+5. Report errors when blocked
 
-The orchestrator may also send you messages directly through the terminal. 
-These will appear as user input. Always acknowledge received instructions.
-~~~
+The orchestrator may send you messages directly through the terminal.
+Always acknowledge received instructions.
+```
+
+#### 7.9.3 Why Skills Over CLAUDE.md
+
+| Aspect | CLAUDE.md Injection | Skill Installation |
+|--------|--------------------|--------------------|
+| **Repo conflict** | Overwrites or conflicts with existing CLAUDE.md in the MP | No conflict — `.claude/commands/` is user-space, not repo content |
+| **Persistence** | Must be re-injected on every restart or re-clone | Persists in `.claude/commands/`; survives `/compact` and restarts |
+| **Installation** | Requires file system write access before Claude Code starts | Orchestrator types into Claude Code like a user — works even on locked-down environments |
+| **Updates** | Must overwrite file and hope Claude Code re-reads it | Orchestrator types update instruction; Claude Code handles the edit |
+| **Visibility** | Hidden file that Claude Code may deprioritize | Explicit slash command that the user or orchestrator can invoke by name |
+| **Idempotence** | Must check for existing file, handle merge conflicts | Check if skill exists + version marker; skip if current |
 
 ---
 
@@ -2172,7 +2211,7 @@ Before diving into components, these principles govern all implementation decisi
 | Principle | Description |
 |-----------|-------------|
 | **Zero Hard-Coded Context** | The orchestrator must **never** hard-code domain-specific knowledge, project context, repo names, team conventions, or workflow patterns. All such context lives in the database and is loaded dynamically at runtime. The orchestrator is a general-purpose engine — it learns about *your* projects, *your* repos, and *your* preferences entirely through DB-stored state. |
-| **DB-Driven Everything** | Session configurations, project definitions, task descriptions, worker capabilities, decision history, learned patterns, CLAUDE.md templates, approval policies — all stored in and read from the database. If the DB is empty, the orchestrator starts with zero assumptions and builds context through usage. |
+| **DB-Driven Everything** | Session configurations, project definitions, task descriptions, worker capabilities, decision history, learned patterns, skill templates, approval policies — all stored in and read from the database. If the DB is empty, the orchestrator starts with zero assumptions and builds context through usage. |
 | **Smart Context Selection** | When the total context from DB (sessions, tasks, decisions, history, learned patterns) exceeds the LLM context window, the orchestrator applies a **smart context selection algorithm** to pick and compact the most critical working context. This is not simple truncation — it is relevance-weighted selection based on recency, active status, relationship to the current query, and urgency. See Section 8.5.5 for details. |
 | **Local-First** | All data and processing stays on the user's machine. No cloud dependencies beyond the LLM API. |
 | **Fail Gracefully** | Every component assumes other components may fail. Communication channels have fallbacks. State is persisted on every mutation. |
@@ -3015,14 +3054,17 @@ CREATE TABLE prompt_templates (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- CLAUDE.md template (injected into remote sessions, stored in DB not code)
-CREATE TABLE claudemd_templates (
+-- Skill templates (installed into remote sessions via tmux send-keys, stored in DB not code)
+CREATE TABLE skill_templates (
     id TEXT PRIMARY KEY,
-    name TEXT NOT NULL UNIQUE,         -- e.g., 'default', 'minimal', 'full_reporting'
-    template TEXT NOT NULL,            -- Template content with ${variable} placeholders
+    name TEXT NOT NULL UNIQUE,         -- e.g., 'orchestrator', 'orchestrator-minimal'
+    version INTEGER DEFAULT 1,         -- Version marker for update detection
+    template TEXT NOT NULL,            -- Skill content with ${variable} placeholders
+    install_instruction TEXT,          -- The message typed into Claude Code to create this skill
     description TEXT,
     is_default BOOLEAN DEFAULT FALSE,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 ```
 
@@ -3056,6 +3098,7 @@ orchestrator/
 │   │   ├── manager.py                 # tmux session CRUD (create, list, kill windows)
 │   │   ├── session.py                 # Individual session lifecycle (connect, send, capture)
 │   │   ├── ssh.py                     # SSH connection wrapper (connect, tunnel, health check)
+│   │   ├── skill_installer.py         # Install/update /orchestrator skill in Claude Code sessions
 │   │   └── output_parser.py           # Tier 1: regex patterns for terminal output detection
 │   │
 │   ├── comm/                          # Communication channels (Claude Code ↔ Orchestrator)
@@ -3078,7 +3121,7 @@ orchestrator/
 │   │   │   ├── pull_requests.py       # PR tracking + pr_dependencies
 │   │   │   ├── activities.py          # Activity log: append-only event stream
 │   │   │   ├── config.py              # Config table: get/set/list by category
-│   │   │   └── templates.py           # Prompt templates + CLAUDE.md templates
+│   │   │   └── templates.py           # Prompt templates + skill templates
 │   │   └── migrations/                # Schema versioning
 │   │       ├── __init__.py
 │   │       ├── runner.py              # Migration runner: detect version, apply pending
@@ -3377,8 +3420,8 @@ To keep the codebase maintainable, modules follow strict dependency rules:
 | Terminal output overflow | Medium | Low | Limit capture size, rotate logs |
 | User sends wrong command | Medium | Medium | Confirmation prompts, undo support |
 | rdev not accessible | Medium | Medium | Graceful error handling, retry |
-| Claude Code ignores CLAUDE.md instructions | High | Medium | MCP server + hooks as primary channels; CLAUDE.md as fallback only |
-| Claude Code `/compact` loses orchestrator context | High | Medium | Passive monitor detects context loss; auto re-brief with task state |
+| Claude Code doesn't use /orchestrator skill proactively | Medium | Medium | Orchestrator types explicit reminders via tmux send-keys; hooks + passive monitor as safety net |
+| Claude Code `/compact` loses orchestrator context | High | Medium | Skill persists in .claude/commands/ (survives /compact); orchestrator re-briefs with task state |
 | Orchestrator LLM costs exceed budget | Medium | Medium | Tiered intelligence (regex first); cost ceiling with alerts |
 | Two workers make conflicting changes | Medium | High | Conflict detection via overlapping file path analysis; alert before merge |
 | Worker creates PR that breaks CI | High | Medium | Monitor CI status; auto-assign fix-up task to same worker |
@@ -3399,7 +3442,7 @@ Recovery:
   3. If reconnect succeeds:
      a. Check if Claude Code is still running (detect prompt in terminal)
      b. If running: resume passive monitoring, log "reconnected" event
-     c. If not running: restart Claude Code, re-inject CLAUDE.md, send re-brief
+     c. If not running: restart Claude Code, verify /orchestrator skill, send re-brief
   4. If reconnect fails after 5 attempts:
      a. Alert user via dashboard notification
      b. Pause any tasks assigned to this worker
@@ -3413,14 +3456,17 @@ Detection: Passive monitor detects Claude Code startup banner or /compact output
            OR active reports stop arriving while terminal is still active
 Recovery:
   1. Wait 10 seconds for Claude Code to fully initialize
-  2. Re-register MCP server connection (if using MCP channel)
-  3. Send re-brief message via tmux send-keys:
+  2. Check if /orchestrator skill still exists in .claude/commands/
+     - If missing (e.g., repo was re-cloned): reinstall skill via tmux send-keys
+     - If present: skip (skill survives /compact and restarts)
+  3. Re-register MCP server connection (if using MCP channel)
+  4. Send re-brief message via tmux send-keys:
      "You are working on project [name], task: [title].
       Progress: [summary of completed subtasks].
       Key decisions made: [list of relevant decisions].
-      Please continue where you left off."
-  4. Log "context_recovery" event in activity timeline
-  5. Monitor for 60s to confirm session resumes productive work
+      Use /orchestrator to report progress. Please continue where you left off."
+  5. Log "context_recovery" event in activity timeline
+  6. Monitor for 60s to confirm session resumes productive work
 ```
 
 #### Scenario 3: Worker Creates a Failing PR
@@ -3548,6 +3594,7 @@ Recovery:
 | **Orchestrator** | The meta-agent managing all sessions |
 | **MCP** | Model Context Protocol — structured communication interface between Claude Code and external tools/servers |
 | **Hooks** | Shell commands configured to fire automatically in response to Claude Code tool-call events |
+| **Skill (Slash Command)** | A custom Claude Code command stored in `.claude/commands/`. The orchestrator installs an `/orchestrator` skill that teaches Claude Code how to report to the orchestrator API |
 | **Re-brief** | The act of re-sending current task context to a session after context loss (compact/restart) |
 | **Passive Monitor** | Background process that polls terminal output to detect session state changes |
 | **Active Reporting** | When Claude Code proactively sends events to the orchestrator (via MCP, curl, or hooks) |
@@ -3580,4 +3627,5 @@ Recovery:
 | 1.0 | 2026-02-07 | Yudong Qiu | Initial draft |
 | 1.1 | 2026-02-07 | Yudong Qiu | Added: Executive Summary, Communication Robustness (MCP server, hooks, heartbeat/reconciliation), Session Recovery & Context Preservation, Worker Capability & Task Scheduling, LLM Brain Design (tiered intelligence, prompt architecture, action schema), Cross-Session Communication, Cost & Resource Management, PR Dependency Management, Replay & Audit, Failure Scenarios & Recovery Playbooks, Testing Strategy, Schema Migration Strategy, Integration Strategy, expanded glossary, new DB schema tables, new API endpoints, Future Considerations (Autonomous/Advisory mode, NL project planning, session-to-session comms, execution replay, cost intelligence) |
 | 1.2 | 2026-02-07 | Yudong Qiu | Added: Core Design Principles (Zero Hard-Coded Context, DB-Driven Everything, Smart Context Selection), Context Management FR section (6.18) with 11 requirements, Smart Context Selection Algorithm (Section 8.5.5) with scoring formula and scaling behavior, updated LLM Brain prompt architecture to be fully DB-driven. Fixed author name. |
-| 1.3 | 2026-02-07 | Yudong Qiu | Final review: Added Section 8.7 Code Structure with full module tree, dependency rules, and design patterns. Added missing DB tables (config, prompt_templates, claudemd_templates). Fixed Table of Contents ordering and completeness. Expanded glossary with 11 additional terms. |
+| 1.3 | 2026-02-07 | Yudong Qiu | Final review: Added Section 8.7 Code Structure with full module tree, dependency rules, and design patterns. Added missing DB tables (config, prompt_templates, skill_templates). Fixed Table of Contents ordering and completeness. Expanded glossary with 11 additional terms. |
+| 1.4 | 2026-02-07 | Yudong Qiu | Replaced CLAUDE.md injection with skill-based approach. The orchestrator now installs a custom `/orchestrator` slash command in each session by typing into Claude Code like a real user (via tmux send-keys). Skills persist in .claude/commands/, don't conflict with repo files, survive /compact, and are idempotent. Updated Section 7.9, communication protocol (0.8), recovery flows, risk table, DB schema (claudemd_templates → skill_templates), code structure (added skill_installer.py), and glossary. |
