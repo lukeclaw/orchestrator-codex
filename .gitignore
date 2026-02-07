@@ -1,0 +1,67 @@
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Editors / IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.python-version
+
+# Environments
+.venv/
+.uv/
+.env
+.env.*
+
+# Build / packaging
+build/
+dist/
+*.egg-info/
+.eggs/
+pip-wheel-metadata/
+
+# Caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.pyre/
+.pytype/
+
+# Coverage
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+
+# Logs
+*.log
+
+# Node (if any local tooling added later)
+node_modules/
+*.tsbuildinfo
+
+# Chrome Extension artifacts
+*.crx
+*.pem
+*.zip
+
+# OS / misc
+Thumbs.db
+Icon?
+
+# DB
+*.db
+data/
+
+# workspace tmp
+tmp/
+
+
