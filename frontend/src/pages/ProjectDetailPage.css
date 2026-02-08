@@ -123,3 +123,79 @@
 .status-indicator.waiting { background: var(--yellow); }
 .status-indicator.error { background: var(--red); }
 .status-indicator.disconnected { background: var(--text-muted); }
+
+/* Context section */
+.pd-context-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 12px;
+  padding: 12px;
+  background: var(--bg);
+  border-radius: var(--radius);
+}
+
+.pd-context-form input,
+.pd-context-form textarea {
+  width: 100%;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 13px;
+  font-family: inherit;
+  resize: vertical;
+}
+
+.pd-context-form-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.pd-context-form-row select {
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 13px;
+}
+
+.pd-context-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.pd-context-item {
+  padding: 10px 12px;
+  background: var(--bg);
+  border-radius: var(--radius);
+}
+
+.pd-context-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.pd-context-time {
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.pd-context-preview {
+  margin: 4px 0 0;
+  font-size: 13px;
+  color: var(--text-secondary);
+  line-height: 1.4;
+}
+
+.pd-empty {
+  font-size: 13px;
+  color: var(--text-muted);
+}

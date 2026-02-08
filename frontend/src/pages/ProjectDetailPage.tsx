@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useParams, Link } from 'react-router-dom'
-import type { Project, Task, PullRequest, Session } from '../api/types'
+import type { Project, Task, PullRequest, Session, ContextItem } from '../api/types'
 import { api } from '../api/client'
 import TaskBoard from '../components/tasks/TaskBoard'
 import TaskForm from '../components/tasks/TaskForm'
@@ -13,22 +13,29 @@ export default function ProjectDetailPage() {
   const [tasks, setTasks] = useState<Task[]>([])
   const [prs, setPrs] = useState<PullRequest[]>([])
   const [sessions, setSessions] = useState<Session[]>([])
+  const [contextItems, setContextItems] = useState<ContextItem[]>([])
   const [error, setError] = useState('')
   const [showTaskForm, setShowTaskForm] = useState(false)
+  const [showContextForm, setShowContextForm] = useState(false)
+  const [ctxTitle, setCtxTitle] = useState('')
+  const [ctxContent, setCtxContent] = useState('')
+  const [ctxCategory, setCtxCategory] = useState('')
 
   const load = useCallback(async () => {
     if (!id) return
     try {
-      const [p, t, pr, s] = await Promise.all([
+      const [p, t, pr, s, ctx] = await Promise.all([
         api<Project>(`/api/projects/${id}`),
         api<Task[]>(`/api/tasks?project_id=${id}`).catch(() => []),
         api<PullRequest[]>('/api/prs').catch(() => []),
         api<Session[]>('/api/sessions').catch(() => []),
+        api<ContextItem[]>(`/api/context?project_id=${id}`).catch(() => []),
       ])
       setProject(p)
       setTasks(t)
       setPrs(pr)
       setSessions(s)
+      setContextItems(ctx)
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to load project')
     }
@@ -125,6 +132,68 @@ export default function ProjectDetailPage() {
           </div>
         </section>
       )}
+
+      {/* Context */}
+      <section className="pd-section">
+        <div className="pd-section-header">
+          <h2>Context ({contextItems.length})</h2>
+          <button className="btn btn-primary btn-sm" onClick={() => setShowContextForm(!showContextForm)}>
+            + Add Context
+          </button>
+        </div>
+        {showContextForm && (
+          <form className="pd-context-form" onSubmit={async (e) => {
+            e.preventDefault()
+            if (!ctxTitle.trim() || !ctxContent.trim()) return
+            await api('/api/context', {
+              method: 'POST',
+              body: JSON.stringify({
+                title: ctxTitle.trim(),
+                content: ctxContent.trim(),
+                scope: 'project',
+                project_id: id,
+                category: ctxCategory || undefined,
+                source: 'user',
+              }),
+            })
+            setCtxTitle('')
+            setCtxContent('')
+            setCtxCategory('')
+            setShowContextForm(false)
+            load()
+          }}>
+            <input type="text" placeholder="Title" value={ctxTitle} onChange={e => setCtxTitle(e.target.value)} required />
+            <textarea placeholder="Content..." value={ctxContent} onChange={e => setCtxContent(e.target.value)} rows={3} required />
+            <div className="pd-context-form-row">
+              <select value={ctxCategory} onChange={e => setCtxCategory(e.target.value)}>
+                <option value="">No category</option>
+                <option value="requirement">requirement</option>
+                <option value="convention">convention</option>
+                <option value="reference">reference</option>
+                <option value="note">note</option>
+              </select>
+              <button type="submit" className="btn btn-primary btn-sm">Save</button>
+              <button type="button" className="btn btn-secondary btn-sm" onClick={() => setShowContextForm(false)}>Cancel</button>
+            </div>
+          </form>
+        )}
+        {contextItems.length === 0 ? (
+          <p className="pd-empty">No context items for this project.</p>
+        ) : (
+          <div className="pd-context-list">
+            {contextItems.map(c => (
+              <div key={c.id} className="pd-context-item">
+                <div className="pd-context-header">
+                  {c.category && <span className="cp-category-tag">{c.category}</span>}
+                  <strong>{c.title}</strong>
+                  <span className="pd-context-time">{c.updated_at ? new Date(c.updated_at).toLocaleDateString() : ''}</span>
+                </div>
+                <p className="pd-context-preview">{c.content.slice(0, 150)}{c.content.length > 150 ? '...' : ''}</p>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
 
       <TaskForm
         open={showTaskForm}

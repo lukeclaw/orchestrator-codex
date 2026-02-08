@@ -7,7 +7,7 @@ from pydantic import BaseModel
 
 from orchestrator.api.deps import get_db
 from orchestrator.state.repositories import sessions as repo
-from orchestrator.terminal.manager import ensure_window
+from orchestrator.terminal.manager import ensure_window, kill_window
 
 logger = logging.getLogger(__name__)
 
@@ -89,8 +89,23 @@ def update_session(session_id: str, body: SessionUpdate, db=Depends(get_db)):
 
 @router.delete("/sessions/{session_id}")
 def delete_session(session_id: str, db=Depends(get_db)):
-    if not repo.delete_session(db, session_id):
+    s = repo.get_session(db, session_id)
+    if s is None:
         raise HTTPException(404, "Session not found")
+
+    # Kill the tmux window if it exists
+    if s.tmux_window:
+        if ":" in s.tmux_window:
+            tmux_sess, tmux_win = s.tmux_window.split(":", 1)
+        else:
+            tmux_sess, tmux_win = "orchestrator", s.tmux_window
+        try:
+            kill_window(tmux_sess, tmux_win)
+            logger.info("Killed tmux window %s:%s for session %s", tmux_sess, tmux_win, s.name)
+        except Exception:
+            logger.warning("Could not kill tmux window for session %s", s.name, exc_info=True)
+
+    repo.delete_session(db, session_id)
     return {"ok": True}
 
 

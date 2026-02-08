@@ -6,10 +6,9 @@ import SessionDetailPage from './pages/SessionDetailPage'
 import ProjectsPage from './pages/ProjectsPage'
 import ProjectDetailPage from './pages/ProjectDetailPage'
 import SessionsPage from './pages/SessionsPage'
-import TasksPage from './pages/TasksPage'
 import DecisionsPage from './pages/DecisionsPage'
-import ChatPage from './pages/ChatPage'
 import ActivityPage from './pages/ActivityPage'
+import ContextPage from './pages/ContextPage'
 import SettingsPage from './pages/SettingsPage'
 
 export default function App() {
@@ -22,10 +21,9 @@ export default function App() {
           <Route path="/projects/:id" element={<ProjectDetailPage />} />
           <Route path="/sessions" element={<SessionsPage />} />
           <Route path="/sessions/:id" element={<SessionDetailPage />} />
-          <Route path="/tasks" element={<TasksPage />} />
           <Route path="/decisions" element={<DecisionsPage />} />
-          <Route path="/chat" element={<ChatPage />} />
           <Route path="/activity" element={<ActivityPage />} />
+          <Route path="/context" element={<ContextPage />} />
           <Route path="/settings" element={<SettingsPage />} />
         </Route>
       </Routes>

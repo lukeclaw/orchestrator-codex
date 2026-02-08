@@ -14,7 +14,7 @@ def test_fresh_migration():
     """Running migrations on an empty DB should create all tables."""
     conn = get_memory_connection()
     applied = apply_migrations(conn)
-    assert applied == [1, 2]
+    assert applied == [1, 2, 3]
 
     # Verify key tables exist
     tables = conn.execute(
@@ -33,6 +33,7 @@ def test_fresh_migration():
         "session_snapshots",
         "comm_events",
         "config", "prompt_templates", "skill_templates",
+        "context_items",
         "schema_version",
     }
     assert expected_tables.issubset(table_names)
@@ -45,7 +46,7 @@ def test_idempotent_rerun():
     """Running migrations twice should be a no-op the second time."""
     conn = get_memory_connection()
     first = apply_migrations(conn)
-    assert first == [1, 2]
+    assert first == [1, 2, 3]
 
     second = apply_migrations(conn)
     assert second == []
@@ -56,7 +57,7 @@ def test_current_version_after_migration():
     conn = get_memory_connection()
     assert get_current_version(conn) == 0
     apply_migrations(conn)
-    assert get_current_version(conn) == 2
+    assert get_current_version(conn) == 3
     conn.close()
 
 

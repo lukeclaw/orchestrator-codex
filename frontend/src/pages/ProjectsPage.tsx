@@ -1,6 +1,7 @@
-import { useState } from 'react'
+import { useState, useCallback } from 'react'
 import { useProjects } from '../hooks/useProjects'
 import { useTasks } from '../hooks/useTasks'
+import { useApp } from '../context/AppContext'
 import ProjectCard from '../components/projects/ProjectCard'
 import ProjectForm from '../components/projects/ProjectForm'
 import FilterBar from '../components/common/FilterBar'
@@ -8,7 +9,7 @@ import './ProjectsPage.css'
 
 export default function ProjectsPage() {
   const { projects, loading, create } = useProjects()
-  const { tasks } = useTasks()
+  const { tasks, refresh: refreshApp } = useApp()
   const [showForm, setShowForm] = useState(false)
   const [statusFilter, setStatusFilter] = useState('')
 
@@ -63,7 +64,7 @@ export default function ProjectsPage() {
       <ProjectForm
         open={showForm}
         onClose={() => setShowForm(false)}
-        onSubmit={create}
+        onSubmit={async (body) => { const p = await create(body); refreshApp(); return p }}
       />
     </div>
   )

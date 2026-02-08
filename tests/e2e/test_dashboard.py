@@ -248,27 +248,21 @@ def test_09_activity_timeline(page):
 
 
 # ---------------------------------------------------------------------------
-# 10. Chat interaction
+# 10. Brain panel
 # ---------------------------------------------------------------------------
 
 
-def test_10_chat_interaction(page):
-    """Type message, send, user + assistant bubbles appear."""
-    page.fill("[data-testid='chat-input']", "What is the status?")
-    page.click("[data-testid='chat-send']")
+def test_10_brain_panel(page):
+    """Brain panel is visible on dashboard with Start button."""
+    screenshot(page, "10_brain_panel")
 
-    # Wait for assistant response (may take a few seconds for LLM or fallback)
-    page.wait_for_selector("[data-testid='chat-msg-assistant']", timeout=15000)
+    brain_panel = page.query_selector("[data-testid='brain-panel']")
+    assert brain_panel is not None
+    assert brain_panel.is_visible()
 
-    screenshot(page, "10_chat")
-
-    user_msgs = page.query_selector_all("[data-testid='chat-msg-user']")
-    assert len(user_msgs) >= 1
-    assert "What is the status?" in user_msgs[0].inner_text()
-
-    assistant_msgs = page.query_selector_all("[data-testid='chat-msg-assistant']")
-    assert len(assistant_msgs) >= 1
-    assert assistant_msgs[0].inner_text() != ""
+    # Should show "Start Brain" button (brain is not running in test env)
+    page_text = brain_panel.inner_text()
+    assert "Orchestrator Brain" in page_text or "Start Brain" in page_text
 
 
 # ---------------------------------------------------------------------------

@@ -6,7 +6,7 @@ import SessionGrid from '../components/sessions/SessionGrid'
 import AddSessionModal from '../components/sessions/AddSessionModal'
 import DecisionQueue from '../components/decisions/DecisionQueue'
 import ActivityTimeline from '../components/activity/ActivityTimeline'
-import ChatPanel from '../components/chat/ChatPanel'
+import BrainTerminal from '../components/brain/BrainTerminal'
 import ProjectCard from '../components/projects/ProjectCard'
 import './DashboardPage.css'
 
@@ -68,20 +68,17 @@ export default function DashboardPage() {
         </section>
       </div>
 
-      {/* Activity + Chat */}
+      {/* Brain + Activity */}
       <div className="grid-2" style={{ marginTop: 16 }}>
+        <section className="panel brain-panel" data-testid="brain-panel">
+          <BrainTerminal />
+        </section>
+
         <section className="panel" data-testid="activity-panel">
           <div className="panel-header">
             <h2>Recent Activity</h2>
           </div>
           <ActivityTimeline />
-        </section>
-
-        <section className="panel chat-panel" data-testid="chat-panel">
-          <div className="panel-header">
-            <h2>Chat</h2>
-          </div>
-          <ChatPanel />
         </section>
       </div>
 

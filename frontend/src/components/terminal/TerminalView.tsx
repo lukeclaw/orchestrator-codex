@@ -48,7 +48,7 @@ export default function TerminalView({ sessionId }: Props) {
       },
       cursorBlink: true,
       allowProposedApi: true,
-      scrollback: 1000,
+      scrollback: 5000,
     })
 
     const fitAddon = new FitAddon()
@@ -83,13 +83,26 @@ export default function TerminalView({ sessionId }: Props) {
     ws.onclose = () => setStatus('disconnected')
     ws.onerror = () => ws.close()
 
+    let scrollbackWritten = false
+
     ws.onmessage = (event) => {
       try {
         const msg = JSON.parse(event.data)
-        if (msg.type === 'output') {
-          // Server sends full pane snapshots — reset and rewrite
-          terminal.reset()
+        if (msg.type === 'scrollback') {
+          // History from before we connected — write it so user can scroll up
           terminal.write(msg.data)
+          scrollbackWritten = true
+        } else if (msg.type === 'output') {
+          if (!scrollbackWritten) {
+            // No scrollback received yet — just write directly
+            terminal.reset()
+            terminal.write(msg.data)
+          } else {
+            // Overwrite the visible area without touching scrollback:
+            // \x1b[H = cursor to home (1,1)
+            // \x1b[J = erase from cursor to end of display
+            terminal.write('\x1b[H\x1b[J' + msg.data)
+          }
         } else if (msg.type === 'error') {
           terminal.write(`\r\n\x1b[31m${msg.message}\x1b[0m\r\n`)
         }

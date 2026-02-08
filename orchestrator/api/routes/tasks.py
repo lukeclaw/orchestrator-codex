@@ -79,9 +79,14 @@ def update_task(task_id: str, body: TaskUpdate, request: Request, db=Depends(get
     old_assigned = t.assigned_session_id
     new_assigned = body.assigned_session_id
 
+    # Auto-transition: assigning a task moves it to in_progress
+    effective_status = body.status
+    if new_assigned and new_assigned != old_assigned and t.status == "todo" and not body.status:
+        effective_status = "in_progress"
+
     updated = repo.update_task(
         db, task_id,
-        status=body.status,
+        status=effective_status,
         assigned_session_id=new_assigned if new_assigned is not None else ...,
         priority=body.priority,
         title=body.title,
@@ -92,7 +97,13 @@ def update_task(task_id: str, body: TaskUpdate, request: Request, db=Depends(get
     if new_assigned and new_assigned != old_assigned:
         _notify_worker_of_assignment(db, updated, request)
 
-    return {"id": updated.id, "status": updated.status}
+    return {
+        "id": updated.id, "project_id": updated.project_id, "title": updated.title,
+        "description": updated.description, "status": updated.status,
+        "priority": updated.priority, "assigned_session_id": updated.assigned_session_id,
+        "created_at": updated.created_at, "started_at": updated.started_at,
+        "completed_at": updated.completed_at,
+    }
 
 
 def _notify_worker_of_assignment(db, task, request):

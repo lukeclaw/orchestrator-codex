@@ -4,9 +4,8 @@ import {
   IconDashboard,
   IconProjects,
   IconSessions,
-  IconTasks,
   IconDecisions,
-  IconChat,
+  IconContext,
   IconActivity,
   IconSettings,
   IconChevronLeft,
@@ -44,9 +43,8 @@ export default function Sidebar({ collapsed, onToggle }: Props) {
         {waitingSessions > 0 && (
           <SidebarItem to="/decisions" icon={<IconDecisions size={18} />} label="Waiting" badge={waitingSessions} collapsed={collapsed} />
         )}
-        <SidebarItem to="/tasks" icon={<IconTasks size={18} />} label="Tasks" collapsed={collapsed} shortcut="T" />
         <SidebarItem to="/decisions" icon={<IconDecisions size={18} />} label="Decisions" badge={decisions.length} collapsed={collapsed} shortcut="E" />
-        <SidebarItem to="/chat" icon={<IconChat size={18} />} label="Chat" collapsed={collapsed} shortcut="C" />
+        <SidebarItem to="/context" icon={<IconContext size={18} />} label="Context" collapsed={collapsed} shortcut="K" />
         <SidebarItem to="/activity" icon={<IconActivity size={18} />} label="Activity" collapsed={collapsed} shortcut="A" />
       </nav>
 

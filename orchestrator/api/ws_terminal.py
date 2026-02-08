@@ -110,6 +110,13 @@ async def terminal_websocket(websocket: WebSocket, session_id: str):
                     # then capture the fresh screen at the correct dimensions.
                     clear_pane(tmux_sess, tmux_win)
                     await asyncio.sleep(0.3)
+
+                    # Send scrollback history first (gives the client scroll-up content)
+                    scrollback = capture_pane_with_escapes(tmux_sess, tmux_win, lines=500)
+                    if scrollback.strip():
+                        await websocket.send_json({"type": "scrollback", "data": scrollback})
+
+                    # Then send the current visible pane
                     content = capture_pane_with_escapes(tmux_sess, tmux_win)
                     await websocket.send_json({"type": "output", "data": content})
                     last_content = content

@@ -61,13 +61,15 @@ export interface PullRequest {
   session_id: string | null
 }
 
-export interface ChatResponse {
-  response: string
-  actions: ChatAction[]
-}
-
-export interface ChatAction {
-  type: string
-  params: Record<string, unknown>
-  requires_approval: boolean
+export interface ContextItem {
+  id: string
+  scope: 'global' | 'project'
+  project_id: string | null
+  title: string
+  content: string
+  category: string | null
+  source: string | null
+  metadata: string | null
+  created_at: string
+  updated_at: string
 }

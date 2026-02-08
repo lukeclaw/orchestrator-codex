@@ -115,7 +115,9 @@ def create_app(
     # Register routes
     from orchestrator.api.routes import (
         activities,
+        brain,
         chat,
+        context,
         decisions,
         health,
         prs,
@@ -132,10 +134,12 @@ def create_app(
     app.include_router(decisions.router, prefix="/api", tags=["decisions"])
     app.include_router(reporting.router, prefix="/api", tags=["reporting"])
     app.include_router(chat.router, prefix="/api", tags=["chat"])
+    app.include_router(context.router, prefix="/api", tags=["context"])
     app.include_router(prs.router, prefix="/api", tags=["prs"])
     app.include_router(health.router, prefix="/api", tags=["health"])
     app.include_router(activities.router, prefix="/api", tags=["activities"])
     app.include_router(settings.router, prefix="/api", tags=["settings"])
+    app.include_router(brain.router, prefix="/api", tags=["brain"])
 
     # WebSocket
     from orchestrator.api.websocket import websocket_endpoint

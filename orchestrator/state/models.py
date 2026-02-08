@@ -225,6 +225,20 @@ class PrDependency:
 
 
 @dataclass
+class ContextItem:
+    id: str
+    scope: str = "global"
+    project_id: str | None = None
+    title: str = ""
+    content: str = ""
+    category: str | None = None
+    source: str | None = None
+    metadata: str | None = None
+    created_at: str = ""
+    updated_at: str = ""
+
+
+@dataclass
 class ProjectWorker:
     project_id: str
     session_id: str
