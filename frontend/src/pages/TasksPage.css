@@ -1,0 +1,36 @@
+.tasks-page {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.tasks-page .page-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.tasks-page .page-header h1 {
+  font-size: 20px;
+  font-weight: 600;
+}
+
+.tasks-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.view-toggle {
+  display: flex;
+  gap: 2px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 2px;
+}
+
+.view-toggle .btn {
+  border: none;
+  border-radius: 4px;
+}

@@ -1,0 +1,59 @@
+.decision-card {
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.decision-card:last-child {
+  border-bottom: none;
+}
+
+.decision-card.critical {
+  border-left: 3px solid var(--red);
+}
+
+.decision-card.high {
+  border-left: 3px solid var(--orange);
+}
+
+.decision-card.normal {
+  border-left: 3px solid var(--accent);
+}
+
+.decision-card.low {
+  border-left: 3px solid var(--text-muted);
+}
+
+.dc-question {
+  font-size: 14px;
+  font-weight: 500;
+  margin-bottom: 8px;
+  line-height: 1.4;
+}
+
+.dc-meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.dc-time {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.dc-context {
+  font-size: 12px;
+  color: var(--text-secondary);
+  background: var(--bg);
+  padding: 8px 10px;
+  border-radius: var(--radius);
+  margin-bottom: 10px;
+  line-height: 1.5;
+}
+
+.dc-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}

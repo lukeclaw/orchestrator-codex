@@ -1,0 +1,139 @@
+.session-detail {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  margin: -20px -24px;
+}
+
+/* Top bar */
+.sd-topbar {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 10px 16px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+  flex-wrap: wrap;
+}
+
+.sd-topbar-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.sd-back-link {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  color: var(--text-secondary);
+  border-radius: var(--radius);
+  transition: background 0.15s, color 0.15s;
+}
+
+.sd-back-link:hover {
+  background: var(--surface-hover);
+  color: var(--text-primary);
+  text-decoration: none;
+}
+
+.sd-title {
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.sd-topbar-meta {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-left: auto;
+}
+
+.sd-meta-item {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+}
+
+.sd-meta-label {
+  color: var(--text-muted);
+}
+
+.sd-meta-value {
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+
+.sd-topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.sd-chip {
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 10px;
+  background: var(--surface-raised);
+  color: var(--text-secondary);
+  border: 1px solid var(--border);
+}
+
+/* Terminal */
+.sd-terminal-area {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* Send form */
+.sd-send-form {
+  display: flex;
+  gap: 8px;
+  padding: 8px 14px;
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.sd-send-form input {
+  flex: 1;
+  padding: 7px 12px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text-primary);
+  font-size: 13px;
+}
+
+.sd-send-form input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-muted);
+}
+
+.sd-send-form input::placeholder {
+  color: var(--text-muted);
+}
+
+.error-page {
+  text-align: center;
+  padding: 40px;
+  color: var(--red);
+}
+
+@media (max-width: 768px) {
+  .sd-topbar {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  .sd-topbar-meta {
+    margin-left: 0;
+  }
+}

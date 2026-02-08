@@ -1,0 +1,26 @@
+# Bootstrap configuration — only infrastructure settings, NOT domain context.
+# All domain context (projects, tasks, sessions, templates) lives in the DB.
+
+server:
+  host: "127.0.0.1"
+  port: 8080
+
+database:
+  path: "data/orchestrator.db"    # Relative to project root
+
+tmux:
+  session_name: "orchestrator"    # tmux session name
+
+anthropic:
+  # API key is read from macOS Keychain, NOT stored here.
+  model: "claude-sonnet-4-20250514"
+  max_tokens: 4096
+
+monitoring:
+  poll_interval_seconds: 5        # Passive monitor default interval
+  heartbeat_timeout_seconds: 120  # Mark session stale after this
+  reconciliation_interval_seconds: 300  # Full state reconciliation
+
+logging:
+  level: "INFO"
+  file: "data/orchestrator.log"

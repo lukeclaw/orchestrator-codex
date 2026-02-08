@@ -1,0 +1,48 @@
+:root {
+  /* Background */
+  --bg: #0d1117;
+  --bg-alt: #010409;
+  --surface: #161b22;
+  --surface-hover: #1c2129;
+  --surface-raised: #21262d;
+
+  /* Borders */
+  --border: #30363d;
+  --border-subtle: #21262d;
+
+  /* Text */
+  --text-primary: #e6edf3;
+  --text-secondary: #8b949e;
+  --text-muted: #484f58;
+
+  /* Accent */
+  --accent: #58a6ff;
+  --accent-muted: #388bfd26;
+  --accent-hover: #79c0ff;
+
+  /* Status colors */
+  --green: #3fb950;
+  --green-muted: #238636;
+  --yellow: #d29922;
+  --yellow-muted: #9e6a03;
+  --red: #f85149;
+  --red-muted: #da3633;
+  --orange: #db6d28;
+  --purple: #a371f7;
+
+  /* Sizing */
+  --radius: 6px;
+  --radius-lg: 10px;
+  --header-height: 56px;
+  --sidebar-width: 220px;
+  --sidebar-collapsed-width: 56px;
+
+  /* Font */
+  --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, sans-serif;
+  --font-mono: 'SF Mono', 'Menlo', 'Monaco', 'Consolas', monospace;
+
+  /* Shadows */
+  --shadow-sm: 0 1px 0 rgba(27,31,36,0.04);
+  --shadow-md: 0 3px 6px rgba(0,0,0,0.3);
+  --shadow-lg: 0 8px 24px rgba(0,0,0,0.4);
+}

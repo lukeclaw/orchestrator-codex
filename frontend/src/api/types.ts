@@ -1,0 +1,73 @@
+export interface Session {
+  id: string
+  name: string
+  host: string
+  mp_path: string | null
+  tmux_window: string | null
+  status: 'idle' | 'working' | 'waiting' | 'error' | 'disconnected'
+  current_task_id: string | null
+  created_at: string
+  last_activity: string | null
+}
+
+export interface Decision {
+  id: string
+  session_id: string | null
+  question: string
+  options: string | string[] | null
+  context: string | null
+  urgency: 'low' | 'normal' | 'high' | 'critical'
+  status: 'pending' | 'responded' | 'dismissed'
+  response: string | null
+  created_at: string
+}
+
+export interface Activity {
+  id: string
+  session_id: string | null
+  event_type: string
+  event_data: string | Record<string, unknown> | null
+  created_at: string
+}
+
+export interface Project {
+  id: string
+  name: string
+  description: string | null
+  status: string
+  target_date: string | null
+  created_at: string
+}
+
+export interface Task {
+  id: string
+  project_id: string
+  title: string
+  description: string | null
+  status: string
+  priority: number
+  assigned_session_id: string | null
+  created_at: string
+  started_at: string | null
+  completed_at: string | null
+}
+
+export interface PullRequest {
+  id: string
+  url: string
+  number: number | null
+  title: string | null
+  status: string
+  session_id: string | null
+}
+
+export interface ChatResponse {
+  response: string
+  actions: ChatAction[]
+}
+
+export interface ChatAction {
+  type: string
+  params: Record<string, unknown>
+  requires_approval: boolean
+}

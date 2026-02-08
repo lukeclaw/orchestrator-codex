@@ -1,0 +1,125 @@
+.project-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.pd-nav {
+  margin-bottom: -8px;
+}
+
+.pd-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.pd-header h1 {
+  font-size: 22px;
+  font-weight: 600;
+}
+
+.pd-desc {
+  font-size: 14px;
+  color: var(--text-secondary);
+  margin-top: 4px;
+}
+
+.pd-meta {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+}
+
+.pd-progress {
+  flex: 1;
+  max-width: 400px;
+}
+
+.pd-date {
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.pd-section {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 16px;
+}
+
+.pd-section h2 {
+  font-size: 15px;
+  font-weight: 600;
+  margin-bottom: 12px;
+}
+
+.pd-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.pd-section-header h2 {
+  margin-bottom: 0;
+}
+
+.pd-workers {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.pd-worker {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: var(--bg);
+  border-radius: var(--radius);
+  text-decoration: none;
+  color: var(--text-primary);
+  font-size: 13px;
+  transition: background 0.1s;
+}
+
+.pd-worker:hover {
+  background: var(--surface-hover);
+  text-decoration: none;
+}
+
+.pd-prs {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.pd-pr-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  background: var(--bg);
+  border-radius: var(--radius);
+  font-size: 13px;
+}
+
+.pd-pr-item a {
+  color: var(--accent);
+}
+
+.status-indicator {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+  flex-shrink: 0;
+}
+
+.status-indicator.idle { background: var(--green); }
+.status-indicator.working { background: var(--accent); }
+.status-indicator.waiting { background: var(--yellow); }
+.status-indicator.error { background: var(--red); }
+.status-indicator.disconnected { background: var(--text-muted); }

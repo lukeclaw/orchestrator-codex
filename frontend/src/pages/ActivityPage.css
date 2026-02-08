@@ -1,0 +1,64 @@
+.activity-page {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.activity-page .page-header h1 {
+  font-size: 20px;
+  font-weight: 600;
+}
+
+.activity-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.ag-date {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--border-subtle);
+  margin-bottom: 6px;
+}
+
+.ag-items {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.ag-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 12px;
+  background: var(--surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius);
+  font-size: 13px;
+}
+
+.ag-item .at-time {
+  color: var(--text-muted);
+  font-size: 12px;
+  font-family: var(--font-mono);
+  min-width: 55px;
+}
+
+.ag-item .at-type {
+  color: var(--accent);
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.ag-item .at-detail {
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

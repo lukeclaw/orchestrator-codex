@@ -1,0 +1,76 @@
+"""Native Starlette WebSocket for real-time updates."""
+
+from __future__ import annotations
+
+import asyncio
+import json
+import logging
+from typing import Any
+
+from starlette.websockets import WebSocket, WebSocketDisconnect
+
+from orchestrator.core.events import Event, subscribe, unsubscribe
+
+logger = logging.getLogger(__name__)
+
+# Connected WebSocket clients
+_clients: set[WebSocket] = set()
+
+
+async def websocket_endpoint(websocket: WebSocket):
+    """Handle WebSocket connections for real-time dashboard updates."""
+    await websocket.accept()
+    _clients.add(websocket)
+    logger.info("WebSocket client connected (total: %d)", len(_clients))
+
+    try:
+        while True:
+            # Keep connection alive; handle incoming messages
+            data = await websocket.receive_text()
+            # Clients can send ping/pong or commands
+            try:
+                msg = json.loads(data)
+                if msg.get("type") == "ping":
+                    await websocket.send_json({"type": "pong"})
+            except json.JSONDecodeError:
+                pass
+    except WebSocketDisconnect:
+        pass
+    finally:
+        _clients.discard(websocket)
+        logger.info("WebSocket client disconnected (total: %d)", len(_clients))
+
+
+async def broadcast(message: dict[str, Any]):
+    """Broadcast a message to all connected WebSocket clients."""
+    if not _clients:
+        return
+
+    data = json.dumps(message)
+    disconnected = set()
+
+    for client in _clients:
+        try:
+            await client.send_text(data)
+        except Exception:
+            disconnected.add(client)
+
+    _clients.difference_update(disconnected)
+
+
+def _on_event(event: Event):
+    """Bridge between sync event bus and async WebSocket broadcast."""
+    try:
+        loop = asyncio.get_running_loop()
+        loop.create_task(broadcast({
+            "type": event.type,
+            "data": event.data,
+            "timestamp": event.timestamp,
+        }))
+    except RuntimeError:
+        # No running event loop (e.g., in CLI mode)
+        pass
+
+
+# Subscribe to all events for WebSocket broadcasting
+subscribe("*", _on_event)
