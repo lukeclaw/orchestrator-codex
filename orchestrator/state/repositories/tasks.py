@@ -73,6 +73,7 @@ def update_task(
     description: str | None = None,
     blocked_by_decision_id: str | None = ...,
     notes: str | None = ...,
+    links: str | None = ...,
 ) -> Task | None:
     sets = []
     params = []
@@ -101,6 +102,9 @@ def update_task(
     if notes is not ...:
         sets.append("notes = ?")
         params.append(notes)
+    if links is not ...:
+        sets.append("links = ?")
+        params.append(links)
     if not sets:
         return get_task(conn, id)
     params.append(id)
@@ -110,8 +114,23 @@ def update_task(
 
 
 def delete_task(conn: sqlite3.Connection, id: str) -> bool:
+    """Delete a task and all its subtasks recursively.
+    
+    Also cleans up:
+    - All subtasks (cascading delete)
+    - Task dependencies involving this task or subtasks
+    - Task requirements for this task or subtasks
+    """
+    # First, recursively delete all subtasks
+    subtasks = list_tasks(conn, parent_task_id=id)
+    for subtask in subtasks:
+        delete_task(conn, subtask.id)
+    
+    # Clean up dependencies and requirements for this task
     conn.execute("DELETE FROM task_dependencies WHERE task_id = ? OR depends_on_task_id = ?", (id, id))
     conn.execute("DELETE FROM task_requirements WHERE task_id = ?", (id,))
+    
+    # Delete the task itself
     cursor = conn.execute("DELETE FROM tasks WHERE id = ?", (id,))
     conn.commit()
     return cursor.rowcount > 0

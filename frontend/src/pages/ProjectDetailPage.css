@@ -66,28 +66,21 @@
   margin-bottom: 0;
 }
 
-.pd-workers {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.pd-worker {
+.pd-section-actions {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 8px 12px;
-  background: var(--bg);
-  border-radius: var(--radius);
-  text-decoration: none;
-  color: var(--text-primary);
-  font-size: 13px;
-  transition: background 0.1s;
+  gap: 12px;
 }
 
-.pd-worker:hover {
-  background: var(--surface-hover);
-  text-decoration: none;
+.toggle-sm .toggle-btn {
+  padding: 4px 10px;
+  font-size: 12px;
+}
+
+.pd-worker-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 16px;
 }
 
 .pd-prs {
@@ -170,9 +163,20 @@
 }
 
 .pd-context-item {
-  padding: 10px 12px;
-  background: var(--bg);
+  padding: 12px;
+  background: var(--surface);
   border-radius: var(--radius);
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.pd-context-item.clickable {
+  cursor: pointer;
+  border: 1px solid transparent;
+}
+
+.pd-context-item.clickable:hover {
+  background: var(--surface-hover);
+  border-color: var(--border);
 }
 
 .pd-context-header {

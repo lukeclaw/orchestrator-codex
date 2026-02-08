@@ -5,10 +5,11 @@ interface ModalProps {
   onClose: () => void
   title: string
   wide?: boolean
+  extraWide?: boolean
   children: ReactNode
 }
 
-export default function Modal({ open, onClose, title, wide, children }: ModalProps) {
+export default function Modal({ open, onClose, title, wide, extraWide, children }: ModalProps) {
   useEffect(() => {
     if (!open) return
     const handler = (e: KeyboardEvent) => {
@@ -23,7 +24,7 @@ export default function Modal({ open, onClose, title, wide, children }: ModalPro
   return (
     <div className="modal-backdrop" onClick={onClose} data-testid="modal-backdrop">
       <div
-        className={`modal-content ${wide ? 'modal-wide' : ''}`}
+        className={`modal-content ${extraWide ? 'modal-extra-wide' : wide ? 'modal-wide' : ''}`}
         onClick={e => e.stopPropagation()}
       >
         <div className="modal-header">

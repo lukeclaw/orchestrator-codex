@@ -183,3 +183,37 @@ export function IconGripVertical(props: IconProps) {
     </Icon>
   )
 }
+
+export function IconRefresh(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <polyline points="23 4 23 10 17 10" />
+      <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
+    </Icon>
+  )
+}
+
+export function IconPause(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <rect x="6" y="4" width="4" height="16" rx="1" fill="currentColor" stroke="none" />
+      <rect x="14" y="4" width="4" height="16" rx="1" fill="currentColor" stroke="none" />
+    </Icon>
+  )
+}
+
+export function IconPlay(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <polygon points="5 3 19 12 5 21 5 3" fill="currentColor" stroke="none" />
+    </Icon>
+  )
+}
+
+export function IconStop(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <rect x="4" y="4" width="16" height="16" rx="2" fill="currentColor" stroke="none" />
+    </Icon>
+  )
+}

@@ -51,6 +51,19 @@ class Task:
     completed_at: str | None = None
     parent_task_id: str | None = None
     notes: str | None = None
+    links: str | None = None  # JSON array of {url, title, type}
+
+    @property
+    def links_list(self) -> list[dict]:
+        """Parse links JSON into list of dicts."""
+        if self.links is None:
+            return []
+        if isinstance(self.links, list):
+            return self.links
+        try:
+            return json.loads(self.links)
+        except (json.JSONDecodeError, TypeError):
+            return []
 
 
 @dataclass

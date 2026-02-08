@@ -88,12 +88,15 @@ export default function WorkersPage() {
     }
   }
 
-  const handleRemove = useCallback((_id: string) => {
-    // Worker will disappear on next poll since AppContext refreshes sessions
+  const { removeSession } = useApp()
+
+  const handleRemove = useCallback((id: string) => {
+    // Remove from client cache immediately for instant UI feedback
+    removeSession(id)
     // Remove from stored order
-    const order = getStoredOrder().filter(oid => oid !== _id)
+    const order = getStoredOrder().filter(oid => oid !== id)
     saveOrder(order)
-  }, [])
+  }, [removeSession])
 
   return (
     <div className="workers-page">

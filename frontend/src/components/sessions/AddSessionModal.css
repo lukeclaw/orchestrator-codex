@@ -1,0 +1,156 @@
+.rdev-list-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.rdev-list-header label {
+  margin-bottom: 0;
+}
+
+.btn-icon {
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 4px 6px;
+  cursor: pointer;
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.btn-icon:hover {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+
+.btn-icon:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn-icon .spinning {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.rdev-error {
+  color: var(--danger);
+  font-size: 12px;
+  padding: 8px;
+  background: rgba(239, 68, 68, 0.1);
+  border-radius: 4px;
+  margin-bottom: 8px;
+}
+
+.rdev-loading,
+.rdev-empty {
+  color: var(--text-muted);
+  font-size: 13px;
+  padding: 16px;
+  text-align: center;
+  background: var(--surface);
+  border-radius: 6px;
+  border: 1px solid var(--border);
+}
+
+.rdev-empty code {
+  background: var(--surface-hover);
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-size: 12px;
+}
+
+.rdev-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 240px;
+  overflow-y: auto;
+}
+
+.rdev-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.rdev-item:hover:not(.in-use):not(.not-running) {
+  border-color: var(--primary);
+  background: var(--surface-hover);
+}
+
+.rdev-item.selected {
+  border-color: var(--primary);
+  background: rgba(59, 130, 246, 0.1);
+}
+
+.rdev-item.in-use {
+  opacity: 0.6;
+  cursor: not-allowed;
+  background: var(--surface);
+}
+
+.rdev-item.not-running {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.rdev-item-main {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.rdev-state {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  padding: 2px 6px;
+  border-radius: 3px;
+  background: var(--surface-hover);
+  color: var(--text-muted);
+}
+
+.rdev-state.running {
+  background: rgba(34, 197, 94, 0.15);
+  color: var(--success);
+}
+
+.rdev-state.stopped,
+.rdev-state.stopping {
+  background: rgba(239, 68, 68, 0.15);
+  color: var(--danger);
+}
+
+.rdev-name {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text);
+}
+
+.rdev-item-meta {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.rdev-in-use {
+  color: var(--warning);
+  font-weight: 500;
+}
+
+.rdev-accessed {
+  color: var(--text-muted);
+}

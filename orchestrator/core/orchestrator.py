@@ -108,12 +108,17 @@ class Orchestrator:
         try:
             from orchestrator.automation.auto_approve import check_auto_approve
 
-            output = tmux.capture_output(self.tmux_session, session_name, lines=30)
-            response = check_auto_approve(conn, session_name, output)
-
             session = sessions_repo.get_session_by_name(conn, session_name)
             if not session:
                 return
+
+            # Skip paused workers - they should not receive automatic responses
+            if session.status == "paused":
+                logger.debug("Skipping paused worker %s for auto-approve", session_name)
+                return
+
+            output = tmux.capture_output(self.tmux_session, session_name, lines=30)
+            response = check_auto_approve(conn, session_name, output)
 
             if response is not None:
                 # Auto-approve: send the response keystroke
@@ -151,10 +156,16 @@ class Orchestrator:
             from orchestrator.scheduler.scheduler import get_next_assignments
             from orchestrator.terminal.session import send_to_session
 
-            assignments = get_next_assignments(conn)
             session = sessions_repo.get_session_by_name(conn, session_name)
             if not session:
                 return
+
+            # Skip paused workers - they should not receive automatic task assignments
+            if session.status == "paused":
+                logger.debug("Skipping paused worker %s for task assignment", session_name)
+                return
+
+            assignments = get_next_assignments(conn)
 
             for task_id, assigned_session_id in assignments:
                 if assigned_session_id != session.id:

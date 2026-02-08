@@ -3,7 +3,11 @@ import { useParams, Link } from 'react-router-dom'
 import type { Project, Task, PullRequest, Session, ContextItem } from '../api/types'
 import { api } from '../api/client'
 import TaskBoard from '../components/tasks/TaskBoard'
+import TaskTable from '../components/tasks/TaskTable'
 import TaskForm from '../components/tasks/TaskForm'
+import TaskDetailModal from '../components/tasks/TaskDetailModal'
+import ContextModal from '../components/context/ContextModal'
+import WorkerCard from '../components/workers/WorkerCard'
 import ProgressBar from '../components/common/ProgressBar'
 import './ProjectDetailPage.css'
 
@@ -16,10 +20,10 @@ export default function ProjectDetailPage() {
   const [contextItems, setContextItems] = useState<ContextItem[]>([])
   const [error, setError] = useState('')
   const [showTaskForm, setShowTaskForm] = useState(false)
-  const [showContextForm, setShowContextForm] = useState(false)
-  const [ctxTitle, setCtxTitle] = useState('')
-  const [ctxContent, setCtxContent] = useState('')
-  const [ctxCategory, setCtxCategory] = useState('')
+  const [taskViewMode, setTaskViewMode] = useState<'board' | 'table'>('board')
+  const [selectedTask, setSelectedTask] = useState<Task | null>(null)
+  const [selectedContext, setSelectedContext] = useState<ContextItem | null>(null)
+  const [showNewContext, setShowNewContext] = useState(false)
 
   const load = useCallback(async () => {
     if (!id) return
@@ -48,6 +52,20 @@ export default function ProjectDetailPage() {
     load()
   }
 
+  async function updateTask(taskId: string, body: Partial<Task>) {
+    await api(`/api/tasks/${taskId}`, { method: 'PATCH', body: JSON.stringify(body) })
+    load()
+  }
+
+  async function deleteTask(taskId: string) {
+    await api(`/api/tasks/${taskId}`, { method: 'DELETE' })
+    load()
+  }
+
+  function handleTaskClick(task: Task) {
+    setSelectedTask(task)
+  }
+
   if (error) {
     return (
       <div className="error-page">
@@ -61,9 +79,11 @@ export default function ProjectDetailPage() {
     return <p className="empty-state">Loading project...</p>
   }
 
-  const doneTasks = tasks.filter(t => t.status === 'done').length
+  // Filter out subtasks - only show parent tasks on project page
+  const parentTasks = tasks.filter(t => !t.parent_task_id)
+  const doneTasks = parentTasks.filter(t => t.status === 'done').length
   const assignedSessions = sessions.filter(s =>
-    tasks.some(t => t.assigned_session_id === s.id)
+    parentTasks.some(t => t.assigned_session_id === s.id)
   )
 
   return (
@@ -93,27 +113,45 @@ export default function ProjectDetailPage() {
       {assignedSessions.length > 0 && (
         <section className="pd-section">
           <h2>Workers ({assignedSessions.length})</h2>
-          <div className="pd-workers">
+          <div className="pd-worker-grid">
             {assignedSessions.map(s => (
-              <Link key={s.id} to={`/sessions/${s.id}`} className="pd-worker">
-                <span className={`status-indicator ${s.status}`} />
-                <span>{s.name}</span>
-                <span className={`status-badge ${s.status}`}>{s.status}</span>
-              </Link>
+              <WorkerCard key={s.id} session={s} />
             ))}
           </div>
         </section>
       )}
 
-      {/* Task Board */}
+      {/* Tasks */}
       <section className="pd-section">
         <div className="pd-section-header">
-          <h2>Tasks ({tasks.length})</h2>
-          <button className="btn btn-primary btn-sm" onClick={() => setShowTaskForm(true)}>
-            + Add Task
-          </button>
+          <h2>Tasks ({parentTasks.length})</h2>
+          <div className="pd-section-actions">
+            <div className="toggle-group toggle-sm">
+              <button
+                type="button"
+                className={`toggle-btn${taskViewMode === 'board' ? ' active' : ''}`}
+                onClick={() => setTaskViewMode('board')}
+              >
+                Board
+              </button>
+              <button
+                type="button"
+                className={`toggle-btn${taskViewMode === 'table' ? ' active' : ''}`}
+                onClick={() => setTaskViewMode('table')}
+              >
+                Table
+              </button>
+            </div>
+            <button className="btn btn-primary btn-sm" onClick={() => setShowTaskForm(true)}>
+              + Add Task
+            </button>
+          </div>
         </div>
-        <TaskBoard tasks={tasks} />
+        {taskViewMode === 'board' ? (
+          <TaskBoard tasks={parentTasks} onTaskClick={handleTaskClick} />
+        ) : (
+          <TaskTable tasks={parentTasks} onTaskClick={handleTaskClick} />
+        )}
       </section>
 
       {/* PRs */}
@@ -137,52 +175,20 @@ export default function ProjectDetailPage() {
       <section className="pd-section">
         <div className="pd-section-header">
           <h2>Context ({contextItems.length})</h2>
-          <button className="btn btn-primary btn-sm" onClick={() => setShowContextForm(!showContextForm)}>
+          <button className="btn btn-primary btn-sm" onClick={() => setShowNewContext(true)}>
             + Add Context
           </button>
         </div>
-        {showContextForm && (
-          <form className="pd-context-form" onSubmit={async (e) => {
-            e.preventDefault()
-            if (!ctxTitle.trim() || !ctxContent.trim()) return
-            await api('/api/context', {
-              method: 'POST',
-              body: JSON.stringify({
-                title: ctxTitle.trim(),
-                content: ctxContent.trim(),
-                scope: 'project',
-                project_id: id,
-                category: ctxCategory || undefined,
-                source: 'user',
-              }),
-            })
-            setCtxTitle('')
-            setCtxContent('')
-            setCtxCategory('')
-            setShowContextForm(false)
-            load()
-          }}>
-            <input type="text" placeholder="Title" value={ctxTitle} onChange={e => setCtxTitle(e.target.value)} required />
-            <textarea placeholder="Content..." value={ctxContent} onChange={e => setCtxContent(e.target.value)} rows={3} required />
-            <div className="pd-context-form-row">
-              <select value={ctxCategory} onChange={e => setCtxCategory(e.target.value)}>
-                <option value="">No category</option>
-                <option value="requirement">requirement</option>
-                <option value="convention">convention</option>
-                <option value="reference">reference</option>
-                <option value="note">note</option>
-              </select>
-              <button type="submit" className="btn btn-primary btn-sm">Save</button>
-              <button type="button" className="btn btn-secondary btn-sm" onClick={() => setShowContextForm(false)}>Cancel</button>
-            </div>
-          </form>
-        )}
         {contextItems.length === 0 ? (
           <p className="pd-empty">No context items for this project.</p>
         ) : (
           <div className="pd-context-list">
             {contextItems.map(c => (
-              <div key={c.id} className="pd-context-item">
+              <div
+                key={c.id}
+                className="pd-context-item clickable"
+                onClick={() => setSelectedContext(c)}
+              >
                 <div className="pd-context-header">
                   {c.category && <span className="cp-category-tag">{c.category}</span>}
                   <strong>{c.title}</strong>
@@ -201,6 +207,42 @@ export default function ProjectDetailPage() {
         onSubmit={createTask}
         projects={project ? [project] : []}
         defaultProjectId={id}
+      />
+
+      <TaskDetailModal
+        task={selectedTask}
+        sessions={sessions}
+        onClose={() => setSelectedTask(null)}
+        onUpdate={updateTask}
+        onDelete={deleteTask}
+      />
+
+      <ContextModal
+        context={selectedContext}
+        projectId={id}
+        isNew={showNewContext}
+        onClose={() => {
+          setSelectedContext(null)
+          setShowNewContext(false)
+        }}
+        onSave={async (body) => {
+          if (body.id) {
+            await api(`/api/context/${body.id}`, {
+              method: 'PATCH',
+              body: JSON.stringify(body),
+            })
+          } else {
+            await api('/api/context', {
+              method: 'POST',
+              body: JSON.stringify(body),
+            })
+          }
+          load()
+        }}
+        onDelete={async (ctxId) => {
+          await api(`/api/context/${ctxId}`, { method: 'DELETE' })
+          load()
+        }}
       />
     </div>
   )

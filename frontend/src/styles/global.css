@@ -64,6 +64,7 @@ input, textarea {
 
 .app-main {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
   padding: 20px 24px;
   display: flex;
@@ -211,6 +212,12 @@ input, textarea {
   border: 1px solid rgba(210,153,34,0.3);
 }
 
+.status-badge.paused {
+  background: rgba(249,115,22,0.12);
+  color: #f97316;
+  border: 1px solid rgba(249,115,22,0.3);
+}
+
 .status-badge.connecting {
   background: rgba(88,166,255,0.12);
   color: var(--accent);
@@ -283,11 +290,19 @@ input, textarea {
   border-radius: var(--radius-lg);
   width: 90%;
   max-width: 500px;
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
   box-shadow: var(--shadow-lg);
 }
 
 .modal-wide {
   max-width: 700px;
+}
+
+.modal-extra-wide {
+  max-width: 1000px;
+  width: 90vw;
 }
 
 .modal-header {
@@ -318,6 +333,9 @@ input, textarea {
 
 .modal-body {
   padding: 20px;
+  overflow-y: auto;
+  flex: 1;
+  min-height: 0;
 }
 
 .modal-footer {

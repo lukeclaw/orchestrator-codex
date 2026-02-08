@@ -35,6 +35,7 @@
 .worker-card.working { border-left-color: var(--green); }
 .worker-card.idle { border-left-color: var(--blue); }
 .worker-card.waiting { border-left-color: var(--yellow); }
+.worker-card.paused { border-left-color: var(--orange, #f97316); }
 .worker-card.error { border-left-color: var(--red); }
 .worker-card.disconnected { border-left-color: var(--text-muted); }
 
@@ -59,6 +60,20 @@
   color: var(--text-primary);
 }
 
+.wc-type-tag {
+  font-size: 9px;
+  font-weight: 600;
+  text-transform: uppercase;
+  padding: 2px 5px;
+  border-radius: 3px;
+  letter-spacing: 0.5px;
+}
+
+.wc-type-tag.rdev {
+  background: rgba(139, 92, 246, 0.15);
+  color: #a78bfa;
+}
+
 /* Drag handle */
 .wc-drag-handle {
   display: flex;
@@ -78,6 +93,58 @@
   cursor: grabbing;
 }
 
+/* Action buttons container */
+.wc-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.worker-card:hover .wc-actions {
+  opacity: 1;
+}
+
+/* Action buttons (pause, stop) */
+.wc-action-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 4px;
+  border-radius: var(--radius);
+  color: var(--text-muted);
+  transition: color 0.15s, background 0.15s;
+}
+
+.wc-action-btn:hover:not(:disabled) {
+  color: var(--text-primary);
+  background: var(--surface-hover);
+}
+
+.wc-action-btn.pause:hover:not(:disabled) {
+  color: var(--orange, #f97316);
+  background: rgba(249, 115, 22, 0.1);
+}
+
+.wc-action-btn.continue:hover:not(:disabled) {
+  color: var(--green);
+  background: rgba(63, 185, 80, 0.1);
+}
+
+.wc-action-btn.stop:hover:not(:disabled) {
+  color: var(--red);
+  background: rgba(248, 81, 73, 0.1);
+}
+
+.wc-action-btn:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
 /* Remove button */
 .wc-remove-btn {
   display: flex;
@@ -89,12 +156,7 @@
   padding: 4px;
   border-radius: var(--radius);
   color: var(--text-muted);
-  opacity: 0;
-  transition: opacity 0.15s, color 0.15s, background 0.15s;
-}
-
-.worker-card:hover .wc-remove-btn {
-  opacity: 1;
+  transition: color 0.15s, background 0.15s;
 }
 
 .wc-remove-btn:hover:not(:disabled) {

@@ -20,20 +20,33 @@ export default function TaskTable({ tasks, onTaskClick }: Props) {
             <th>Title</th>
             <th>Status</th>
             <th>Priority</th>
+            <th>Subtasks</th>
+            <th>Links</th>
             <th>Assigned</th>
             <th>Created</th>
           </tr>
         </thead>
         <tbody>
-          {tasks.map(t => (
-            <tr key={t.id} className="tt-row" onClick={() => onTaskClick?.(t)}>
-              <td className="tt-title">{t.title}</td>
-              <td><span className={`status-badge ${t.status}`}>{t.status}</span></td>
-              <td>P{t.priority}</td>
-              <td>{t.assigned_session_id ? 'Yes' : '\u2014'}</td>
-              <td className="tt-time">{timeAgo(t.created_at)}</td>
-            </tr>
-          ))}
+          {tasks.map(t => {
+            const stats = t.subtask_stats
+            return (
+              <tr key={t.id} className="tt-row" onClick={() => onTaskClick?.(t)}>
+                <td className="tt-title">{t.title}</td>
+                <td><span className={`status-badge ${t.status}`}>{t.status}</span></td>
+                <td>P{t.priority}</td>
+                <td className="tt-subtasks">
+                  {stats && stats.total > 0 ? (
+                    <span title={`${stats.done}/${stats.total} done`}>
+                      {stats.done}/{stats.total}
+                    </span>
+                  ) : '—'}
+                </td>
+                <td className="tt-links">{t.links?.length || '—'}</td>
+                <td>{t.assigned_session_id ? 'Yes' : '—'}</td>
+                <td className="tt-time">{timeAgo(t.created_at)}</td>
+              </tr>
+            )
+          })}
         </tbody>
       </table>
     </div>

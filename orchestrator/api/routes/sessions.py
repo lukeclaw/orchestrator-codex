@@ -2,8 +2,12 @@
 
 import logging
 import os
+import re
 import shutil
+import subprocess
 import threading
+import time
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse
@@ -18,12 +22,17 @@ from orchestrator.terminal.manager import (
     send_keys,
 )
 from orchestrator.terminal.ssh import is_rdev_host
+from orchestrator.worker.cli_scripts import generate_worker_scripts, get_path_export_command
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
 WORKER_BASE_DIR = "/tmp/orchestrator/workers"
+
+# Cache for rdev list (1 hour TTL)
+_rdev_cache: dict[str, Any] = {"data": [], "timestamp": 0}
+RDEV_CACHE_TTL = 3600  # 1 hour in seconds
 
 
 class SessionCreate(BaseModel):
@@ -57,6 +66,93 @@ def _serialize_session(s):
 def list_sessions(status: str | None = None, db=Depends(get_db)):
     sessions = repo.list_sessions(db, status=status)
     return [_serialize_session(s) for s in sessions]
+
+
+def _fetch_rdev_list() -> list[dict]:
+    """Fetch rdev list from CLI command."""
+    rdevs = []
+    try:
+        result = subprocess.run(
+            ["rdev", "list"],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        output = result.stdout
+        
+        # Parse the table output
+        # Format: Name | State | Cluster Name | Created | Last Accessed | Server URL
+        lines = output.strip().split('\n')
+        for line in lines:
+            # Skip header, separator lines, and info messages
+            if '|' not in line or line.startswith('-') or 'Name' in line and 'State' in line:
+                continue
+            
+            parts = [p.strip() for p in line.split('|')]
+            if len(parts) >= 2:
+                name = parts[0].strip()
+                state = parts[1].strip() if len(parts) > 1 else ''
+                
+                # Skip empty or invalid entries
+                if not name or '/' not in name:
+                    continue
+                
+                rdevs.append({
+                    "name": name,
+                    "state": state,
+                    "cluster": parts[2].strip() if len(parts) > 2 else '',
+                    "created": parts[3].strip() if len(parts) > 3 else '',
+                    "last_accessed": parts[4].strip() if len(parts) > 4 else '',
+                })
+    except subprocess.TimeoutExpired:
+        logger.warning("rdev list command timed out")
+    except FileNotFoundError:
+        logger.warning("rdev command not found")
+    except Exception:
+        logger.warning("Failed to run rdev list", exc_info=True)
+    
+    return rdevs
+
+
+@router.get("/rdevs")
+def list_rdevs(refresh: bool = False, db=Depends(get_db)):
+    """List available rdev instances and show which ones have workers assigned.
+    
+    Uses server-side cache with 1 hour TTL. Pass refresh=true to force refresh.
+    """
+    global _rdev_cache
+    
+    now = time.time()
+    cache_age = now - _rdev_cache["timestamp"]
+    
+    # Use cache if valid and not forcing refresh
+    if not refresh and cache_age < RDEV_CACHE_TTL and _rdev_cache["data"]:
+        rdevs = _rdev_cache["data"]
+        logger.debug("Using cached rdev list (age: %.0fs)", cache_age)
+    else:
+        # Fetch fresh data
+        rdevs = _fetch_rdev_list()
+        _rdev_cache["data"] = rdevs
+        _rdev_cache["timestamp"] = now
+        logger.info("Refreshed rdev list cache (%d instances)", len(rdevs))
+    
+    # Always check current session state for in_use status
+    sessions = repo.list_sessions(db)
+    used_hosts = {s.host for s in sessions}
+    
+    # Return copies with in_use status (don't modify cache)
+    result = []
+    for rdev in rdevs:
+        item = dict(rdev)
+        item["in_use"] = rdev["name"] in used_hosts
+        # Find the worker name if in use
+        for s in sessions:
+            if s.host == rdev["name"]:
+                item["worker_name"] = s.name
+                break
+        result.append(item)
+    
+    return result
 
 
 @router.get("/sessions/{session_id}")
@@ -137,19 +233,51 @@ def create_session(body: SessionCreate, request: Request, db=Depends(get_db)):
         return {"id": s.id, "name": s.name, "status": "connecting"}
 
     else:
-        # Local worker — write CLAUDE.md template to worker dir
+        # Local worker — launch claude with worker instructions via --append-system-prompt
+        # Load worker prompt template
         source_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
         template_src = os.path.join(source_root, "prompts", "worker_claude_template.md")
+        worker_prompt = None
+        
+        # Generate CLI scripts (task_id fetched dynamically by scripts)
+        config = getattr(request.app.state, "config", {})
+        api_port = config.get("server", {}).get("port", 8093)
+        
+        bin_dir = generate_worker_scripts(
+            worker_dir=worker_dir,
+            worker_name=body.name,
+            session_id=s.id,
+            api_base=f"http://127.0.0.1:{api_port}",
+        )
+        logger.info("Generated CLI scripts for local worker %s in %s", body.name, bin_dir)
+        
         if os.path.exists(template_src):
             try:
                 with open(template_src) as f:
-                    template = f.read()
-                populated = template.replace("SESSION_ID", s.id)
-                with open(os.path.join(worker_dir, "CLAUDE.md"), "w") as f:
-                    f.write(populated)
-                logger.info("Wrote worker CLAUDE.md for %s in %s", body.name, worker_dir)
+                    worker_prompt = f.read().replace("SESSION_ID", s.id)
             except Exception:
-                logger.warning("Could not write worker CLAUDE.md for %s", body.name, exc_info=True)
+                logger.warning("Could not read worker prompt for %s", body.name, exc_info=True)
+
+        # cd to working directory, export PATH, and launch claude
+        if tmux_window:
+            try:
+                import shlex
+                # Build command: cd, export PATH, launch claude
+                cmd_parts = [f"cd {mp_path}"]
+                path_export = get_path_export_command(os.path.join(worker_dir, "bin"))
+                cmd_parts.append(path_export)
+                
+                if worker_prompt:
+                    quoted_prompt = shlex.quote(worker_prompt)
+                    cmd_parts.append(f"claude --append-system-prompt {quoted_prompt}")
+                else:
+                    cmd_parts.append("claude")
+                
+                cmd = " && ".join(cmd_parts)
+                send_keys(tmux_session_name, body.name, cmd, enter=True)
+                logger.info("Launched claude in %s for local worker %s", mp_path, body.name)
+            except Exception:
+                logger.warning("Could not launch claude for local worker %s", body.name, exc_info=True)
 
         return {"id": s.id, "name": s.name, "status": s.status}
 
@@ -172,6 +300,31 @@ def delete_session(session_id: str, db=Depends(get_db)):
     s = repo.get_session(db, session_id)
     if s is None:
         raise HTTPException(404, "Session not found")
+
+    worker_scripts_dir = os.path.join(WORKER_BASE_DIR, s.name)
+    is_rdev = is_rdev_host(s.host)
+
+    # For rdev workers, clean up remote directory before killing window
+    if is_rdev and s.tmux_window:
+        if ":" in s.tmux_window:
+            tmux_sess, tmux_win = s.tmux_window.split(":", 1)
+        else:
+            tmux_sess, tmux_win = "orchestrator", s.tmux_window
+        try:
+            # Send Ctrl+C to interrupt any running process, then clean up
+            send_keys(tmux_sess, tmux_win, "", enter=False)  # Clear any pending input
+            import subprocess
+            subprocess.run(
+                ["tmux", "send-keys", "-t", f"{tmux_sess}:{tmux_win}", "C-c"],
+                capture_output=True, timeout=2
+            )
+            time.sleep(0.5)
+            # Remove remote worker directory
+            send_keys(tmux_sess, tmux_win, f"rm -rf {worker_scripts_dir}", enter=True)
+            time.sleep(0.5)
+            logger.info("Cleaned up remote worker directory %s for session %s", worker_scripts_dir, s.name)
+        except Exception:
+            logger.warning("Could not clean up remote worker directory for session %s", s.name, exc_info=True)
 
     # Kill the tunnel window if it exists (rdev workers)
     if s.tunnel_pane:
@@ -197,16 +350,22 @@ def delete_session(session_id: str, db=Depends(get_db)):
         except Exception:
             logger.warning("Could not kill tmux window for session %s", s.name, exc_info=True)
 
-    # Clean up worker tmp directory
-    if s.mp_path:
-        from pathlib import Path
-        worker_dir = Path(s.mp_path)
-        if worker_dir.exists() and "tmp" in str(worker_dir):
+    # Clean up local worker scripts directory
+    if os.path.exists(worker_scripts_dir):
+        try:
+            shutil.rmtree(worker_scripts_dir)
+            logger.info("Removed local worker directory %s for session %s", worker_scripts_dir, s.name)
+        except Exception:
+            logger.warning("Could not remove local worker directory %s", worker_scripts_dir, exc_info=True)
+
+    # Clean up worker mp_path if different from scripts dir and in tmp
+    if s.mp_path and s.mp_path != worker_scripts_dir:
+        if os.path.exists(s.mp_path) and "/tmp/" in s.mp_path:
             try:
-                shutil.rmtree(worker_dir)
-                logger.info("Removed worker directory %s for session %s", worker_dir, s.name)
+                shutil.rmtree(s.mp_path)
+                logger.info("Removed worker mp_path %s for session %s", s.mp_path, s.name)
             except Exception:
-                logger.warning("Could not remove worker directory %s", worker_dir, exc_info=True)
+                logger.warning("Could not remove worker mp_path %s", s.mp_path, exc_info=True)
 
     repo.delete_session(db, session_id)
     return {"ok": True}
@@ -253,16 +412,68 @@ def session_preview(session_id: str, lines: int = 30, db=Depends(get_db)):
     return {"content": content, "status": s.status}
 
 
-@router.post("/sessions/{session_id}/stop")
-def stop_session(session_id: str, db=Depends(get_db)):
-    """Gracefully stop a worker session (send Ctrl-C x3, mark disconnected)."""
+@router.post("/sessions/{session_id}/pause")
+def pause_session(session_id: str, db=Depends(get_db)):
+    """Pause a worker session (send Escape to claude code, mark as paused)."""
     s = repo.get_session(db, session_id)
     if s is None:
         raise HTTPException(404, "Session not found")
 
     if not s.tmux_window:
-        repo.update_session(db, session_id, status="disconnected")
-        return {"ok": True, "message": "No tmux window, marked as disconnected"}
+        return {"ok": False, "error": "No tmux window attached"}
+
+    if ":" in s.tmux_window:
+        tmux_sess, tmux_win = s.tmux_window.split(":", 1)
+    else:
+        tmux_sess, tmux_win = "orchestrator", s.tmux_window
+
+    try:
+        # Send Escape to pause claude code
+        send_keys(tmux_sess, tmux_win, "Escape", enter=False)
+    except Exception:
+        logger.warning("Could not send Escape to session %s", s.name, exc_info=True)
+
+    repo.update_session(db, session_id, status="paused")
+    return {"ok": True, "message": f"Session {s.name} paused"}
+
+
+@router.post("/sessions/{session_id}/continue")
+def continue_session(session_id: str, db=Depends(get_db)):
+    """Continue a paused worker session (send 'continue' message)."""
+    s = repo.get_session(db, session_id)
+    if s is None:
+        raise HTTPException(404, "Session not found")
+
+    if not s.tmux_window:
+        return {"ok": False, "error": "No tmux window attached"}
+
+    if ":" in s.tmux_window:
+        tmux_sess, tmux_win = s.tmux_window.split(":", 1)
+    else:
+        tmux_sess, tmux_win = "orchestrator", s.tmux_window
+
+    try:
+        from orchestrator.terminal.manager import send_keys_literal
+        # Send "continue" message to claude code
+        send_keys_literal(tmux_sess, tmux_win, "continue")
+        send_keys(tmux_sess, tmux_win, "", enter=True)
+    except Exception:
+        logger.warning("Could not send continue to session %s", s.name, exc_info=True)
+
+    repo.update_session(db, session_id, status="working")
+    return {"ok": True, "message": f"Session {s.name} continued"}
+
+
+@router.post("/sessions/{session_id}/stop")
+def stop_session(session_id: str, db=Depends(get_db)):
+    """Stop a worker session: send Escape, then /clear, unassign task, go to idle."""
+    s = repo.get_session(db, session_id)
+    if s is None:
+        raise HTTPException(404, "Session not found")
+
+    if not s.tmux_window:
+        repo.update_session(db, session_id, status="idle", current_task_id=None)
+        return {"ok": True, "message": "No tmux window, marked as idle"}
 
     if ":" in s.tmux_window:
         tmux_sess, tmux_win = s.tmux_window.split(":", 1)
@@ -271,11 +482,20 @@ def stop_session(session_id: str, db=Depends(get_db)):
 
     import time
     try:
-        for _ in range(3):
-            send_keys(tmux_sess, tmux_win, "C-c", enter=False)
-            time.sleep(0.3)
+        # Send Escape to stop current operation
+        send_keys(tmux_sess, tmux_win, "Escape", enter=False)
+        time.sleep(0.5)
+        # Send /clear to reset context
+        from orchestrator.terminal.manager import send_keys_literal
+        send_keys_literal(tmux_sess, tmux_win, "/clear")
+        send_keys(tmux_sess, tmux_win, "", enter=True)
     except Exception:
-        logger.warning("Could not send Ctrl-C to session %s", s.name, exc_info=True)
+        logger.warning("Could not send stop commands to session %s", s.name, exc_info=True)
 
-    repo.update_session(db, session_id, status="disconnected")
-    return {"ok": True, "message": f"Session {s.name} stopped"}
+    # Unassign current task if any
+    if s.current_task_id:
+        from orchestrator.state.repositories import tasks as tasks_repo
+        tasks_repo.update_task(db, s.current_task_id, assigned_session_id=None, status="todo")
+
+    repo.update_session(db, session_id, status="idle", current_task_id=None)
+    return {"ok": True, "message": f"Session {s.name} stopped and cleared"}

@@ -3,6 +3,7 @@
   flex-direction: column;
   flex: 1;
   min-height: 0;
+  height: 100%;
   background: #0d1117;
   overflow: hidden;
 }
@@ -52,13 +53,10 @@
 /* Ensure xterm fills its container */
 .terminal-view .xterm {
   height: 100%;
-  padding: 4px;
+  padding: 8px 12px;
+  box-sizing: border-box;
 }
 
 .terminal-view .xterm-viewport {
-  overflow-y: auto !important;
-}
-
-.terminal-view .xterm-screen {
-  height: 100% !important;
+  overflow-y: hidden !important;
 }

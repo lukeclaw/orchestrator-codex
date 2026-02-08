@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import os
+import shlex
 import sqlite3
 import time
 
@@ -11,6 +12,7 @@ from orchestrator.state.models import Session
 from orchestrator.state.repositories import sessions as sessions_repo
 from orchestrator.terminal import manager as tmux
 from orchestrator.terminal import ssh
+from orchestrator.worker.cli_scripts import generate_worker_scripts, get_path_export_command
 
 logger = logging.getLogger(__name__)
 
@@ -98,8 +100,16 @@ def send_to_session(
     message: str,
     tmux_session: str = "orchestrator",
 ) -> bool:
-    """Send a message to a session's Claude Code instance."""
-    return tmux.send_keys(tmux_session, name, message)
+    """Send a message to a session's Claude Code instance.
+    
+    Uses literal mode to send text (avoiding tmux special key interpretation),
+    then sends Enter separately to submit the message.
+    """
+    # Send message content in literal mode (no special key interpretation)
+    if not tmux.send_keys_literal(tmux_session, name, message):
+        return False
+    # Send Enter separately to submit
+    return tmux.send_keys(tmux_session, name, "", enter=True)
 
 
 def setup_rdev_worker(
@@ -118,6 +128,7 @@ def setup_rdev_worker(
     or {"ok": False, "error": "..."} on failure.
     """
     tunnel_name = f"{name}-tunnel"
+    worker_dir = f"/tmp/orchestrator/workers/{name}"
 
     try:
         # 1. Create tunnel window and start reverse SSH tunnel
@@ -134,13 +145,45 @@ def setup_rdev_worker(
         if not ssh.wait_for_prompt(tmux_session, name, timeout=30):
             raise RuntimeError(f"Timed out waiting for shell prompt on {host}")
 
-        # 4. Launch Claude Code
-        tmux.send_keys(tmux_session, name, "claude --dangerously-skip-permissions")
-        logger.info("Launched Claude Code in %s", name)
-        time.sleep(5)
+        # 4. Generate CLI scripts (task_id fetched dynamically by scripts)
+        # Generate CLI scripts locally first
+        os.makedirs(worker_dir, exist_ok=True)
+        bin_dir = generate_worker_scripts(
+            worker_dir=worker_dir,
+            worker_name=name,
+            session_id=session_id,
+            api_base=f"http://127.0.0.1:{api_port}",
+        )
+        logger.info("Generated CLI scripts in %s", bin_dir)
+        
+        # Copy scripts to remote via SSH
+        # Create remote directory and copy scripts
+        tmux.send_keys(tmux_session, name, f"mkdir -p {worker_dir}/bin", enter=True)
+        time.sleep(0.5)
+        
+        # Copy each script file to remote
+        for script_name in ["orch-task", "orch-subtask", "orch-worker", "orch-context"]:
+            local_path = os.path.join(bin_dir, script_name)
+            if os.path.exists(local_path):
+                with open(local_path) as f:
+                    script_content = f.read()
+                # Use heredoc to write script content
+                tmux.send_keys(tmux_session, name, 
+                    f"cat > {worker_dir}/bin/{script_name} << 'ORCHEOF'\n{script_content}\nORCHEOF", 
+                    enter=True)
+                time.sleep(0.3)
+                tmux.send_keys(tmux_session, name, f"chmod +x {worker_dir}/bin/{script_name}", enter=True)
+                time.sleep(0.2)
+        
+        # Export PATH
+        path_export = get_path_export_command(f"{worker_dir}/bin")
+        tmux.send_keys(tmux_session, name, path_export, enter=True)
+        time.sleep(0.5)
+        logger.info("Copied CLI scripts to remote and updated PATH")
 
-        # 5. Render and send worker template as first chat message
+        # 5. Launch Claude with worker prompt via --append-system-prompt
         template_path = os.path.join(_SOURCE_ROOT, "prompts", "worker_claude_template.md")
+        
         if os.path.exists(template_path):
             with open(template_path) as f:
                 template = f.read()
@@ -149,10 +192,15 @@ def setup_rdev_worker(
                 rendered = rendered.replace("TASK_ID", task_id)
             if project_id:
                 rendered = rendered.replace("PROJECT_ID", project_id)
-            tmux.send_keys(tmux_session, name, rendered)
-            logger.info("Sent worker instructions to %s", name)
+            
+            # Use shlex.quote for safe shell escaping - no tmp files needed
+            quoted_prompt = shlex.quote(rendered)
+            tmux.send_keys(tmux_session, name, f"claude --dangerously-skip-permissions --append-system-prompt {quoted_prompt}")
+            logger.info("Launched Claude Code with worker prompt in %s", name)
         else:
             logger.warning("Worker template not found at %s", template_path)
+            tmux.send_keys(tmux_session, name, "claude --dangerously-skip-permissions")
+            logger.info("Launched Claude Code (no worker prompt) in %s", name)
 
         return {"ok": True, "tunnel_window": tunnel_name}
 

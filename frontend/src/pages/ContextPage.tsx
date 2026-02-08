@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { useApp } from '../context/AppContext'
 import { useContextItems } from '../hooks/useContextItems'
 import type { ContextItem } from '../api/types'
+import ConfirmPopover from '../components/common/ConfirmPopover'
 import './ContextPage.css'
 
 const CATEGORIES = ['requirement', 'convention', 'reference', 'note']
@@ -228,7 +229,16 @@ export default function ContextPage() {
                   <pre className="cp-content">{item.content}</pre>
                   <div className="cp-card-actions">
                     <button className="btn btn-secondary btn-sm" onClick={() => openEdit(item)}>Edit</button>
-                    <button className="btn btn-danger btn-sm" onClick={() => handleDelete(item.id)}>Delete</button>
+                    <ConfirmPopover
+                      message={`Delete "${item.title}"?`}
+                      confirmLabel="Delete"
+                      onConfirm={() => handleDelete(item.id)}
+                      variant="danger"
+                    >
+                      {({ onClick }) => (
+                        <button className="btn btn-danger btn-sm" onClick={onClick}>Delete</button>
+                      )}
+                    </ConfirmPopover>
                   </div>
                 </div>
               ) : (

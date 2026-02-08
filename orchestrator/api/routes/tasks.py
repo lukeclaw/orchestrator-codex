@@ -1,5 +1,6 @@
 """Task CRUD + status updates + assignment."""
 
+import json
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -31,17 +32,35 @@ class TaskUpdate(BaseModel):
     title: str | None = None
     description: str | None = None
     notes: str | None = None
+    links: list[dict] | None = None  # [{url, title, type}]
 
 
-def _serialize_task(t) -> dict:
-    return {
+class TaskLinkAction(BaseModel):
+    """For agent-driven link management."""
+    action: str  # add, update, delete
+    url: str
+    title: str | None = None
+    link_type: str | None = None  # pr, doc, reference, etc.
+
+
+def _serialize_task(t, include_subtask_stats: bool = False, db=None) -> dict:
+    result = {
         "id": t.id, "project_id": t.project_id, "title": t.title,
         "description": t.description, "status": t.status,
         "priority": t.priority, "assigned_session_id": t.assigned_session_id,
         "parent_task_id": t.parent_task_id, "notes": t.notes,
+        "links": t.links_list,
         "created_at": t.created_at, "started_at": t.started_at,
         "completed_at": t.completed_at,
     }
+    if include_subtask_stats and db is not None:
+        subtasks = repo.list_tasks(db, parent_task_id=t.id)
+        result["subtask_stats"] = {
+            "total": len(subtasks),
+            "done": sum(1 for s in subtasks if s.status == "done"),
+            "in_progress": sum(1 for s in subtasks if s.status == "in_progress"),
+        }
+    return result
 
 
 @router.get("/tasks")
@@ -50,13 +69,14 @@ def list_tasks(
     status: str | None = None,
     assigned_session_id: str | None = None,
     parent_task_id: str | None = None,
+    include_subtask_stats: bool = True,
     db=Depends(get_db),
 ):
     kwargs = dict(project_id=project_id, status=status, assigned_session_id=assigned_session_id)
     if parent_task_id is not None:
         kwargs["parent_task_id"] = parent_task_id
     tasks = repo.list_tasks(db, **kwargs)
-    return [_serialize_task(t) for t in tasks]
+    return [_serialize_task(t, include_subtask_stats=include_subtask_stats, db=db) for t in tasks]
 
 
 @router.get("/tasks/{task_id}")
@@ -100,21 +120,30 @@ def update_task(task_id: str, body: TaskUpdate, request: Request, db=Depends(get
         raise HTTPException(404, "Task not found")
 
     old_assigned = t.assigned_session_id
-    new_assigned = body.assigned_session_id
+    
+    # Check if assigned_session_id was explicitly set in the request (including to null)
+    assigned_session_explicitly_set = "assigned_session_id" in body.model_fields_set
+    new_assigned = body.assigned_session_id if assigned_session_explicitly_set else old_assigned
 
     # Auto-transition: assigning a task moves it to in_progress
     effective_status = body.status
     if new_assigned and new_assigned != old_assigned and t.status == "todo" and not body.status:
         effective_status = "in_progress"
 
+    # Handle links update
+    links_json = None
+    if "links" in body.model_fields_set:
+        links_json = json.dumps(body.links) if body.links else None
+
     updated = repo.update_task(
         db, task_id,
         status=effective_status,
-        assigned_session_id=new_assigned if new_assigned is not None else ...,
+        assigned_session_id=new_assigned if assigned_session_explicitly_set else ...,
         priority=body.priority,
         title=body.title,
         description=body.description,
         notes=body.notes if "notes" in body.model_fields_set else ...,
+        links=links_json if "links" in body.model_fields_set else ...,
     )
 
     # Notify worker when a task is newly assigned
@@ -168,6 +197,75 @@ def _notify_worker_of_assignment(db, task, request):
 
 @router.delete("/tasks/{task_id}")
 def delete_task(task_id: str, db=Depends(get_db)):
-    if not repo.delete_task(db, task_id):
+    task = repo.get_task(db, task_id)
+    if task is None:
         raise HTTPException(404, "Task not found")
-    return {"ok": True}
+    
+    # Collect all session IDs to unassign (this task + subtasks)
+    sessions_to_unassign = set()
+    
+    def collect_assigned_sessions(tid: str):
+        t = repo.get_task(db, tid)
+        if t and t.assigned_session_id:
+            sessions_to_unassign.add(t.assigned_session_id)
+        # Check subtasks recursively
+        subtasks = repo.list_tasks(db, parent_task_id=tid)
+        for st in subtasks:
+            collect_assigned_sessions(st.id)
+    
+    collect_assigned_sessions(task_id)
+    
+    # Unassign workers and set them to idle (keep them alive for reuse)
+    for session_id in sessions_to_unassign:
+        try:
+            sessions_repo.update_session(
+                db, session_id,
+                status="idle",
+                current_task_id=None,
+            )
+            logger.info("Unassigned worker session %s (now idle) for deleted task %s", session_id, task_id)
+        except Exception:
+            logger.warning("Could not unassign worker session %s", session_id, exc_info=True)
+    
+    # Now delete the task (and subtasks via cascading delete)
+    repo.delete_task(db, task_id)
+    return {"ok": True, "unassigned_sessions": list(sessions_to_unassign)}
+
+
+@router.post("/tasks/{task_id}/links")
+def manage_task_link(task_id: str, body: TaskLinkAction, db=Depends(get_db)):
+    """Agent-driven link management: add, update, or delete links."""
+    t = repo.get_task(db, task_id)
+    if t is None:
+        raise HTTPException(404, "Task not found")
+
+    links = t.links_list.copy()
+
+    if body.action == "add":
+        # Check if link already exists
+        existing = next((l for l in links if l.get("url") == body.url), None)
+        if existing:
+            raise HTTPException(400, f"Link already exists: {body.url}")
+        links.append({
+            "url": body.url,
+            "title": body.title or body.url,
+            "type": body.link_type or "reference",
+        })
+    elif body.action == "update":
+        existing = next((l for l in links if l.get("url") == body.url), None)
+        if not existing:
+            raise HTTPException(404, f"Link not found: {body.url}")
+        if body.title:
+            existing["title"] = body.title
+        if body.link_type:
+            existing["type"] = body.link_type
+    elif body.action == "delete":
+        original_len = len(links)
+        links = [l for l in links if l.get("url") != body.url]
+        if len(links) == original_len:
+            raise HTTPException(404, f"Link not found: {body.url}")
+    else:
+        raise HTTPException(400, f"Invalid action: {body.action}")
+
+    updated = repo.update_task(db, task_id, links=json.dumps(links))
+    return _serialize_task(updated)

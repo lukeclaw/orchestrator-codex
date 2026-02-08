@@ -13,6 +13,7 @@ interface AppState {
   connected: boolean
   loading: boolean
   refresh: () => void
+  removeSession: (id: string) => void
 }
 
 const AppContext = createContext<AppState>({
@@ -26,6 +27,7 @@ const AppContext = createContext<AppState>({
   connected: false,
   loading: true,
   refresh: () => {},
+  removeSession: () => {},
 })
 
 export function useApp() {
@@ -101,8 +103,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const workers = sessions.filter(s => s.name !== 'brain')
 
+  const removeSession = useCallback((id: string) => {
+    setSessions(prev => prev.filter(s => s.id !== id))
+  }, [])
+
   return (
-    <AppContext.Provider value={{ sessions, workers, decisions, activities, projects, tasks, prs, connected, loading, refresh: fetchAll }}>
+    <AppContext.Provider value={{ sessions, workers, decisions, activities, projects, tasks, prs, connected, loading, refresh: fetchAll, removeSession }}>
       {children}
     </AppContext.Provider>
   )

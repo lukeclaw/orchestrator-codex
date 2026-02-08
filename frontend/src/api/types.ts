@@ -5,7 +5,7 @@ export interface Session {
   mp_path: string | null
   tmux_window: string | null
   tunnel_pane: string | null
-  status: 'idle' | 'working' | 'waiting' | 'error' | 'disconnected' | 'connecting'
+  status: 'idle' | 'working' | 'waiting' | 'paused' | 'error' | 'disconnected' | 'connecting'
   current_task_id: string | null
   created_at: string
   last_activity: string | null
@@ -40,6 +40,18 @@ export interface Project {
   created_at: string
 }
 
+export interface TaskLink {
+  url: string
+  title: string
+  type: string  // pr, doc, reference, etc.
+}
+
+export interface SubtaskStats {
+  total: number
+  done: number
+  in_progress: number
+}
+
 export interface Task {
   id: string
   project_id: string
@@ -48,6 +60,10 @@ export interface Task {
   status: string
   priority: number
   assigned_session_id: string | null
+  parent_task_id: string | null
+  notes: string | null
+  links: TaskLink[]
+  subtask_stats?: SubtaskStats
   created_at: string
   started_at: string | null
   completed_at: string | null

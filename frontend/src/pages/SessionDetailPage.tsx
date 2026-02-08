@@ -6,6 +6,7 @@ import { useNotify } from '../context/NotificationContext'
 import TerminalView from '../components/terminal/TerminalView'
 import { timeAgo } from '../components/common/TimeAgo'
 import { IconArrowLeft } from '../components/common/Icons'
+import ConfirmPopover from '../components/common/ConfirmPopover'
 import './SessionDetailPage.css'
 
 export default function SessionDetailPage() {
@@ -41,7 +42,7 @@ export default function SessionDetailPage() {
   }, [id])
 
   async function handleDelete() {
-    if (!id || !confirm('Remove this session?')) return
+    if (!id) return
     try {
       await api(`/api/sessions/${id}`, { method: 'DELETE' })
       navigate('/')
@@ -114,13 +115,22 @@ export default function SessionDetailPage() {
           {activities.length > 0 && (
             <span className="sd-chip">{activities.length} events</span>
           )}
-          <button
-            className="btn btn-danger btn-sm"
-            data-testid="delete-session-btn"
-            onClick={handleDelete}
+          <ConfirmPopover
+            message={`Remove session "${session.name}"?`}
+            confirmLabel="Remove"
+            onConfirm={handleDelete}
+            variant="danger"
           >
-            Remove
-          </button>
+            {({ onClick }) => (
+              <button
+                className="btn btn-danger btn-sm"
+                data-testid="delete-session-btn"
+                onClick={onClick}
+              >
+                Remove
+              </button>
+            )}
+          </ConfirmPopover>
         </div>
       </div>
 

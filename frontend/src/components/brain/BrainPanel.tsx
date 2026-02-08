@@ -4,7 +4,8 @@ import { useNotify } from '../../context/NotificationContext'
 import BrainTerminal from './BrainTerminal'
 import type { BrainStatus } from './BrainTerminal'
 import AutoSyncTimer from './AutoSyncTimer'
-import { IconPanelRight, IconChevronRight } from '../common/Icons'
+import { IconChevronRight } from '../common/Icons'
+import ConfirmPopover from '../common/ConfirmPopover'
 import './BrainPanel.css'
 
 interface BrainPanelProps {
@@ -136,13 +137,22 @@ export default function BrainPanel({
         </div>
         <div className="bp-header-right">
           {isRunning ? (
-            <button
-              className="btn btn-danger btn-sm"
-              onClick={handleStop}
-              disabled={stopping}
+            <ConfirmPopover
+              message="Stop the brain?"
+              confirmLabel="Stop"
+              onConfirm={handleStop}
+              variant="danger"
             >
-              {stopping ? 'Stopping...' : 'Stop'}
-            </button>
+              {({ onClick }) => (
+                <button
+                  className="btn btn-danger btn-sm"
+                  onClick={onClick}
+                  disabled={stopping}
+                >
+                  {stopping ? 'Stopping...' : 'Stop'}
+                </button>
+              )}
+            </ConfirmPopover>
           ) : (
             <button
               className="btn btn-primary btn-sm"

@@ -10,7 +10,6 @@ from fastapi import WebSocket, WebSocketDisconnect
 
 from orchestrator.terminal.manager import (
     capture_pane_with_escapes,
-    clear_pane,
     ensure_window,
     send_keys_literal,
     resize_pane,
@@ -106,17 +105,10 @@ async def terminal_websocket(websocket: WebSocket, session_id: str):
                 resize_pane(tmux_sess, tmux_win, cols, rows)
 
                 if not initial_sent:
-                    # Clear old content that was formatted at the wrong width,
-                    # then capture the fresh screen at the correct dimensions.
-                    clear_pane(tmux_sess, tmux_win)
-                    await asyncio.sleep(0.3)
+                    # Give tmux a moment to apply the resize
+                    await asyncio.sleep(0.1)
 
-                    # Send scrollback history first (gives the client scroll-up content)
-                    scrollback = capture_pane_with_escapes(tmux_sess, tmux_win, lines=500)
-                    if scrollback.strip():
-                        await websocket.send_json({"type": "scrollback", "data": scrollback})
-
-                    # Then send the current visible pane
+                    # Capture only visible pane content (no scrollback)
                     content = capture_pane_with_escapes(tmux_sess, tmux_win)
                     await websocket.send_json({"type": "output", "data": content})
                     last_content = content

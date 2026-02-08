@@ -98,16 +98,67 @@ A web UI at `localhost:8093` showing:
 
 ### 3.6 Worker-to-Orchestrator Communication
 
-Workers talk to the orchestrator via:
+Workers talk to the orchestrator via **scoped CLI tools** that are auto-generated when a worker session is created:
 
-1. **REST API** (`curl` from the worker): report progress, request decisions, check for guidance
-2. **Custom skill** (`/orchestrator` slash command installed in Claude Code): structured reporting
-3. **Passive monitoring**: orchestrator polls tmux output to detect state changes
-4. **Hooks**: Claude Code hooks fire on events (commits, PRs, errors)
+| Command | Purpose |
+|---------|---------|
+| `orch-task show` | View assigned task details |
+| `orch-task update --status STATUS` | Update task status (in_progress, done, blocked) |
+| `orch-subtask list` | List subtasks under assigned task |
+| `orch-subtask create --title TITLE [--description DESC] [--links URL1,URL2]` | Create a subtask |
+| `orch-subtask update --id UUID --status STATUS [--add-link URL]` | Update a subtask |
+| `orch-worker update --status STATUS` | Update worker status (working, idle, waiting) |
+| `orch-context show --scope project\|global` | Read project or global context |
+| `orch-context tasks` | List all project tasks |
 
-These are layered — if one channel fails, others provide fallback.
+**Key design decisions:**
 
-### 3.7 Orchestration Engine
+1. **Scoped by design**: Scripts only know their own session ID — they cannot affect other workers' tasks or sessions
+2. **Dynamic task lookup**: Task ID is fetched from the API at runtime (not hardcoded), allowing workers to be created before task assignment
+3. **File-based caching**: Task info cached to `/tmp/orchestrator/workers/{name}/.task_cache` with 5-minute TTL to minimize API calls
+4. **Refresh on demand**: `--refresh` flag forces immediate cache refresh (useful after task reassignment)
+5. **Subtask links**: Workers can attach PR URLs, documentation, or references to subtasks via `--links` or `--add-link`
+
+**Why CLI scripts instead of raw curl?**
+- **Scope enforcement**: Workers can only manage their assigned task and subtasks
+- **Reduced complexity**: Simple `--param value` syntax vs. complex JSON payloads
+- **Lower token cost**: Shorter commands = fewer tokens
+- **Validation**: Scripts validate inputs before making API calls
+- **No conflicts**: `orch-` prefix avoids collision with system commands
+
+**Fallback channels** (if CLI tools unavailable):
+- Direct REST API (`curl`)
+- Custom skill (`/orchestrator` slash command)
+- Passive monitoring (tmux output polling)
+- Claude Code hooks (commits, PRs, errors)
+
+### 3.7 Lifecycle Management
+
+**Worker Session Lifecycle:**
+
+| Event | Behavior |
+|-------|----------|
+| **Create session** | Generate CLI scripts in `/tmp/orchestrator/workers/{name}/bin/`, add to PATH |
+| **Assign task** | Worker fetches task_id dynamically via CLI (cached for 5 min) |
+| **Reassign task** | Worker runs `--refresh` or waits for cache TTL to pick up new task |
+| **Delete session** | Full cleanup: kill tmux window, kill tunnel (rdev), remove `/tmp/orchestrator/workers/{name}/` |
+
+**Task Lifecycle:**
+
+| Event | Behavior |
+|-------|----------|
+| **Delete task** | 1. Unassign all workers (set to `idle`, clear `current_task_id`) — **do not delete workers** |
+|                 | 2. Recursively delete all subtasks (cascading delete) |
+|                 | 3. Clean up task dependencies and requirements |
+| **Delete subtask** | Same cascading behavior if subtask has its own children |
+
+**Key requirements:**
+- **Workers are reusable**: Deleting a task does NOT delete assigned workers — they become idle and available for new tasks
+- **No orphaned subtasks**: Deleting a parent task automatically deletes all descendant subtasks
+- **Clean tmp folders**: Worker deletion cleans up both local and remote (rdev) `/tmp/orchestrator/workers/{name}/` directories
+- **Remote cleanup for rdev**: Before killing tmux window, send `rm -rf` command to clean up remote worker directory
+
+### 3.8 Orchestration Engine
 
 The backend runs a continuous orchestration loop:
 
@@ -352,3 +403,4 @@ activities     (id, session_id, project_id, type, summary, details, created_at)
 | 1.0–1.5 | 2026-02-07 | Initial drafts with detailed specs |
 | 2.0 | 2026-02-07 | Rewritten: pain points front and center, simplified from 3600 lines to focused requirements |
 | 2.1 | 2026-02-07 | Added Section 3.7 (Orchestration Engine), Section 4.5 (What's Built), settings endpoint |
+| 2.2 | 2026-02-08 | Added Section 3.6 (Worker CLI tools: orch-task, orch-subtask, orch-worker, orch-context), Section 3.7 (Lifecycle Management: cleanup, cascading deletes, worker reuse) |

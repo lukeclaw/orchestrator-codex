@@ -4,7 +4,8 @@ import type { Session } from '../../api/types'
 import { api } from '../../api/client'
 import { useNotify } from '../../context/NotificationContext'
 import { timeAgo } from '../common/TimeAgo'
-import { IconTrash, IconGripVertical } from '../common/Icons'
+import { IconTrash, IconGripVertical, IconPause, IconPlay, IconStop } from '../common/Icons'
+import ConfirmPopover from '../common/ConfirmPopover'
 import './WorkerCard.css'
 
 interface Props {
@@ -24,6 +25,7 @@ export default function WorkerCard({
   const notify = useNotify()
   const [preview, setPreview] = useState('')
   const [removing, setRemoving] = useState(false)
+  const [actionPending, setActionPending] = useState(false)
   const intervalRef = useRef<ReturnType<typeof setInterval> | undefined>(undefined)
 
   useEffect(() => {
@@ -49,12 +51,11 @@ export default function WorkerCard({
     }
   }, [session.id])
 
-  async function handleRemove(e: React.MouseEvent) {
-    e.stopPropagation()
+  async function handleRemove() {
     if (removing) return
     setRemoving(true)
     try {
-      // Stop the worker first (send Ctrl-C), then delete
+      // Stop the worker first, then delete
       try {
         await api(`/api/sessions/${session.id}/stop`, { method: 'POST' })
       } catch {
@@ -66,6 +67,35 @@ export default function WorkerCard({
     } catch (e) {
       notify(e instanceof Error ? e.message : 'Failed to remove worker', 'error')
       setRemoving(false)
+    }
+  }
+
+  async function handlePauseOrContinue(e: React.MouseEvent) {
+    e.stopPropagation()
+    if (actionPending) return
+    setActionPending(true)
+    try {
+      const isPaused = session.status === 'paused'
+      const endpoint = isPaused ? 'continue' : 'pause'
+      await api(`/api/sessions/${session.id}/${endpoint}`, { method: 'POST' })
+      notify(`Worker ${session.name} ${isPaused ? 'continued' : 'paused'}`, 'success')
+    } catch (e) {
+      notify(e instanceof Error ? e.message : 'Action failed', 'error')
+    } finally {
+      setActionPending(false)
+    }
+  }
+
+  async function handleStop() {
+    if (actionPending) return
+    setActionPending(true)
+    try {
+      await api(`/api/sessions/${session.id}/stop`, { method: 'POST' })
+      notify(`Worker ${session.name} stopped and cleared`, 'success')
+    } catch (e) {
+      notify(e instanceof Error ? e.message : 'Failed to stop worker', 'error')
+    } finally {
+      setActionPending(false)
     }
   }
 
@@ -97,16 +127,58 @@ export default function WorkerCard({
           )}
           <span className={`status-indicator ${session.status}`} />
           <span className="wc-name">{session.name}</span>
+          {session.host.includes('/') && <span className="wc-type-tag rdev">rdev</span>}
           <span className={`status-badge ${session.status}`}>{session.status}</span>
         </div>
-        <button
-          className="wc-remove-btn"
-          onClick={handleRemove}
-          disabled={removing}
-          title="Remove worker"
-        >
-          <IconTrash size={14} />
-        </button>
+        <div className="wc-actions">
+          {/* Pause/Continue button */}
+          <button
+            className={`wc-action-btn ${session.status === 'paused' ? 'continue' : 'pause'}`}
+            onClick={handlePauseOrContinue}
+            disabled={actionPending || session.status === 'idle' || session.status === 'disconnected'}
+            title={session.status === 'paused' ? 'Continue' : 'Pause'}
+          >
+            {session.status === 'paused' ? <IconPlay size={14} /> : <IconPause size={14} />}
+          </button>
+
+          {/* Stop button */}
+          <ConfirmPopover
+            message={`Stop worker "${session.name}" and clear context?`}
+            confirmLabel="Stop"
+            onConfirm={handleStop}
+            variant="danger"
+          >
+            {({ onClick }) => (
+              <button
+                className="wc-action-btn stop"
+                onClick={onClick}
+                disabled={actionPending || session.status === 'idle' || session.status === 'disconnected'}
+                title="Stop and clear"
+              >
+                <IconStop size={14} />
+              </button>
+            )}
+          </ConfirmPopover>
+
+          {/* Remove button */}
+          <ConfirmPopover
+            message={`Remove worker "${session.name}"?`}
+            confirmLabel="Remove"
+            onConfirm={handleRemove}
+            variant="danger"
+          >
+            {({ onClick }) => (
+              <button
+                className="wc-remove-btn"
+                onClick={onClick}
+                disabled={removing}
+                title="Remove worker"
+              >
+                <IconTrash size={14} />
+              </button>
+            )}
+          </ConfirmPopover>
+        </div>
       </div>
 
       <div className="wc-terminal-preview">
