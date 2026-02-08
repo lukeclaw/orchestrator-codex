@@ -21,6 +21,7 @@ class TaskCreate(BaseModel):
     title: str
     description: str | None = None
     priority: int = 0
+    parent_task_id: str | None = None
 
 
 class TaskUpdate(BaseModel):
@@ -29,6 +30,18 @@ class TaskUpdate(BaseModel):
     priority: int | None = None
     title: str | None = None
     description: str | None = None
+    notes: str | None = None
+
+
+def _serialize_task(t) -> dict:
+    return {
+        "id": t.id, "project_id": t.project_id, "title": t.title,
+        "description": t.description, "status": t.status,
+        "priority": t.priority, "assigned_session_id": t.assigned_session_id,
+        "parent_task_id": t.parent_task_id, "notes": t.notes,
+        "created_at": t.created_at, "started_at": t.started_at,
+        "completed_at": t.completed_at,
+    }
 
 
 @router.get("/tasks")
@@ -36,19 +49,14 @@ def list_tasks(
     project_id: str | None = None,
     status: str | None = None,
     assigned_session_id: str | None = None,
+    parent_task_id: str | None = None,
     db=Depends(get_db),
 ):
-    tasks = repo.list_tasks(db, project_id=project_id, status=status, assigned_session_id=assigned_session_id)
-    return [
-        {
-            "id": t.id, "project_id": t.project_id, "title": t.title,
-            "description": t.description, "status": t.status,
-            "priority": t.priority, "assigned_session_id": t.assigned_session_id,
-            "created_at": t.created_at, "started_at": t.started_at,
-            "completed_at": t.completed_at,
-        }
-        for t in tasks
-    ]
+    kwargs = dict(project_id=project_id, status=status, assigned_session_id=assigned_session_id)
+    if parent_task_id is not None:
+        kwargs["parent_task_id"] = parent_task_id
+    tasks = repo.list_tasks(db, **kwargs)
+    return [_serialize_task(t) for t in tasks]
 
 
 @router.get("/tasks/{task_id}")
@@ -56,18 +64,33 @@ def get_task(task_id: str, db=Depends(get_db)):
     t = repo.get_task(db, task_id)
     if t is None:
         raise HTTPException(404, "Task not found")
-    return {
-        "id": t.id, "project_id": t.project_id, "title": t.title,
-        "description": t.description, "status": t.status,
-        "priority": t.priority, "assigned_session_id": t.assigned_session_id,
-        "created_at": t.created_at,
-    }
+    return _serialize_task(t)
+
+
+@router.get("/tasks/{task_id}/subtasks")
+def list_subtasks(task_id: str, db=Depends(get_db)):
+    t = repo.get_task(db, task_id)
+    if t is None:
+        raise HTTPException(404, "Task not found")
+    subtasks = repo.list_tasks(db, parent_task_id=task_id)
+    return [_serialize_task(s) for s in subtasks]
 
 
 @router.post("/tasks", status_code=201)
 def create_task(body: TaskCreate, db=Depends(get_db)):
-    t = repo.create_task(db, body.project_id, body.title, body.description, body.priority)
-    return {"id": t.id, "title": t.title, "status": t.status}
+    # If creating a subtask, inherit project_id from parent
+    project_id = body.project_id
+    if body.parent_task_id:
+        parent = repo.get_task(db, body.parent_task_id)
+        if parent is None:
+            raise HTTPException(404, "Parent task not found")
+        if not project_id:
+            project_id = parent.project_id
+    t = repo.create_task(
+        db, project_id, body.title, body.description, body.priority,
+        parent_task_id=body.parent_task_id,
+    )
+    return _serialize_task(t)
 
 
 @router.patch("/tasks/{task_id}")
@@ -91,19 +114,14 @@ def update_task(task_id: str, body: TaskUpdate, request: Request, db=Depends(get
         priority=body.priority,
         title=body.title,
         description=body.description,
+        notes=body.notes if "notes" in body.model_fields_set else ...,
     )
 
     # Notify worker when a task is newly assigned
     if new_assigned and new_assigned != old_assigned:
         _notify_worker_of_assignment(db, updated, request)
 
-    return {
-        "id": updated.id, "project_id": updated.project_id, "title": updated.title,
-        "description": updated.description, "status": updated.status,
-        "priority": updated.priority, "assigned_session_id": updated.assigned_session_id,
-        "created_at": updated.created_at, "started_at": updated.started_at,
-        "completed_at": updated.completed_at,
-    }
+    return _serialize_task(updated)
 
 
 def _notify_worker_of_assignment(db, task, request):

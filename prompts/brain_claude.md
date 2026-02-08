@@ -14,17 +14,17 @@ You manage a system where multiple Claude Code instances (workers) run in parall
 
 ## Orchestrator API
 
-The orchestrator server runs at `http://127.0.0.1:8080`. Use `curl` to interact with it.
+The orchestrator server runs at `http://127.0.0.1:8093`. Use `curl` to interact with it.
 All request/response bodies are JSON. Use `-s` for silent mode and pipe through `jq` for readable output.
 
 ### Projects
 
 ```bash
 # List all projects
-curl -s http://127.0.0.1:8080/api/projects | jq
+curl -s http://127.0.0.1:8093/api/projects | jq
 
 # Create a project
-curl -s -X POST http://127.0.0.1:8080/api/projects \
+curl -s -X POST http://127.0.0.1:8093/api/projects \
   -H 'Content-Type: application/json' \
   -d '{"name": "My Project", "description": "Project description"}' | jq
 ```
@@ -33,15 +33,15 @@ curl -s -X POST http://127.0.0.1:8080/api/projects \
 
 ```bash
 # List all tasks (optional filters: ?project_id=X&status=todo&assigned_session_id=Y)
-curl -s http://127.0.0.1:8080/api/tasks | jq
+curl -s http://127.0.0.1:8093/api/tasks | jq
 
 # Create a task
-curl -s -X POST http://127.0.0.1:8080/api/tasks \
+curl -s -X POST http://127.0.0.1:8093/api/tasks \
   -H 'Content-Type: application/json' \
   -d '{"project_id": "...", "title": "Task title", "description": "What to do", "priority": 1}' | jq
 
 # Update a task (status: todo/in_progress/done/blocked, assign to session, etc.)
-curl -s -X PATCH http://127.0.0.1:8080/api/tasks/TASK_ID \
+curl -s -X PATCH http://127.0.0.1:8093/api/tasks/TASK_ID \
   -H 'Content-Type: application/json' \
   -d '{"status": "in_progress", "assigned_session_id": "SESSION_ID"}' | jq
 ```
@@ -50,15 +50,15 @@ curl -s -X PATCH http://127.0.0.1:8080/api/tasks/TASK_ID \
 
 ```bash
 # List all sessions
-curl -s http://127.0.0.1:8080/api/sessions | jq
+curl -s http://127.0.0.1:8093/api/sessions | jq
 
 # Create a session (creates a tmux window)
-curl -s -X POST http://127.0.0.1:8080/api/sessions \
+curl -s -X POST http://127.0.0.1:8093/api/sessions \
   -H 'Content-Type: application/json' \
   -d '{"name": "worker-1", "host": "localhost"}' | jq
 
 # Send a message to a worker (types into their terminal)
-curl -s -X POST http://127.0.0.1:8080/api/sessions/SESSION_ID/send \
+curl -s -X POST http://127.0.0.1:8093/api/sessions/SESSION_ID/send \
   -H 'Content-Type: application/json' \
   -d '{"message": "Your instructions here"}' | jq
 ```
@@ -67,10 +67,10 @@ curl -s -X POST http://127.0.0.1:8080/api/sessions/SESSION_ID/send \
 
 ```bash
 # List pending decisions (questions from workers that need answers)
-curl -s 'http://127.0.0.1:8080/api/decisions?status=pending' | jq
+curl -s 'http://127.0.0.1:8093/api/decisions?status=pending' | jq
 
 # Resolve a decision
-curl -s -X PATCH http://127.0.0.1:8080/api/decisions/DECISION_ID \
+curl -s -X PATCH http://127.0.0.1:8093/api/decisions/DECISION_ID \
   -H 'Content-Type: application/json' \
   -d '{"response": "Your answer here"}' | jq
 ```
@@ -79,34 +79,34 @@ curl -s -X PATCH http://127.0.0.1:8080/api/decisions/DECISION_ID \
 
 ```bash
 # List all context items (optional filters: ?scope=global&project_id=X&category=Y&search=Z)
-curl -s http://127.0.0.1:8080/api/context | jq
+curl -s http://127.0.0.1:8093/api/context | jq
 
 # Get global context only
-curl -s 'http://127.0.0.1:8080/api/context?scope=global' | jq
+curl -s 'http://127.0.0.1:8093/api/context?scope=global' | jq
 
 # Get context for a specific project
-curl -s 'http://127.0.0.1:8080/api/context?project_id=PROJECT_ID' | jq
+curl -s 'http://127.0.0.1:8093/api/context?project_id=PROJECT_ID' | jq
 
 # Search context by keyword
-curl -s 'http://127.0.0.1:8080/api/context?search=authentication' | jq
+curl -s 'http://127.0.0.1:8093/api/context?search=authentication' | jq
 
 # Create a context item (scope: global or project)
-curl -s -X POST http://127.0.0.1:8080/api/context \
+curl -s -X POST http://127.0.0.1:8093/api/context \
   -H 'Content-Type: application/json' \
   -d '{"title": "Coding style", "content": "Use 2-space indentation...", "scope": "global", "category": "convention", "source": "brain"}' | jq
 
 # Create project-scoped context
-curl -s -X POST http://127.0.0.1:8080/api/context \
+curl -s -X POST http://127.0.0.1:8093/api/context \
   -H 'Content-Type: application/json' \
   -d '{"title": "API auth pattern", "content": "All endpoints use JWT...", "scope": "project", "project_id": "PROJECT_ID", "category": "requirement", "source": "brain"}' | jq
 
 # Update a context item
-curl -s -X PATCH http://127.0.0.1:8080/api/context/ITEM_ID \
+curl -s -X PATCH http://127.0.0.1:8093/api/context/ITEM_ID \
   -H 'Content-Type: application/json' \
   -d '{"content": "Updated content..."}' | jq
 
 # Delete a context item
-curl -s -X DELETE http://127.0.0.1:8080/api/context/ITEM_ID | jq
+curl -s -X DELETE http://127.0.0.1:8093/api/context/ITEM_ID | jq
 ```
 
 Use context to store:
@@ -119,7 +119,7 @@ Categories: `requirement`, `convention`, `reference`, `note`
 
 ```bash
 # Recent activities
-curl -s 'http://127.0.0.1:8080/api/activities?limit=20' | jq
+curl -s 'http://127.0.0.1:8093/api/activities?limit=20' | jq
 ```
 
 ### Tmux Direct Access

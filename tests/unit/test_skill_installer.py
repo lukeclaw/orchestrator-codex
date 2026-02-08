@@ -23,7 +23,7 @@ def test_version_pattern_no_match():
 
 def test_render_skill_template(db):
     seed_all(db)
-    result = render_skill_template(db, "worker-1", "http://localhost:8080")
+    result = render_skill_template(db, "worker-1", "http://localhost:8093")
     assert result is not None
     content, instruction = result
 
@@ -31,7 +31,7 @@ def test_render_skill_template(db):
     assert "${SESSION_NAME}" not in content
     assert "${ORCHESTRATOR_URL}" not in content
     assert "worker-1" in content
-    assert "http://localhost:8080" in content
+    assert "http://localhost:8093" in content
 
     # Check instruction is present
     assert "create a custom slash command" in instruction.lower() or "orchestrator.md" in instruction

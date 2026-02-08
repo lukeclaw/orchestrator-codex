@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import sqlite3
 import time
 
@@ -12,6 +13,8 @@ from orchestrator.terminal import manager as tmux
 from orchestrator.terminal import ssh
 
 logger = logging.getLogger(__name__)
+
+_SOURCE_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 
 
 def create_session(
@@ -97,3 +100,67 @@ def send_to_session(
 ) -> bool:
     """Send a message to a session's Claude Code instance."""
     return tmux.send_keys(tmux_session, name, message)
+
+
+def setup_rdev_worker(
+    conn: sqlite3.Connection,
+    session_id: str,
+    name: str,
+    host: str,
+    tmux_session: str = "orchestrator",
+    api_port: int = 8093,
+    task_id: str | None = None,
+    project_id: str | None = None,
+) -> dict:
+    """Set up a full rdev worker: tunnel, SSH, Claude, prompt.
+
+    Returns {"ok": True, "tunnel_window": ...} on success,
+    or {"ok": False, "error": "..."} on failure.
+    """
+    tunnel_name = f"{name}-tunnel"
+
+    try:
+        # 1. Create tunnel window and start reverse SSH tunnel
+        tmux.create_window(tmux_session, tunnel_name)
+        ssh.setup_rdev_tunnel(tmux_session, tunnel_name, host, api_port, api_port)
+        logger.info("Started reverse tunnel for %s -> %s", name, host)
+        time.sleep(3)
+
+        # 2. Connect to rdev VM
+        ssh.rdev_connect(tmux_session, name, host)
+        logger.info("Connecting to rdev VM for %s: %s", name, host)
+
+        # 3. Wait for shell prompt
+        if not ssh.wait_for_prompt(tmux_session, name, timeout=30):
+            raise RuntimeError(f"Timed out waiting for shell prompt on {host}")
+
+        # 4. Launch Claude Code
+        tmux.send_keys(tmux_session, name, "claude --dangerously-skip-permissions")
+        logger.info("Launched Claude Code in %s", name)
+        time.sleep(5)
+
+        # 5. Render and send worker template as first chat message
+        template_path = os.path.join(_SOURCE_ROOT, "prompts", "worker_claude_template.md")
+        if os.path.exists(template_path):
+            with open(template_path) as f:
+                template = f.read()
+            rendered = template.replace("SESSION_ID", session_id)
+            if task_id:
+                rendered = rendered.replace("TASK_ID", task_id)
+            if project_id:
+                rendered = rendered.replace("PROJECT_ID", project_id)
+            tmux.send_keys(tmux_session, name, rendered)
+            logger.info("Sent worker instructions to %s", name)
+        else:
+            logger.warning("Worker template not found at %s", template_path)
+
+        return {"ok": True, "tunnel_window": tunnel_name}
+
+    except Exception as e:
+        logger.exception("Failed to set up rdev worker %s", name)
+        # Clean up tunnel window on failure
+        try:
+            tmux.kill_window(tmux_session, tunnel_name)
+        except Exception:
+            pass
+        return {"ok": False, "error": str(e)}

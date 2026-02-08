@@ -11,6 +11,7 @@ sys.path.insert(0, str(PROJECT_ROOT))
 from orchestrator.state.db import get_connection
 from orchestrator.state.migrations.runner import apply_migrations
 from orchestrator.state.repositories import config as config_repo
+from orchestrator.state.repositories import context as context_repo
 from orchestrator.state.repositories import templates as templates_repo
 
 
@@ -220,11 +221,93 @@ Always acknowledge received instructions."""
     )
 
 
+def seed_context(conn):
+    """Seed default global context items."""
+    items = [
+        (
+            "LinkedIn rdev VM Workflow",
+            """LinkedIn engineers use rdev VMs for developing on multiproduct (MP) repositories.
+
+## Listing rdev Sessions
+
+```bash
+rdev list
+```
+
+Example output:
+```
+MP                  Name               Status
+subs-mt             sleepy-franklin    RUNNING
+jobs-mt             epic-turing        RUNNING
+```
+
+## Connecting Manually
+
+```bash
+rdev ssh MP_NAME/SESSION_NAME --non-tmux
+```
+
+The `--non-tmux` flag opens a plain SSH session instead of attaching to a tmux session inside the VM.
+
+Inside the VM, Claude Code can be run with `claude --dangerously-skip-permissions` (safe because rdev VMs are isolated sandboxes).""",
+            "knowledge",
+            "rdev",
+        ),
+        (
+            "Creating rdev Workers",
+            """To create a worker on an rdev VM, call the session API with the rdev session path as the host:
+
+```bash
+curl -s -X POST http://127.0.0.1:8093/api/sessions \\
+  -H 'Content-Type: application/json' \\
+  -d '{"name": "worker-1", "host": "subs-mt/sleepy-franklin"}'
+```
+
+The API automatically handles the full setup:
+1. Sets up a reverse SSH tunnel for API callbacks
+2. Connects to the rdev VM via `rdev ssh`
+3. Launches Claude Code with `--dangerously-skip-permissions`
+4. Sends the worker instructions as the first chat message
+
+The host format `MP_NAME/SESSION_NAME` (with a forward slash) triggers rdev mode. For local workers, use `host: "localhost"`.
+
+Use `rdev list` to discover available rdev sessions before creating workers.""",
+            "guideline",
+            "rdev",
+        ),
+    ]
+
+    # Remove stale context items that are no longer seeded
+    stale_titles = [
+        "Orchestrator Architecture Overview",
+        "Task and Sub-task Conventions",
+        "Connecting Workers to rdev VMs",
+    ]
+    existing = context_repo.list_context(conn, scope="global")
+    existing_titles = {item.title: item for item in existing}
+
+    for title in stale_titles:
+        if title in existing_titles:
+            context_repo.delete_context_item(conn, existing_titles[title].id)
+
+    for title, content, category, source in items:
+        if title not in existing_titles:
+            context_repo.create_context_item(
+                conn,
+                title=title,
+                content=content,
+                scope="global",
+                category=category,
+                source=source,
+            )
+
+
 def seed_all(conn):
     """Run all seed functions."""
     seed_config(conn)
     seed_prompt_templates(conn)
     seed_skill_templates(conn)
+    seed_context(conn)
 
 
 def main():

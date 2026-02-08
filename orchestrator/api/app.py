@@ -12,7 +12,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
-from orchestrator.state.db import get_connection
+from orchestrator.state.db import get_connection, ConnectionFactory
 from orchestrator.state.migrations.runner import apply_migrations
 
 logger = logging.getLogger(__name__)
@@ -25,10 +25,12 @@ async def lifespan(app: FastAPI):
     """Application lifespan: startup and shutdown."""
     from orchestrator.core.lifecycle import startup_check, shutdown
     from orchestrator.core.orchestrator import Orchestrator
+    from orchestrator.core.state_manager import StateManager
 
     logger.info("Orchestrator API starting up")
 
     conn = app.state.conn
+    db_path = app.state.db_path
 
     # Load config for the orchestrator engine
     try:
@@ -36,6 +38,8 @@ async def lifespan(app: FastAPI):
         config = load_config()
     except Exception:
         config = {}
+
+    app.state.config = config
 
     # Reconcile DB with tmux state
     try:
@@ -50,16 +54,25 @@ async def lifespan(app: FastAPI):
     except Exception:
         logger.exception("Failed to seed auto-approve defaults (non-fatal)")
 
+    # Start the StateManager (handles event-driven DB writes)
+    state_manager = None
+    if db_path:
+        state_manager = StateManager(db_path)
+        app.state.state_manager = state_manager
+        await state_manager.start()
+
     # Start the orchestrator engine (monitor, events, recovery)
-    orch = Orchestrator(conn, config)
+    orch = Orchestrator(conn, config, db_path=db_path)
     app.state.orchestrator = orch
     await orch.start()
 
     yield
 
-    # Shutdown: stop monitor, save snapshots
+    # Shutdown: stop monitor, state manager, save snapshots
     logger.info("Orchestrator API shutting down")
     await orch.stop()
+    if state_manager:
+        await state_manager.stop()
     try:
         shutdown(conn)
     except Exception:
@@ -89,9 +102,11 @@ def create_app(
     )
 
     # Database
+    resolved_db_path = None
     if db is not None:
         app.state.conn = db
     elif db_path:
+        resolved_db_path = db_path
         conn = get_connection(db_path)
         apply_migrations(conn)
         app.state.conn = conn
@@ -99,13 +114,16 @@ def create_app(
         # Check env var first (used by E2E tests), then fall back to config
         env_db_path = os.environ.get("ORCHESTRATOR_DB_PATH")
         if env_db_path:
+            resolved_db_path = env_db_path
             conn = get_connection(env_db_path)
         else:
             from orchestrator.main import PROJECT_ROOT, load_config
             config = load_config()
-            conn = get_connection(PROJECT_ROOT / config["database"]["path"])
+            resolved_db_path = str(PROJECT_ROOT / config["database"]["path"])
+            conn = get_connection(resolved_db_path)
         apply_migrations(conn)
         app.state.conn = conn
+    app.state.db_path = resolved_db_path
 
     # Static files — React build assets
     dist_assets = WEB_DIR / "dist" / "assets"

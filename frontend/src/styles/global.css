@@ -211,11 +211,51 @@ input, textarea {
   border: 1px solid rgba(210,153,34,0.3);
 }
 
+.status-badge.connecting {
+  background: rgba(88,166,255,0.12);
+  color: var(--accent);
+  border: 1px solid rgba(88,166,255,0.3);
+}
+
 .status-badge.done,
 .status-badge.merged {
   background: rgba(163,113,247,0.12);
   color: var(--purple);
   border: 1px solid rgba(163,113,247,0.3);
+}
+
+/* Toggle group */
+.toggle-group {
+  display: flex;
+  gap: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.toggle-btn {
+  flex: 1;
+  padding: 6px 12px;
+  font-size: 12px;
+  background: var(--surface);
+  color: var(--text-muted);
+  border: none;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.toggle-btn:not(:last-child) {
+  border-right: 1px solid var(--border);
+}
+
+.toggle-btn:hover {
+  background: var(--surface-hover);
+}
+
+.toggle-btn.active {
+  background: var(--accent-muted);
+  color: var(--accent);
+  font-weight: 500;
 }
 
 /* Empty state */

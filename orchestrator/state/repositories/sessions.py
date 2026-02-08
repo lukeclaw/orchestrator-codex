@@ -3,6 +3,7 @@
 import sqlite3
 import uuid
 
+from orchestrator.state.db import transaction, with_retry
 from orchestrator.state.models import Session, WorkerCapability
 
 
@@ -30,6 +31,7 @@ def list_sessions(conn: sqlite3.Connection, status: str | None = None) -> list[S
     return [Session(**dict(r)) for r in rows]
 
 
+@with_retry
 def create_session(
     conn: sqlite3.Connection,
     name: str,
@@ -47,11 +49,13 @@ def create_session(
     return get_session(conn, id)
 
 
+@with_retry
 def update_session(
     conn: sqlite3.Connection,
     id: str,
     status: str | None = None,
     tmux_window: str | None = None,
+    tunnel_pane: str | None = ...,
     current_task_id: str | None = ...,
     takeover_mode: bool | None = None,
     last_activity: str | None = None,
@@ -64,6 +68,9 @@ def update_session(
     if tmux_window is not None:
         sets.append("tmux_window = ?")
         params.append(tmux_window)
+    if tunnel_pane is not ...:
+        sets.append("tunnel_pane = ?")
+        params.append(tunnel_pane)
     if current_task_id is not ...:
         sets.append("current_task_id = ?")
         params.append(current_task_id)
@@ -83,11 +90,23 @@ def update_session(
     return get_session(conn, id)
 
 
+@with_retry
 def delete_session(conn: sqlite3.Connection, id: str) -> bool:
-    # Clean up related capabilities
-    conn.execute("DELETE FROM worker_capabilities WHERE session_id = ?", (id,))
-    cursor = conn.execute("DELETE FROM sessions WHERE id = ?", (id,))
-    conn.commit()
+    """Delete a session and all related records.
+    
+    Uses a single transaction to avoid partial deletes and reduce lock time.
+    """
+    with transaction(conn):
+        # Clean up all FK references before deleting the session
+        conn.execute("DELETE FROM worker_capabilities WHERE session_id = ?", (id,))
+        conn.execute("DELETE FROM comm_events WHERE session_id = ?", (id,))
+        conn.execute("DELETE FROM session_snapshots WHERE session_id = ?", (id,))
+        conn.execute("DELETE FROM activities WHERE session_id = ?", (id,))
+        conn.execute("DELETE FROM project_workers WHERE session_id = ?", (id,))
+        conn.execute("UPDATE tasks SET assigned_session_id = NULL WHERE assigned_session_id = ?", (id,))
+        conn.execute("UPDATE decisions SET session_id = NULL WHERE session_id = ?", (id,))
+        conn.execute("UPDATE pull_requests SET session_id = NULL WHERE session_id = ?", (id,))
+        cursor = conn.execute("DELETE FROM sessions WHERE id = ?", (id,))
     return cursor.rowcount > 0
 
 

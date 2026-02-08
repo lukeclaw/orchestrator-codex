@@ -4,6 +4,7 @@ import { api } from '../api/client'
 
 interface AppState {
   sessions: Session[]
+  workers: Session[]
   decisions: Decision[]
   activities: Activity[]
   projects: Project[]
@@ -16,6 +17,7 @@ interface AppState {
 
 const AppContext = createContext<AppState>({
   sessions: [],
+  workers: [],
   decisions: [],
   activities: [],
   projects: [],
@@ -97,8 +99,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
     return () => clearInterval(interval)
   }, [fetchAll])
 
+  const workers = sessions.filter(s => s.name !== 'brain')
+
   return (
-    <AppContext.Provider value={{ sessions, decisions, activities, projects, tasks, prs, connected, loading, refresh: fetchAll }}>
+    <AppContext.Provider value={{ sessions, workers, decisions, activities, projects, tasks, prs, connected, loading, refresh: fetchAll }}>
       {children}
     </AppContext.Provider>
   )

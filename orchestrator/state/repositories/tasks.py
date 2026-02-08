@@ -18,6 +18,7 @@ def list_tasks(
     project_id: str | None = None,
     status: str | None = None,
     assigned_session_id: str | None = None,
+    parent_task_id: str | None = ...,
 ) -> list[Task]:
     clauses = []
     params = []
@@ -30,6 +31,12 @@ def list_tasks(
     if assigned_session_id:
         clauses.append("assigned_session_id = ?")
         params.append(assigned_session_id)
+    if parent_task_id is not ...:
+        if parent_task_id is None:
+            clauses.append("parent_task_id IS NULL")
+        else:
+            clauses.append("parent_task_id = ?")
+            params.append(parent_task_id)
 
     where = f" WHERE {' AND '.join(clauses)}" if clauses else ""
     rows = conn.execute(
@@ -44,12 +51,13 @@ def create_task(
     title: str,
     description: str | None = None,
     priority: int = 0,
+    parent_task_id: str | None = None,
 ) -> Task:
     id = str(uuid.uuid4())
     conn.execute(
-        """INSERT INTO tasks (id, project_id, title, description, priority)
-           VALUES (?, ?, ?, ?, ?)""",
-        (id, project_id, title, description, priority),
+        """INSERT INTO tasks (id, project_id, title, description, priority, parent_task_id)
+           VALUES (?, ?, ?, ?, ?, ?)""",
+        (id, project_id, title, description, priority, parent_task_id),
     )
     conn.commit()
     return get_task(conn, id)
@@ -64,6 +72,7 @@ def update_task(
     title: str | None = None,
     description: str | None = None,
     blocked_by_decision_id: str | None = ...,
+    notes: str | None = ...,
 ) -> Task | None:
     sets = []
     params = []
@@ -89,6 +98,9 @@ def update_task(
     if blocked_by_decision_id is not ...:
         sets.append("blocked_by_decision_id = ?")
         params.append(blocked_by_decision_id)
+    if notes is not ...:
+        sets.append("notes = ?")
+        params.append(notes)
     if not sets:
         return get_task(conn, id)
     params.append(id)

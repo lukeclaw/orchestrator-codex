@@ -25,6 +25,7 @@ class Session:
     host: str
     mp_path: str | None = None
     tmux_window: str | None = None
+    tunnel_pane: str | None = None
     status: str = "idle"
     takeover_mode: bool = False
     current_task_id: str | None = None
@@ -48,6 +49,8 @@ class Task:
     created_at: str = ""
     started_at: str | None = None
     completed_at: str | None = None
+    parent_task_id: str | None = None
+    notes: str | None = None
 
 
 @dataclass

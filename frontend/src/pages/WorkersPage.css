@@ -1,0 +1,28 @@
+.workers-page {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.workers-page .page-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.workers-page .page-header h1 {
+  font-size: 20px;
+  font-weight: 600;
+}
+
+.worker-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(420px, 1fr));
+  gap: 16px;
+}
+
+@media (max-width: 500px) {
+  .worker-grid {
+    grid-template-columns: 1fr;
+  }
+}

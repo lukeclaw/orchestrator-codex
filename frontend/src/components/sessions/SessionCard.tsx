@@ -15,7 +15,7 @@ export default function SessionCard({ session }: Props) {
       className={`session-card ${session.status}`}
       data-testid="session-card"
       data-session-id={session.id}
-      onClick={() => navigate(`/sessions/${session.id}`)}
+      onClick={() => navigate(`/workers/${session.id}`)}
     >
       <div className="sc-top">
         <span className={`status-indicator ${session.status}`} />

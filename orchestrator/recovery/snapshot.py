@@ -6,10 +6,12 @@ import json
 import sqlite3
 import uuid
 
+from orchestrator.state.db import with_retry
 from orchestrator.state.models import SessionSnapshot
 from orchestrator.state.repositories import sessions, tasks
 
 
+@with_retry
 def create_snapshot(conn: sqlite3.Connection, session_id: str) -> SessionSnapshot:
     """Create a snapshot of the current session context."""
     session = sessions.get_session(conn, session_id)

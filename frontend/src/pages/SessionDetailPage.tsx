@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import type { Session, Task, PullRequest, Activity } from '../api/types'
 import { api } from '../api/client'
+import { useNotify } from '../context/NotificationContext'
 import TerminalView from '../components/terminal/TerminalView'
 import { timeAgo } from '../components/common/TimeAgo'
 import { IconArrowLeft } from '../components/common/Icons'
@@ -10,6 +11,7 @@ import './SessionDetailPage.css'
 export default function SessionDetailPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
+  const notify = useNotify()
   const [session, setSession] = useState<Session | null>(null)
   const [tasks, setTasks] = useState<Task[]>([])
   const [prs, setPrs] = useState<PullRequest[]>([])
@@ -44,7 +46,7 @@ export default function SessionDetailPage() {
       await api(`/api/sessions/${id}`, { method: 'DELETE' })
       navigate('/')
     } catch (e) {
-      alert(e instanceof Error ? e.message : 'Failed to delete')
+      notify(e instanceof Error ? e.message : 'Failed to delete', 'error')
     }
   }
 
@@ -58,7 +60,7 @@ export default function SessionDetailPage() {
       })
       setSendMsg('')
     } catch (e) {
-      alert(e instanceof Error ? e.message : 'Failed to send')
+      notify(e instanceof Error ? e.message : 'Failed to send', 'error')
     }
   }
 
@@ -80,7 +82,7 @@ export default function SessionDetailPage() {
       {/* Top bar with session info */}
       <div className="sd-topbar">
         <div className="sd-topbar-left">
-          <Link to="/sessions" className="sd-back-link">
+          <Link to="/workers" className="sd-back-link">
             <IconArrowLeft size={16} />
           </Link>
           <h2 className="sd-title">{session.name}</h2>

@@ -1,11 +1,14 @@
-"""Background async task for passive monitoring of terminal output."""
+"""Background async task for passive monitoring of terminal output.
+
+This module is READ-ONLY — it only reads terminal state and emits events.
+All database writes happen in the StateManager (core/state_manager.py).
+"""
 
 from __future__ import annotations
 
 import asyncio
 import logging
 import sqlite3
-from datetime import datetime
 
 from orchestrator.core.events import Event, publish
 from orchestrator.state.repositories import sessions as sessions_repo
@@ -29,7 +32,11 @@ async def poll_session(
     session_name: str,
     tmux_session: str = "orchestrator",
 ) -> list[Event]:
-    """Poll a single session and return any events detected."""
+    """Poll a single session and return any events detected.
+    
+    This function is READ-ONLY. It detects state changes and emits events,
+    but does NOT write to the database. The StateManager handles all writes.
+    """
     output = tmux.capture_output(tmux_session, session_name, lines=50)
 
     # Skip if output hasn't changed
@@ -47,16 +54,7 @@ async def poll_session(
     if old_state != new_state.value:
         _previous_state[session_name] = new_state.value
 
-        # Update DB
-        session = sessions_repo.get_session_by_name(conn, session_name)
-        if session:
-            sessions_repo.update_session(
-                conn,
-                session.id,
-                status=new_state.value,
-                last_activity=datetime.now().isoformat(),
-            )
-
+        # Emit state change event — StateManager will handle DB update
         events.append(Event(
             type="session.state_changed",
             data={
@@ -84,7 +82,12 @@ async def monitor_loop(
     poll_interval: float = 5.0,
     active_interval: float = 2.0,
 ):
-    """Main monitoring loop. Polls all sessions at the configured interval."""
+    """Main monitoring loop. Polls all sessions at the configured interval.
+    
+    This loop is READ-ONLY. It reads session list and terminal output,
+    then publishes events. The StateManager subscribes to these events
+    and handles all database writes.
+    """
     logger.info("Passive monitor started (interval=%.1fs)", poll_interval)
 
     while True:

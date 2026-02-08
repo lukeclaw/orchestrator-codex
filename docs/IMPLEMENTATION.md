@@ -129,7 +129,7 @@ orchestrator = "orchestrator.main:cli"
 
 server:
   host: "127.0.0.1"
-  port: 8080
+  port: 8093
 
 database:
   path: "data/orchestrator.db"    # Relative to project root
@@ -355,7 +355,7 @@ orchestrator/
 
 **Goal:** FastAPI server with REST endpoints and WebSocket, web dashboard with session cards, decision queue, project management. Playwright E2E tests.
 
-**Deliverable:** User opens `http://localhost:8080` and sees a live dashboard with session cards, decision queue, and chat. WebSocket pushes real-time updates.
+**Deliverable:** User opens `http://localhost:8093` and sees a live dashboard with session cards, decision queue, and chat. WebSocket pushes real-time updates.
 
 ### 6.1 Tasks
 
@@ -437,13 +437,13 @@ def screenshot_on_failure(page: Page, request):
 @pytest.fixture
 def dashboard(page: Page):
     """Navigate to dashboard and wait for load."""
-    page.goto("http://localhost:8080")
+    page.goto("http://localhost:8093")
     page.wait_for_selector("[data-testid='session-grid']", timeout=5000)
     return page
 ```
 
 ### 6.4 Exit Criteria
-- [ ] `http://localhost:8080` loads dashboard
+- [ ] `http://localhost:8093` loads dashboard
 - [ ] Session cards render with real-time status
 - [ ] Decision queue shows pending decisions with approve/dismiss
 - [ ] WebSocket pushes updates without page reload
@@ -665,7 +665,7 @@ Each phase follows this cycle:
 ```bash
 # Terminal 1: Run the orchestrator (API + monitor)
 cd /Users/yuqiu/projects/my_assistant/orchestrator
-uv run uvicorn orchestrator.api.app:create_app --factory --reload --port 8080
+uv run uvicorn orchestrator.api.app:create_app --factory --reload --port 8093
 
 # Terminal 2: Run tests
 cd /Users/yuqiu/projects/my_assistant/orchestrator

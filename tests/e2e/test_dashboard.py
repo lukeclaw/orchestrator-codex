@@ -89,6 +89,9 @@ def test_04_add_session_flow(page):
 
     screenshot(page, "04a_add_session_modal")
 
+    # Switch to Local mode (modal defaults to rdev)
+    page.click("[data-testid='worker-type-toggle'] >> text=Local")
+
     # Fill form
     page.fill("[data-testid='session-name-input']", "worker-delta")
     page.fill("[data-testid='session-host-input']", "localhost")
@@ -119,8 +122,8 @@ def test_04_add_session_flow(page):
 
 
 def test_05_session_detail_page(page, server):
-    """Navigate to session detail page, see host/status/info."""
-    # Click on worker-alpha card — navigates to /sessions/s1
+    """Navigate to worker detail page, see host/status/info."""
+    # Click on worker-alpha card — navigates to /workers/s1
     card = page.query_selector("[data-session-id='s1']")
     assert card is not None
     card.click()
@@ -128,8 +131,8 @@ def test_05_session_detail_page(page, server):
 
     screenshot(page, "05_session_detail")
 
-    # Should be on the session detail page
-    assert "/sessions/s1" in page.url
+    # Should be on the worker detail page
+    assert "/workers/s1" in page.url
 
     # Session name and info should be visible
     text = page.inner_text("body")
@@ -252,17 +255,17 @@ def test_09_activity_timeline(page):
 # ---------------------------------------------------------------------------
 
 
-def test_10_brain_panel(page):
-    """Brain panel is visible on dashboard with Start button."""
-    screenshot(page, "10_brain_panel")
+def test_10_brain_sidebar(page):
+    """Brain sidebar is visible on all pages with Start button."""
+    screenshot(page, "10_brain_sidebar")
 
-    brain_panel = page.query_selector("[data-testid='brain-panel']")
-    assert brain_panel is not None
-    assert brain_panel.is_visible()
+    brain_sidebar = page.query_selector("[data-testid='brain-sidebar']")
+    assert brain_sidebar is not None
+    assert brain_sidebar.is_visible()
 
-    # Should show "Start Brain" button (brain is not running in test env)
-    page_text = brain_panel.inner_text()
-    assert "Orchestrator Brain" in page_text or "Start Brain" in page_text
+    # Should show "Brain" title or Start button (brain is not running in test env)
+    page_text = brain_sidebar.inner_text()
+    assert "Brain" in page_text or "Start" in page_text
 
 
 # ---------------------------------------------------------------------------
@@ -285,6 +288,28 @@ def test_11_responsive_layout(page):
     sessions_panel = page.query_selector("[data-testid='sessions-panel']")
     assert sessions_panel.is_visible()
 
+    # Brain sidebar should still be present (possibly collapsed)
+    brain_sidebar = page.query_selector("[data-testid='brain-sidebar']")
+    assert brain_sidebar is not None
+
     # No console errors throughout
     js_errors = [e for e in page._console_errors if "WebSocket" not in e]
     assert len(js_errors) == 0, f"Console errors: {js_errors}"
+
+
+# ---------------------------------------------------------------------------
+# 12. Auto-sync timer
+# ---------------------------------------------------------------------------
+
+
+def test_12_auto_sync_timer(page):
+    """Auto-sync timer area renders in the brain sidebar."""
+    screenshot(page, "12_auto_sync_timer")
+
+    timer = page.query_selector("[data-testid='auto-sync-timer']")
+    assert timer is not None
+    assert timer.is_visible()
+
+    # When brain is not running, shows "brain not running" message
+    timer_text = timer.inner_text()
+    assert "brain not running" in timer_text.lower() or "auto-sync" in timer_text.lower()

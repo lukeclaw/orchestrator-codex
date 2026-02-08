@@ -6,12 +6,14 @@ import logging
 import os
 import sqlite3
 
+from orchestrator.state.db import with_retry
 from orchestrator.state.repositories import sessions
 from orchestrator.terminal import manager as tmux
 
 logger = logging.getLogger(__name__)
 
 
+@with_retry
 def startup_check(conn: sqlite3.Connection, tmux_session: str = "orchestrator"):
     """Run startup checks: verify tmux session, reconcile DB with tmux state."""
     # Skip reconciliation if tmux is not available or in test mode

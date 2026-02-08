@@ -5,11 +5,13 @@ from __future__ import annotations
 import asyncio
 import logging
 import sqlite3
+from pathlib import Path
 
 from orchestrator.core.events import Event, subscribe
 from orchestrator.recovery.detector import needs_recovery, get_recovery_reason
 from orchestrator.recovery.rebrief import rebrief_session
 from orchestrator.recovery.snapshot import create_snapshot
+from orchestrator.state.db import ConnectionFactory
 from orchestrator.state.repositories import sessions as sessions_repo
 from orchestrator.state.repositories import activities as activities_repo
 from orchestrator.state.repositories import tasks as tasks_repo
@@ -26,14 +28,30 @@ class Orchestrator:
         self,
         conn: sqlite3.Connection,
         config: dict,
+        db_path: str | Path | None = None,
     ):
-        self.conn = conn
+        self.conn = conn  # For read operations (monitor loop)
         self.config = config
         self.tmux_session = config.get("tmux", {}).get("session_name", "orchestrator")
         self._monitor_task: asyncio.Task | None = None
+        
+        # Connection factory for write operations (avoids lock contention)
+        self._conn_factory: ConnectionFactory | None = None
+        if db_path:
+            self._conn_factory = ConnectionFactory(db_path)
 
         # Subscribe to events
         subscribe("*", self._handle_event)
+
+    def _get_write_conn(self) -> sqlite3.Connection:
+        """Get a connection for write operations.
+        
+        Uses connection factory if available (reduces lock contention),
+        otherwise falls back to shared connection.
+        """
+        if self._conn_factory:
+            return self._conn_factory.create()
+        return self.conn
 
     def _handle_event(self, event: Event):
         """Central event handler."""
@@ -59,19 +77,20 @@ class Orchestrator:
 
     def _execute_recovery(self, session_name: str, reason: str):
         """Execute recovery: snapshot + re-brief."""
+        conn = self._get_write_conn()
         try:
-            session = sessions_repo.get_session_by_name(self.conn, session_name)
+            session = sessions_repo.get_session_by_name(conn, session_name)
             if not session:
                 return
 
             # Snapshot current state before re-brief
-            create_snapshot(self.conn, session.id)
+            create_snapshot(conn, session.id)
 
             # Send re-brief
-            success = rebrief_session(self.conn, session_name, self.tmux_session)
+            success = rebrief_session(conn, session_name, self.tmux_session)
             if success:
                 activities_repo.create_activity(
-                    self.conn,
+                    conn,
                     event_type="recovery.rebrief",
                     session_id=session.id,
                     event_data={"reason": reason},
@@ -79,16 +98,20 @@ class Orchestrator:
                 logger.info("Recovery re-brief sent to %s", session_name)
         except Exception:
             logger.exception("Recovery failed for %s", session_name)
+        finally:
+            if self._conn_factory and conn is not self.conn:
+                conn.close()
 
     def _handle_waiting(self, session_name: str):
         """Handle a session that's waiting for input — check auto-approve rules."""
+        conn = self._get_write_conn()
         try:
             from orchestrator.automation.auto_approve import check_auto_approve
 
             output = tmux.capture_output(self.tmux_session, session_name, lines=30)
-            response = check_auto_approve(self.conn, session_name, output)
+            response = check_auto_approve(conn, session_name, output)
 
-            session = sessions_repo.get_session_by_name(self.conn, session_name)
+            session = sessions_repo.get_session_by_name(conn, session_name)
             if not session:
                 return
 
@@ -96,7 +119,7 @@ class Orchestrator:
                 # Auto-approve: send the response keystroke
                 tmux.send_keys(self.tmux_session, session_name, response, enter=False)
                 activities_repo.create_activity(
-                    self.conn,
+                    conn,
                     event_type="auto_approve.sent",
                     session_id=session.id,
                     event_data={"response": repr(response), "output_tail": output[-200:]},
@@ -106,7 +129,7 @@ class Orchestrator:
                 # Create a decision for human review
                 from orchestrator.state.repositories import decisions as decisions_repo
                 decisions_repo.create_decision(
-                    self.conn,
+                    conn,
                     question=f"Session '{session_name}' is waiting for input",
                     session_id=session.id,
                     context=output[-500:] if output else "No terminal output captured",
@@ -117,15 +140,19 @@ class Orchestrator:
             logger.debug("auto_approve module not available")
         except Exception:
             logger.exception("Error handling waiting state for %s", session_name)
+        finally:
+            if self._conn_factory and conn is not self.conn:
+                conn.close()
 
     def _handle_idle(self, session_name: str):
         """Handle a session that went idle — check for next task assignment."""
+        conn = self._get_write_conn()
         try:
             from orchestrator.scheduler.scheduler import get_next_assignments
             from orchestrator.terminal.session import send_to_session
 
-            assignments = get_next_assignments(self.conn)
-            session = sessions_repo.get_session_by_name(self.conn, session_name)
+            assignments = get_next_assignments(conn)
+            session = sessions_repo.get_session_by_name(conn, session_name)
             if not session:
                 return
 
@@ -133,16 +160,16 @@ class Orchestrator:
                 if assigned_session_id != session.id:
                     continue
 
-                task = tasks_repo.get_task(self.conn, task_id)
+                task = tasks_repo.get_task(conn, task_id)
                 if not task:
                     continue
 
                 # Assign the task
                 tasks_repo.update_task(
-                    self.conn, task_id, assigned_session_id=session.id, status="in_progress"
+                    conn, task_id, assigned_session_id=session.id, status="in_progress"
                 )
                 sessions_repo.update_session(
-                    self.conn, session.id, current_task_id=task_id, status="working"
+                    conn, session.id, current_task_id=task_id, status="working"
                 )
 
                 # Compose and send context to the worker
@@ -150,7 +177,7 @@ class Orchestrator:
                 send_to_session(session_name, message, self.tmux_session)
 
                 activities_repo.create_activity(
-                    self.conn,
+                    conn,
                     event_type="task.assigned",
                     session_id=session.id,
                     task_id=task_id,
@@ -160,6 +187,9 @@ class Orchestrator:
                 break  # One task per idle event
         except Exception:
             logger.exception("Error handling idle state for %s", session_name)
+        finally:
+            if self._conn_factory and conn is not self.conn:
+                conn.close()
 
     async def start(self):
         """Start the orchestrator (monitoring loop)."""

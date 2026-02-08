@@ -4,7 +4,8 @@ export interface Session {
   host: string
   mp_path: string | null
   tmux_window: string | null
-  status: 'idle' | 'working' | 'waiting' | 'error' | 'disconnected'
+  tunnel_pane: string | null
+  status: 'idle' | 'working' | 'waiting' | 'error' | 'disconnected' | 'connecting'
   current_task_id: string | null
   created_at: string
   last_activity: string | null

@@ -76,3 +76,28 @@ def test_seed_config_categories(db):
     assert len(context) >= 6
     monitoring = list_config(db, category="monitoring")
     assert len(monitoring) >= 3
+
+
+def test_seed_context_items(db):
+    from orchestrator.state.repositories.context import list_context
+    seed_all(db)
+    items = list_context(db, scope="global")
+    titles = {item.title for item in items}
+
+    # These should exist
+    assert "LinkedIn rdev VM Workflow" in titles
+    assert "Creating rdev Workers" in titles
+
+    # These should NOT exist (removed)
+    assert "Orchestrator Architecture Overview" not in titles
+    assert "Task and Sub-task Conventions" not in titles
+    assert "Connecting Workers to rdev VMs" not in titles
+
+
+def test_seed_context_idempotent(db):
+    from orchestrator.state.repositories.context import list_context
+    seed_all(db)
+    count1 = len(list_context(db, scope="global"))
+    seed_all(db)
+    count2 = len(list_context(db, scope="global"))
+    assert count1 == count2

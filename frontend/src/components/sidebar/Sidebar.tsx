@@ -19,13 +19,13 @@ interface Props {
 }
 
 export default function Sidebar({ collapsed, onToggle }: Props) {
-  const { sessions, decisions } = useApp()
+  const { workers, decisions } = useApp()
 
-  const activeSessions = sessions.filter(
+  const activeSessions = workers.filter(
     s => s.status === 'working' || s.status === 'idle'
   ).length
 
-  const waitingSessions = sessions.filter(s => s.status === 'waiting').length
+  const waitingSessions = workers.filter(s => s.status === 'waiting').length
 
   return (
     <aside className={`sidebar ${collapsed ? 'collapsed' : ''}`}>
@@ -39,7 +39,7 @@ export default function Sidebar({ collapsed, onToggle }: Props) {
       <nav className="sidebar-nav">
         <SidebarItem to="/" icon={<IconDashboard size={18} />} label="Dashboard" collapsed={collapsed} shortcut="D" />
         <SidebarItem to="/projects" icon={<IconProjects size={18} />} label="Projects" collapsed={collapsed} shortcut="P" />
-        <SidebarItem to="/sessions" icon={<IconSessions size={18} />} label="Sessions" badge={activeSessions} collapsed={collapsed} shortcut="S" />
+        <SidebarItem to="/workers" icon={<IconSessions size={18} />} label="Workers" badge={activeSessions} collapsed={collapsed} shortcut="W" />
         {waitingSessions > 0 && (
           <SidebarItem to="/decisions" icon={<IconDecisions size={18} />} label="Waiting" badge={waitingSessions} collapsed={collapsed} />
         )}

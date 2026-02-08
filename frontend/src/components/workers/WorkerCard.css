@@ -1,0 +1,148 @@
+.worker-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--text-muted);
+  border-radius: var(--radius);
+  cursor: pointer;
+  transition: border-color 0.15s, box-shadow 0.15s, opacity 0.2s;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.worker-card:hover {
+  border-color: var(--accent);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+
+.worker-card.removing {
+  opacity: 0.4;
+  pointer-events: none;
+}
+
+/* Drag state */
+.worker-card.dragging {
+  opacity: 0.5;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+}
+
+.worker-card.drag-over {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent);
+}
+
+/* Status border colors */
+.worker-card.working { border-left-color: var(--green); }
+.worker-card.idle { border-left-color: var(--blue); }
+.worker-card.waiting { border-left-color: var(--yellow); }
+.worker-card.error { border-left-color: var(--red); }
+.worker-card.disconnected { border-left-color: var(--text-muted); }
+
+/* Header */
+.wc-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+.wc-header-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.wc-name {
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--text-primary);
+}
+
+/* Drag handle */
+.wc-drag-handle {
+  display: flex;
+  align-items: center;
+  cursor: grab;
+  color: var(--text-muted);
+  padding: 2px;
+  border-radius: 3px;
+}
+
+.wc-drag-handle:hover {
+  color: var(--text-secondary);
+  background: var(--surface-hover);
+}
+
+.wc-drag-handle:active {
+  cursor: grabbing;
+}
+
+/* Remove button */
+.wc-remove-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 4px;
+  border-radius: var(--radius);
+  color: var(--text-muted);
+  opacity: 0;
+  transition: opacity 0.15s, color 0.15s, background 0.15s;
+}
+
+.worker-card:hover .wc-remove-btn {
+  opacity: 1;
+}
+
+.wc-remove-btn:hover:not(:disabled) {
+  color: var(--red);
+  background: rgba(248, 81, 73, 0.1);
+}
+
+.wc-remove-btn:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+/* Terminal preview */
+.wc-terminal-preview {
+  background: #0d1117;
+  padding: 10px 12px;
+  min-height: 180px;
+  max-height: 220px;
+  overflow: hidden;
+  flex: 1;
+}
+
+.wc-terminal-preview pre {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.4;
+  color: #c9d1d9;
+  white-space: pre;
+  overflow: hidden;
+}
+
+/* Footer */
+.wc-footer {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 14px;
+  font-size: 11px;
+  color: var(--text-muted);
+  border-top: 1px solid var(--border);
+}
+
+.wc-host {
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+
+.wc-activity {
+  margin-left: auto;
+}

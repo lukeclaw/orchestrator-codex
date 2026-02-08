@@ -46,3 +46,48 @@ def setup_tunnel(
     """
     tunnel_cmd = f"ssh -R {remote_port}:127.0.0.1:{local_port} -N -f {host}"
     return send_keys(session_name, window_name, tunnel_cmd)
+
+
+# --- rdev helpers ---
+
+def is_rdev_host(host: str) -> bool:
+    """Return True if host looks like an rdev session (MP_NAME/SESSION_NAME)."""
+    parts = host.split("/")
+    return len(parts) == 2 and all(parts)
+
+
+def rdev_connect(session_name: str, window_name: str, host: str) -> bool:
+    """Connect to an rdev VM via `rdev ssh`."""
+    return send_keys(session_name, window_name, f"rdev ssh {host} --non-tmux")
+
+
+def setup_rdev_tunnel(
+    session_name: str,
+    window_name: str,
+    host: str,
+    local_port: int,
+    remote_port: int,
+) -> bool:
+    """Start a reverse SSH tunnel in a dedicated tmux window (foreground).
+
+    Unlike setup_tunnel() which backgrounds with -f, this runs in the
+    foreground of its own window so the process is trackable and killable.
+    """
+    cmd = f"ssh -N -R {remote_port}:127.0.0.1:{local_port} {host}"
+    return send_keys(session_name, window_name, cmd)
+
+
+def wait_for_prompt(
+    session_name: str,
+    window_name: str,
+    timeout: float = 30.0,
+    interval: float = 2.0,
+) -> bool:
+    """Poll until a shell prompt is detected or timeout is reached."""
+    elapsed = 0.0
+    while elapsed < timeout:
+        if health_check(session_name, window_name):
+            return True
+        time.sleep(interval)
+        elapsed += interval
+    return False

@@ -6,7 +6,6 @@ import SessionGrid from '../components/sessions/SessionGrid'
 import AddSessionModal from '../components/sessions/AddSessionModal'
 import DecisionQueue from '../components/decisions/DecisionQueue'
 import ActivityTimeline from '../components/activity/ActivityTimeline'
-import BrainTerminal from '../components/brain/BrainTerminal'
 import ProjectCard from '../components/projects/ProjectCard'
 import './DashboardPage.css'
 
@@ -39,17 +38,17 @@ export default function DashboardPage() {
         </section>
       )}
 
-      {/* Sessions + Decisions */}
+      {/* Workers + Decisions */}
       <div className="grid-2">
         <section className="panel" data-testid="sessions-panel">
           <div className="panel-header">
-            <h2>Sessions</h2>
+            <h2>Workers</h2>
             <button
               className="btn btn-primary btn-sm"
               data-testid="add-session-btn"
               onClick={() => setShowAddModal(true)}
             >
-              + Add Session
+              + Add Worker
             </button>
           </div>
           <SessionGrid />
@@ -68,19 +67,13 @@ export default function DashboardPage() {
         </section>
       </div>
 
-      {/* Brain + Activity */}
-      <div className="grid-2" style={{ marginTop: 16 }}>
-        <section className="panel brain-panel" data-testid="brain-panel">
-          <BrainTerminal />
-        </section>
-
-        <section className="panel" data-testid="activity-panel">
-          <div className="panel-header">
-            <h2>Recent Activity</h2>
-          </div>
-          <ActivityTimeline />
-        </section>
-      </div>
+      {/* Activity */}
+      <section className="panel" style={{ marginTop: 16 }} data-testid="activity-panel">
+        <div className="panel-header">
+          <h2>Recent Activity</h2>
+        </div>
+        <ActivityTimeline />
+      </section>
 
       <AddSessionModal open={showAddModal} onClose={() => setShowAddModal(false)} />
     </>

@@ -57,7 +57,7 @@ def check_skill_version(
 def render_skill_template(
     conn: sqlite3.Connection,
     session_name: str,
-    orchestrator_url: str = "http://localhost:8080",
+    orchestrator_url: str = "http://localhost:8093",
 ) -> tuple[str, str] | None:
     """Load the default skill template from DB and render it.
 
@@ -88,7 +88,7 @@ def install_skill(
     conn: sqlite3.Connection,
     session_name: str,
     tmux_session: str = "orchestrator",
-    orchestrator_url: str = "http://localhost:8080",
+    orchestrator_url: str = "http://localhost:8093",
 ) -> bool:
     """Install the orchestrator skill into a session.
 
@@ -119,7 +119,7 @@ def update_skill(
     conn: sqlite3.Connection,
     session_name: str,
     tmux_session: str = "orchestrator",
-    orchestrator_url: str = "http://localhost:8080",
+    orchestrator_url: str = "http://localhost:8093",
 ) -> bool:
     """Update the orchestrator skill in a session."""
     result = render_skill_template(conn, session_name, orchestrator_url)
@@ -140,7 +140,7 @@ def ensure_skill(
     conn: sqlite3.Connection,
     session_name: str,
     tmux_session: str = "orchestrator",
-    orchestrator_url: str = "http://localhost:8080",
+    orchestrator_url: str = "http://localhost:8093",
 ) -> bool:
     """Ensure the skill is installed and up-to-date. Main entry point.
 

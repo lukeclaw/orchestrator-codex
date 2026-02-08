@@ -57,7 +57,7 @@ A worker is assigned to one task at a time. When done, it picks up the next task
 
 ### 3.1 Dashboard — Single Pane of Glass
 
-A web UI at `localhost:8080` showing:
+A web UI at `localhost:8093` showing:
 
 - **All workers**: which is working, waiting, idle, or dead
 - **All tasks**: kanban board (TODO / IN PROGRESS / DONE / BLOCKED)
@@ -256,7 +256,7 @@ activities     (id, session_id, project_id, type, summary, details, created_at)
 
 ### 5.1 Morning Startup
 
-1. Start orchestrator: `orchestrator` (opens dashboard at localhost:8080)
+1. Start orchestrator: `orchestrator` (opens dashboard at localhost:8093)
 2. Dashboard shows existing sessions, any orphaned from yesterday
 3. Create new sessions or adopt existing tmux windows
 4. Review overnight activity: PRs created, decisions pending

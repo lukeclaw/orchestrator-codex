@@ -14,7 +14,7 @@ Each piece is independent. Three workers can build them in parallel.
 
 All work happens inside `orchestrator/tmp/demo/` — a throwaway folder.
 
-The orchestrator is already running at `http://localhost:8080`. The dashboard is empty. Auto-approve rules (Tool Calls, Continue Prompts, Generic Y/N) were turned on earlier in Settings.
+The orchestrator is already running at `http://localhost:8093`. The dashboard is empty. Auto-approve rules (Tool Calls, Continue Prompts, Generic Y/N) were turned on earlier in Settings.
 
 ---
 

@@ -1,0 +1,130 @@
+.brain-panel-sidebar {
+  height: 100vh;
+  background: var(--surface);
+  border-left: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  position: relative;
+  overflow: hidden;
+}
+
+.brain-panel-sidebar:not(.dragging) {
+  transition: width 0.2s ease;
+}
+
+.brain-panel-sidebar.collapsed {
+  width: 40px !important;
+  align-items: center;
+  padding-top: 10px;
+}
+
+/* Drag handle */
+.bp-resize-handle {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 4px;
+  cursor: col-resize;
+  z-index: 10;
+  background: transparent;
+}
+
+.bp-resize-handle:hover,
+.bp-resize-handle:active {
+  background: var(--accent);
+}
+
+/* Collapsed toggle */
+.bp-toggle-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 8px;
+  border-radius: var(--radius);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.bp-toggle-btn:hover {
+  background: var(--surface-hover);
+}
+
+/* Header */
+.bp-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+  gap: 8px;
+}
+
+.bp-header-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.bp-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.bp-header-right {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.bp-collapse-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 4px;
+  color: var(--text-secondary);
+  border-radius: var(--radius);
+  display: flex;
+  align-items: center;
+}
+
+.bp-collapse-btn:hover {
+  background: var(--surface-hover);
+  color: var(--text-primary);
+}
+
+/* Brain status indicator */
+.brain-indicator {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.brain-indicator.active {
+  background: var(--green);
+  box-shadow: 0 0 6px rgba(63, 185, 80, 0.5);
+  animation: pulse-green 2s infinite;
+}
+
+.brain-indicator.inactive {
+  background: var(--text-tertiary);
+}
+
+@keyframes pulse-green {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+/* Content area — fills remaining space */
+.bp-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}

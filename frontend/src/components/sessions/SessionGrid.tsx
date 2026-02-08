@@ -3,23 +3,23 @@ import SessionCard from './SessionCard'
 import './SessionGrid.css'
 
 export default function SessionGrid() {
-  const { sessions, loading } = useApp()
+  const { workers, loading } = useApp()
 
   if (loading) {
-    return <p className="empty-state">Loading sessions...</p>
+    return <p className="empty-state">Loading workers...</p>
   }
 
-  if (!sessions.length) {
+  if (!workers.length) {
     return (
       <p className="empty-state">
-        No sessions yet. Click &quot;+ Add Session&quot; to get started.
+        No workers yet. Click &quot;+ Add Worker&quot; to get started.
       </p>
     )
   }
 
   return (
     <div className="session-grid" data-testid="session-grid">
-      {sessions.map(s => (
+      {workers.map(s => (
         <SessionCard key={s.id} session={s} />
       ))}
     </div>

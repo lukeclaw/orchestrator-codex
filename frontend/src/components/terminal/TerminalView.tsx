@@ -6,9 +6,10 @@ import './TerminalView.css'
 
 interface Props {
   sessionId: string
+  onUserInput?: () => void
 }
 
-export default function TerminalView({ sessionId }: Props) {
+export default function TerminalView({ sessionId, onUserInput }: Props) {
   const termRef = useRef<HTMLDivElement>(null)
   const terminalRef = useRef<Terminal | null>(null)
   const wsRef = useRef<WebSocket | null>(null)
@@ -116,6 +117,7 @@ export default function TerminalView({ sessionId }: Props) {
       if (ws.readyState === WebSocket.OPEN) {
         ws.send(JSON.stringify({ type: 'input', data }))
       }
+      onUserInput?.()
     })
 
     // Handle resize
