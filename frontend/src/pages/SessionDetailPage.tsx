@@ -82,9 +82,9 @@ export default function SessionDetailPage() {
       {/* Top bar with session info */}
       <div className="sd-topbar">
         <div className="sd-topbar-left">
-          <Link to="/workers" className="sd-back-link">
+          <button className="sd-back-btn" onClick={() => navigate(-1)} title="Go back">
             <IconArrowLeft size={16} />
-          </Link>
+          </button>
           <h2 className="sd-title">{session.name}</h2>
           <span className={`status-badge ${session.status}`}>{session.status}</span>
         </div>

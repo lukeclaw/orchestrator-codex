@@ -1,12 +1,11 @@
 import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from 'react'
 import { useLocation } from 'react-router-dom'
-import type { Session, Decision, Activity, Project, Task } from '../api/types'
+import type { Session, Activity, Project, Task } from '../api/types'
 import { api } from '../api/client'
 
 interface AppState {
   sessions: Session[]
   workers: Session[]
-  decisions: Decision[]
   activities: Activity[]
   projects: Project[]
   tasks: Task[]
@@ -19,7 +18,6 @@ interface AppState {
 const AppContext = createContext<AppState>({
   sessions: [],
   workers: [],
-  decisions: [],
   activities: [],
   projects: [],
   tasks: [],
@@ -35,7 +33,6 @@ export function useApp() {
 
 export function AppProvider({ children }: { children: ReactNode }) {
   const [sessions, setSessions] = useState<Session[]>([])
-  const [decisions, setDecisions] = useState<Decision[]>([])
   const [activities, setActivities] = useState<Activity[]>([])
   const [projects, setProjects] = useState<Project[]>([])
   const [tasks, setTasks] = useState<Task[]>([])
@@ -44,15 +41,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const fetchAll = useCallback(async () => {
     try {
-      const [s, d, a, p, t] = await Promise.all([
+      const [s, a, p, t] = await Promise.all([
         api<Session[]>('/api/sessions?session_type=worker'),
-        api<Decision[]>('/api/decisions/pending'),
         api<Activity[]>('/api/activities?limit=20'),
         api<Project[]>('/api/projects').catch(() => []),
         api<Task[]>('/api/tasks').catch(() => []),
       ])
       setSessions(s)
-      setDecisions(d)
       setActivities(a)
       setProjects(p)
       setTasks(t)
@@ -114,7 +109,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, [location.pathname])
 
   return (
-    <AppContext.Provider value={{ sessions, workers, decisions, activities, projects, tasks, connected, loading, refresh: fetchAll, removeSession }}>
+    <AppContext.Provider value={{ sessions, workers, activities, projects, tasks, connected, loading, refresh: fetchAll, removeSession }}>
       {children}
     </AppContext.Provider>
   )

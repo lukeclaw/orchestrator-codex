@@ -24,18 +24,16 @@
   height: 28px;
   padding: 0;
   border: none;
-  background: transparent;
+  background: none;
   color: var(--text-muted);
-  border-radius: var(--radius);
+  border-radius: 6px;
   cursor: pointer;
-  transition: background 0.15s, color 0.15s;
-  text-decoration: none;
+  transition: all 0.15s;
 }
 
 .pd-back-btn:hover {
   background: var(--surface-hover);
   color: var(--text-primary);
-  text-decoration: none;
 }
 
 .pd-header h1 {

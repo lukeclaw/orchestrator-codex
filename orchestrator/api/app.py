@@ -138,7 +138,6 @@ def create_app(
         activities,
         brain,
         context,
-        decisions,
         health,
         projects,
         reporting,
@@ -150,7 +149,6 @@ def create_app(
     app.include_router(sessions.router, prefix="/api", tags=["sessions"])
     app.include_router(projects.router, prefix="/api", tags=["projects"])
     app.include_router(tasks.router, prefix="/api", tags=["tasks"])
-    app.include_router(decisions.router, prefix="/api", tags=["decisions"])
     app.include_router(reporting.router, prefix="/api", tags=["reporting"])
     app.include_router(context.router, prefix="/api", tags=["context"])
     app.include_router(health.router, prefix="/api", tags=["health"])

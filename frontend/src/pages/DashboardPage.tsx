@@ -4,13 +4,12 @@ import { useApp } from '../context/AppContext'
 import StatsBar from '../components/layout/StatsBar'
 import SessionGrid from '../components/sessions/SessionGrid'
 import AddSessionModal from '../components/sessions/AddSessionModal'
-import DecisionQueue from '../components/decisions/DecisionQueue'
 import ActivityTimeline from '../components/activity/ActivityTimeline'
 import ProjectCard from '../components/projects/ProjectCard'
 import './DashboardPage.css'
 
 export default function DashboardPage() {
-  const { decisions, projects, tasks } = useApp()
+  const { projects } = useApp()
   const [showAddModal, setShowAddModal] = useState(false)
 
   const activeProjects = projects.filter(p => p.status === 'active')
@@ -34,7 +33,7 @@ export default function DashboardPage() {
         </section>
       )}
 
-      {/* Workers + Decisions */}
+      {/* Workers + Activity */}
       <div className="grid-2">
         <section className="panel" data-testid="sessions-panel">
           <div className="panel-header">
@@ -50,26 +49,13 @@ export default function DashboardPage() {
           <SessionGrid />
         </section>
 
-        <section className="panel" data-testid="decisions-panel">
+        <section className="panel" data-testid="activity-panel">
           <div className="panel-header">
-            <h2>
-              Decisions
-              <span className="badge" data-testid="decision-count" id="decision-count">
-                {decisions.length}
-              </span>
-            </h2>
+            <h2>Recent Activity</h2>
           </div>
-          <DecisionQueue />
+          <ActivityTimeline />
         </section>
       </div>
-
-      {/* Activity */}
-      <section className="panel" style={{ marginTop: 16 }} data-testid="activity-panel">
-        <div className="panel-header">
-          <h2>Recent Activity</h2>
-        </div>
-        <ActivityTimeline />
-      </section>
 
       <AddSessionModal open={showAddModal} onClose={() => setShowAddModal(false)} />
     </>

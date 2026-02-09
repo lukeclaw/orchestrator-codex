@@ -168,7 +168,7 @@ show_help() {{
     echo "  list                      List all subtasks"
     echo "  create --title TITLE [--description DESC] [--links URL1,URL2]"
     echo "                            Create a new subtask"
-    echo "  update --id ID [--status STATUS] [--links URLS] [--add-link URL]"
+    echo "  update --id ID [--status STATUS] [--links URLS] [--add-link URL] [--add-link-tag TAG]"
     echo "                            Update a subtask"
     echo ""
     echo "Examples:"
@@ -176,7 +176,7 @@ show_help() {{
     echo "  orch-subtask create --title \\"Fix bug\\" --description \\"Details\\""
     echo "  orch-subtask create --title \\"Add tests\\" --links \\"http://pr1,http://doc1\\""
     echo "  orch-subtask update --id UUID --status done"
-    echo "  orch-subtask update --id UUID --add-link \\"http://github.com/pr/123\\""
+    echo "  orch-subtask update --id UUID --add-link \\"http://github.com/pr/123\\" --add-link-tag PR"
 }}
 
 cmd_list() {{
@@ -234,7 +234,7 @@ cmd_create() {{
                 if [[ "$first" != true ]]; then
                     links_json="$links_json,"
                 fi
-                links_json="$links_json{{\\"url\\": \\"$url\\", \\"type\\": \\"reference\\", \\"title\\": \\"$url\\"}}"
+                links_json="$links_json{{\\"url\\": \\"$url\\"}}"
                 first=false
             fi
         done
@@ -255,6 +255,7 @@ cmd_update() {{
     local status=""
     local links=""
     local add_link=""
+    local add_link_tag=""
     
     while [[ $# -gt 0 ]]; do
         case "$1" in
@@ -272,6 +273,10 @@ cmd_update() {{
                 ;;
             --add-link)
                 add_link="$2"
+                shift 2
+                ;;
+            --add-link-tag)
+                add_link_tag="$2"
                 shift 2
                 ;;
             *)
@@ -313,7 +318,7 @@ cmd_update() {{
                 if [[ "$lfirst" != true ]]; then
                     links_json="$links_json,"
                 fi
-                links_json="$links_json{{\\"url\\": \\"$url\\", \\"type\\": \\"reference\\", \\"title\\": \\"$url\\"}}"
+                links_json="$links_json{{\\"url\\": \\"$url\\"}}"
                 lfirst=false
             fi
         done
@@ -328,7 +333,10 @@ cmd_update() {{
     if [[ -n "$add_link" ]]; then
         # Fetch existing links and append
         local existing=$(curl -s "$API_BASE/api/tasks/$subtask_id" | jq -c '.links // []')
-        local new_link="{{\\"url\\": \\"$add_link\\", \\"type\\": \\"reference\\", \\"title\\": \\"$add_link\\"}}"
+        local new_link="{{\\"url\\": \\"$add_link\\"}}"
+        if [[ -n "$add_link_tag" ]]; then
+            new_link="{{\\"url\\": \\"$add_link\\", \\"tag\\": \\"$add_link_tag\\"}}"
+        fi
         local updated_links=$(echo "$existing" | jq -c ". + [$new_link]")
         if [[ "$first" != true ]]; then
             json="$json, "

@@ -49,11 +49,11 @@ build_json() {{
 '''
 
 # ============================================================================
-# brain-workers: Manage worker sessions
+# orch-workers: Manage worker sessions
 # ============================================================================
 BRAIN_WORKERS_SCRIPT = BRAIN_SCRIPT_HEADER + '''
 show_help() {{
-    echo "Usage: brain-workers <command> [options]"
+    echo "Usage: orch-workers <command> [options]"
     echo ""
     echo "Commands:"
     echo "  list                          List all workers"
@@ -61,9 +61,9 @@ show_help() {{
     echo "  delete <id>                   Delete a worker"
     echo ""
     echo "Examples:"
-    echo "  brain-workers list"
-    echo "  brain-workers show abc123"
-    echo "  brain-workers delete abc123"
+    echo "  orch-workers list"
+    echo "  orch-workers show abc123"
+    echo "  orch-workers delete abc123"
 }}
 
 cmd_list() {{
@@ -98,11 +98,11 @@ esac
 '''
 
 # ============================================================================
-# brain-projects: Manage projects
+# orch-projects: Manage projects
 # ============================================================================
 BRAIN_PROJECTS_SCRIPT = BRAIN_SCRIPT_HEADER + '''
 show_help() {{
-    echo "Usage: brain-projects <command> [options]"
+    echo "Usage: orch-projects <command> [options]"
     echo ""
     echo "Commands:"
     echo "  list                          List all projects"
@@ -117,9 +117,9 @@ show_help() {{
     echo "  --task-prefix PREFIX          Task key prefix (e.g., UTI)"
     echo ""
     echo "Examples:"
-    echo "  brain-projects list"
-    echo "  brain-projects create --name \\"Auth Migration\\" --description \\"Migrate to OAuth 2.0\\""
-    echo "  brain-projects update abc123 --status completed"
+    echo "  orch-projects list"
+    echo "  orch-projects create --name \\"Auth Migration\\" --description \\"Migrate to OAuth 2.0\\""
+    echo "  orch-projects update abc123 --status completed"
 }}
 
 cmd_list() {{
@@ -217,11 +217,11 @@ esac
 '''
 
 # ============================================================================
-# brain-tasks: Manage tasks
+# orch-tasks: Manage tasks
 # ============================================================================
 BRAIN_TASKS_SCRIPT = BRAIN_SCRIPT_HEADER + '''
 show_help() {{
-    echo "Usage: brain-tasks <command> [options]"
+    echo "Usage: orch-tasks <command> [options]"
     echo ""
     echo "Commands:"
     echo "  list [--project-id ID] [--status S]   List tasks"
@@ -238,12 +238,15 @@ show_help() {{
     echo "  --status STATUS               Task status (todo|in_progress|done|blocked)"
     echo "  --priority PRIORITY           Priority (high|medium|low)"
     echo "  --parent-id ID                Parent task ID (for subtasks)"
+    echo "  --add-link URL                Add a link to the task"
+    echo "  --add-link-tag TAG            Tag for the link (e.g., PR, PRD, DOC)"
     echo ""
     echo "Examples:"
-    echo "  brain-tasks list --project-id abc123"
-    echo "  brain-tasks create --project-id abc123 --title \\"Add OAuth callback\\" --priority high"
-    echo "  brain-tasks assign task123 worker456"
-    echo "  brain-tasks update task123 --status done"
+    echo "  orch-tasks list --project-id abc123"
+    echo "  orch-tasks create --project-id abc123 --title \\"Add OAuth callback\\" --priority high"
+    echo "  orch-tasks assign task123 worker456"
+    echo "  orch-tasks update task123 --status done"
+    echo "  orch-tasks update task123 --add-link \\"https://github.com/pr/123\\" --add-link-tag PR"
 }}
 
 cmd_list() {{
@@ -318,13 +321,15 @@ cmd_update() {{
         exit 1
     fi
     
-    local title="" description="" status="" priority=""
+    local title="" description="" status="" priority="" add_link="" add_link_tag=""
     while [[ $# -gt 0 ]]; do
         case "$1" in
             --title) title="$2"; shift 2 ;;
             --description) description="$2"; shift 2 ;;
             --status) status="$2"; shift 2 ;;
             --priority) priority="$2"; shift 2 ;;
+            --add-link) add_link="$2"; shift 2 ;;
+            --add-link-tag) add_link_tag="$2"; shift 2 ;;
             *) echo "Unknown option: $1" >&2; exit 1 ;;
         esac
     done
@@ -344,7 +349,18 @@ cmd_update() {{
     fi
     if [[ -n "$priority" ]]; then
         [[ "$first" != true ]] && json="$json, "
-        json="$json\\"priority\\": \\"$priority\\""
+        json="$json\\"priority\\": \\"$priority\\""; first=false
+    fi
+    if [[ -n "$add_link" ]]; then
+        # Fetch existing links and append
+        local existing=$(curl -s "$API_BASE/api/tasks/$id" | jq -c '.links // []')
+        local new_link="{{\\"url\\": \\"$add_link\\"}}"
+        if [[ -n "$add_link_tag" ]]; then
+            new_link="{{\\"url\\": \\"$add_link\\", \\"tag\\": \\"$add_link_tag\\"}}"
+        fi
+        local updated_links=$(echo "$existing" | jq -c ". + [$new_link]")
+        [[ "$first" != true ]] && json="$json, "
+        json="$json\\"links\\": $updated_links"; first=false
     fi
     json="$json}}"
     
@@ -358,7 +374,7 @@ cmd_assign() {{
     local worker_id="$2"
     if [[ -z "$task_id" ]] || [[ -z "$worker_id" ]]; then
         echo "Error: Both task ID and worker ID required" >&2
-        echo "Usage: brain-tasks assign <task-id> <worker-id>" >&2
+        echo "Usage: orch-tasks assign <task-id> <worker-id>" >&2
         exit 1
     fi
     
@@ -392,11 +408,11 @@ esac
 '''
 
 # ============================================================================
-# brain-context: Manage context items
+# orch-ctx: Manage context items
 # ============================================================================
 BRAIN_CONTEXT_SCRIPT = BRAIN_SCRIPT_HEADER + '''
 show_help() {{
-    echo "Usage: brain-context <command> [options]"
+    echo "Usage: orch-ctx <command> [options]"
     echo ""
     echo "Commands:"
     echo "  list [filters]                List context items (titles + descriptions)"
@@ -420,10 +436,10 @@ show_help() {{
     echo "  --category CAT                Category: instruction|requirement|convention|reference|note"
     echo ""
     echo "Examples:"
-    echo "  brain-context list --scope global"
-    echo "  brain-context read abc123"
-    echo "  brain-context create --title \\"Coding style\\" --content \\"Use 2-space indent\\" --scope global"
-    echo "  brain-context create --title \\"Strategy\\" --content \\"Worker-1 handles API\\" --scope brain"
+    echo "  orch-ctx list --scope global"
+    echo "  orch-ctx read abc123"
+    echo "  orch-ctx create --title \\"Coding style\\" --content \\"Use 2-space indent\\" --scope global"
+    echo "  orch-ctx create --title \\"Strategy\\" --content \\"Worker-1 handles API\\" --scope brain"
 }}
 
 cmd_list() {{
@@ -568,105 +584,16 @@ esac
 '''
 
 # ============================================================================
-# brain-decisions: Manage decisions queue
-# ============================================================================
-BRAIN_DECISIONS_SCRIPT = BRAIN_SCRIPT_HEADER + '''
-show_help() {{
-    echo "Usage: brain-decisions <command> [options]"
-    echo ""
-    echo "Commands:"
-    echo "  list [--status STATUS]        List decisions (default: pending)"
-    echo "  show <id>                     Show decision details"
-    echo "  respond <id> --response TEXT  Respond to a decision"
-    echo "  dismiss <id>                  Dismiss a decision"
-    echo ""
-    echo "Examples:"
-    echo "  brain-decisions list"
-    echo "  brain-decisions list --status pending"
-    echo "  brain-decisions respond abc123 --response \\"Use approach A\\""
-    echo "  brain-decisions dismiss abc123"
-}}
-
-cmd_list() {{
-    local status="pending"
-    while [[ $# -gt 0 ]]; do
-        case "$1" in
-            --status) status="$2"; shift 2 ;;
-            *) echo "Unknown option: $1" >&2; exit 1 ;;
-        esac
-    done
-    
-    curl -s "$API_BASE/api/decisions?status=$status" | pp
-}}
-
-cmd_show() {{
-    local id="$1"
-    if [[ -z "$id" ]]; then
-        echo "Error: Decision ID required" >&2
-        exit 1
-    fi
-    curl -s "$API_BASE/api/decisions/$id" | pp
-}}
-
-cmd_respond() {{
-    local id="$1"
-    shift
-    if [[ -z "$id" ]]; then
-        echo "Error: Decision ID required" >&2
-        exit 1
-    fi
-    
-    local response=""
-    while [[ $# -gt 0 ]]; do
-        case "$1" in
-            --response) response="$2"; shift 2 ;;
-            *) echo "Unknown option: $1" >&2; exit 1 ;;
-        esac
-    done
-    
-    if [[ -z "$response" ]]; then
-        echo "Error: --response is required" >&2
-        exit 1
-    fi
-    
-    curl -s -X PATCH "$API_BASE/api/decisions/$id" \\
-        -H 'Content-Type: application/json' \\
-        -d "{{\\"response\\": \\"$response\\", \\"status\\": \\"resolved\\"}}" | pp
-}}
-
-cmd_dismiss() {{
-    local id="$1"
-    if [[ -z "$id" ]]; then
-        echo "Error: Decision ID required" >&2
-        exit 1
-    fi
-    
-    curl -s -X PATCH "$API_BASE/api/decisions/$id" \\
-        -H 'Content-Type: application/json' \\
-        -d '{{"status": "dismissed"}}' | pp
-}}
-
-case "$1" in
-    list) shift; cmd_list "$@" ;;
-    show) shift; cmd_show "$@" ;;
-    respond) shift; cmd_respond "$@" ;;
-    dismiss) shift; cmd_dismiss "$@" ;;
-    -h|--help|"") show_help ;;
-    *) echo "Unknown command: $1" >&2; show_help; exit 1 ;;
-esac
-'''
-
-# ============================================================================
-# brain-send: Send messages to workers
+# orch-send: Send messages to workers
 # ============================================================================
 BRAIN_SEND_SCRIPT = BRAIN_SCRIPT_HEADER + '''
 show_help() {{
-    echo "Usage: brain-send <worker-id> <message>"
+    echo "Usage: orch-send <worker-id> <message>"
     echo ""
     echo "Send a message to a worker's terminal."
     echo ""
     echo "Examples:"
-    echo "  brain-send abc123 \\"Please focus on the API endpoint first\\""
+    echo "  orch-send abc123 \\"Please focus on the API endpoint first\\""
 }}
 
 if [[ $# -lt 2 ]]; then
@@ -716,7 +643,6 @@ def generate_brain_scripts(
         "orch-projects": (BRAIN_PROJECTS_SCRIPT, "Manage projects"),
         "orch-tasks": (BRAIN_TASKS_SCRIPT, "Manage tasks"),
         "orch-ctx": (BRAIN_CONTEXT_SCRIPT, "Manage context items"),
-        "orch-decisions": (BRAIN_DECISIONS_SCRIPT, "Manage decisions queue"),
         "orch-send": (BRAIN_SEND_SCRIPT, "Send messages to workers"),
     }
     

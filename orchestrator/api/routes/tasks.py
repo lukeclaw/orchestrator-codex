@@ -32,15 +32,14 @@ class TaskUpdate(BaseModel):
     title: str | None = None
     description: str | None = None
     notes: str | None = None
-    links: list[dict] | None = None  # [{url, title, type}]
+    links: list[dict] | None = None  # [{url, tag?}]
 
 
 class TaskLinkAction(BaseModel):
     """For agent-driven link management."""
     action: str  # add, update, delete
     url: str
-    title: str | None = None
-    link_type: str | None = None  # pr, doc, reference, etc.
+    tag: str | None = None  # optional free-form tag like "PR", "PRD", etc.
 
 
 def _get_task_key(t, db) -> str | None:

@@ -5,7 +5,6 @@ import {
   IconProjects,
   IconTasks,
   IconSessions,
-  IconDecisions,
   IconContext,
   IconActivity,
   IconSettings,
@@ -21,13 +20,11 @@ interface Props {
 }
 
 export default function Sidebar({ collapsed, onToggle }: Props) {
-  const { workers, decisions } = useApp()
+  const { workers } = useApp()
 
   const activeSessions = workers.filter(
     s => s.status === 'working' || s.status === 'idle'
   ).length
-
-  const waitingSessions = workers.filter(s => s.status === 'waiting').length
 
   return (
     <aside className={`sidebar ${collapsed ? 'collapsed' : ''}`}>
@@ -54,10 +51,6 @@ export default function Sidebar({ collapsed, onToggle }: Props) {
         <SidebarItem to="/projects" icon={<IconProjects size={18} />} label="Projects" collapsed={collapsed} shortcut="P" />
         <SidebarItem to="/tasks" icon={<IconTasks size={18} />} label="Tasks" collapsed={collapsed} shortcut="T" />
         <SidebarItem to="/workers" icon={<IconSessions size={18} />} label="Workers" badge={activeSessions} collapsed={collapsed} shortcut="W" />
-        {waitingSessions > 0 && (
-          <SidebarItem to="/decisions" icon={<IconDecisions size={18} />} label="Waiting" badge={waitingSessions} collapsed={collapsed} />
-        )}
-        <SidebarItem to="/decisions" icon={<IconDecisions size={18} />} label="Decisions" badge={decisions.length} collapsed={collapsed} shortcut="E" />
         <SidebarItem to="/context" icon={<IconContext size={18} />} label="Context" collapsed={collapsed} shortcut="K" />
         <SidebarItem to="/activity" icon={<IconActivity size={18} />} label="Activity" collapsed={collapsed} shortcut="A" />
       </nav>

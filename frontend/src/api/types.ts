@@ -11,18 +11,6 @@ export interface Session {
   session_type: 'worker' | 'brain' | 'system'
 }
 
-export interface Decision {
-  id: string
-  session_id: string | null
-  question: string
-  options: string | string[] | null
-  context: string | null
-  urgency: 'low' | 'normal' | 'high' | 'critical'
-  status: 'pending' | 'responded' | 'dismissed'
-  response: string | null
-  created_at: string
-}
-
 export interface Activity {
   id: string
   session_id: string | null
@@ -62,8 +50,7 @@ export interface Project {
 
 export interface TaskLink {
   url: string
-  title: string
-  type: string  // pr, doc, reference, etc.
+  tag?: string  // optional free-form tag like "PR", "PRD", etc.
 }
 
 export interface SubtaskStats {

@@ -35,6 +35,10 @@ orch-tasks create --project-id <id> --title "Add OAuth callback" --priority high
 orch-tasks update <id> --status done
 orch-tasks assign <task-id> <worker-id>     # Assign task to worker
 orch-tasks unassign <task-id>               # Unassign task
+
+# Add a link to a task (with optional tag like PR, PRD, DOC, ISSUE)
+orch-tasks update <id> --add-link "https://github.com/org/repo/pull/123" --add-link-tag "PR"
+orch-tasks update <id> --add-link "https://docs.example.com/spec" --add-link-tag "PRD"
 ```
 
 ### orch-workers — Manage worker sessions
@@ -72,15 +76,6 @@ orch-ctx create --title "API pattern" --content "Use JWT auth" --scope project -
 # Update/delete
 orch-ctx update <id> --content "Updated content"
 orch-ctx delete <id>
-```
-
-### orch-decisions — Handle worker questions
-
-```bash
-orch-decisions list                         # List pending decisions
-orch-decisions show <id>                    # Show decision details
-orch-decisions respond <id> --response "Use approach A"
-orch-decisions dismiss <id>                 # Dismiss without responding
 ```
 
 ### orch-send — Send messages to workers
@@ -147,9 +142,7 @@ When monitoring:
 
 1. Check workers: `orch-workers list`
 2. Capture worker output: `tmux capture-pane -p -t orchestrator:WORKER -S -50`
-3. Check for pending decisions: `orch-decisions list`
-4. Resolve decisions: `orch-decisions respond <id> --response "..."`
-5. Update context with learnings: `orch-ctx create --title "..." --content "..." --scope brain`
+3. Update context with learnings: `orch-ctx create --title "..." --content "..." --scope brain`
 
 ## Guidelines
 
@@ -160,7 +153,7 @@ When monitoring:
 - When a worker is waiting (status: "waiting"), check their output to see what they need
 - Prefer creating 2-4 workers for a typical project — too many creates coordination overhead
 - When sending messages to workers, include all relevant context (file paths, requirements, constraints)
-- Store important decisions and conventions in the context store so they survive across sessions
+- Store important conventions in the context store so they survive across sessions
 
 ## Project Directory
 

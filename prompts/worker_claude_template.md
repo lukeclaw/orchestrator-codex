@@ -64,8 +64,11 @@ orch-subtask update --id SUBTASK_UUID --status done
 # Add a link to an existing subtask (do this as soon as you have the link)
 orch-subtask update --id SUBTASK_UUID --add-link "https://github.com/org/repo/pull/123"
 
+# Add a link with an optional tag (e.g., PR, PRD, DOC, ISSUE)
+orch-subtask update --id SUBTASK_UUID --add-link "https://github.com/org/repo/pull/123" --add-link-tag "PR"
+
 # Update subtask with multiple changes
-orch-subtask update --id SUBTASK_UUID --status done --add-link "https://github.com/org/repo/pull/123"
+orch-subtask update --id SUBTASK_UUID --status done --add-link "https://github.com/org/repo/pull/123" --add-link-tag "PR"
 ```
 
 ### Project Context (`orch-context`)

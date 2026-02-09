@@ -6,10 +6,10 @@ import { useApp } from '../context/AppContext'
 import TaskBoard from '../components/tasks/TaskBoard'
 import TaskTable from '../components/tasks/TaskTable'
 import TaskForm from '../components/tasks/TaskForm'
-import TaskDetailModal from '../components/tasks/TaskDetailModal'
 import ContextModal from '../components/context/ContextModal'
 import ProjectEditModal from '../components/projects/ProjectEditModal'
 import WorkerCard from '../components/workers/WorkerCard'
+import { IconArrowLeft } from '../components/common/Icons'
 import './ProjectDetailPage.css'
 
 export default function ProjectDetailPage() {
@@ -28,7 +28,6 @@ export default function ProjectDetailPage() {
   const [error, setError] = useState('')
   const [showTaskForm, setShowTaskForm] = useState(false)
   const [taskViewMode, setTaskViewMode] = useState<'board' | 'table'>('board')
-  const [selectedTask, setSelectedTask] = useState<Task | null>(null)
   const [selectedContext, setSelectedContext] = useState<ContextItem | null>(null)
   const [showNewContext, setShowNewContext] = useState(false)
   const [showEditProject, setShowEditProject] = useState(false)
@@ -62,7 +61,7 @@ export default function ProjectDetailPage() {
   }
 
   function handleTaskClick(task: Task) {
-    setSelectedTask(task)
+    navigate(`/tasks/${task.id}`)
   }
 
   async function handleProjectUpdate(projectId: string, data: { name?: string; description?: string; status?: string; target_date?: string }) {
@@ -103,11 +102,9 @@ export default function ProjectDetailPage() {
     <div className="project-detail">
       <div className="pd-header">
         <div className="pd-title-row">
-          <Link to="/projects" className="pd-back-btn" title="Back to Projects">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <polyline points="15 18 9 12 15 6" />
-            </svg>
-          </Link>
+          <button className="pd-back-btn" onClick={() => navigate(-1)} title="Go back">
+            <IconArrowLeft size={16} />
+          </button>
           <h1>{project.name}</h1>
           <button
             type="button"
@@ -217,14 +214,6 @@ export default function ProjectDetailPage() {
         onSubmit={createTask}
         projects={project ? [project] : []}
         defaultProjectId={id}
-      />
-
-      <TaskDetailModal
-        task={selectedTask}
-        sessions={sessions}
-        onClose={() => setSelectedTask(null)}
-        onUpdate={updateTask}
-        onDelete={deleteTask}
       />
 
       <ContextModal
