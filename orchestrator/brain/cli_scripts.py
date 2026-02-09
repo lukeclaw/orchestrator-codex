@@ -57,17 +57,43 @@ show_help() {{
     echo ""
     echo "Commands:"
     echo "  list                          List all workers"
+    echo "  rdevs [--refresh]             List available rdev instances"
     echo "  show <id>                     Show worker details"
+    echo "  create [options]              Create a new worker"
     echo "  delete <id>                   Delete a worker"
+    echo ""
+    echo "Create Options:"
+    echo "  --name NAME                   Worker name (required)"
+    echo "  --host HOST                   Host: 'localhost' or rdev path like 'subs-mt/name' (default: localhost)"
+    echo "  --work-dir DIR                Working directory for the worker"
+    echo "  --task-id ID                  Task ID to assign to the worker"
     echo ""
     echo "Examples:"
     echo "  orch-workers list"
+    echo "  orch-workers rdevs                # List available rdev VMs"
+    echo "  orch-workers rdevs --refresh     # Force refresh rdev list"
     echo "  orch-workers show abc123"
+    echo "  orch-workers create --name api-worker"
+    echo "  orch-workers create --name ui-worker --host localhost --work-dir /path/to/repo"
+    echo "  orch-workers create --name rdev-worker --host subs-mt/sleepy-franklin"
     echo "  orch-workers delete abc123"
 }}
 
 cmd_list() {{
     curl -s "$API_BASE/api/sessions?session_type=worker" | pp
+}}
+
+cmd_rdevs() {{
+    local refresh=""
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --refresh) refresh="?refresh=true"; shift ;;
+            *) echo "Unknown option: $1" >&2; exit 1 ;;
+        esac
+    done
+    
+    # Fetch rdevs and format output
+    curl -s "$API_BASE/api/rdevs$refresh" | jq -r '.[] | "\\(.name)\\t\\(.state)\\t\\(if .in_use then "IN USE (\\(.worker_name // "unknown"))" else "available" end)"' | column -t -s $'\\t'
 }}
 
 cmd_show() {{
@@ -77,6 +103,33 @@ cmd_show() {{
         exit 1
     fi
     curl -s "$API_BASE/api/sessions/$id" | pp
+}}
+
+cmd_create() {{
+    local name="" host="localhost" work_dir="" task_id=""
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --name) name="$2"; shift 2 ;;
+            --host) host="$2"; shift 2 ;;
+            --work-dir) work_dir="$2"; shift 2 ;;
+            --task-id) task_id="$2"; shift 2 ;;
+            *) echo "Unknown option: $1" >&2; exit 1 ;;
+        esac
+    done
+    
+    if [[ -z "$name" ]]; then
+        echo "Error: --name is required" >&2
+        exit 1
+    fi
+    
+    local json="{{\\"name\\": \\"$name\\", \\"host\\": \\"$host\\""
+    [[ -n "$work_dir" ]] && json="$json, \\"work_dir\\": \\"$work_dir\\""
+    [[ -n "$task_id" ]] && json="$json, \\"task_id\\": \\"$task_id\\""
+    json="$json}}"
+    
+    curl -s -X POST "$API_BASE/api/sessions" \\
+        -H 'Content-Type: application/json' \\
+        -d "$json" | pp
 }}
 
 cmd_delete() {{
@@ -90,7 +143,9 @@ cmd_delete() {{
 
 case "$1" in
     list) shift; cmd_list "$@" ;;
+    rdevs) shift; cmd_rdevs "$@" ;;
     show) shift; cmd_show "$@" ;;
+    create) shift; cmd_create "$@" ;;
     delete) shift; cmd_delete "$@" ;;
     -h|--help|"") show_help ;;
     *) echo "Unknown command: $1" >&2; show_help; exit 1 ;;
@@ -766,7 +821,7 @@ exit 0
     # Make executable
     os.chmod(hook_script_path, os.stat(hook_script_path).st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
     
-    # Create settings.json with hooks configuration
+    # Create settings.json with hooks configuration and command allowlist
     import json
     settings = {
         "hooks": {
@@ -780,6 +835,17 @@ exit 0
                         }
                     ]
                 }
+            ]
+        },
+        # Auto-approve all orch- CLI commands and common safe commands
+        # Note: Claude Code requires tool names to start with uppercase
+        "permissions": {
+            "allow": [
+                "Bash(orch-*)",           # All orchestrator CLI commands
+                "Bash(tmux capture-pane*)",  # Capture worker output
+                "Bash(tmux send-keys*)",     # Send messages to workers
+                "Bash(curl *127.0.0.1:8093*)",  # API calls to orchestrator
+                "Bash(jq *)",             # JSON processing
             ]
         }
     }

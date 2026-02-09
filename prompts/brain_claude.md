@@ -45,7 +45,12 @@ orch-tasks update <id> --add-link "https://docs.example.com/spec" --add-link-tag
 
 ```bash
 orch-workers list                           # List all workers
+orch-workers rdevs                          # List available rdev VMs (shows state & in_use)
+orch-workers rdevs --refresh                # Force refresh rdev list from CLI
 orch-workers show <id>                      # Show worker details
+orch-workers create --name api-worker       # Create a local worker
+orch-workers create --name ui-worker --host localhost --work-dir /path/to/repo
+orch-workers create --name rdev-worker --host subs-mt/sleepy-franklin  # Create rdev worker
 orch-workers delete <id>                    # Delete a worker
 ```
 
@@ -139,14 +144,9 @@ When the user describes a project:
 1. Create the project: `orch-projects create --name "..." --description "..."`
 2. Break it into tasks: `orch-tasks create --project-id ID --title "..." --description "..." --priority high`
 3. Store requirements as context: `orch-ctx create --title "..." --content "..." --scope project --project-id ID`
-4. Create worker sessions via curl (not yet in CLI):
-   ```bash
-   curl -s -X POST http://127.0.0.1:8093/api/sessions \
-     -H 'Content-Type: application/json' \
-     -d '{"name": "worker-1", "host": "localhost"}' | jq
-   ```
-5. Launch Claude Code: `tmux send-keys -t orchestrator:worker-1 "claude" Enter`
-6. Wait a few seconds, then send task context: `orch-send <worker-id> "Your task: ..."`
+4. Create worker sessions: `orch-workers create --name worker-1 --work-dir /path/to/repo`
+5. Wait for worker to initialize (~5-10 seconds for local, ~30 seconds for rdev)
+6. Send task context: `orch-send <worker-id> "Your task: ..."`
 7. Assign task: `orch-tasks assign <task-id> <worker-id>`
 
 When monitoring:

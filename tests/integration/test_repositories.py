@@ -3,7 +3,6 @@
 from orchestrator.state.repositories import (
     config as config_repo,
     projects,
-    pull_requests,
     sessions,
     tasks,
     templates,

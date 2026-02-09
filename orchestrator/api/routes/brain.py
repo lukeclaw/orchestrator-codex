@@ -1,6 +1,9 @@
 """Orchestrator brain — manages the Claude Code process that acts as the central intelligence."""
 
 import logging
+import os
+import shutil
+import time
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -145,8 +148,6 @@ def start_brain(db=Depends(get_db)):
 @router.post("/brain/stop", status_code=200)
 def stop_brain(db=Depends(get_db)):
     """Stop the orchestrator brain and clean up tmp directory."""
-    import shutil
-    
     session = _get_brain_session(db)
     if session is None:
         return {"ok": True, "message": "Brain not running"}
@@ -155,7 +156,6 @@ def stop_brain(db=Depends(get_db)):
     
     try:
         # Send Ctrl-C three times to force-exit Claude Code
-        import time
         for _ in range(3):
             tmux.send_keys(TMUX_SESSION, BRAIN_SESSION_NAME, "C-c", enter=False)
             time.sleep(0.3)
