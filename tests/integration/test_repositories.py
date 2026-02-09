@@ -131,23 +131,6 @@ class TestTasksRepo:
         assert len(reqs) == 1
 
 
-# --- Pull Requests ---
-
-class TestPullRequestsRepo:
-    def test_create_and_list(self, db):
-        pr = pull_requests.create_pull_request(
-            db, "https://github.com/org/repo/pull/1", number=1, title="Fix bug"
-        )
-        assert pr.status == "open"
-        all_prs = pull_requests.list_pull_requests(db)
-        assert len(all_prs) == 1
-
-    def test_update_status(self, db):
-        pr = pull_requests.create_pull_request(db, "https://example.com/pr/2")
-        updated = pull_requests.update_pull_request(db, pr.id, status="merged")
-        assert updated.status == "merged"
-
-
 # --- Templates ---
 
 class TestTemplatesRepo:

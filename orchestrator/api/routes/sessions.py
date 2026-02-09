@@ -552,3 +552,425 @@ def stop_session(session_id: str, db=Depends(get_db)):
 
     repo.update_session(db, session_id, status="idle")
     return {"ok": True, "message": f"Session {s.name} stopped and cleared"}
+
+
+@router.post("/sessions/{session_id}/reconnect")
+def reconnect_session(session_id: str, request: Request, db=Depends(get_db)):
+    """Reconnect a disconnected worker session.
+    
+    For rdev workers: re-establish SSH/tunnel if needed, then launch Claude with -c flag.
+    For local workers: just relaunch Claude with -c flag.
+    Sets status to paused after reconnecting, ready for continue.
+    """
+    s = repo.get_session(db, session_id)
+    if s is None:
+        raise HTTPException(404, "Session not found")
+
+    if s.status != "disconnected":
+        return {"ok": False, "error": f"Session is not disconnected (status: {s.status})"}
+
+    if not s.tmux_window:
+        return {"ok": False, "error": "No tmux window attached"}
+
+    if ":" in s.tmux_window:
+        tmux_sess, tmux_win = s.tmux_window.split(":", 1)
+    else:
+        tmux_sess, tmux_win = "orchestrator", s.tmux_window
+
+    config = getattr(request.app.state, "config", {})
+    api_port = config.get("server", {}).get("port", 8093)
+    tmp_dir = os.path.join(WORKER_BASE_DIR, s.name)
+
+    if is_rdev_host(s.host):
+        # rdev worker — check tunnel and SSH, re-establish if needed, then launch claude -c
+        db_path = getattr(request.app.state, "db_path", None)
+        repo.update_session(db, session_id, status="connecting")
+
+        def _background_reconnect():
+            from orchestrator.state.db import get_connection
+            bg_conn = get_connection(db_path) if db_path else db
+            try:
+                _reconnect_rdev_worker(
+                    bg_conn, s, tmux_sess, tmux_win, api_port, tmp_dir
+                )
+                logger.info("rdev worker %s reconnected", s.name)
+            except Exception as e:
+                logger.exception("rdev reconnect failed for %s", s.name)
+                try:
+                    repo.update_session(bg_conn, s.id, status="disconnected")
+                except Exception:
+                    pass
+            finally:
+                if db_path and bg_conn is not db:
+                    bg_conn.close()
+
+        thread = threading.Thread(target=_background_reconnect, daemon=True)
+        thread.start()
+        return {"ok": True, "message": f"Reconnecting rdev worker {s.name}..."}
+
+    else:
+        # Local worker — just relaunch claude
+        try:
+            _reconnect_local_worker(s, tmux_sess, tmux_win, api_port, tmp_dir)
+            repo.update_session(db, session_id, status="paused")
+            return {"ok": True, "message": f"Session {s.name} reconnected and paused"}
+        except Exception as e:
+            logger.exception("Local reconnect failed for %s", s.name)
+            return {"ok": False, "error": str(e)}
+
+
+def _check_tunnel_alive(tmux_sess: str, tunnel_win: str) -> bool:
+    """Check if the tunnel window has an active SSH connection."""
+    try:
+        output = capture_output(tmux_sess, tunnel_win, lines=5)
+        # If we can capture output and it doesn't show "Connection closed", it's likely alive
+        return output and "Connection closed" not in output and "Connection refused" not in output
+    except Exception:
+        return False
+
+
+def _parse_hostname_from_output(output: str, start_marker: str, end_marker: str) -> str | None:
+    """Extract hostname from captured terminal output between markers.
+    
+    The output includes the command line itself, so we need to find markers
+    that appear at the START of a line (the actual echo output), not within
+    the command line.
+    
+    Returns the hostname string or None if parsing failed.
+    """
+    # Split into lines and find markers at line start
+    lines = output.split('\n')
+    start_line_idx = None
+    end_line_idx = None
+    
+    for i, line in enumerate(lines):
+        stripped = line.strip()
+        if stripped == start_marker:
+            start_line_idx = i
+        elif stripped == end_marker and start_line_idx is not None:
+            end_line_idx = i
+            break
+    
+    if start_line_idx is None or end_line_idx is None:
+        return None
+    
+    # Extract lines between markers
+    hostname_lines = [l.strip() for l in lines[start_line_idx + 1:end_line_idx] if l.strip()]
+    if hostname_lines:
+        return hostname_lines[0]
+    return None
+
+
+def _check_ssh_alive(tmux_sess: str, worker_win: str, host: str) -> bool:
+    """Check if the SSH session in worker window is still alive by testing hostname.
+    
+    Sends 'hostname' command and checks if the HOSTNAME LINE (not other output) 
+    contains 'rdev-' prefix indicating we're connected to an rdev VM.
+    """
+    try:
+        import random
+        marker_id = random.randint(10000, 99999)
+        start_marker = f"SSH_START_{marker_id}"
+        end_marker = f"SSH_END_{marker_id}"
+        
+        # Send command with markers around hostname
+        cmd = f"echo {start_marker} && hostname && echo {end_marker}"
+        send_keys(tmux_sess, worker_win, cmd, enter=True)
+        time.sleep(1.5)
+        
+        output = capture_output(tmux_sess, worker_win, lines=15)
+        logger.debug("SSH alive check output: %s", output)
+        
+        # Parse hostname from output (handles command line being included)
+        hostname = _parse_hostname_from_output(output, start_marker, end_marker)
+        
+        if hostname is None:
+            logger.info("SSH alive check: couldn't parse hostname from output")
+            return False
+        
+        logger.info("SSH alive check: hostname='%s'", hostname)
+        
+        # rdev hostnames have "rdev-" prefix
+        if hostname.lower().startswith("rdev-"):
+            return True
+        else:
+            logger.info("SSH alive check: hostname doesn't start with 'rdev-', not connected")
+            return False
+    except Exception as e:
+        logger.warning("SSH alive check failed: %s", e)
+        return False
+
+
+def _build_system_prompt(session_id: str) -> str | None:
+    """Build the system prompt from template, same as new worker setup."""
+    import shlex
+    
+    source_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    template_path = os.path.join(source_root, "prompts", "worker_claude_template.md")
+    
+    if not os.path.exists(template_path):
+        logger.warning("Worker template not found at %s", template_path)
+        return None
+    
+    with open(template_path) as f:
+        template = f.read()
+    
+    return shlex.quote(template.replace("SESSION_ID", session_id))
+
+
+def _reconnect_rdev_worker(conn, session, tmux_sess: str, tmux_win: str, api_port: int, tmp_dir: str):
+    """Reconnect an rdev worker: check/restore tunnel and SSH, then launch claude.
+    
+    Uses same claude command as new workers (--session-id auto-resumes existing sessions).
+    """
+    from orchestrator.terminal import ssh
+    from orchestrator.worker.cli_scripts import get_path_export_command
+    
+    tunnel_name = f"{session.name}-tunnel"
+    remote_tmp_dir = f"/tmp/orchestrator/workers/{session.name}"
+    
+    # 1. Check/restore tunnel
+    tunnel_alive = False
+    if session.tunnel_pane:
+        if ":" in session.tunnel_pane:
+            t_sess, t_win = session.tunnel_pane.split(":", 1)
+        else:
+            t_sess, t_win = tmux_sess, session.tunnel_pane
+        tunnel_alive = _check_tunnel_alive(t_sess, t_win)
+        logger.info("Tunnel for %s alive: %s", session.name, tunnel_alive)
+    
+    if not tunnel_alive:
+        logger.info("Re-establishing tunnel for %s", session.name)
+        if session.tunnel_pane:
+            try:
+                if ":" in session.tunnel_pane:
+                    t_sess, t_win = session.tunnel_pane.split(":", 1)
+                else:
+                    t_sess, t_win = tmux_sess, session.tunnel_pane
+                kill_window(t_sess, t_win)
+            except Exception:
+                pass
+        
+        from orchestrator.terminal.manager import create_window
+        create_window(tmux_sess, tunnel_name)
+        ssh.setup_rdev_tunnel(tmux_sess, tunnel_name, session.host, api_port, api_port)
+        time.sleep(3)
+        repo.update_session(conn, session.id, tunnel_pane=f"{tmux_sess}:{tunnel_name}")
+    
+    # 2. Check/restore SSH connection
+    ssh_alive = _check_ssh_alive(tmux_sess, tmux_win, session.host)
+    logger.info("SSH for %s alive: %s", session.name, ssh_alive)
+    
+    if not ssh_alive:
+        logger.info("Re-establishing SSH for %s", session.name)
+        ssh.rdev_connect(tmux_sess, tmux_win, session.host)
+        if not ssh.wait_for_prompt(tmux_sess, tmux_win, timeout=30):
+            raise RuntimeError(f"Timed out waiting for shell prompt on {session.host}")
+    
+    # 3. Export PATH and cd to work_dir
+    path_export = get_path_export_command(f"{remote_tmp_dir}/bin")
+    send_keys(tmux_sess, tmux_win, path_export, enter=True)
+    time.sleep(0.3)
+    
+    if session.work_dir:
+        send_keys(tmux_sess, tmux_win, f"cd {session.work_dir}", enter=True)
+        time.sleep(0.3)
+    
+    # 4. Launch Claude with -r to resume existing session
+    settings_file = f"{remote_tmp_dir}/configs/settings.json"
+    claude_args = [
+        f"-r {session.id}",  # Resume existing session
+        f"--settings {settings_file}",
+        "--dangerously-skip-permissions",
+    ]
+    
+    system_prompt = _build_system_prompt(session.id)
+    if system_prompt:
+        claude_args.append(f"--append-system-prompt {system_prompt}")
+    
+    claude_cmd = f"claude {' '.join(claude_args)}"
+    send_keys(tmux_sess, tmux_win, claude_cmd, enter=True)
+    logger.info("Launched Claude Code for rdev worker %s (session_id=%s)", session.name, session.id)
+    
+    repo.update_session(conn, session.id, status="paused")
+
+
+def _reconnect_local_worker(session, tmux_sess: str, tmux_win: str, api_port: int, tmp_dir: str):
+    """Reconnect a local worker: cd to work_dir and relaunch claude.
+    
+    Uses same claude command as new workers (--session-id auto-resumes existing sessions).
+    """
+    import shlex
+    from orchestrator.worker.cli_scripts import get_path_export_command
+    
+    # 1. Export PATH and cd to work_dir
+    path_export = get_path_export_command(os.path.join(tmp_dir, "bin"))
+    send_keys(tmux_sess, tmux_win, path_export, enter=True)
+    time.sleep(0.3)
+    
+    if session.work_dir:
+        send_keys(tmux_sess, tmux_win, f"cd {shlex.quote(session.work_dir)}", enter=True)
+        time.sleep(0.3)
+    
+    # 2. Launch Claude with -r to resume existing session
+    settings_file = os.path.join(tmp_dir, "configs", "settings.json")
+    claude_args = [
+        f"-r {session.id}",  # Resume existing session
+        f"--settings {shlex.quote(settings_file)}",
+    ]
+    
+    system_prompt = _build_system_prompt(session.id)
+    if system_prompt:
+        claude_args.append(f"--append-system-prompt {system_prompt}")
+    
+    claude_cmd = f"claude {' '.join(claude_args)}"
+    send_keys(tmux_sess, tmux_win, claude_cmd, enter=True)
+    logger.info("Launched Claude Code for local worker %s (session_id=%s)", session.name, session.id)
+
+
+def _check_claude_process_local(session_id: str) -> tuple[bool, str]:
+    """Check if Claude Code with given session_id is running locally via ps | grep.
+    
+    Returns (alive: bool, reason: str)
+    """
+    import subprocess
+    
+    try:
+        # Run ps | grep directly on local machine
+        result = subprocess.run(
+            ["bash", "-c", f"ps aux | grep -v grep | grep 'session-id {session_id}'"],
+            capture_output=True,
+            text=True,
+            timeout=5
+        )
+        
+        if result.returncode == 0 and result.stdout.strip():
+            return True, "Claude process found via ps"
+        else:
+            return False, "Claude process not found via ps"
+    except subprocess.TimeoutExpired:
+        return True, "Health check timed out"
+    except Exception as e:
+        logger.warning("Health check ps command failed: %s", e)
+        return True, f"Health check error: {e}"
+
+
+def _check_claude_process_rdev(host: str, session_id: str) -> tuple[bool, str]:
+    """Check if Claude Code with given session_id is running on rdev host via SSH.
+    
+    Returns (alive: bool, reason: str)
+    """
+    import subprocess
+    
+    try:
+        # Run ps aux on remote host via regular SSH
+        # Host format is like "subs-mt/sleepy-franklin" which SSH understands
+        result = subprocess.run(
+            ["ssh", "-o", "ConnectTimeout=5", "-o", "BatchMode=yes", host, "ps aux"],
+            capture_output=True,
+            text=True,
+            timeout=10
+        )
+        
+        if result.returncode != 0:
+            # SSH failed - could mean VM is down or network issue
+            stderr = result.stderr.strip()
+            if "Connection refused" in stderr or "Connection closed" in stderr or "Connection timed out" in stderr:
+                return False, f"SSH connection failed: {stderr}"
+            if "Permission denied" in stderr:
+                return True, f"SSH auth issue (worker may still be alive): {stderr}"
+            return True, f"SSH check inconclusive: {stderr}"
+        
+        # Check if our session ID is in the process list
+        if f"session-id {session_id}" in result.stdout:
+            return True, "Claude process found via SSH"
+        else:
+            return False, "Claude process not found via SSH"
+    except subprocess.TimeoutExpired:
+        return False, "SSH connection timed out - host may be unreachable"
+    except Exception as e:
+        logger.warning("Health check SSH command failed: %s", e)
+        return True, f"Health check error: {e}"
+
+
+@router.post("/sessions/{session_id}/health-check")
+def health_check_session(session_id: str, db=Depends(get_db)):
+    """Check if a worker's Claude Code process is still running.
+    
+    Uses `ps | grep --session-id <session_id>` to reliably detect if the
+    Claude Code process is running:
+    - For local workers: runs ps directly on local machine
+    - For rdev workers: runs ps via `rdev ssh` on the remote host
+    
+    Updates status to 'disconnected' if not running.
+    
+    Returns:
+        {"alive": bool, "status": str, "reason": str}
+    """
+    s = repo.get_session(db, session_id)
+    if s is None:
+        raise HTTPException(404, "Session not found")
+
+    if not s.tmux_window:
+        return {"alive": False, "status": s.status, "reason": "No tmux window"}
+
+    # Check if rdev or local worker
+    if is_rdev_host(s.host):
+        alive, reason = _check_claude_process_rdev(s.host, session_id)
+    else:
+        alive, reason = _check_claude_process_local(session_id)
+    
+    if not alive:
+        if s.status != "disconnected":
+            repo.update_session(db, session_id, status="disconnected")
+            logger.info("Health check: %s marked as disconnected (%s)", s.name, reason)
+        return {"alive": False, "status": "disconnected", "reason": reason}
+    
+    return {"alive": True, "status": s.status, "reason": reason}
+
+
+@router.post("/sessions/health-check-all")
+def health_check_all_sessions(db=Depends(get_db)):
+    """Run health check on all active worker sessions.
+    
+    Uses `ps | grep --session-id` to reliably check if Claude Code is running:
+    - For local workers: runs ps directly on local machine
+    - For rdev workers: runs ps via `rdev ssh` on the remote host
+    
+    Updates disconnected workers automatically.
+    
+    Returns:
+        {"checked": int, "disconnected": list[str], "alive": list[str]}
+    """
+    sessions = repo.list_sessions(db, session_type="worker")
+    
+    results = {"checked": 0, "disconnected": [], "alive": []}
+    
+    for s in sessions:
+        if s.status == "disconnected":
+            continue  # Skip already disconnected workers
+            
+        if not s.tmux_window:
+            continue
+            
+        results["checked"] += 1
+
+        try:
+            # Check if rdev or local worker
+            if is_rdev_host(s.host):
+                alive, reason = _check_claude_process_rdev(s.host, s.id)
+            else:
+                alive, reason = _check_claude_process_local(s.id)
+            
+            if not alive:
+                repo.update_session(db, s.id, status="disconnected")
+                results["disconnected"].append(s.name)
+                logger.info("Health check: %s marked as disconnected (%s)", s.name, reason)
+            else:
+                results["alive"].append(s.name)
+        except Exception as e:
+            # Can't check - assume alive for now
+            logger.warning("Health check failed for %s: %s", s.name, e)
+            results["alive"].append(s.name)
+    
+    return results

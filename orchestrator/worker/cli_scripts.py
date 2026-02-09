@@ -753,7 +753,8 @@ case "$EVENT" in
         STATUS="waiting"
         ;;
     SessionEnd)
-        STATUS="connecting"
+        # Claude Code exited - mark as disconnected
+        STATUS="disconnected"
         ;;
     *)
         # Unknown event, do nothing

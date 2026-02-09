@@ -87,6 +87,31 @@ export function AppProvider({ children }: { children: ReactNode }) {
     return () => clearInterval(interval)
   }, [fetchAll])
 
+  // Periodic health check to detect disconnected workers (every 5 minutes)
+  useEffect(() => {
+    const healthCheck = async () => {
+      try {
+        const result = await api<{ disconnected: string[] }>('/api/sessions/health-check-all', { method: 'POST' })
+        if (result.disconnected && result.disconnected.length > 0) {
+          // Refresh data if any workers were marked disconnected
+          fetchAll()
+        }
+      } catch {
+        // Ignore health check errors
+      }
+    }
+    
+    // Run health check every 5 minutes (300000ms)
+    const interval = setInterval(healthCheck, 300000)
+    // Also run once after initial load (after 10 seconds)
+    const timeout = setTimeout(healthCheck, 10000)
+    
+    return () => {
+      clearInterval(interval)
+      clearTimeout(timeout)
+    }
+  }, [fetchAll])
+
   // sessions already filtered by session_type=worker from API
   const workers = sessions
 

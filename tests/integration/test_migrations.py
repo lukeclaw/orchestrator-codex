@@ -15,8 +15,9 @@ def test_fresh_migration():
     conn = get_memory_connection()
     applied = apply_migrations(conn)
     # Migrations: 1=initial, 2=remove_cost, 3=context, 4=subtasks, 5=tunnel_pane,
-    # 6=takeover, 7=session_type, 8=remove_current_task_id, 9=rename_mp_path_to_work_dir
-    assert applied == [1, 2, 3, 4, 5, 6, 7, 8, 9]
+    # 6=task_links, 7=session_type, 8=remove_current_task_id, 9=rename_mp_path_to_work_dir,
+    # 10=task_index, 11=priority_to_string, 12=drop_pr_tables, 13=context_description, 14=timestamps
+    assert applied == [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14]
 
     # Verify key tables exist
     tables = conn.execute(
@@ -27,9 +28,8 @@ def test_fresh_migration():
     expected_tables = {
         "projects", "sessions", "project_workers",
         "tasks", "task_dependencies",
-        "pull_requests",
         "learned_patterns",
-        "worker_capabilities", "task_requirements", "pr_dependencies",
+        "worker_capabilities", "task_requirements",
         "session_snapshots",
         "comm_events",
         "config", "prompt_templates", "skill_templates",
@@ -46,7 +46,7 @@ def test_idempotent_rerun():
     """Running migrations twice should be a no-op the second time."""
     conn = get_memory_connection()
     first = apply_migrations(conn)
-    assert first == [1, 2, 3, 4, 5, 6, 7, 8, 9]
+    assert first == [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14]
 
     second = apply_migrations(conn)
     assert second == []
@@ -57,7 +57,7 @@ def test_current_version_after_migration():
     conn = get_memory_connection()
     assert get_current_version(conn) == 0
     apply_migrations(conn)
-    assert get_current_version(conn) == 9
+    assert get_current_version(conn) == 14
     conn.close()
 
 

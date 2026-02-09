@@ -91,10 +91,28 @@ export default function TerminalView({ sessionId, onUserInput }: Props) {
         if (msg.type === 'output') {
           // Only update if content actually changed
           if (msg.data !== lastContent) {
-            // Use clear + write instead of reset to reduce flicker
-            terminal.clear()
-            terminal.write(msg.data)
             lastContent = msg.data
+            
+            // Trim content to terminal rows only if needed
+            let content = msg.data
+            const lineCount = (content.match(/\n/g) || []).length + 1
+            if (lineCount > terminal.rows) {
+              // Find the nth newline and slice there
+              let idx = 0
+              for (let i = 0; i < terminal.rows && idx < content.length; i++) {
+                const next = content.indexOf('\n', idx)
+                if (next === -1) break
+                idx = next + 1
+              }
+              content = content.slice(0, idx > 0 ? idx - 1 : content.length)
+            }
+            
+            // Single write: home cursor, clear screen, content, then position cursor
+            let output = '\x1b[H\x1b[J' + content
+            if (typeof msg.cursorX === 'number' && typeof msg.cursorY === 'number') {
+              output += `\x1b[${msg.cursorY + 1};${msg.cursorX + 1}H`
+            }
+            terminal.write(output)
           }
         } else if (msg.type === 'error') {
           terminal.write(`\r\n\x1b[31m${msg.message}\x1b[0m\r\n`)

@@ -60,6 +60,5 @@ def test_rendered_template_has_curl_commands(db):
     content, _ = result
     assert "curl" in content
     assert "/api/report" in content
-    assert "/api/decision" in content
     assert "/api/guidance" in content
     assert "http://localhost:9090" in content

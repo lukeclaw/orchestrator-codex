@@ -4,7 +4,7 @@ import type { Session } from '../../api/types'
 import { api } from '../../api/client'
 import { useNotify } from '../../context/NotificationContext'
 import { timeAgo } from '../common/TimeAgo'
-import { IconTrash, IconGripVertical, IconPause, IconPlay, IconStop } from '../common/Icons'
+import { IconTrash, IconGripVertical, IconPause, IconPlay, IconStop, IconRefresh } from '../common/Icons'
 import ConfirmPopover from '../common/ConfirmPopover'
 import './WorkerCard.css'
 
@@ -99,6 +99,20 @@ export default function WorkerCard({
     }
   }
 
+  async function handleReconnect(e: React.MouseEvent) {
+    e.stopPropagation()
+    if (actionPending) return
+    setActionPending(true)
+    try {
+      await api(`/api/sessions/${session.id}/reconnect`, { method: 'POST' })
+      notify(`Reconnecting worker ${session.name}...`, 'success')
+    } catch (e) {
+      notify(e instanceof Error ? e.message : 'Failed to reconnect', 'error')
+    } finally {
+      setActionPending(false)
+    }
+  }
+
   // Take last ~20 lines for the preview
   const previewLines = preview.split('\n').slice(-20).join('\n')
 
@@ -131,34 +145,48 @@ export default function WorkerCard({
           <span className={`status-badge ${session.status}`}>{session.status}</span>
         </div>
         <div className="wc-actions">
-          {/* Pause/Continue button */}
-          <button
-            className={`wc-action-btn ${session.status === 'paused' ? 'continue' : 'pause'}`}
-            onClick={handlePauseOrContinue}
-            disabled={actionPending || session.status === 'idle' || session.status === 'disconnected'}
-            title={session.status === 'paused' ? 'Continue' : 'Pause'}
-          >
-            {session.status === 'paused' ? <IconPlay size={14} /> : <IconPause size={14} />}
-          </button>
-
-          {/* Stop button */}
-          <ConfirmPopover
-            message={`Stop worker "${session.name}" and clear context?`}
-            confirmLabel="Stop"
-            onConfirm={handleStop}
-            variant="danger"
-          >
-            {({ onClick }) => (
+          {session.status === 'disconnected' ? (
+            /* Reconnect button for disconnected workers */
+            <button
+              className="wc-action-btn reconnect"
+              onClick={handleReconnect}
+              disabled={actionPending}
+              title="Reconnect"
+            >
+              <IconRefresh size={14} />
+            </button>
+          ) : (
+            <>
+              {/* Pause/Continue button */}
               <button
-                className="wc-action-btn stop"
-                onClick={onClick}
-                disabled={actionPending || session.status === 'idle' || session.status === 'disconnected'}
-                title="Stop and clear"
+                className={`wc-action-btn ${session.status === 'paused' ? 'continue' : 'pause'}`}
+                onClick={handlePauseOrContinue}
+                disabled={actionPending || session.status === 'idle'}
+                title={session.status === 'paused' ? 'Continue' : 'Pause'}
               >
-                <IconStop size={14} />
+                {session.status === 'paused' ? <IconPlay size={14} /> : <IconPause size={14} />}
               </button>
-            )}
-          </ConfirmPopover>
+
+              {/* Stop button */}
+              <ConfirmPopover
+                message={`Stop worker "${session.name}" and clear context?`}
+                confirmLabel="Stop"
+                onConfirm={handleStop}
+                variant="danger"
+              >
+                {({ onClick }) => (
+                  <button
+                    className="wc-action-btn stop"
+                    onClick={onClick}
+                    disabled={actionPending || session.status === 'idle'}
+                    title="Stop and clear"
+                  >
+                    <IconStop size={14} />
+                  </button>
+                )}
+              </ConfirmPopover>
+            </>
+          )}
 
           {/* Remove button */}
           <ConfirmPopover

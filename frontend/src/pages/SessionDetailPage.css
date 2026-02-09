@@ -49,43 +49,138 @@
   font-weight: 600;
 }
 
-.sd-topbar-meta {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  margin-left: auto;
+/* Type tag (rdev label) */
+.sd-type-tag {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  padding: 2px 6px;
+  border-radius: 4px;
+  letter-spacing: 0.5px;
 }
 
-.sd-meta-item {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  font-size: 12px;
+.sd-type-tag.rdev {
+  background: rgba(139, 92, 246, 0.15);
+  color: #a78bfa;
 }
 
-.sd-meta-label {
+/* Check status button next to status badge */
+.sd-check-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  background: none;
+  border: none;
   color: var(--text-muted);
+  border-radius: var(--radius);
+  cursor: pointer;
+  transition: color 0.15s, background 0.15s;
 }
 
-.sd-meta-value {
-  color: var(--text-secondary);
-  font-family: var(--font-mono);
-  font-size: 11px;
+.sd-check-btn:hover:not(:disabled) {
+  color: var(--text-primary);
+  background: var(--surface-hover);
+}
+
+.sd-check-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
 }
 
 .sd-topbar-actions {
+  margin-left: auto;
   display: flex;
   align-items: center;
   gap: 8px;
 }
 
-.sd-chip {
-  font-size: 11px;
-  padding: 2px 8px;
-  border-radius: 10px;
+/* Task link */
+.sd-task-link {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
   background: var(--surface-raised);
-  color: var(--text-secondary);
   border: 1px solid var(--border);
+  border-radius: var(--radius);
+  text-decoration: none;
+  font-size: 12px;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.sd-task-link:hover {
+  border-color: var(--accent);
+  background: var(--surface-hover);
+}
+
+.sd-task-label {
+  color: var(--text-muted);
+}
+
+.sd-task-title {
+  color: var(--text-primary);
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Control buttons - icon only */
+.sd-control-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.sd-control-btn:hover:not(:disabled) {
+  background: var(--surface-hover);
+  color: var(--text-primary);
+}
+
+.sd-control-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.sd-control-btn.pause:hover:not(:disabled) {
+  color: var(--orange, #f97316);
+  border-color: var(--orange, #f97316);
+}
+
+.sd-control-btn.continue:hover:not(:disabled) {
+  color: var(--green);
+  border-color: var(--green);
+}
+
+.sd-control-btn.stop:hover:not(:disabled) {
+  color: var(--red);
+  border-color: var(--red);
+}
+
+.sd-control-btn.reconnect {
+  color: var(--blue);
+  border-color: var(--blue);
+  background: rgba(56, 139, 253, 0.1);
+}
+
+.sd-control-btn.reconnect:hover:not(:disabled) {
+  background: rgba(56, 139, 253, 0.2);
+}
+
+.sd-control-btn.remove:hover:not(:disabled) {
+  color: var(--red);
+  border-color: var(--red);
 }
 
 /* Terminal */
@@ -95,35 +190,6 @@
   overflow: hidden;
 }
 
-/* Send form */
-.sd-send-form {
-  display: flex;
-  gap: 8px;
-  padding: 8px 14px;
-  background: var(--surface);
-  border-top: 1px solid var(--border);
-  flex-shrink: 0;
-}
-
-.sd-send-form input {
-  flex: 1;
-  padding: 7px 12px;
-  background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  color: var(--text-primary);
-  font-size: 13px;
-}
-
-.sd-send-form input:focus {
-  outline: none;
-  border-color: var(--accent);
-  box-shadow: 0 0 0 2px var(--accent-muted);
-}
-
-.sd-send-form input::placeholder {
-  color: var(--text-muted);
-}
 
 .error-page {
   text-align: center;

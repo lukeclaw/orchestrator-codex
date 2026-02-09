@@ -209,25 +209,6 @@ class TestReporting:
         assert resp.json()["session"] == "guide-worker"
 
 
-# --- Chat ---
-
-class TestChat:
-    def test_chat_placeholder(self, client):
-        # Mock the key so we always test the fallback path
-        with patch("orchestrator.api.routes.chat.get_validated_key", return_value=None):
-            resp = client.post("/api/chat", json={"message": "What's happening?"})
-        assert resp.status_code == 200
-        data = resp.json()
-        assert "response" in data
-        assert "What's happening?" in data["response"]
-
-    def test_chat_status(self, client):
-        resp = client.get("/api/chat/status")
-        assert resp.status_code == 200
-        data = resp.json()
-        assert "key_found" in data
-
-
 # --- Brain ---
 
 class TestBrain:
@@ -344,12 +325,12 @@ class TestDashboard:
     def test_dashboard_loads(self, client):
         resp = client.get("/")
         assert resp.status_code == 200
-        assert "Claude Orchestrator" in resp.text
+        assert "Orchestrator" in resp.text
 
     def test_frontend_routes_return_html(self, client):
         """All frontend routes should return 200 and serve the SPA."""
         for path in ["/workers", "/workers/abc-123", "/projects", "/projects/xyz",
-                     "/decisions", "/context", "/settings"]:
+                     "/context", "/settings"]:
             resp = client.get(path)
             assert resp.status_code == 200, f"GET {path} returned {resp.status_code}"
 

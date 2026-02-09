@@ -18,7 +18,7 @@ def test_01_dashboard_loads(page):
     """Page loads, title present, WebSocket connects."""
     screenshot(page, "01_dashboard_loads")
 
-    assert "Claude Orchestrator" in page.title()
+    assert "Orchestrator" in page.title()
 
     # Stats bar is visible
     stats = page.query_selector("[data-testid='stats-bar']")

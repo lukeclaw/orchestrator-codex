@@ -235,8 +235,12 @@ def setup_rdev_worker(
         template_path = os.path.join(_SOURCE_ROOT, "prompts", "worker_claude_template.md")
         settings_file = f"{remote_tmp_dir}/configs/settings.json"
         
-        # Build claude command with --settings for hooks
-        claude_args = [f"--settings {settings_file}", "--dangerously-skip-permissions"]
+        # Build claude command with --settings for hooks and --session-id for health check
+        claude_args = [
+            f"--settings {settings_file}",
+            "--dangerously-skip-permissions",
+            f"--session-id {session_id}",  # Used by health check to find this process
+        ]
         
         if os.path.exists(template_path):
             with open(template_path) as f:

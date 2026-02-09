@@ -14,7 +14,7 @@ from orchestrator.terminal.manager import (
     send_keys_literal,
     resize_pane,
 )
-from orchestrator.terminal.control import send_keys_async, resize_async, capture_pane_async
+from orchestrator.terminal.control import send_keys_async, resize_async, capture_pane_with_cursor_async
 
 logger = logging.getLogger(__name__)
 
@@ -76,16 +76,33 @@ async def terminal_websocket(websocket: WebSocket, session_id: str):
 
     async def poll_output():
         nonlocal last_content
+        poll_interval = 0.05  # Start fast (50ms)
+        idle_count = 0
+        
         while poll_active:
-            await asyncio.sleep(0.05)
+            await asyncio.sleep(poll_interval)
             if not initial_sent:
                 continue
             try:
-                # Use async capture for non-blocking operation
-                content = await capture_pane_async(tmux_sess, tmux_win)
+                content, cursor_x, cursor_y = await capture_pane_with_cursor_async(tmux_sess, tmux_win)
+                
                 if content != last_content:
-                    await websocket.send_json({"type": "output", "data": content})
+                    # Content changed - send update and reset to fast polling
+                    idle_count = 0
+                    poll_interval = 0.05  # 50ms when active
+                    
+                    await websocket.send_json({
+                        "type": "output",
+                        "data": content,
+                        "cursorX": cursor_x,
+                        "cursorY": cursor_y,
+                    })
                     last_content = content
+                else:
+                    # No change - gradually slow down polling
+                    idle_count += 1
+                    if idle_count > 10:
+                        poll_interval = min(0.2, poll_interval + 0.02)  # Slow to 200ms max
             except Exception:
                 pass
 
@@ -102,6 +119,19 @@ async def terminal_websocket(websocket: WebSocket, session_id: str):
             if msg.get("type") == "input":
                 # Use async control mode for lower latency input
                 await send_keys_async(tmux_sess, tmux_win, msg.get("data", ""))
+                # Immediately capture and send update for responsiveness
+                try:
+                    content, cursor_x, cursor_y = await capture_pane_with_cursor_async(tmux_sess, tmux_win)
+                    if content != last_content:
+                        await websocket.send_json({
+                            "type": "output",
+                            "data": content,
+                            "cursorX": cursor_x,
+                            "cursorY": cursor_y,
+                        })
+                        last_content = content
+                except Exception:
+                    pass
             elif msg.get("type") == "resize":
                 cols = msg.get("cols", 80)
                 rows = msg.get("rows", 24)
@@ -112,9 +142,14 @@ async def terminal_websocket(websocket: WebSocket, session_id: str):
                     # Give tmux a moment to apply the resize
                     await asyncio.sleep(0.05)
 
-                    # Capture only visible pane content (no scrollback)
-                    content = await capture_pane_async(tmux_sess, tmux_win)
-                    await websocket.send_json({"type": "output", "data": content})
+                    # Capture visible pane content with cursor position
+                    content, cursor_x, cursor_y = await capture_pane_with_cursor_async(tmux_sess, tmux_win)
+                    await websocket.send_json({
+                        "type": "output",
+                        "data": content,
+                        "cursorX": cursor_x,
+                        "cursorY": cursor_y,
+                    })
                     last_content = content
                     initial_sent = True
     except WebSocketDisconnect:

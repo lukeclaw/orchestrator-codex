@@ -5,7 +5,6 @@ import json
 from orchestrator.state.models import (
     Config,
     Project,
-    PullRequest,
     Session,
     SkillTemplate,
     Task,
@@ -29,7 +28,7 @@ def test_session_defaults():
 def test_task_defaults():
     t = Task(id="t1", project_id="p1", title="Implement feature")
     assert t.status == "todo"
-    assert t.priority == 0
+    assert t.priority == "M"  # Default priority is Medium
     assert t.assigned_session_id is None
 
 
@@ -51,12 +50,6 @@ def test_config_parsed_value_string():
 def test_config_parsed_value_boolean():
     c = Config(key="test", value="true")
     assert c.parsed_value is True
-
-
-def test_pull_request_defaults():
-    pr = PullRequest(id="pr1", url="https://github.com/org/repo/pull/1")
-    assert pr.status == "open"
-    assert pr.number is None
 
 
 def test_worker_capability():

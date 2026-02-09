@@ -4,8 +4,7 @@ import { api } from '../api/client'
 import { useNotify } from '../context/NotificationContext'
 import { useApp } from '../context/AppContext'
 import TerminalView from '../components/terminal/TerminalView'
-import { timeAgo } from '../components/common/TimeAgo'
-import { IconArrowLeft } from '../components/common/Icons'
+import { IconArrowLeft, IconPause, IconPlay, IconStop, IconRefresh, IconTrash, IconSync } from '../components/common/Icons'
 import ConfirmPopover from '../components/common/ConfirmPopover'
 import './SessionDetailPage.css'
 
@@ -21,7 +20,71 @@ export default function SessionDetailPage() {
   
   // Local state for page-specific data
   const [error, setError] = useState('')
-  const [sendMsg, setSendMsg] = useState('')
+  const [actionPending, setActionPending] = useState(false)
+
+  async function handlePauseOrContinue() {
+    if (!id || actionPending) return
+    setActionPending(true)
+    try {
+      const endpoint = session?.status === 'paused' ? 'continue' : 'pause'
+      await api(`/api/sessions/${id}/${endpoint}`, { method: 'POST' })
+      refresh()
+      notify(`Worker ${endpoint === 'pause' ? 'paused' : 'resumed'}`, 'success')
+    } catch (e) {
+      notify(e instanceof Error ? e.message : `Failed to ${session?.status === 'paused' ? 'continue' : 'pause'}`, 'error')
+    } finally {
+      setActionPending(false)
+    }
+  }
+
+  async function handleStop() {
+    if (!id || actionPending) return
+    setActionPending(true)
+    try {
+      await api(`/api/sessions/${id}/stop`, { method: 'POST' })
+      refresh()
+      notify(`Worker stopped and cleared`, 'success')
+    } catch (e) {
+      notify(e instanceof Error ? e.message : 'Failed to stop worker', 'error')
+    } finally {
+      setActionPending(false)
+    }
+  }
+
+  async function handleReconnect() {
+    if (!id || actionPending) return
+    setActionPending(true)
+    try {
+      await api(`/api/sessions/${id}/reconnect`, { method: 'POST' })
+      refresh()
+      notify(`Reconnecting worker...`, 'success')
+    } catch (e) {
+      notify(e instanceof Error ? e.message : 'Failed to reconnect', 'error')
+    } finally {
+      setActionPending(false)
+    }
+  }
+
+  async function handleHealthCheck() {
+    if (!id || actionPending) return
+    setActionPending(true)
+    try {
+      const result = await api<{ alive: boolean; status: string; reason: string }>(
+        `/api/sessions/${id}/health-check`,
+        { method: 'POST' }
+      )
+      await refresh()  // Wait for data to refresh before showing notification
+      if (result.alive) {
+        notify(`Worker is alive: ${result.reason}`, 'success')
+      } else {
+        notify(`Worker disconnected: ${result.reason}`, 'warning')
+      }
+    } catch (e) {
+      notify(e instanceof Error ? e.message : 'Failed to check status', 'error')
+    } finally {
+      setActionPending(false)
+    }
+  }
 
   async function handleDelete() {
     if (!id) return
@@ -31,20 +94,6 @@ export default function SessionDetailPage() {
       navigate('/')
     } catch (e) {
       notify(e instanceof Error ? e.message : 'Failed to delete', 'error')
-    }
-  }
-
-  async function handleSendMessage(e: React.FormEvent) {
-    e.preventDefault()
-    if (!id || !sendMsg.trim()) return
-    try {
-      await api(`/api/sessions/${id}/send`, {
-        method: 'POST',
-        body: JSON.stringify({ message: sendMsg.trim() }),
-      })
-      setSendMsg('')
-    } catch (e) {
-      notify(e instanceof Error ? e.message : 'Failed to send', 'error')
     }
   }
 
@@ -70,41 +119,83 @@ export default function SessionDetailPage() {
             <IconArrowLeft size={16} />
           </button>
           <h2 className="sd-title">{session.name}</h2>
+          {session.host.includes('/') && <span className="sd-type-tag rdev">rdev</span>}
           <span className={`status-badge ${session.status}`}>{session.status}</span>
-        </div>
-        <div className="sd-topbar-meta">
-          <span className="sd-meta-item">
-            <span className="sd-meta-label">Host</span>
-            <span className="sd-meta-value">{session.host}</span>
-          </span>
-          {session.work_dir && (
-            <span className="sd-meta-item">
-              <span className="sd-meta-label">Path</span>
-              <span className="sd-meta-value">{session.work_dir}</span>
-            </span>
-          )}
-          <span className="sd-meta-item">
-            <span className="sd-meta-label">Last active</span>
-            <span className="sd-meta-value">{session.last_activity ? timeAgo(session.last_activity) : 'Never'}</span>
-          </span>
+          {/* Check Status button next to status */}
+          <button
+            className="sd-check-btn"
+            onClick={handleHealthCheck}
+            disabled={actionPending}
+            title="Check if worker is alive"
+          >
+            <IconSync size={14} />
+          </button>
         </div>
         <div className="sd-topbar-actions">
+          {/* Task link */}
           {tasks.length > 0 && (
-            <span className="sd-chip">{tasks.length} task{tasks.length > 1 ? 's' : ''}</span>
+            <Link to={`/tasks/${tasks[0].id}`} className="sd-task-link">
+              <span className="sd-task-label">Task:</span>
+              <span className="sd-task-title">{tasks[0].title}</span>
+            </Link>
           )}
+
+          {/* Control buttons - icon only */}
+          {session.status === 'disconnected' ? (
+            <button
+              className="sd-control-btn reconnect"
+              onClick={handleReconnect}
+              disabled={actionPending}
+              title="Reconnect"
+            >
+              <IconRefresh size={16} />
+            </button>
+          ) : (
+            <>
+              <button
+                className={`sd-control-btn ${session.status === 'paused' ? 'continue' : 'pause'}`}
+                onClick={handlePauseOrContinue}
+                disabled={actionPending || session.status === 'idle'}
+                title={session.status === 'paused' ? 'Continue' : 'Pause'}
+              >
+                {session.status === 'paused' ? <IconPlay size={16} /> : <IconPause size={16} />}
+              </button>
+              <ConfirmPopover
+                message={`Stop worker "${session.name}" and clear context?`}
+                confirmLabel="Stop"
+                onConfirm={handleStop}
+                variant="danger"
+              >
+                {({ onClick }) => (
+                  <button
+                    className="sd-control-btn stop"
+                    onClick={onClick}
+                    disabled={actionPending || session.status === 'idle'}
+                    title="Stop and clear"
+                  >
+                    <IconStop size={16} />
+                  </button>
+                )}
+              </ConfirmPopover>
+            </>
+          )}
+
+          {/* Remove button */}
           <ConfirmPopover
-            message={`Remove session "${session.name}"?`}
+            message={`Remove worker "${session.name}"?`}
             confirmLabel="Remove"
             onConfirm={handleDelete}
             variant="danger"
           >
             {({ onClick }) => (
               <button
-                className="btn btn-danger btn-sm"
+                className="sd-control-btn remove"
                 data-testid="delete-session-btn"
                 onClick={onClick}
+                disabled={actionPending}
+                title="Remove worker"
               >
-                Remove
+                <IconTrash size={16} />
               </button>
             )}
           </ConfirmPopover>
@@ -115,20 +206,6 @@ export default function SessionDetailPage() {
       <div className="sd-terminal-area">
         <TerminalView sessionId={session.id} />
       </div>
-
-      {/* Message bar at bottom */}
-      <form className="sd-send-form" onSubmit={handleSendMessage}>
-        <input
-          type="text"
-          value={sendMsg}
-          onChange={e => setSendMsg(e.target.value)}
-          placeholder={`Send message to ${session.name}...`}
-          data-testid="send-message-input"
-        />
-        <button type="submit" className="btn btn-primary btn-sm" data-testid="send-message-btn">
-          Send
-        </button>
-      </form>
     </div>
   )
 }
