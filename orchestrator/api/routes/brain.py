@@ -1,13 +1,16 @@
 """Orchestrator brain — manages the Claude Code process that acts as the central intelligence."""
 
 import logging
+from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
 
 from orchestrator.api.deps import get_db
 from orchestrator.state.repositories import sessions as sessions_repo
 from orchestrator.terminal import manager as tmux
 from orchestrator.terminal.session import send_to_session
+from orchestrator.brain.cli_scripts import generate_brain_scripts, get_brain_path_export, generate_brain_hooks
 
 logger = logging.getLogger(__name__)
 
@@ -15,6 +18,9 @@ router = APIRouter()
 
 BRAIN_SESSION_NAME = "brain"
 TMUX_SESSION = "orchestrator"
+
+# In-memory storage for current dashboard URL
+_current_url: str | None = None
 
 
 def _get_brain_session(db):
@@ -34,6 +40,25 @@ def brain_status(db=Depends(get_db)):
         "status": session.status,
         "tmux_window": session.tmux_window,
     }
+
+
+class FocusUpdate(BaseModel):
+    """Model for updating the current dashboard URL."""
+    url: str
+
+
+@router.get("/brain/focus")
+def get_focus():
+    """Get the current dashboard URL."""
+    return {"url": _current_url}
+
+
+@router.post("/brain/focus")
+def set_focus(focus: FocusUpdate):
+    """Set the current dashboard URL. Called by frontend on navigation."""
+    global _current_url
+    _current_url = focus.url
+    return {"ok": True, "url": _current_url}
 
 
 @router.post("/brain/start", status_code=200)
@@ -61,12 +86,22 @@ def start_brain(db=Depends(get_db)):
     if os.path.exists(claude_md_src):
         shutil.copy2(claude_md_src, os.path.join(brain_dir, "CLAUDE.md"))
 
+    # Deploy brain CLI scripts
+    bin_dir = generate_brain_scripts(brain_dir)
+    path_export = get_brain_path_export(bin_dir)
+
+    # Generate brain hooks (injects dashboard focus context into prompts)
+    settings_path = generate_brain_hooks(brain_dir)
+
     try:
         # Create tmux window for the brain
         target = tmux.ensure_window(TMUX_SESSION, BRAIN_SESSION_NAME)
 
         # cd to the brain working directory so Claude Code picks up CLAUDE.md
         tmux.send_keys(TMUX_SESSION, BRAIN_SESSION_NAME, f"cd {brain_dir}")
+
+        # Add brain CLI tools to PATH
+        tmux.send_keys(TMUX_SESSION, BRAIN_SESSION_NAME, path_export)
 
         if session:
             # Reuse existing DB record
@@ -88,10 +123,10 @@ def start_brain(db=Depends(get_db)):
             )
             session_id = s.id
 
-        # Launch Claude Code
+        # Launch Claude Code with hooks settings
         import time
         time.sleep(0.5)
-        tmux.send_keys(TMUX_SESSION, BRAIN_SESSION_NAME, "claude")
+        tmux.send_keys(TMUX_SESSION, BRAIN_SESSION_NAME, f"claude --settings {settings_path}")
         sessions_repo.update_session(db, session_id, status="working")
 
         logger.info("Orchestrator brain started in %s", target)

@@ -1,4 +1,5 @@
 import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from 'react'
+import { useLocation } from 'react-router-dom'
 import type { Session, Decision, Activity, Project, Task } from '../api/types'
 import { api } from '../api/client'
 
@@ -68,8 +69,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
     let reconnectTimer: ReturnType<typeof setTimeout>
 
     function connect() {
-      const proto = location.protocol === 'https:' ? 'wss:' : 'ws:'
-      ws = new WebSocket(`${proto}//${location.host}/ws`)
+      const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+      ws = new WebSocket(`${proto}//${window.location.host}/ws`)
 
       ws.onopen = () => setConnected(true)
       ws.onclose = () => {
@@ -102,6 +103,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const removeSession = useCallback((id: string) => {
     setSessions(prev => prev.filter(s => s.id !== id))
   }, [])
+
+  // Track current URL for brain context
+  const location = useLocation()
+  useEffect(() => {
+    api('/api/brain/focus', {
+      method: 'POST',
+      body: JSON.stringify({ url: location.pathname }),
+    }).catch(() => {})
+  }, [location.pathname])
 
   return (
     <AppContext.Provider value={{ sessions, workers, decisions, activities, projects, tasks, connected, loading, refresh: fetchAll, removeSession }}>

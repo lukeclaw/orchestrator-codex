@@ -3,6 +3,7 @@ import SidebarItem from './SidebarItem'
 import {
   IconDashboard,
   IconProjects,
+  IconTasks,
   IconSessions,
   IconDecisions,
   IconContext,
@@ -51,6 +52,7 @@ export default function Sidebar({ collapsed, onToggle }: Props) {
       <nav className="sidebar-nav">
         <SidebarItem to="/" icon={<IconDashboard size={18} />} label="Dashboard" collapsed={collapsed} shortcut="D" />
         <SidebarItem to="/projects" icon={<IconProjects size={18} />} label="Projects" collapsed={collapsed} shortcut="P" />
+        <SidebarItem to="/tasks" icon={<IconTasks size={18} />} label="Tasks" collapsed={collapsed} shortcut="T" />
         <SidebarItem to="/workers" icon={<IconSessions size={18} />} label="Workers" badge={activeSessions} collapsed={collapsed} shortcut="W" />
         {waitingSessions > 0 && (
           <SidebarItem to="/decisions" icon={<IconDecisions size={18} />} label="Waiting" badge={waitingSessions} collapsed={collapsed} />

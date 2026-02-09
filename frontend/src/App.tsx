@@ -8,6 +8,8 @@ import WorkersPage from './pages/WorkersPage'
 import SessionDetailPage from './pages/SessionDetailPage'
 import ProjectsPage from './pages/ProjectsPage'
 import ProjectDetailPage from './pages/ProjectDetailPage'
+import TasksPage from './pages/TasksPage'
+import TaskDetailPage from './pages/TaskDetailPage'
 import DecisionsPage from './pages/DecisionsPage'
 import ActivityPage from './pages/ActivityPage'
 import ContextPage from './pages/ContextPage'
@@ -23,6 +25,8 @@ export default function App() {
               <Route path="/" element={<DashboardPage />} />
               <Route path="/projects" element={<ProjectsPage />} />
               <Route path="/projects/:id" element={<ProjectDetailPage />} />
+              <Route path="/tasks" element={<TasksPage />} />
+              <Route path="/tasks/:id" element={<TaskDetailPage />} />
               <Route path="/workers" element={<WorkersPage />} />
               <Route path="/workers/:id" element={<SessionDetailPage />} />
               <Route path="/decisions" element={<DecisionsPage />} />
