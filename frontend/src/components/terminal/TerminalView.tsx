@@ -82,13 +82,20 @@ export default function TerminalView({ sessionId, onUserInput }: Props) {
 
     ws.onerror = () => ws.close()
 
+    // Track last content for smart diffing
+    let lastContent = ''
+
     ws.onmessage = (event) => {
       try {
         const msg = JSON.parse(event.data)
         if (msg.type === 'output') {
-          // Reset terminal and write fresh content
-          terminal.reset()
-          terminal.write(msg.data)
+          // Only update if content actually changed
+          if (msg.data !== lastContent) {
+            // Use clear + write instead of reset to reduce flicker
+            terminal.clear()
+            terminal.write(msg.data)
+            lastContent = msg.data
+          }
         } else if (msg.type === 'error') {
           terminal.write(`\r\n\x1b[31m${msg.message}\x1b[0m\r\n`)
         }
@@ -97,7 +104,7 @@ export default function TerminalView({ sessionId, onUserInput }: Props) {
       }
     }
 
-    // Send keystrokes
+    // Send keystrokes with local echo for immediate feedback
     terminal.onData(data => {
       if (ws.readyState === WebSocket.OPEN) {
         ws.send(JSON.stringify({ type: 'input', data }))

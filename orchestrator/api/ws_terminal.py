@@ -14,6 +14,7 @@ from orchestrator.terminal.manager import (
     send_keys_literal,
     resize_pane,
 )
+from orchestrator.terminal.control import send_keys_async, resize_async, capture_pane_async
 
 logger = logging.getLogger(__name__)
 
@@ -76,11 +77,12 @@ async def terminal_websocket(websocket: WebSocket, session_id: str):
     async def poll_output():
         nonlocal last_content
         while poll_active:
-            await asyncio.sleep(0.15)
+            await asyncio.sleep(0.05)
             if not initial_sent:
                 continue
             try:
-                content = capture_pane_with_escapes(tmux_sess, tmux_win)
+                # Use async capture for non-blocking operation
+                content = await capture_pane_async(tmux_sess, tmux_win)
                 if content != last_content:
                     await websocket.send_json({"type": "output", "data": content})
                     last_content = content
@@ -98,18 +100,20 @@ async def terminal_websocket(websocket: WebSocket, session_id: str):
                 continue
 
             if msg.get("type") == "input":
-                send_keys_literal(tmux_sess, tmux_win, msg.get("data", ""))
+                # Use async control mode for lower latency input
+                await send_keys_async(tmux_sess, tmux_win, msg.get("data", ""))
             elif msg.get("type") == "resize":
                 cols = msg.get("cols", 80)
                 rows = msg.get("rows", 24)
-                resize_pane(tmux_sess, tmux_win, cols, rows)
+                # Use async control mode for resize too
+                await resize_async(tmux_sess, tmux_win, cols, rows)
 
                 if not initial_sent:
                     # Give tmux a moment to apply the resize
-                    await asyncio.sleep(0.1)
+                    await asyncio.sleep(0.05)
 
                     # Capture only visible pane content (no scrollback)
-                    content = capture_pane_with_escapes(tmux_sess, tmux_win)
+                    content = await capture_pane_async(tmux_sess, tmux_win)
                     await websocket.send_json({"type": "output", "data": content})
                     last_content = content
                     initial_sent = True
