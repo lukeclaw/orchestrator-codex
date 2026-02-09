@@ -28,11 +28,15 @@
 .markdown-content ul,
 .markdown-content ol {
   margin: 0.5em 0;
-  padding-left: 1.5em;
+  padding-left: 1.25em;
+}
+
+.markdown-content ol {
+  list-style-type: decimal;
 }
 
 .markdown-content li {
-  margin: 0.25em 0;
+  margin: 0.3em 0;
 }
 
 .markdown-content li > ul,
@@ -50,21 +54,22 @@
 }
 
 .markdown-content .code-block {
-  margin: 0.75em 0;
-  padding: 1em;
+  margin: 0em 0em;
+  padding: 6px;
   border-radius: 6px;
   overflow-x: auto;
-  background: #1e1e1e;
-  border: 1px solid var(--border);
+  background: rgb(23, 27, 33);
+  border: none;
 }
 
 .markdown-content .code-block code {
   font-family: 'SF Mono', 'Menlo', 'Monaco', 'Consolas', monospace;
-  font-size: 13px;
-  line-height: 1.5;
-  color: #d4d4d4;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--text);
   white-space: pre;
   display: block;
+  background: transparent;
 }
 
 .markdown-content pre {

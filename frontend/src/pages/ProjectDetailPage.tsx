@@ -194,7 +194,15 @@ export default function ProjectDetailPage() {
               <div
                 key={c.id}
                 className="pd-context-item clickable"
-                onClick={() => setSelectedContext(c)}
+                onClick={async () => {
+                  // Fetch full content if not loaded
+                  if (!c.content) {
+                    const full = await api<ContextItem>(`/api/context/${c.id}`)
+                    setSelectedContext(full)
+                  } else {
+                    setSelectedContext(c)
+                  }
+                }}
               >
                 <div className="pd-context-header">
                   {c.category && <span className="cp-category-tag">{c.category}</span>}

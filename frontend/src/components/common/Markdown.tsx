@@ -7,14 +7,67 @@ interface Props {
 }
 
 // Token types for the parser
+type ListItem = {
+  content: string
+  children?: ListItem[]
+  childOrdered?: boolean
+}
+
 type Token =
   | { type: 'heading'; level: number; content: string }
   | { type: 'paragraph'; content: string }
   | { type: 'code_block'; language: string; content: string }
   | { type: 'blockquote'; content: string }
   | { type: 'hr' }
-  | { type: 'list'; ordered: boolean; items: string[] }
+  | { type: 'list'; ordered: boolean; items: ListItem[] }
   | { type: 'table'; headers: string[]; rows: string[][] }
+
+// Parse a list with potential nested items
+function parseList(lines: string[], startIndex: number, ordered: boolean): { items: ListItem[], endIndex: number } {
+  const items: ListItem[] = []
+  let i = startIndex
+  const listPattern = ordered ? /^(\d+\.)\s(.*)$/ : /^([-*+])\s(.*)$/
+  const indentedListPattern = /^(\s{2,})(\d+\.|[-*+])\s(.*)$/
+
+  while (i < lines.length) {
+    const line = lines[i]
+    
+    // Check for top-level list item
+    const match = line.match(listPattern)
+    if (match) {
+      const content = match[2]
+      const item: ListItem = { content }
+      items.push(item)
+      i++
+      
+      // Check for nested items (indented)
+      const nestedItems: ListItem[] = []
+      let nestedOrdered: boolean | undefined
+      while (i < lines.length) {
+        const nestedMatch = lines[i].match(indentedListPattern)
+        if (nestedMatch) {
+          const marker = nestedMatch[2]
+          nestedOrdered = nestedOrdered ?? /^\d+\.$/.test(marker)
+          nestedItems.push({ content: nestedMatch[3] })
+          i++
+        } else {
+          break
+        }
+      }
+      
+      if (nestedItems.length > 0) {
+        item.children = nestedItems
+        item.childOrdered = nestedOrdered
+      }
+      continue
+    }
+    
+    // No more list items at this level
+    break
+  }
+
+  return { items, endIndex: i }
+}
 
 // Parse markdown into tokens
 function tokenize(text: string): Token[] {
@@ -89,23 +142,17 @@ function tokenize(text: string): Token[] {
 
     // Unordered list
     if (/^[-*+]\s/.test(line)) {
-      const items: string[] = []
-      while (i < lines.length && /^[-*+]\s/.test(lines[i])) {
-        items.push(lines[i].replace(/^[-*+]\s/, ''))
-        i++
-      }
+      const { items, endIndex } = parseList(lines, i, false)
       tokens.push({ type: 'list', ordered: false, items })
+      i = endIndex
       continue
     }
 
     // Ordered list
     if (/^\d+\.\s/.test(line)) {
-      const items: string[] = []
-      while (i < lines.length && /^\d+\.\s/.test(lines[i])) {
-        items.push(lines[i].replace(/^\d+\.\s/, ''))
-        i++
-      }
+      const { items, endIndex } = parseList(lines, i, true)
       tokens.push({ type: 'list', ordered: true, items })
+      i = endIndex
       continue
     }
 
@@ -140,7 +187,16 @@ function tokenize(text: string): Token[] {
 
 // Parse inline markdown (bold, italic, code, links)
 function parseInline(text: string): string {
-  return text
+  // First, protect escaped characters by replacing with placeholders
+  const escapeMap: Record<string, string> = {}
+  let escapeIndex = 0
+  let processed = text.replace(/\\([\\`*_{}[\]()#+\-.!|])/g, (_, char) => {
+    const placeholder = `\x00ESC${escapeIndex++}\x00`
+    escapeMap[placeholder] = char
+    return placeholder
+  })
+
+  processed = processed
     // Escape HTML
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
@@ -162,6 +218,13 @@ function parseInline(text: string): string {
     .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>')
     // Line breaks within paragraphs
     .replace(/\n/g, '<br />')
+
+  // Restore escaped characters
+  for (const [placeholder, char] of Object.entries(escapeMap)) {
+    processed = processed.replace(placeholder, char)
+  }
+
+  return processed
 }
 
 // Escape HTML for code blocks (no inline parsing)
@@ -194,7 +257,15 @@ function renderTokens(tokens: Token[]): string {
       
       case 'list':
         const listTag = token.ordered ? 'ol' : 'ul'
-        const listItems = token.items.map(item => `<li>${parseInline(item)}</li>`).join('')
+        const listItems = token.items.map(item => {
+          let html = parseInline(item.content)
+          if (item.children && item.children.length > 0) {
+            const childTag = item.childOrdered ? 'ol' : 'ul'
+            const childItems = item.children.map(c => `<li>${parseInline(c.content)}</li>`).join('')
+            html += `<${childTag}>${childItems}</${childTag}>`
+          }
+          return `<li>${html}</li>`
+        }).join('')
         return `<${listTag}>${listItems}</${listTag}>`
       
       case 'table':

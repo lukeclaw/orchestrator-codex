@@ -35,6 +35,7 @@
 .cm-preview {
   flex: 1;
   min-height: 250px;
+  max-height: 60vh;
   padding: 12px;
   background: var(--bg);
   border: 1px solid var(--border);
