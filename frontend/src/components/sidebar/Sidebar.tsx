@@ -10,6 +10,7 @@ import {
   IconSettings,
   IconChevronLeft,
   IconChevronRight,
+  IconLogo,
 } from '../common/Icons'
 import './Sidebar.css'
 
@@ -30,10 +31,19 @@ export default function Sidebar({ collapsed, onToggle }: Props) {
   return (
     <aside className={`sidebar ${collapsed ? 'collapsed' : ''}`}>
       <div className="sidebar-header">
-        {!collapsed && <span className="sidebar-brand">Orchestrator</span>}
-        <button className="sidebar-toggle" onClick={onToggle} title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}>
-          {collapsed ? <IconChevronRight size={16} /> : <IconChevronLeft size={16} />}
-        </button>
+        <div 
+          className="sidebar-brand-group" 
+          onClick={collapsed ? onToggle : undefined}
+          title={collapsed ? 'Expand sidebar' : undefined}
+        >
+          <IconLogo size={24} />
+          {!collapsed && <span className="sidebar-brand">Orchestrator</span>}
+        </div>
+        {!collapsed && (
+          <button className="sidebar-toggle" onClick={onToggle} title="Collapse sidebar">
+            <IconChevronLeft size={16} />
+          </button>
+        )}
       </div>
 
       <nav className="sidebar-nav">

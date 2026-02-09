@@ -31,6 +31,17 @@
   padding: 0;
 }
 
+.sidebar-brand-group {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+}
+
+.sidebar.collapsed .sidebar-brand-group {
+  justify-content: center;
+}
+
 .sidebar-brand {
   font-size: 15px;
   font-weight: 700;

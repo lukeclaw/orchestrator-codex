@@ -217,3 +217,40 @@ export function IconStop(props: IconProps) {
     </Icon>
   )
 }
+
+export function IconLogo({ size = 24 }: { size?: number }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 32 32"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+    >
+      <defs>
+        <linearGradient id="logoGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stopColor="#8B5CF6" />
+          <stop offset="100%" stopColor="#6366F1" />
+        </linearGradient>
+        <linearGradient id="logoGradientLight" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stopColor="#A78BFA" />
+          <stop offset="100%" stopColor="#818CF8" />
+        </linearGradient>
+      </defs>
+      <rect x="2" y="2" width="28" height="28" rx="7" fill="url(#logoGradient)" />
+      <circle cx="16" cy="16" r="4" fill="white" />
+      <circle cx="16" cy="7" r="2.5" fill="url(#logoGradientLight)" stroke="white" strokeWidth="1.5" />
+      <circle cx="23.5" cy="12" r="2.5" fill="url(#logoGradientLight)" stroke="white" strokeWidth="1.5" />
+      <circle cx="23.5" cy="20" r="2.5" fill="url(#logoGradientLight)" stroke="white" strokeWidth="1.5" />
+      <circle cx="16" cy="25" r="2.5" fill="url(#logoGradientLight)" stroke="white" strokeWidth="1.5" />
+      <circle cx="8.5" cy="20" r="2.5" fill="url(#logoGradientLight)" stroke="white" strokeWidth="1.5" />
+      <circle cx="8.5" cy="12" r="2.5" fill="url(#logoGradientLight)" stroke="white" strokeWidth="1.5" />
+      <line x1="16" y1="12" x2="16" y2="9.5" stroke="white" strokeWidth="1.5" strokeLinecap="round" />
+      <line x1="19.5" y1="14" x2="21.5" y2="13" stroke="white" strokeWidth="1.5" strokeLinecap="round" />
+      <line x1="19.5" y1="18" x2="21.5" y2="19" stroke="white" strokeWidth="1.5" strokeLinecap="round" />
+      <line x1="16" y1="20" x2="16" y2="22.5" stroke="white" strokeWidth="1.5" strokeLinecap="round" />
+      <line x1="12.5" y1="18" x2="10.5" y2="19" stroke="white" strokeWidth="1.5" strokeLinecap="round" />
+      <line x1="12.5" y1="14" x2="10.5" y2="13" stroke="white" strokeWidth="1.5" strokeLinecap="round" />
+    </svg>
+  )
+}
