@@ -4,7 +4,7 @@ import { useNotify } from '../../context/NotificationContext'
 import BrainTerminal from './BrainTerminal'
 import type { BrainStatus } from './BrainTerminal'
 import AutoSyncTimer from './AutoSyncTimer'
-import { IconChevronRight } from '../common/Icons'
+import { IconChevronLeft, IconChevronRight } from '../common/Icons'
 import ConfirmPopover from '../common/ConfirmPopover'
 import './BrainPanel.css'
 
@@ -113,8 +113,9 @@ export default function BrainPanel({
           onClick={onToggleCollapsed}
           title="Expand brain panel"
         >
-          <span className={`brain-indicator ${isRunning ? 'active' : 'inactive'}`} />
+          <IconChevronLeft size={16} />
         </button>
+        <span className={`brain-indicator ${isRunning ? 'active' : 'inactive'}`} style={{ marginTop: 8 }} />
       </div>
     )
   }
@@ -128,7 +129,14 @@ export default function BrainPanel({
       <div className="bp-resize-handle" onMouseDown={handleMouseDown} />
 
       <div className="bp-header">
-        <div className="bp-header-left">
+        <button
+          className="bp-collapse-btn"
+          onClick={onToggleCollapsed}
+          title="Collapse brain panel"
+        >
+          <IconChevronRight size={14} />
+        </button>
+        <div className="bp-header-center">
           <span className={`brain-indicator ${isRunning ? 'active' : 'inactive'}`} />
           <span className="bp-title">Brain</span>
           {brainStatus?.status && (
@@ -162,13 +170,6 @@ export default function BrainPanel({
               {starting ? 'Starting...' : 'Start'}
             </button>
           )}
-          <button
-            className="bp-collapse-btn"
-            onClick={onToggleCollapsed}
-            title="Collapse brain panel"
-          >
-            <IconChevronRight size={14} />
-          </button>
         </div>
       </div>
 
