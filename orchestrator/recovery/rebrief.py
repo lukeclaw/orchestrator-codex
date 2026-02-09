@@ -6,10 +6,19 @@ import json
 import logging
 import sqlite3
 
-from orchestrator.llm.templates import render_template
+from string import Template
+
 from orchestrator.recovery.snapshot import get_latest_snapshot
-from orchestrator.state.repositories import sessions
+from orchestrator.state.repositories import sessions, templates as templates_repo
 from orchestrator.terminal.session import send_to_session
+
+
+def _render_template(conn, template_name: str, variables: dict) -> str | None:
+    """Load a prompt template from DB and render it with variables."""
+    tpl = templates_repo.get_prompt_template(conn, template_name)
+    if tpl is None:
+        return None
+    return Template(tpl.template).safe_substitute(variables)
 
 logger = logging.getLogger(__name__)
 
@@ -56,7 +65,7 @@ def rebrief_session(
         "last_known_state": snapshot.last_known_state or "Unknown",
     }
 
-    message = render_template(conn, "rebrief", variables)
+    message = _render_template(conn, "rebrief", variables)
     if message is None:
         # Fallback message
         message = (

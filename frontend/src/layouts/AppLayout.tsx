@@ -1,6 +1,5 @@
 import { Outlet } from 'react-router-dom'
 import { useSidebarState } from '../hooks/useSidebarState'
-import { useKeyboardNav } from '../hooks/useKeyboardNav'
 import { useBrainPanelState } from '../hooks/useBrainPanelState'
 import { useNotifications } from '../context/NotificationContext'
 import Sidebar from '../components/sidebar/Sidebar'
@@ -13,7 +12,6 @@ export default function AppLayout() {
   const { collapsed, toggle } = useSidebarState()
   const brainPanel = useBrainPanelState()
   const notifications = useNotifications()
-  useKeyboardNav()
 
   return (
     <div className="app-shell">

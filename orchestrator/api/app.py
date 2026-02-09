@@ -137,7 +137,6 @@ def create_app(
     from orchestrator.api.routes import (
         activities,
         brain,
-        chat,
         context,
         decisions,
         health,
@@ -153,7 +152,6 @@ def create_app(
     app.include_router(tasks.router, prefix="/api", tags=["tasks"])
     app.include_router(decisions.router, prefix="/api", tags=["decisions"])
     app.include_router(reporting.router, prefix="/api", tags=["reporting"])
-    app.include_router(chat.router, prefix="/api", tags=["chat"])
     app.include_router(context.router, prefix="/api", tags=["context"])
     app.include_router(health.router, prefix="/api", tags=["health"])
     app.include_router(activities.router, prefix="/api", tags=["activities"])
