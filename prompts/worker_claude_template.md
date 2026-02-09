@@ -33,6 +33,22 @@ orch-task update --status done
 
 # Mark task as blocked if you can't proceed
 orch-task update --status blocked
+
+# Add notes about your progress or findings
+orch-task update --notes "Found root cause in auth module. Fix requires updating config."
+
+# For multi-line notes, use heredoc with --notes-stdin (recommended):
+orch-task update --notes-stdin <<'EOF'
+## Investigation Summary
+
+Found the root cause:
+- Config file has incorrect `auth_endpoint`
+- The `validateToken()` function doesn't handle null cases
+
+### Next Steps
+1. Update config.yaml
+2. Add null check in auth.py
+EOF
 ```
 
 ### Subtask Management (`orch-subtask`)
@@ -60,6 +76,20 @@ orch-subtask create --title "Update API documentation" \
 
 # Update subtask status (use the UUID from list output)
 orch-subtask update --id SUBTASK_UUID --status done
+
+# Add notes about findings or progress
+orch-subtask update --id SUBTASK_UUID --notes "Identified issue in config parsing"
+
+# For multi-line notes, use heredoc:
+orch-subtask update --id SUBTASK_UUID --notes-stdin <<'EOF'
+## Root Cause Analysis
+
+The config parser fails when:
+- Values contain `=` characters
+- Keys have trailing whitespace
+
+Fix: Use proper YAML parsing instead of split('=')
+EOF
 
 # Add a link to an existing subtask (do this as soon as you have the link)
 orch-subtask update --id SUBTASK_UUID --add-link "https://github.com/org/repo/pull/123"

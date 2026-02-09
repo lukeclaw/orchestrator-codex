@@ -6,7 +6,6 @@ import {
   IconTasks,
   IconSessions,
   IconContext,
-  IconActivity,
   IconSettings,
   IconChevronLeft,
   IconChevronRight,
@@ -52,7 +51,6 @@ export default function Sidebar({ collapsed, onToggle }: Props) {
         <SidebarItem to="/tasks" icon={<IconTasks size={18} />} label="Tasks" collapsed={collapsed} shortcut="T" />
         <SidebarItem to="/workers" icon={<IconSessions size={18} />} label="Workers" badge={activeSessions} collapsed={collapsed} shortcut="W" />
         <SidebarItem to="/context" icon={<IconContext size={18} />} label="Context" collapsed={collapsed} shortcut="K" />
-        <SidebarItem to="/activity" icon={<IconActivity size={18} />} label="Activity" collapsed={collapsed} shortcut="A" />
       </nav>
 
       <div className="sidebar-footer">

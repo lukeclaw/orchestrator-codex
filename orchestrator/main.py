@@ -169,10 +169,8 @@ def _show_config(config: dict):
 def _show_status(conn):
     """Display orchestrator status."""
     from orchestrator.state.repositories.sessions import list_sessions
-    from orchestrator.state.repositories.decisions import list_pending
 
     sessions = list_sessions(conn)
-    pending = list_pending(conn)
 
     console.print("[bold]Orchestrator Status[/bold]\n")
 
@@ -203,8 +201,6 @@ def _show_status(conn):
                 task_id,
             )
         console.print(table)
-
-    console.print(f"\n  Pending decisions: [bold]{len(pending)}[/bold]")
 
 
 def _handle_add(conn, config: dict, user_input: str):

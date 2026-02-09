@@ -62,7 +62,7 @@ ${system_state}
 ## Your Role
 - Analyze the current state of all sessions, tasks, and projects
 - Answer user questions about session status, task progress, and project health
-- Propose actions when appropriate (send messages, assign tasks, create decisions)
+- Propose actions when appropriate (send messages, assign tasks)
 - Always explain your reasoning before proposing actions
 
 ## Rules
@@ -80,9 +80,8 @@ ${system_state}
 
 Provide a brief, structured summary covering:
 1. Active sessions and what they're doing
-2. Pending decisions that need attention
-3. Recent activity highlights
-4. Any issues or blockers""",
+2. Task progress and any blockers
+3. Any issues that need attention""",
             "Template for status summary queries",
         ),
         (
@@ -111,16 +110,13 @@ Suggest a task assignment plan. Consider:
 ## Session: ${session_name}
 ## Current Task: ${task_summary}
 
-## Key Decisions Made:
-${key_decisions}
-
 ## Files You Were Working On:
 ${file_paths}
 
 ## Last Known State:
 ${last_known_state}
 
-Please acknowledge this context and continue your work. If you need any clarification, use the /orchestrator skill to request a decision.""",
+Please acknowledge this context and continue your work. If you need any clarification, ask and wait for guidance.""",
             "Template for re-briefing sessions after context loss",
         ),
     ]
@@ -141,7 +137,7 @@ def seed_skill_templates(conn):
 <!-- orchestrator-skill-version: ${SKILL_VERSION} -->
 
 You are connected to an orchestrator system managing multiple Claude Code
-sessions. Use this skill to report your progress and request decisions.
+sessions. Use this skill to report your progress.
 
 ## Environment
 
@@ -167,18 +163,6 @@ When you create a pull request:
       -d '{"session":"${SESSION_NAME}","event":"pr_created",
            "data":{"url":"PR_URL","title":"PR_TITLE"}}'
 
-## Request Decision
-
-For architectural decisions or when you need user input:
-
-    curl -sX POST ${ORCHESTRATOR_URL}/api/decision \\
-      -H "Content-Type: application/json" \\
-      -d '{"session":"${SESSION_NAME}",
-           "question":"YOUR QUESTION","options":["A","B"],
-           "context":"CONTEXT","urgency":"normal"}'
-
-Then wait -- the user will respond through the orchestrator.
-
 ## Check for Guidance
 
 Before starting major work:
@@ -197,10 +181,9 @@ When blocked by errors:
 ## Best Practices
 
 1. Report progress after completing each significant subtask
-2. Request decisions for architectural choices
-3. Check for guidance at the start of each major task
-4. Report PRs immediately after creation
-5. Report errors when blocked
+2. Check for guidance at the start of each major task
+3. Report PRs immediately after creation
+4. Report errors when blocked
 
 The orchestrator may send you messages directly through the terminal.
 Always acknowledge received instructions."""

@@ -9,8 +9,7 @@ You manage a system where multiple Claude Code instances (workers) run in parall
 1. **Plan work** — Break down project descriptions into concrete tasks
 2. **Manage workers** — Create sessions, launch Claude Code in them, assign tasks
 3. **Monitor progress** — Check worker output, track task status
-4. **Make decisions** — Resolve questions from workers, handle blockers
-5. **Coordinate** — Ensure workers don't conflict, manage dependencies
+4. **Coordinate** — Ensure workers don't conflict, manage dependencies, resolve blockers
 
 ## CLI Tools
 
@@ -33,6 +32,7 @@ orch-tasks list --project-id <id>           # List tasks for a project
 orch-tasks show <id>                        # Show task details
 orch-tasks create --project-id <id> --title "Add OAuth callback" --priority high
 orch-tasks update <id> --status done
+orch-tasks update <id> --notes "Found root cause in auth module"  # Add notes/findings
 orch-tasks assign <task-id> <worker-id>     # Assign task to worker
 orch-tasks unassign <task-id>               # Unassign task
 
@@ -72,6 +72,20 @@ orch-ctx read <id1> <id2>               # Read multiple
 orch-ctx create --title "Coding style" --content "Use 2-space indent" --scope global --category convention
 orch-ctx create --title "Strategy" --content "Worker-1 handles API" --scope brain --category note
 orch-ctx create --title "API pattern" --content "Use JWT auth" --scope project --project-id <id> --category requirement
+
+# For multi-line content, use heredoc with --content-stdin (recommended):
+orch-ctx create --title "PRD" --scope project --project-id <id> --content-stdin <<'EOF'
+# Project Requirements
+
+This handles **any** content:
+- Newlines work
+- `backticks` work
+- "quotes" work
+- Backslashes \ work
+EOF
+
+# Or read from a file:
+orch-ctx create --title "PRD" --content-file /path/to/prd.md --scope project --project-id <id>
 
 # Update/delete
 orch-ctx update <id> --content "Updated content"
@@ -116,9 +130,6 @@ curl -s -X POST http://127.0.0.1:8093/api/sessions/SESSION_ID/send \
 
 # Stop a worker
 curl -s -X POST http://127.0.0.1:8093/api/sessions/SESSION_ID/stop | jq
-
-# Recent activities
-curl -s 'http://127.0.0.1:8093/api/activities?limit=20' | jq
 ```
 
 ## Workflow

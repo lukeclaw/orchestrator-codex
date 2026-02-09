@@ -10,7 +10,6 @@ from orchestrator.api.deps import get_db
 from orchestrator.state.repositories import tasks as repo
 from orchestrator.state.repositories import sessions as sessions_repo
 from orchestrator.state.repositories import projects as projects_repo
-from orchestrator.state.repositories import activities as activities_repo
 
 logger = logging.getLogger(__name__)
 
@@ -69,8 +68,8 @@ def _serialize_task(t, include_subtask_stats: bool = False, db=None) -> dict:
         "links": t.links_list,
         "task_index": t.task_index,
         "task_key": _get_task_key(t, db) if db else None,
-        "created_at": t.created_at, "started_at": t.started_at,
-        "completed_at": t.completed_at,
+        "created_at": t.created_at,
+        "updated_at": t.updated_at,
     }
     if include_subtask_stats and db is not None:
         subtasks = repo.list_tasks(db, parent_task_id=t.id)
@@ -201,14 +200,6 @@ def _notify_worker_of_assignment(db, task, request):
 
         message = "\n".join(parts)
         send_to_session(session.name, message, tmux_session)
-
-        activities_repo.create_activity(
-            db,
-            event_type="task.assigned",
-            session_id=session.id,
-            task_id=task.id,
-            event_data={"task_title": task.title, "session_name": session.name},
-        )
         logger.info("Notified worker %s of task assignment: %s", session.name, task.title)
     except Exception:
         logger.exception("Failed to notify worker of task assignment")

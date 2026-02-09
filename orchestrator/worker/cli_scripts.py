@@ -88,6 +88,15 @@ for arg in "$@"; do
     fi
 done
 set -- "${{FILTERED_ARGS[@]}}"
+
+# Helper: JSON-encode a string (handles newlines, quotes, backslashes, etc.)
+json_encode() {{
+    if command -v jq &> /dev/null; then
+        printf '%s' "$1" | jq -Rs . | sed 's/^"//;s/"$//'
+    else
+        python3 -c "import json,sys; print(json.dumps(sys.stdin.read())[1:-1])" <<< "$1"
+    fi
+}}
 '''
 
 ORCH_TASK_SCRIPT = SCRIPT_HEADER + '''
@@ -96,7 +105,12 @@ show_help() {{
     echo ""
     echo "Commands:"
     echo "  show [--refresh]              Show task details"
-    echo "  update --status STATUS        Update task status (in_progress|done|blocked)"
+    echo "  update [options]              Update task"
+    echo ""
+    echo "Update Options:"
+    echo "  --status STATUS               Update status (in_progress|done|blocked)"
+    echo "  --notes NOTES                 Update notes (findings, progress, observations)"
+    echo "  --notes-stdin                 Read notes from stdin (for multi-line content)"
     echo ""
     echo "Options:"
     echo "  --refresh                     Force refresh task info from API"
@@ -106,6 +120,7 @@ show_help() {{
     echo "  orch-task show --refresh"
     echo "  orch-task update --status in_progress"
     echo "  orch-task update --status done"
+    echo "  orch-task update --notes \\"Found issue in auth module\\""
 }}
 
 cmd_show() {{
@@ -116,12 +131,20 @@ cmd_show() {{
 cmd_update() {{
     load_task_info "$FORCE_REFRESH" || exit 1
     
-    local status=""
+    local status="" notes="" notes_stdin=""
     while [[ $# -gt 0 ]]; do
         case "$1" in
             --status)
                 status="$2"
                 shift 2
+                ;;
+            --notes)
+                notes="$2"
+                shift 2
+                ;;
+            --notes-stdin)
+                notes_stdin="1"
+                shift
                 ;;
             *)
                 echo "Unknown option: $1" >&2
@@ -130,14 +153,31 @@ cmd_update() {{
         esac
     done
     
-    if [[ -z "$status" ]]; then
-        echo "Error: --status is required" >&2
+    # Read notes from stdin if specified
+    if [[ -n "$notes_stdin" ]]; then
+        notes=$(cat)
+    fi
+    
+    if [[ -z "$status" && -z "$notes" ]]; then
+        echo "Error: --status or --notes is required" >&2
         exit 1
     fi
     
+    local json="{{"
+    local first=true
+    if [[ -n "$status" ]]; then
+        json="$json\\"status\\": \\"$status\\""; first=false
+    fi
+    if [[ -n "$notes" ]]; then
+        local escaped_notes=$(json_encode "$notes")
+        [[ "$first" != true ]] && json="$json, "
+        json="$json\\"notes\\": \\"$escaped_notes\\""; first=false
+    fi
+    json="$json}}"
+    
     curl -s -X PATCH "$API_BASE/api/tasks/$TASK_ID" \\
         -H 'Content-Type: application/json' \\
-        -d "{{\\"status\\": \\"$status\\"}}" | jq .
+        -d "$json" | jq .
 }}
 
 case "$1" in
@@ -168,14 +208,27 @@ show_help() {{
     echo "  list                      List all subtasks"
     echo "  create --title TITLE [--description DESC] [--links URL1,URL2]"
     echo "                            Create a new subtask"
-    echo "  update --id ID [--status STATUS] [--links URLS] [--add-link URL] [--add-link-tag TAG]"
-    echo "                            Update a subtask"
+    echo "  update --id ID [options]  Update a subtask"
+    echo ""
+    echo "Create Options:"
+    echo "  --description DESC        Subtask description"
+    echo "  --description-stdin       Read description from stdin (for multi-line)"
+    echo "  --links URLS              Comma-separated URLs"
+    echo ""
+    echo "Update Options:"
+    echo "  --status STATUS           Update status"
+    echo "  --notes NOTES             Update notes (findings, progress)"
+    echo "  --notes-stdin             Read notes from stdin (for multi-line)"
+    echo "  --links URLS              Replace all links (comma-separated)"
+    echo "  --add-link URL            Add a link"
+    echo "  --add-link-tag TAG        Tag for the link (e.g., PR, DOC)"
     echo ""
     echo "Examples:"
     echo "  orch-subtask list"
     echo "  orch-subtask create --title \\"Fix bug\\" --description \\"Details\\""
     echo "  orch-subtask create --title \\"Add tests\\" --links \\"http://pr1,http://doc1\\""
     echo "  orch-subtask update --id UUID --status done"
+    echo "  orch-subtask update --id UUID --notes \\"Root cause found in config\\""
     echo "  orch-subtask update --id UUID --add-link \\"http://github.com/pr/123\\" --add-link-tag PR"
 }}
 
@@ -188,6 +241,7 @@ cmd_create() {{
     load_task_info "$FORCE_REFRESH" || exit 1
     local title=""
     local description=""
+    local description_stdin=""
     local links=""
     
     while [[ $# -gt 0 ]]; do
@@ -200,6 +254,10 @@ cmd_create() {{
                 description="$2"
                 shift 2
                 ;;
+            --description-stdin)
+                description_stdin="1"
+                shift
+                ;;
             --links)
                 links="$2"
                 shift 2
@@ -211,6 +269,11 @@ cmd_create() {{
         esac
     done
     
+    # Read description from stdin if specified
+    if [[ -n "$description_stdin" ]]; then
+        description=$(cat)
+    fi
+    
     if [[ -z "$title" ]]; then
         echo "Error: --title is required" >&2
         exit 1
@@ -220,7 +283,8 @@ cmd_create() {{
     local json="{{\\"project_id\\": \\"$PROJECT_ID\\", \\"parent_task_id\\": \\"$TASK_ID\\", \\"title\\": \\"$title\\""
     
     if [[ -n "$description" ]]; then
-        json="$json, \\"description\\": \\"$description\\""
+        local escaped_desc=$(json_encode "$description")
+        json="$json, \\"description\\": \\"$escaped_desc\\""
     fi
     
     if [[ -n "$links" ]]; then
@@ -253,6 +317,8 @@ cmd_update() {{
     load_task_info "$FORCE_REFRESH" || exit 1
     local subtask_id=""
     local status=""
+    local notes=""
+    local notes_stdin=""
     local links=""
     local add_link=""
     local add_link_tag=""
@@ -266,6 +332,14 @@ cmd_update() {{
             --status)
                 status="$2"
                 shift 2
+                ;;
+            --notes)
+                notes="$2"
+                shift 2
+                ;;
+            --notes-stdin)
+                notes_stdin="1"
+                shift
                 ;;
             --links)
                 links="$2"
@@ -291,6 +365,11 @@ cmd_update() {{
         exit 1
     fi
     
+    # Read notes from stdin if specified
+    if [[ -n "$notes_stdin" ]]; then
+        notes=$(cat)
+    fi
+    
     # Verify subtask belongs to our task
     local parent=$(curl -s "$API_BASE/api/tasks/$subtask_id" | jq -r '.parent_task_id // empty')
     if [[ "$parent" != "$TASK_ID" ]]; then
@@ -304,6 +383,15 @@ cmd_update() {{
     
     if [[ -n "$status" ]]; then
         json="$json\\"status\\": \\"$status\\""
+        first=false
+    fi
+    
+    if [[ -n "$notes" ]]; then
+        local escaped_notes=$(json_encode "$notes")
+        if [[ "$first" != true ]]; then
+            json="$json, "
+        fi
+        json="$json\\"notes\\": \\"$escaped_notes\\""
         first=false
     fi
     

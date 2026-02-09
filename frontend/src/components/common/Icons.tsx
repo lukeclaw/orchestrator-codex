@@ -64,16 +64,6 @@ export function IconTasks(props: IconProps) {
   )
 }
 
-export function IconDecisions(props: IconProps) {
-  return (
-    <Icon {...props}>
-      <circle cx="12" cy="12" r="10" />
-      <line x1="12" y1="8" x2="12" y2="12" />
-      <line x1="12" y1="16" x2="12.01" y2="16" />
-    </Icon>
-  )
-}
-
 export function IconChat(props: IconProps) {
   return (
     <Icon {...props}>
@@ -87,14 +77,6 @@ export function IconContext(props: IconProps) {
     <Icon {...props}>
       <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
       <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
-    </Icon>
-  )
-}
-
-export function IconActivity(props: IconProps) {
-  return (
-    <Icon {...props}>
-      <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
     </Icon>
   )
 }

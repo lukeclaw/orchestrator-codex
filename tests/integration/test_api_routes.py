@@ -188,41 +188,6 @@ class TestTasks:
         assert resp.status_code == 200
 
 
-# --- Decisions ---
-
-class TestDecisions:
-    def test_create_and_respond(self, client):
-        # Create
-        resp = client.post("/api/decisions", json={
-            "question": "Use Redis?", "options": ["Yes", "No"],
-            "urgency": "high"
-        })
-        assert resp.status_code == 201
-        did = resp.json()["id"]
-
-        # List pending
-        resp = client.get("/api/decisions/pending")
-        assert len(resp.json()) == 1
-        assert resp.json()[0]["urgency"] == "high"
-
-        # Respond
-        resp = client.post(f"/api/decisions/{did}/respond", json={
-            "response": "Yes"
-        })
-        assert resp.json()["status"] == "responded"
-        assert resp.json()["response"] == "Yes"
-
-        # No more pending
-        resp = client.get("/api/decisions/pending")
-        assert len(resp.json()) == 0
-
-    def test_dismiss_decision(self, client):
-        create = client.post("/api/decisions", json={"question": "Ignore?"})
-        did = create.json()["id"]
-        resp = client.post(f"/api/decisions/{did}/dismiss")
-        assert resp.json()["status"] == "dismissed"
-
-
 # --- Reporting ---
 
 class TestReporting:
@@ -235,19 +200,6 @@ class TestReporting:
         })
         assert resp.status_code == 200
         assert resp.json()["ok"] is True
-
-    def test_request_decision_via_reporting(self, client):
-        with patch("orchestrator.api.routes.sessions.ensure_window", return_value="orchestrator:dec-worker"):
-            client.post("/api/sessions", json={"name": "dec-worker", "host": "h"})
-        resp = client.post("/api/decision", json={
-            "session": "dec-worker", "question": "Which DB?",
-            "options": ["PG", "MySQL"]
-        })
-        assert resp.json()["ok"] is True
-
-        pending = client.get("/api/decisions/pending").json()
-        assert len(pending) == 1
-        assert pending[0]["question"] == "Which DB?"
 
     def test_get_guidance(self, client):
         with patch("orchestrator.api.routes.sessions.ensure_window", return_value="orchestrator:guide-worker"):
@@ -397,7 +349,7 @@ class TestDashboard:
     def test_frontend_routes_return_html(self, client):
         """All frontend routes should return 200 and serve the SPA."""
         for path in ["/workers", "/workers/abc-123", "/projects", "/projects/xyz",
-                     "/decisions", "/activity", "/context", "/settings"]:
+                     "/decisions", "/context", "/settings"]:
             resp = client.get(path)
             assert resp.status_code == 200, f"GET {path} returned {resp.status_code}"
 

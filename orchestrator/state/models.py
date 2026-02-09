@@ -75,10 +75,8 @@ class Task:
     status: str = "todo"
     priority: str = "M"  # H (High), M (Medium), L (Low)
     assigned_session_id: str | None = None
-    blocked_by_decision_id: str | None = None
     created_at: str = ""
-    started_at: str | None = None
-    completed_at: str | None = None
+    updated_at: str = ""
     parent_task_id: str | None = None
     notes: str | None = None
     links: str | None = None  # JSON array of {url, title, type}
@@ -129,18 +127,6 @@ class Decision:
             return json.loads(self.options)
         except (json.JSONDecodeError, TypeError):
             return []
-
-
-@dataclass
-class Activity:
-    id: str
-    event_type: str
-    project_id: str | None = None
-    task_id: str | None = None
-    session_id: str | None = None
-    event_data: str | None = None
-    actor: str | None = None
-    created_at: str = ""
 
 
 @dataclass
@@ -224,19 +210,6 @@ class CommEvent:
     channel: str
     event_type: str
     details: str | None = None
-    created_at: str = ""
-
-
-@dataclass
-class DecisionHistory:
-    id: str
-    decision_id: str
-    project_id: str | None = None
-    question: str | None = None
-    context: str | None = None
-    decision: str | None = None
-    user_feedback: str | None = None
-    was_helpful: bool | None = None
     created_at: str = ""
 
 

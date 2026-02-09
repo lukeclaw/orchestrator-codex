@@ -4,7 +4,6 @@ import { useApp } from '../context/AppContext'
 import StatsBar from '../components/layout/StatsBar'
 import SessionGrid from '../components/sessions/SessionGrid'
 import AddSessionModal from '../components/sessions/AddSessionModal'
-import ActivityTimeline from '../components/activity/ActivityTimeline'
 import ProjectCard from '../components/projects/ProjectCard'
 import './DashboardPage.css'
 
@@ -33,29 +32,20 @@ export default function DashboardPage() {
         </section>
       )}
 
-      {/* Workers + Activity */}
-      <div className="grid-2">
-        <section className="panel" data-testid="sessions-panel">
-          <div className="panel-header">
-            <h2>Workers</h2>
-            <button
-              className="btn btn-primary btn-sm"
-              data-testid="add-session-btn"
-              onClick={() => setShowAddModal(true)}
-            >
-              + Add Worker
-            </button>
-          </div>
-          <SessionGrid />
-        </section>
-
-        <section className="panel" data-testid="activity-panel">
-          <div className="panel-header">
-            <h2>Recent Activity</h2>
-          </div>
-          <ActivityTimeline />
-        </section>
-      </div>
+      {/* Workers */}
+      <section className="panel" data-testid="sessions-panel">
+        <div className="panel-header">
+          <h2>Workers</h2>
+          <button
+            className="btn btn-primary btn-sm"
+            data-testid="add-session-btn"
+            onClick={() => setShowAddModal(true)}
+          >
+            + Add Worker
+          </button>
+        </div>
+        <SessionGrid />
+      </section>
 
       <AddSessionModal open={showAddModal} onClose={() => setShowAddModal(false)} />
     </>

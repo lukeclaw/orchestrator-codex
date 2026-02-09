@@ -1,12 +1,11 @@
 import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from 'react'
 import { useLocation } from 'react-router-dom'
-import type { Session, Activity, Project, Task } from '../api/types'
+import type { Session, Project, Task } from '../api/types'
 import { api } from '../api/client'
 
 interface AppState {
   sessions: Session[]
   workers: Session[]
-  activities: Activity[]
   projects: Project[]
   tasks: Task[]
   connected: boolean
@@ -18,7 +17,6 @@ interface AppState {
 const AppContext = createContext<AppState>({
   sessions: [],
   workers: [],
-  activities: [],
   projects: [],
   tasks: [],
   connected: false,
@@ -33,7 +31,6 @@ export function useApp() {
 
 export function AppProvider({ children }: { children: ReactNode }) {
   const [sessions, setSessions] = useState<Session[]>([])
-  const [activities, setActivities] = useState<Activity[]>([])
   const [projects, setProjects] = useState<Project[]>([])
   const [tasks, setTasks] = useState<Task[]>([])
   const [connected, setConnected] = useState(false)
@@ -41,14 +38,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const fetchAll = useCallback(async () => {
     try {
-      const [s, a, p, t] = await Promise.all([
+      const [s, p, t] = await Promise.all([
         api<Session[]>('/api/sessions?session_type=worker'),
-        api<Activity[]>('/api/activities?limit=20'),
         api<Project[]>('/api/projects').catch(() => []),
         api<Task[]>('/api/tasks').catch(() => []),
       ])
       setSessions(s)
-      setActivities(a)
       setProjects(p)
       setTasks(t)
     } catch (e) {
@@ -109,7 +104,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, [location.pathname])
 
   return (
-    <AppContext.Provider value={{ sessions, workers, activities, projects, tasks, connected, loading, refresh: fetchAll, removeSession }}>
+    <AppContext.Provider value={{ sessions, workers, projects, tasks, connected, loading, refresh: fetchAll, removeSession }}>
       {children}
     </AppContext.Provider>
   )

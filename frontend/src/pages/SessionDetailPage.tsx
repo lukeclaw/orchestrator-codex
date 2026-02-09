@@ -1,6 +1,5 @@
-import { useEffect, useState, useCallback } from 'react'
+import { useState } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
-import type { Activity } from '../api/types'
 import { api } from '../api/client'
 import { useNotify } from '../context/NotificationContext'
 import { useApp } from '../context/AppContext'
@@ -21,23 +20,8 @@ export default function SessionDetailPage() {
   const tasks = allTasks.filter(t => t.assigned_session_id === id)
   
   // Local state for page-specific data
-  const [activities, setActivities] = useState<Activity[]>([])
   const [error, setError] = useState('')
   const [sendMsg, setSendMsg] = useState('')
-
-  // Load page-specific data (activities)
-  const loadPageData = useCallback(async () => {
-    if (!id) return
-    try {
-      const a = await api<Activity[]>(`/api/activities?session_id=${id}&limit=10`).catch(() => [])
-      setActivities(a)
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to load session data')
-    }
-  }, [id])
-
-  // Initial load of page-specific data
-  useEffect(() => { loadPageData() }, [loadPageData])
 
   async function handleDelete() {
     if (!id) return
@@ -107,9 +91,6 @@ export default function SessionDetailPage() {
         <div className="sd-topbar-actions">
           {tasks.length > 0 && (
             <span className="sd-chip">{tasks.length} task{tasks.length > 1 ? 's' : ''}</span>
-          )}
-          {activities.length > 0 && (
-            <span className="sd-chip">{activities.length} events</span>
           )}
           <ConfirmPopover
             message={`Remove session "${session.name}"?`}

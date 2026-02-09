@@ -235,6 +235,7 @@ show_help() {{
     echo "  --project-id ID               Project ID (required for create)"
     echo "  --title TITLE                 Task title (required for create)"
     echo "  --description DESC            Task description"
+    echo "  --notes NOTES                 Task notes (findings, progress, observations)"
     echo "  --status STATUS               Task status (todo|in_progress|done|blocked)"
     echo "  --priority PRIORITY           Priority (high|medium|low)"
     echo "  --parent-id ID                Parent task ID (for subtasks)"
@@ -246,6 +247,7 @@ show_help() {{
     echo "  orch-tasks create --project-id abc123 --title \\"Add OAuth callback\\" --priority high"
     echo "  orch-tasks assign task123 worker456"
     echo "  orch-tasks update task123 --status done"
+    echo "  orch-tasks update task123 --notes \\"Found root cause in auth module\\""
     echo "  orch-tasks update task123 --add-link \\"https://github.com/pr/123\\" --add-link-tag PR"
 }}
 
@@ -321,11 +323,12 @@ cmd_update() {{
         exit 1
     fi
     
-    local title="" description="" status="" priority="" add_link="" add_link_tag=""
+    local title="" description="" notes="" status="" priority="" add_link="" add_link_tag=""
     while [[ $# -gt 0 ]]; do
         case "$1" in
             --title) title="$2"; shift 2 ;;
             --description) description="$2"; shift 2 ;;
+            --notes) notes="$2"; shift 2 ;;
             --status) status="$2"; shift 2 ;;
             --priority) priority="$2"; shift 2 ;;
             --add-link) add_link="$2"; shift 2 ;;
@@ -342,6 +345,10 @@ cmd_update() {{
     if [[ -n "$description" ]]; then
         [[ "$first" != true ]] && json="$json, "
         json="$json\\"description\\": \\"$description\\""; first=false
+    fi
+    if [[ -n "$notes" ]]; then
+        [[ "$first" != true ]] && json="$json, "
+        json="$json\\"notes\\": \\"$notes\\""; first=false
     fi
     if [[ -n "$status" ]]; then
         [[ "$first" != true ]] && json="$json, "
@@ -430,6 +437,8 @@ show_help() {{
     echo "Create/Update Options:"
     echo "  --title TITLE                 Context title (required for create)"
     echo "  --content CONTENT             Context content (required for create)"
+    echo "  --content-file FILE           Read content from file (safer for special chars)"
+    echo "  --content-stdin               Read content from stdin (best for LLM agents)"
     echo "  --description DESC            Brief description"
     echo "  --scope SCOPE                 Scope: global|brain|project (default: global)"
     echo "  --project-id ID               Project ID (required if scope=project)"
@@ -478,12 +487,25 @@ cmd_read() {{
     done
 }}
 
+# Helper: JSON-encode a string (handles newlines, quotes, backslashes, etc.)
+json_encode() {{
+    if command -v jq &> /dev/null; then
+        # jq -Rs reads raw input, outputs JSON string (with quotes) - strip the quotes
+        printf '%s' "$1" | jq -Rs . | sed 's/^"//;s/"$//'
+    else
+        # Fallback to Python if jq not available
+        python3 -c "import json,sys; print(json.dumps(sys.stdin.read())[1:-1])" <<< "$1"
+    fi
+}}
+
 cmd_create() {{
-    local title="" content="" description="" scope="global" project_id="" category=""
+    local title="" content="" content_file="" content_stdin="" description="" scope="global" project_id="" category=""
     while [[ $# -gt 0 ]]; do
         case "$1" in
             --title) title="$2"; shift 2 ;;
             --content) content="$2"; shift 2 ;;
+            --content-file) content_file="$2"; shift 2 ;;
+            --content-stdin) content_stdin="1"; shift ;;
             --description) description="$2"; shift 2 ;;
             --scope) scope="$2"; shift 2 ;;
             --project-id) project_id="$2"; shift 2 ;;
@@ -496,8 +518,20 @@ cmd_create() {{
         echo "Error: --title is required" >&2
         exit 1
     fi
+    # Read content from stdin if specified
+    if [[ -n "$content_stdin" ]]; then
+        content=$(cat)
+    # Read content from file if specified
+    elif [[ -n "$content_file" ]]; then
+        if [[ ! -f "$content_file" ]]; then
+            echo "Error: Content file not found: $content_file" >&2
+            exit 1
+        fi
+        content=$(cat "$content_file")
+    fi
+    
     if [[ -z "$content" ]]; then
-        echo "Error: --content is required" >&2
+        echo "Error: --content, --content-file, or --content-stdin is required" >&2
         exit 1
     fi
     if [[ "$scope" == "project" ]] && [[ -z "$project_id" ]]; then
@@ -505,8 +539,8 @@ cmd_create() {{
         exit 1
     fi
     
-    # Escape content for JSON (handle newlines and quotes)
-    local escaped_content=$(echo "$content" | sed 's/\\/\\\\/g' | sed 's/"/\\"/g' | sed ':a;N;$!ba;s/\\n/\\\\n/g')
+    # JSON-encode content (handles newlines, quotes, backslashes, etc.)
+    local escaped_content=$(json_encode "$content")
     
     local json="{{\\"title\\": \\"$title\\", \\"content\\": \\"$escaped_content\\", \\"scope\\": \\"$scope\\", \\"source\\": \\"brain\\""
     [[ -n "$description" ]] && json="$json, \\"description\\": \\"$description\\""
@@ -527,11 +561,13 @@ cmd_update() {{
         exit 1
     fi
     
-    local title="" content="" description="" category=""
+    local title="" content="" content_file="" content_stdin="" description="" category=""
     while [[ $# -gt 0 ]]; do
         case "$1" in
             --title) title="$2"; shift 2 ;;
             --content) content="$2"; shift 2 ;;
+            --content-file) content_file="$2"; shift 2 ;;
+            --content-stdin) content_stdin="1"; shift ;;
             --description) description="$2"; shift 2 ;;
             --category) category="$2"; shift 2 ;;
             *) echo "Unknown option: $1" >&2; exit 1 ;;
@@ -543,8 +579,19 @@ cmd_update() {{
     if [[ -n "$title" ]]; then
         json="$json\\"title\\": \\"$title\\""; first=false
     fi
+    # Read content from stdin if specified
+    if [[ -n "$content_stdin" ]]; then
+        content=$(cat)
+    # Read content from file if specified
+    elif [[ -n "$content_file" ]]; then
+        if [[ ! -f "$content_file" ]]; then
+            echo "Error: Content file not found: $content_file" >&2
+            exit 1
+        fi
+        content=$(cat "$content_file")
+    fi
     if [[ -n "$content" ]]; then
-        local escaped_content=$(echo "$content" | sed 's/\\/\\\\/g' | sed 's/"/\\"/g' | sed ':a;N;$!ba;s/\\n/\\\\n/g')
+        local escaped_content=$(json_encode "$content")
         [[ "$first" != true ]] && json="$json, "
         json="$json\\"content\\": \\"$escaped_content\\""; first=false
     fi

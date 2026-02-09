@@ -49,32 +49,6 @@ def e2e_db_path():
         "VALUES ('s3', 'worker-gamma', 'rdev1.example.com', 'disconnected')"
     )
 
-    # --- Decisions (2 with different urgencies) ---
-    conn.execute(
-        "INSERT INTO decisions (id, session_id, question, options, urgency, status) "
-        "VALUES ('d1', 's1', 'Should we refactor the auth module before adding OAuth?', "
-        "'[\"Yes, refactor first\", \"No, add OAuth directly\"]', 'high', 'pending')"
-    )
-    conn.execute(
-        "INSERT INTO decisions (id, session_id, question, context, urgency, status) "
-        "VALUES ('d2', 's2', 'PR #42 has merge conflicts. How should we resolve?', "
-        "'Conflicts in src/auth.py and src/config.py', 'critical', 'pending')"
-    )
-
-    # --- Activities ---
-    conn.execute(
-        "INSERT INTO activities (id, session_id, event_type, event_data) "
-        "VALUES ('a1', 's1', 'task.started', '{\"task\": \"Implement OAuth flow\"}')"
-    )
-    conn.execute(
-        "INSERT INTO activities (id, session_id, event_type, event_data) "
-        "VALUES ('a2', 's2', 'pr.created', '{\"pr\": \"#42 Add user auth\"}')"
-    )
-    conn.execute(
-        "INSERT INTO activities (id, session_id, event_type, event_data) "
-        "VALUES ('a3', 's1', 'session.connected', '{\"host\": \"localhost\"}')"
-    )
-
     conn.commit()
     conn.close()
 

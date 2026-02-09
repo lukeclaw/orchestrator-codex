@@ -7,7 +7,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from scripts.seed_db import seed_all
 from orchestrator.llm.context_selector import select_context, _score_item, _estimate_tokens
-from orchestrator.state.repositories import projects, sessions, tasks, decisions
+from orchestrator.state.repositories import projects, sessions, tasks
 from datetime import datetime
 
 
@@ -29,15 +29,6 @@ def test_context_includes_sessions(db):
     assert "worker-1" in context
     assert "worker-2" in context
     assert "Sessions: 2 total" in context
-
-
-def test_context_includes_pending_decisions(db):
-    seed_all(db)
-    decisions.create_decision(db, "Which DB?", urgency="high")
-
-    context = select_context(db)
-    assert "Pending decisions: 1" in context
-    assert "Which DB?" in context
 
 
 def test_context_respects_budget(db):

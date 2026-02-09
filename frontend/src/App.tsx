@@ -10,7 +10,6 @@ import ProjectsPage from './pages/ProjectsPage'
 import ProjectDetailPage from './pages/ProjectDetailPage'
 import TasksPage from './pages/TasksPage'
 import TaskDetailPage from './pages/TaskDetailPage'
-import ActivityPage from './pages/ActivityPage'
 import ContextPage from './pages/ContextPage'
 import SettingsPage from './pages/SettingsPage'
 
@@ -28,7 +27,6 @@ export default function App() {
               <Route path="/tasks/:id" element={<TaskDetailPage />} />
               <Route path="/workers" element={<WorkersPage />} />
               <Route path="/workers/:id" element={<SessionDetailPage />} />
-              <Route path="/activity" element={<ActivityPage />} />
               <Route path="/context" element={<ContextPage />} />
               <Route path="/settings" element={<SettingsPage />} />
             </Route>

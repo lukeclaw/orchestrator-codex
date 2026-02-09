@@ -144,11 +144,15 @@ def start_brain(db=Depends(get_db)):
 
 @router.post("/brain/stop", status_code=200)
 def stop_brain(db=Depends(get_db)):
-    """Stop the orchestrator brain."""
+    """Stop the orchestrator brain and clean up tmp directory."""
+    import shutil
+    
     session = _get_brain_session(db)
     if session is None:
         return {"ok": True, "message": "Brain not running"}
 
+    brain_dir = "/tmp/orchestrator/brain"
+    
     try:
         # Send Ctrl-C three times to force-exit Claude Code
         import time
@@ -157,12 +161,20 @@ def stop_brain(db=Depends(get_db)):
             time.sleep(0.3)
         sessions_repo.update_session(db, session.id, status="disconnected")
         logger.info("Orchestrator brain stopped")
-        return {"ok": True, "message": "Brain stopped"}
     except Exception as e:
         logger.exception("Failed to stop brain")
         # Force-update status even if tmux command failed
         sessions_repo.update_session(db, session.id, status="disconnected")
-        return {"ok": True, "message": f"Brain marked as stopped (tmux error: {e})"}
+    
+    # Clean up brain tmp directory so next start is clean
+    try:
+        if os.path.exists(brain_dir):
+            shutil.rmtree(brain_dir)
+            logger.info("Cleaned up brain directory: %s", brain_dir)
+    except Exception as e:
+        logger.warning("Could not clean up brain directory %s: %s", brain_dir, e)
+    
+    return {"ok": True, "message": "Brain stopped"}
 
 
 @router.post("/brain/sync", status_code=200)

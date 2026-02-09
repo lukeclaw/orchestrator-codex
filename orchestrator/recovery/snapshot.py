@@ -25,13 +25,8 @@ def create_snapshot(conn: sqlite3.Connection, session_id: str) -> SessionSnapsho
         task = assigned_tasks[0]
         task_summary = f"{task.title}: {task.description or 'No description'} (status: {task.status})"
 
-    # Key decisions
-    from orchestrator.state.repositories.decisions import list_decisions
-    recent_decisions = list_decisions(conn, session_id=session_id)[:5]
-    key_decisions = json.dumps([
-        {"question": d.question, "response": d.response, "status": d.status}
-        for d in recent_decisions
-    ])
+    # Legacy field kept for schema compatibility
+    key_decisions = json.dumps([])
 
     # Last known state
     last_state = f"Session {session.name}: status={session.status}, host={session.host}"

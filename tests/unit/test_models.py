@@ -3,9 +3,7 @@
 import json
 
 from orchestrator.state.models import (
-    Activity,
     Config,
-    Decision,
     Project,
     PullRequest,
     Session,
@@ -35,21 +33,6 @@ def test_task_defaults():
     assert t.assigned_session_id is None
 
 
-def test_decision_options_list_from_json():
-    d = Decision(id="d1", question="Which DB?", options='["PostgreSQL", "MySQL"]')
-    assert d.options_list == ["PostgreSQL", "MySQL"]
-
-
-def test_decision_options_list_from_list():
-    d = Decision(id="d1", question="Which DB?", options=["PostgreSQL", "MySQL"])
-    assert d.options_list == ["PostgreSQL", "MySQL"]
-
-
-def test_decision_options_list_none():
-    d = Decision(id="d1", question="Which DB?")
-    assert d.options_list == []
-
-
 def test_config_parsed_value_json():
     c = Config(key="test", value='{"nested": true}')
     assert c.parsed_value == {"nested": True}
@@ -74,12 +57,6 @@ def test_pull_request_defaults():
     pr = PullRequest(id="pr1", url="https://github.com/org/repo/pull/1")
     assert pr.status == "open"
     assert pr.number is None
-
-
-def test_activity_creation():
-    a = Activity(id="a1", event_type="task_started", actor="system")
-    assert a.project_id is None
-    assert a.event_data is None
 
 
 def test_worker_capability():

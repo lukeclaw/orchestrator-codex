@@ -28,8 +28,6 @@ def test_fresh_migration():
         "projects", "sessions", "project_workers",
         "tasks", "task_dependencies",
         "pull_requests",
-        "decisions", "decision_history",
-        "activities",
         "learned_patterns",
         "worker_capabilities", "task_requirements", "pr_dependencies",
         "session_snapshots",
@@ -81,6 +79,4 @@ def test_indexes_created():
     ).fetchall()
     index_names = {r["name"] for r in indexes}
     assert "idx_tasks_project" in index_names
-    assert "idx_decisions_status" in index_names
-    assert "idx_activities_created" in index_names
     conn.close()

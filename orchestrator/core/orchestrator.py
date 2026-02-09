@@ -13,7 +13,6 @@ from orchestrator.recovery.rebrief import rebrief_session
 from orchestrator.recovery.snapshot import create_snapshot
 from orchestrator.state.db import ConnectionFactory
 from orchestrator.state.repositories import sessions as sessions_repo
-from orchestrator.state.repositories import activities as activities_repo
 from orchestrator.state.repositories import tasks as tasks_repo
 from orchestrator.terminal import manager as tmux
 from orchestrator.terminal.monitor import monitor_loop
@@ -89,12 +88,6 @@ class Orchestrator:
             # Send re-brief
             success = rebrief_session(conn, session_name, self.tmux_session)
             if success:
-                activities_repo.create_activity(
-                    conn,
-                    event_type="recovery.rebrief",
-                    session_id=session.id,
-                    event_data={"reason": reason},
-                )
                 logger.info("Recovery re-brief sent to %s", session_name)
         except Exception:
             logger.exception("Recovery failed for %s", session_name)
@@ -123,24 +116,9 @@ class Orchestrator:
             if response is not None:
                 # Auto-approve: send the response keystroke
                 tmux.send_keys(self.tmux_session, session_name, response, enter=False)
-                activities_repo.create_activity(
-                    conn,
-                    event_type="auto_approve.sent",
-                    session_id=session.id,
-                    event_data={"response": repr(response), "output_tail": output[-200:]},
-                )
                 logger.info("Auto-approved for %s: sent %r", session_name, response)
             else:
-                # Create a decision for human review
-                from orchestrator.state.repositories import decisions as decisions_repo
-                decisions_repo.create_decision(
-                    conn,
-                    question=f"Session '{session_name}' is waiting for input",
-                    session_id=session.id,
-                    context=output[-500:] if output else "No terminal output captured",
-                    urgency="normal",
-                )
-                logger.info("Created decision for waiting session %s", session_name)
+                logger.info("Session %s waiting for input - manual intervention needed", session_name)
         except ImportError:
             logger.debug("auto_approve module not available")
         except Exception:
@@ -186,14 +164,6 @@ class Orchestrator:
                 # Compose and send context to the worker
                 message = f"New task assigned: {task.title}\n\n{task.description or ''}"
                 send_to_session(session_name, message, self.tmux_session)
-
-                activities_repo.create_activity(
-                    conn,
-                    event_type="task.assigned",
-                    session_id=session.id,
-                    task_id=task_id,
-                    event_data={"task_title": task.title},
-                )
                 logger.info("Assigned task '%s' to %s", task.title, session_name)
                 break  # One task per idle event
         except Exception:

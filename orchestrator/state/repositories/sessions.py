@@ -117,10 +117,8 @@ def delete_session(conn: sqlite3.Connection, id: str) -> bool:
         conn.execute("DELETE FROM worker_capabilities WHERE session_id = ?", (id,))
         conn.execute("DELETE FROM comm_events WHERE session_id = ?", (id,))
         conn.execute("DELETE FROM session_snapshots WHERE session_id = ?", (id,))
-        conn.execute("DELETE FROM activities WHERE session_id = ?", (id,))
         conn.execute("DELETE FROM project_workers WHERE session_id = ?", (id,))
         conn.execute("UPDATE tasks SET assigned_session_id = NULL WHERE assigned_session_id = ?", (id,))
-        conn.execute("UPDATE decisions SET session_id = NULL WHERE session_id = ?", (id,))
         cursor = conn.execute("DELETE FROM sessions WHERE id = ?", (id,))
     return cursor.rowcount > 0
 

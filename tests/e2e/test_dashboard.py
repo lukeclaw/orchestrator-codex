@@ -2,8 +2,6 @@
 
 Seed data (see conftest.py):
   - 3 sessions: worker-alpha (working), worker-beta (idle), worker-gamma (disconnected)
-  - 2 decisions: d1 (high, with options), d2 (critical, with context)
-  - 3 activities: task.started, pr.created, session.connected
 """
 
 from __future__ import annotations
@@ -68,12 +66,9 @@ def test_03_quick_stats_accurate(page):
     screenshot(page, "03_quick_stats")
 
     sessions_val = page.query_selector("#stat-sessions-val").inner_text()
-    decisions_val = page.query_selector("#stat-decisions-val").inner_text()
 
     # 2 active (working + idle), disconnected doesn't count
     assert sessions_val == "2"
-    # 2 pending decisions
-    assert decisions_val == "2"
 
 
 # ---------------------------------------------------------------------------
@@ -144,110 +139,6 @@ def test_05_session_detail_page(page, server):
     if back_btn:
         back_btn.click()
         page.wait_for_timeout(1000)
-
-
-# ---------------------------------------------------------------------------
-# 06. Decision queue display
-# ---------------------------------------------------------------------------
-
-
-def test_06_decision_queue_display(page):
-    """Two decisions visible with urgency colors and option buttons."""
-    screenshot(page, "06_decisions")
-
-    cards = page.query_selector_all("[data-testid='decision-card']")
-    assert len(cards) == 2
-
-    count = page.query_selector("[data-testid='decision-count']")
-    assert count is not None
-    assert count.inner_text() == "2"
-
-    # Check urgency tags
-    urgencies = [c.query_selector(".urgency-tag").inner_text().lower() for c in cards]
-    assert "high" in urgencies
-    assert "critical" in urgencies
-
-    # Find the HIGH decision — should have 2 option buttons
-    d1_card = None
-    for c in cards:
-        if "high" in c.query_selector(".urgency-tag").inner_text().lower():
-            d1_card = c
-            break
-    assert d1_card is not None
-    option_btns = d1_card.query_selector_all("[data-testid='approve-btn']")
-    assert len(option_btns) == 2
-
-
-# ---------------------------------------------------------------------------
-# 07. Approve decision
-# ---------------------------------------------------------------------------
-
-
-def test_07_approve_decision(page):
-    """Click an option button, decision resolves, count decrements."""
-    cards = page.query_selector_all("[data-testid='decision-card']")
-    initial_count = len(cards)
-
-    first_approve = page.query_selector("[data-testid='approve-btn']")
-    assert first_approve is not None
-    first_approve.click()
-    page.wait_for_timeout(1500)
-
-    screenshot(page, "07_after_approve")
-
-    remaining = page.query_selector_all("[data-testid='decision-card']")
-    assert len(remaining) == initial_count - 1
-
-    count = page.query_selector("[data-testid='decision-count']").inner_text()
-    assert count == str(initial_count - 1)
-
-
-# ---------------------------------------------------------------------------
-# 08. Dismiss decision
-# ---------------------------------------------------------------------------
-
-
-def test_08_dismiss_decision(page):
-    """Click Dismiss, decision removed."""
-    cards = page.query_selector_all("[data-testid='decision-card']")
-    if not cards:
-        return
-
-    initial = len(cards)
-    dismiss_btn = page.query_selector("[data-testid='dismiss-btn']")
-    assert dismiss_btn is not None
-    dismiss_btn.click()
-    page.wait_for_timeout(1500)
-
-    screenshot(page, "08_after_dismiss")
-
-    remaining = page.query_selector_all("[data-testid='decision-card']")
-    assert len(remaining) == initial - 1
-
-
-# ---------------------------------------------------------------------------
-# 09. Activity timeline
-# ---------------------------------------------------------------------------
-
-
-def test_09_activity_timeline(page):
-    """Activity entries show event_type tags."""
-    screenshot(page, "09_activity_timeline")
-
-    items = page.query_selector_all("[data-testid='activity-item']")
-    assert len(items) >= 3
-
-    # React uses .at-type class for event type
-    event_types = [it.query_selector(".at-type").inner_text() for it in items]
-    assert "session.connected" in event_types
-    assert "pr.created" in event_types
-    assert "task.started" in event_types
-
-    # Each item should have a time
-    for it in items:
-        time_el = it.query_selector(".at-time")
-        assert time_el is not None
-        assert time_el.inner_text() != ""
 
 
 # ---------------------------------------------------------------------------

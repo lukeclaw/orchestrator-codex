@@ -1,9 +1,7 @@
 """Integration tests for all repositories against real SQLite."""
 
 from orchestrator.state.repositories import (
-    activities,
     config as config_repo,
-    decisions,
     projects,
     pull_requests,
     sessions,
@@ -96,15 +94,14 @@ class TestTasksRepo:
         assert t.priority == 5
         assert t.status == "todo"
 
-    def test_update_status_sets_timestamps(self, db):
+    def test_update_status_sets_updated_at(self, db):
         p = projects.create_project(db, "TS Project")
         t = tasks.create_task(db, p.id, "Timestamped task")
+        original_updated_at = t.updated_at
 
         t = tasks.update_task(db, t.id, status="in_progress")
-        assert t.started_at is not None
-
-        t = tasks.update_task(db, t.id, status="done")
-        assert t.completed_at is not None
+        assert t.updated_at is not None
+        assert t.updated_at >= original_updated_at
 
     def test_list_by_project(self, db):
         p1 = projects.create_project(db, "P1")
@@ -135,40 +132,6 @@ class TestTasksRepo:
         assert len(reqs) == 1
 
 
-# --- Decisions ---
-
-class TestDecisionsRepo:
-    def test_create_and_list_pending(self, db):
-        d = decisions.create_decision(db, "Which framework?", options=["FastAPI", "Flask"])
-        assert d.status == "pending"
-        pending = decisions.list_pending(db)
-        assert len(pending) == 1
-
-    def test_respond_decision(self, db):
-        d = decisions.create_decision(db, "DB choice?", urgency="high")
-        responded = decisions.respond_decision(db, d.id, "PostgreSQL", "admin")
-        assert responded.status == "responded"
-        assert responded.response == "PostgreSQL"
-        assert responded.resolved_by == "admin"
-        assert decisions.list_pending(db) == []
-
-    def test_dismiss_decision(self, db):
-        d = decisions.create_decision(db, "Ignore me")
-        dismissed = decisions.dismiss_decision(db, d.id)
-        assert dismissed.status == "dismissed"
-
-    def test_respond_unblocks_task(self, db):
-        p = projects.create_project(db, "Block Test")
-        d = decisions.create_decision(db, "Blocking question")
-        t = tasks.create_task(db, p.id, "Blocked task")
-        tasks.update_task(db, t.id, status="blocked", blocked_by_decision_id=d.id)
-
-        decisions.respond_decision(db, d.id, "Answer")
-        t = tasks.get_task(db, t.id)
-        assert t.status == "todo"
-        assert t.blocked_by_decision_id is None
-
-
 # --- Pull Requests ---
 
 class TestPullRequestsRepo:
@@ -184,24 +147,6 @@ class TestPullRequestsRepo:
         pr = pull_requests.create_pull_request(db, "https://example.com/pr/2")
         updated = pull_requests.update_pull_request(db, pr.id, status="merged")
         assert updated.status == "merged"
-
-
-# --- Activities ---
-
-class TestActivitiesRepo:
-    def test_log_and_list(self, db):
-        a = activities.log_activity(db, "task_started", actor="system")
-        assert a.event_type == "task_started"
-        recent = activities.list_activities(db, limit=10)
-        assert len(recent) == 1
-
-    def test_list_by_session(self, db):
-        s = sessions.create_session(db, "act-worker", "host")
-        activities.log_activity(db, "event1", session_id=s.id)
-        activities.log_activity(db, "event2", session_id=s.id)
-        activities.log_activity(db, "event3")  # no session
-        session_acts = activities.list_activities(db, session_id=s.id)
-        assert len(session_acts) == 2
 
 
 # --- Templates ---

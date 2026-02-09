@@ -6,6 +6,7 @@ import type { Task, TaskLink } from '../api/types'
 import { IconArrowLeft } from '../components/common/Icons'
 import ConfirmPopover from '../components/common/ConfirmPopover'
 import TagDropdown from '../components/common/TagDropdown'
+import Markdown from '../components/common/Markdown'
 import './TaskDetailPage.css'
 
 const STATUS_OPTIONS = [
@@ -13,6 +14,12 @@ const STATUS_OPTIONS = [
   { value: 'in_progress', label: 'In Progress', className: 'status-in_progress' },
   { value: 'done', label: 'Done', className: 'status-done' },
   { value: 'blocked', label: 'Blocked', className: 'status-blocked' },
+]
+
+const PRIORITY_OPTIONS = [
+  { value: 'H', label: 'High', className: 'priority-H' },
+  { value: 'M', label: 'Medium', className: 'priority-M' },
+  { value: 'L', label: 'Low', className: 'priority-L' },
 ]
 
 export default function TaskDetailPage() {
@@ -26,9 +33,12 @@ export default function TaskDetailPage() {
   // Editing states
   const [isEditingTitle, setIsEditingTitle] = useState(false)
   const [isEditingDesc, setIsEditingDesc] = useState(false)
+  const [isEditingNotes, setIsEditingNotes] = useState(false)
   const [editTitle, setEditTitle] = useState('')
   const [editDesc, setEditDesc] = useState('')
+  const [editNotes, setEditNotes] = useState('')
   const [status, setStatus] = useState('')
+  const [priority, setPriority] = useState('')
   const [assignedSession, setAssignedSession] = useState('')
   const [links, setLinks] = useState<TaskLink[]>([])
   const [subtasks, setSubtasks] = useState<Task[]>([])
@@ -41,12 +51,31 @@ export default function TaskDetailPage() {
   const [editLinkUrl, setEditLinkUrl] = useState('')
   const [editLinkTag, setEditLinkTag] = useState('')
   const [subtasksExpanded, setSubtasksExpanded] = useState(true)
+  const [notesExpanded, setNotesExpanded] = useState(true)
+  const [showAddSubtask, setShowAddSubtask] = useState(false)
+  const [newSubtaskTitle, setNewSubtaskTitle] = useState('')
+  const [creatingSubtask, setCreatingSubtask] = useState(false)
+
+  // Reset all editing states when navigating to a different task
+  useEffect(() => {
+    setIsEditingTitle(false)
+    setIsEditingDesc(false)
+    setIsEditingNotes(false)
+    setShowAddLink(false)
+    setEditingLinkUrl(null)
+    setShowAddSubtask(false)
+    setNewSubtaskTitle('')
+    setNotesExpanded(true)
+    setSubtasksExpanded(true)
+  }, [id])
 
   useEffect(() => {
     if (task) {
       setEditTitle(task.title)
       setEditDesc(task.description || '')
+      setEditNotes(task.notes || '')
       setStatus(task.status)
+      setPriority(task.priority)
       setAssignedSession(task.assigned_session_id || '')
       setLinks(task.links || [])
       
@@ -104,9 +133,23 @@ export default function TaskDetailPage() {
     setIsEditingDesc(false)
   }
 
+  const handleNotesSave = async () => {
+    if (editNotes === (task?.notes || '')) {
+      setIsEditingNotes(false)
+      return
+    }
+    await handleSaveField('notes', editNotes || null)
+    setIsEditingNotes(false)
+  }
+
   const handleStatusChange = async (newStatus: string) => {
     setStatus(newStatus)
     await handleSaveField('status', newStatus)
+  }
+
+  const handlePriorityChange = async (newPriority: string) => {
+    setPriority(newPriority)
+    await handleSaveField('priority', newPriority)
   }
 
   const handleAssignChange = async (sessionId: string) => {
@@ -163,6 +206,33 @@ export default function TaskDetailPage() {
     const original = links.find(l => l.url === editingLinkUrl)
     if (!original) return false
     return editLinkUrl !== original.url || editLinkTag !== (original.tag || '')
+  }
+
+  const handleCreateSubtask = async () => {
+    if (!task || !newSubtaskTitle.trim()) return
+    setCreatingSubtask(true)
+    try {
+      await api('/api/tasks', {
+        method: 'POST',
+        body: JSON.stringify({
+          project_id: task.project_id,
+          parent_task_id: task.id,
+          title: newSubtaskTitle.trim(),
+          status: 'todo',
+          priority: 'M'
+        })
+      })
+      setNewSubtaskTitle('')
+      setShowAddSubtask(false)
+      // Refresh subtasks
+      const updated = await api<Task[]>(`/api/tasks?parent_task_id=${task.id}&include_subtask_stats=false`)
+      setSubtasks(updated)
+      refresh()
+    } catch (err) {
+      console.error('Failed to create subtask:', err)
+    } finally {
+      setCreatingSubtask(false)
+    }
   }
 
   const handleDelete = async () => {
@@ -318,6 +388,74 @@ export default function TaskDetailPage() {
                 Worker <strong>{assignedWorker?.name}</strong> is working on this task
               </div>
             )}
+
+            {/* Notes Section */}
+            <div className="tdp-notes-section">
+              <div className="tdp-notes-header">
+                <button 
+                  className="tdp-notes-toggle"
+                  onClick={() => setNotesExpanded(!notesExpanded)}
+                  title={notesExpanded ? 'Collapse' : 'Expand'}
+                >
+                  <span className={`expand-icon ${notesExpanded ? 'expanded' : ''}`}>▶</span>
+                </button>
+                <label>Notes</label>
+                {!isEditingNotes && isEditable && notesExpanded && (
+                  <button className="tdp-edit-btn" onClick={() => setIsEditingNotes(true)}>Edit</button>
+                )}
+                {!notesExpanded && task.notes && (
+                  <span className="tdp-notes-preview">{task.notes.split('\n')[0]}</span>
+                )}
+              </div>
+              {notesExpanded && (
+                isEditingNotes ? (
+                  <div className="tdp-desc-edit">
+                    <textarea
+                      value={editNotes}
+                      onChange={e => setEditNotes(e.target.value)}
+                      placeholder="Add notes about this task (supports markdown)..."
+                      rows={Math.max(5, (task.notes || '').split('\n').length)}
+                      autoFocus
+                      onKeyDown={e => {
+                        if (e.key === 'Escape') {
+                          setIsEditingNotes(false)
+                          setEditNotes(task.notes || '')
+                        }
+                      }}
+                    />
+                    <div className="tdp-inline-actions desc-actions">
+                      <button
+                        className="tdp-action-btn save"
+                        onClick={handleNotesSave}
+                        disabled={editNotes === (task.notes || '')}
+                        title="Save"
+                      >
+                        ✓
+                      </button>
+                      <button
+                        className="tdp-action-btn cancel"
+                        onClick={() => { setIsEditingNotes(false); setEditNotes(task.notes || '') }}
+                        title="Discard"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  </div>
+                ) : task.notes ? (
+                  <div className="tdp-notes-content">
+                    <Markdown>{task.notes}</Markdown>
+                  </div>
+                ) : (
+                  <p 
+                    className={`tdp-notes-empty ${isEditable ? 'editable' : ''}`}
+                    onClick={() => isEditable && setIsEditingNotes(true)}
+                    title={isEditable ? 'Click to edit' : undefined}
+                  >
+                    No notes yet...
+                  </p>
+                )
+              )}
+            </div>
           </div>
 
           {/* Links Card */}
@@ -359,7 +497,16 @@ export default function TaskDetailPage() {
                       {isEditable && (
                         <div className="tdp-link-actions">
                           <button className="link-edit" onClick={() => startEditLink(link)} title="Edit">✎</button>
-                          <button className="link-remove" onClick={() => handleRemoveLink(link.url)} title="Remove">×</button>
+                          <ConfirmPopover
+                            message="Remove this link?"
+                            confirmLabel="Remove"
+                            onConfirm={() => handleRemoveLink(link.url)}
+                            variant="danger"
+                          >
+                            {({ onClick }) => (
+                              <button className="link-remove" onClick={onClick} title="Remove">×</button>
+                            )}
+                          </ConfirmPopover>
                         </div>
                       )}
                     </div>
@@ -370,50 +517,84 @@ export default function TaskDetailPage() {
           </div>
 
           {/* Subtasks Card */}
-          {subtasks.length > 0 && (
-            <div className="tdp-card tdp-subtasks-card">
-              <div className="tdp-card-header clickable" onClick={() => setSubtasksExpanded(!subtasksExpanded)}>
-                <h3>
-                  <span className={`expand-icon ${subtasksExpanded ? 'expanded' : ''}`}>▶</span>
-                  Subtasks
-                  <span className="count">({doneSubtasks}/{totalSubtasks})</span>
-                </h3>
+          <div className="tdp-card tdp-subtasks-card">
+            <div className="tdp-card-header">
+              <h3 className="clickable" onClick={() => setSubtasksExpanded(!subtasksExpanded)}>
+                <span className={`expand-icon ${subtasksExpanded ? 'expanded' : ''}`}>▶</span>
+                Subtasks
+                {subtasks.length > 0 && <span className="count">({doneSubtasks}/{totalSubtasks})</span>}
+              </h3>
+              {subtasks.length > 0 && (
                 <div className="tdp-progress">
                   <div className="tdp-progress-bar" style={{ width: `${progressPct}%` }} />
                 </div>
+              )}
+              {isEditable && !showAddSubtask && (
+                <button className="tdp-edit-btn" onClick={() => setShowAddSubtask(true)}>+ Add</button>
+              )}
+            </div>
+            {showAddSubtask && (
+              <div className="tdp-subtask-form">
+                <input
+                  type="text"
+                  placeholder="Subtask title..."
+                  value={newSubtaskTitle}
+                  onChange={e => setNewSubtaskTitle(e.target.value)}
+                  autoFocus
+                  onKeyDown={e => {
+                    if (e.key === 'Enter' && newSubtaskTitle.trim()) handleCreateSubtask()
+                    if (e.key === 'Escape') { setShowAddSubtask(false); setNewSubtaskTitle('') }
+                  }}
+                />
+                <div className="tdp-inline-actions">
+                  <button 
+                    className="tdp-action-btn save" 
+                    onClick={handleCreateSubtask} 
+                    disabled={!newSubtaskTitle.trim() || creatingSubtask}
+                    title="Create"
+                  >
+                    ✓
+                  </button>
+                  <button 
+                    className="tdp-action-btn cancel" 
+                    onClick={() => { setShowAddSubtask(false); setNewSubtaskTitle('') }}
+                    title="Cancel"
+                  >
+                    ✕
+                  </button>
+                </div>
               </div>
-              {subtasksExpanded && (
-                <div className="tdp-subtasks-list">
-                  {subtasks.map(st => (
-                    <Link key={st.id} to={`/tasks/${st.id}`} className="tdp-subtask-item">
+            )}
+            {subtasksExpanded && subtasks.length > 0 && (
+              <div className="tdp-subtasks-list">
+                {subtasks.map(st => (
+                  <div key={st.id} className="tdp-subtask-row">
+                    <Link to={`/tasks/${st.id}`} className="tdp-subtask-item">
                       <span className={`subtask-status status-${st.status}`} />
                       <span className="subtask-key">{st.task_key}</span>
                       <span className="subtask-title">{st.title}</span>
-                      <span className={`status-badge small status-${st.status}`}>{formatStatus(st.status)}</span>
                     </Link>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* Actions */}
-          <div className="tdp-actions">
-            {isEditable && (
-              <ConfirmPopover
-                message={`Delete "${task.title}"?`}
-                confirmLabel="Delete"
-                onConfirm={handleDelete}
-                variant="danger"
-              >
-                {({ onClick }) => (
-                  <button className="btn btn-danger" onClick={onClick} disabled={deleting}>
-                    {deleting ? 'Deleting...' : 'Delete Task'}
-                  </button>
-                )}
-              </ConfirmPopover>
+                    {st.links && st.links.length > 0 && (
+                      <a
+                        href={st.links[0].url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="subtask-link-btn"
+                        onClick={e => e.stopPropagation()}
+                        title={st.links.length > 1 ? `${st.links[0].url} (+${st.links.length - 1} more)` : st.links[0].url}
+                      >
+                        ↗{st.links.length > 1 && <span className="link-more">...</span>}
+                      </a>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+            {subtasksExpanded && subtasks.length === 0 && !showAddSubtask && (
+              <p className="tdp-empty-text">No subtasks yet</p>
             )}
           </div>
+
         </main>
 
         {/* Sidebar */}
@@ -434,9 +615,15 @@ export default function TaskDetailPage() {
 
             <div className="sidebar-field">
               <label>Priority</label>
-              <span className={`priority-badge priority-${task.priority}`}>
-                {task.priority === 'H' ? 'High' : task.priority === 'M' ? 'Medium' : 'Low'}
-              </span>
+              <TagDropdown
+                value={priority}
+                options={PRIORITY_OPTIONS}
+                onChange={handlePriorityChange}
+                disabled={!isEditable}
+                renderTag={(opt) => (
+                  <span className={`priority-badge ${opt.className}`}>{opt.label}</span>
+                )}
+              />
             </div>
 
             {!isSubtask && (
@@ -464,25 +651,34 @@ export default function TaskDetailPage() {
 
             <div className="sidebar-field">
               <label>Created</label>
-              <span className="sidebar-date">{new Date(task.created_at).toLocaleDateString()}</span>
+              <span className="sidebar-date">{new Date(task.created_at).toLocaleString()}</span>
             </div>
 
-            {task.started_at && (
-              <div className="sidebar-field">
-                <label>Started</label>
-                <span className="sidebar-date">{new Date(task.started_at).toLocaleDateString()}</span>
-              </div>
-            )}
+            <div className="sidebar-field">
+              <label>Updated</label>
+              <span className="sidebar-date">{new Date(task.updated_at).toLocaleString()}</span>
+            </div>
 
-            {task.completed_at && (
-              <div className="sidebar-field">
-                <label>Completed</label>
-                <span className="sidebar-date">{new Date(task.completed_at).toLocaleDateString()}</span>
+            {isEditable && (
+              <div className="tdp-sidebar-actions">
+                <ConfirmPopover
+                  message={`Delete "${task.title}"?`}
+                  confirmLabel="Delete"
+                  onConfirm={handleDelete}
+                  variant="danger"
+                >
+                  {({ onClick }) => (
+                    <button className="btn btn-danger" onClick={onClick} disabled={deleting}>
+                      {deleting ? 'Deleting...' : 'Delete Task'}
+                    </button>
+                  )}
+                </ConfirmPopover>
               </div>
             )}
           </div>
         </aside>
       </div>
+
     </div>
   )
 }

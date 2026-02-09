@@ -11,14 +11,6 @@ export interface Session {
   session_type: 'worker' | 'brain' | 'system'
 }
 
-export interface Activity {
-  id: string
-  session_id: string | null
-  event_type: string
-  event_data: string | Record<string, unknown> | null
-  created_at: string
-}
-
 export interface ProjectStats {
   tasks: {
     total: number
@@ -74,8 +66,7 @@ export interface Task {
   task_key: string | null  // Human-readable key like "UTI-1" or "UTI-1-1"
   subtask_stats?: SubtaskStats
   created_at: string
-  started_at: string | null
-  completed_at: string | null
+  updated_at: string
 }
 
 export interface ContextItem {

@@ -171,10 +171,6 @@ def update_task(
         if status is not None:
             sets.append("status = ?")
             params.append(status)
-            if status == "in_progress":
-                sets.append("started_at = CURRENT_TIMESTAMP")
-            elif status == "done":
-                sets.append("completed_at = CURRENT_TIMESTAMP")
         if assigned_session_id is not None:
             sets.append("assigned_session_id = ?")
             val = None if assigned_session_id.lower() == "none" else assigned_session_id
@@ -192,10 +188,14 @@ def update_task(
         if not sets:
             return json.dumps({"error": "No fields to update"})
 
+        # Always update updated_at timestamp
+        sets.append("updated_at = CURRENT_TIMESTAMP")
         params.append(task_id)
         conn.execute(f"UPDATE tasks SET {', '.join(sets)} WHERE id = ?", params)
         conn.commit()
-        row = conn.execute("SELECT * FROM tasks WHERE id = ?", (task_id,)).fetchone()
+        # Use explicit column list to avoid deprecated columns
+        task_cols = "id, project_id, title, description, status, priority, assigned_session_id, created_at, updated_at, parent_task_id, notes, links, task_index"
+        row = conn.execute(f"SELECT {task_cols} FROM tasks WHERE id = ?", (task_id,)).fetchone()
         if row is None:
             return json.dumps({"error": "Task not found"})
         return json.dumps(dict(row), indent=2, default=str)
@@ -335,89 +335,13 @@ def start_claude_in_session(session_name: str) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Activity log
-# ---------------------------------------------------------------------------
-
-@mcp.tool()
-def get_activity_log(limit: int = 20, session_id: str | None = None) -> str:
-    """Get recent activity events from the orchestrator.
-    Shows what's been happening across all sessions."""
-    conn = _get_conn()
-    try:
-        if session_id:
-            rows = conn.execute(
-                """SELECT a.*, s.name as session_name
-                   FROM activities a
-                   LEFT JOIN sessions s ON a.session_id = s.id
-                   WHERE a.session_id = ?
-                   ORDER BY a.created_at DESC LIMIT ?""",
-                (session_id, limit),
-            ).fetchall()
-        else:
-            rows = conn.execute(
-                """SELECT a.*, s.name as session_name
-                   FROM activities a
-                   LEFT JOIN sessions s ON a.session_id = s.id
-                   ORDER BY a.created_at DESC LIMIT ?""",
-                (limit,),
-            ).fetchall()
-        return json.dumps(_rows_to_dicts(rows), indent=2, default=str)
-    finally:
-        conn.close()
-
-
-# ---------------------------------------------------------------------------
-# Decisions
-# ---------------------------------------------------------------------------
-
-@mcp.tool()
-def list_pending_decisions() -> str:
-    """List decisions that need human input.
-    These are questions from workers that require your judgment."""
-    conn = _get_conn()
-    try:
-        rows = conn.execute(
-            """SELECT d.*, s.name as session_name, t.title as task_title
-               FROM decisions d
-               LEFT JOIN sessions s ON d.session_id = s.id
-               LEFT JOIN tasks t ON d.task_id = t.id
-               WHERE d.status = 'pending'
-               ORDER BY d.created_at""",
-        ).fetchall()
-        return json.dumps(_rows_to_dicts(rows), indent=2, default=str)
-    finally:
-        conn.close()
-
-
-@mcp.tool()
-def resolve_decision(decision_id: str, response: str) -> str:
-    """Resolve a pending decision by providing a response.
-    The response will be sent to the worker who asked."""
-    conn = _get_conn()
-    try:
-        conn.execute(
-            """UPDATE decisions SET status = 'resolved', response = ?,
-               resolved_at = CURRENT_TIMESTAMP, resolved_by = 'brain'
-               WHERE id = ?""",
-            (response, decision_id),
-        )
-        conn.commit()
-        row = conn.execute("SELECT * FROM decisions WHERE id = ?", (decision_id,)).fetchone()
-        if row is None:
-            return json.dumps({"error": "Decision not found"})
-        return json.dumps(dict(row), indent=2, default=str)
-    finally:
-        conn.close()
-
-
-# ---------------------------------------------------------------------------
 # Orchestrator status (overview)
 # ---------------------------------------------------------------------------
 
 @mcp.tool()
 def get_orchestrator_status() -> str:
     """Get a high-level overview of the orchestrator state.
-    Shows counts of projects, tasks by status, sessions by status, and pending decisions."""
+    Shows counts of projects, tasks by status, and sessions by status."""
     conn = _get_conn()
     try:
         projects = conn.execute("SELECT COUNT(*) as cnt FROM projects").fetchone()["cnt"]
@@ -427,15 +351,11 @@ def get_orchestrator_status() -> str:
         sessions_by_status = conn.execute(
             "SELECT status, COUNT(*) as cnt FROM sessions GROUP BY status"
         ).fetchall()
-        pending_decisions = conn.execute(
-            "SELECT COUNT(*) as cnt FROM decisions WHERE status = 'pending'"
-        ).fetchone()["cnt"]
 
         return json.dumps({
             "projects": projects,
             "tasks": {r["status"]: r["cnt"] for r in tasks_by_status},
             "sessions": {r["status"]: r["cnt"] for r in sessions_by_status},
-            "pending_decisions": pending_decisions,
         }, indent=2)
     finally:
         conn.close()

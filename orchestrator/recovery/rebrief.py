@@ -39,16 +39,6 @@ def rebrief_session(
         logger.warning("No snapshot available for session %s", session_name)
         return False
 
-    # Parse key decisions
-    try:
-        key_decisions = json.loads(snapshot.key_decisions) if snapshot.key_decisions else []
-        decisions_text = "\n".join(
-            f"- Q: {d['question']} -> A: {d.get('response', 'pending')}"
-            for d in key_decisions
-        )
-    except (json.JSONDecodeError, TypeError):
-        decisions_text = "No recent decisions"
-
     # Parse file paths
     try:
         file_paths = json.loads(snapshot.file_paths) if snapshot.file_paths else []
@@ -60,7 +50,6 @@ def rebrief_session(
     variables = {
         "session_name": session_name,
         "task_summary": snapshot.task_summary or "No current task",
-        "key_decisions": decisions_text,
         "file_paths": files_text,
         "last_known_state": snapshot.last_known_state or "Unknown",
     }
@@ -71,7 +60,6 @@ def rebrief_session(
         message = (
             f"You previously lost context. Here is your current assignment:\n"
             f"Task: {variables['task_summary']}\n"
-            f"Decisions: {variables['key_decisions']}\n"
             f"Last state: {variables['last_known_state']}\n"
             f"Please continue your work."
         )
