@@ -6,10 +6,11 @@ interface ModalProps {
   title: string
   wide?: boolean
   extraWide?: boolean
+  closeOnOutsideClick?: boolean
   children: ReactNode
 }
 
-export default function Modal({ open, onClose, title, wide, extraWide, children }: ModalProps) {
+export default function Modal({ open, onClose, title, wide, extraWide, closeOnOutsideClick = true, children }: ModalProps) {
   useEffect(() => {
     if (!open) return
     const handler = (e: KeyboardEvent) => {
@@ -22,7 +23,7 @@ export default function Modal({ open, onClose, title, wide, extraWide, children 
   if (!open) return null
 
   return (
-    <div className="modal-backdrop" onClick={onClose} data-testid="modal-backdrop">
+    <div className="modal-backdrop" onClick={closeOnOutsideClick ? onClose : undefined} data-testid="modal-backdrop">
       <div
         className={`modal-content ${extraWide ? 'modal-extra-wide' : wide ? 'modal-wide' : ''}`}
         onClick={e => e.stopPropagation()}

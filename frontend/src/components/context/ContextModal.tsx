@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import Modal from '../common/Modal'
 import ConfirmPopover from '../common/ConfirmPopover'
+import Markdown from '../common/Markdown'
 import type { ContextItem } from '../../api/types'
 import './ContextModal.css'
 
@@ -15,6 +16,7 @@ interface Props {
 
 const CATEGORY_OPTIONS = [
   { value: '', label: 'No category' },
+  { value: 'instruction', label: 'Instruction' },
   { value: 'requirement', label: 'Requirement' },
   { value: 'convention', label: 'Convention' },
   { value: 'reference', label: 'Reference' },
@@ -23,25 +25,34 @@ const CATEGORY_OPTIONS = [
 
 export default function ContextModal({ context, projectId, isNew, onClose, onSave, onDelete }: Props) {
   const [title, setTitle] = useState('')
+  const [description, setDescription] = useState('')
   const [content, setContent] = useState('')
   const [category, setCategory] = useState('')
+  const [scope, setScope] = useState<'global' | 'project' | 'brain'>(projectId ? 'project' : 'global')
   const [saving, setSaving] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [viewMode, setViewMode] = useState<'edit' | 'preview'>('edit')
 
+  // If projectId is provided, scope is locked to project
+  const scopeLocked = !!projectId
+
   useEffect(() => {
     if (context) {
       setTitle(context.title)
-      setContent(context.content)
+      setDescription(context.description || '')
+      setContent(context.content || '')
       setCategory(context.category || '')
+      setScope(context.scope as 'global' | 'project' | 'brain')
       setViewMode('preview')
     } else if (isNew) {
       setTitle('')
+      setDescription('')
       setContent('')
       setCategory('')
+      setScope(projectId ? 'project' : 'global')
       setViewMode('edit')
     }
-  }, [context, isNew])
+  }, [context, isNew, projectId])
 
   const isOpen = !!context || !!isNew
 
@@ -52,10 +63,11 @@ export default function ContextModal({ context, projectId, isNew, onClose, onSav
       await onSave({
         id: context?.id,
         title: title.trim(),
+        description: description.trim() || null,
         content: content.trim(),
         category: category || null,
-        scope: 'project',
-        project_id: projectId,
+        scope: scopeLocked ? 'project' : scope,
+        project_id: scopeLocked ? projectId : (scope === 'project' ? context?.project_id : undefined),
         source: 'user',
       })
       onClose()
@@ -75,35 +87,8 @@ export default function ContextModal({ context, projectId, isNew, onClose, onSav
     }
   }
 
-  // Simple markdown to HTML conversion for preview
-  const renderMarkdown = (text: string) => {
-    let html = text
-      // Escape HTML
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      // Headers
-      .replace(/^### (.+)$/gm, '<h4>$1</h4>')
-      .replace(/^## (.+)$/gm, '<h3>$1</h3>')
-      .replace(/^# (.+)$/gm, '<h2>$1</h2>')
-      // Bold and italic
-      .replace(/\*\*\*(.+?)\*\*\*/g, '<strong><em>$1</em></strong>')
-      .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-      .replace(/\*(.+?)\*/g, '<em>$1</em>')
-      // Inline code
-      .replace(/`([^`]+)`/g, '<code>$1</code>')
-      // Links
-      .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>')
-      // Line breaks
-      .replace(/\n/g, '<br />')
-      // Horizontal rule
-      .replace(/^---$/gm, '<hr />')
-    
-    return html
-  }
-
   return (
-    <Modal open={isOpen} onClose={onClose} title={isNew ? 'Add Context' : 'Context Details'} wide>
+    <Modal open={isOpen} onClose={onClose} title={isNew ? 'Add Context' : 'Context Details'} wide closeOnOutsideClick={false}>
       <div className="modal-body context-modal-body">
         <div className="form-group">
           <label>Title</label>
@@ -113,6 +98,16 @@ export default function ContextModal({ context, projectId, isNew, onClose, onSav
             onChange={e => setTitle(e.target.value)}
             placeholder="Context title..."
             required
+          />
+        </div>
+
+        <div className="form-group">
+          <label>Description <span style={{ color: 'var(--text-muted)', fontWeight: 'normal' }}>(brief summary for list view)</span></label>
+          <input
+            type="text"
+            value={description}
+            onChange={e => setDescription(e.target.value)}
+            placeholder="Brief description of the content..."
           />
         </div>
 
@@ -128,6 +123,21 @@ export default function ContextModal({ context, projectId, isNew, onClose, onSav
             ))}
           </select>
         </div>
+
+        {!scopeLocked && (
+          <div className="form-group">
+            <label>Scope</label>
+            <select
+              className="filter-select"
+              value={scope}
+              onChange={e => setScope(e.target.value as 'global' | 'project' | 'brain')}
+            >
+              <option value="global">Global (brain + workers)</option>
+              <option value="brain">Brain only</option>
+              <option value="project">Project</option>
+            </select>
+          </div>
+        )}
 
         <div className="form-group cm-content-group">
           <div className="cm-content-header">
@@ -159,10 +169,13 @@ export default function ContextModal({ context, projectId, isNew, onClose, onSav
               required
             />
           ) : (
-            <div 
-              className="cm-preview"
-              dangerouslySetInnerHTML={{ __html: renderMarkdown(content) || '<em>No content</em>' }}
-            />
+            <div className="cm-preview">
+              {content ? (
+                <Markdown>{content}</Markdown>
+              ) : (
+                <em>No content</em>
+              )}
+            </div>
           )}
         </div>
 

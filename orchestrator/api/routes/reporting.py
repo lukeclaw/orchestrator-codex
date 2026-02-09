@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from orchestrator.api.deps import get_db
-from orchestrator.state.repositories import activities, decisions, pull_requests, sessions
+from orchestrator.state.repositories import activities, decisions, sessions
 
 router = APIRouter()
 
@@ -45,15 +45,6 @@ def report(body: ReportEvent, db=Depends(get_db)):
         event_data=json.dumps(body.data),
         actor=body.session,
     )
-
-    # Handle specific event types
-    if body.event == "pr_created" and "url" in body.data:
-        pull_requests.create_pull_request(
-            db,
-            url=body.data["url"],
-            session_id=session_id,
-            title=body.data.get("title"),
-        )
 
     # Update session last_activity
     if session:

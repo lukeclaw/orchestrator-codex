@@ -113,7 +113,9 @@ def _build_category_a(conn: sqlite3.Connection) -> str:
 
     # Active session details (one line each)
     for s in all_sessions:
-        task_info = f", task={s.current_task_id}" if s.current_task_id else ""
+        # Look up task assigned to this session
+        assigned = tasks.list_tasks(conn, assigned_session_id=s.id)
+        task_info = f", task={assigned[0].id}" if assigned else ""
         lines.append(f"  [{s.status}] {s.name} @ {s.host}{task_info}")
 
     lines.append(f"\nProjects: {len(all_projects)} active")
@@ -140,14 +142,15 @@ def _build_category_b(
     # Session details
     for s in sessions.list_sessions(conn):
         content = f"Session: {s.name}\nHost: {s.host}\nStatus: {s.status}"
-        if s.mp_path:
-            content += f"\nPath: {s.mp_path}"
-        if s.current_task_id:
-            t = tasks.get_task(conn, s.current_task_id)
-            if t:
-                content += f"\nCurrent task: {t.title}"
-                if t.description:
-                    content += f"\n  {t.description[:200]}"
+        if s.work_dir:
+            content += f"\nPath: {s.work_dir}"
+        # Look up task assigned to this session
+        assigned = tasks.list_tasks(conn, assigned_session_id=s.id)
+        if assigned:
+            t = assigned[0]
+            content += f"\nCurrent task: {t.title}"
+            if t.description:
+                content += f"\n  {t.description[:200]}"
 
         score = _score_item(
             content, query_lower, weights, now,

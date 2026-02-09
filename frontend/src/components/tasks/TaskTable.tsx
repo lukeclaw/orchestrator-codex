@@ -17,6 +17,7 @@ export default function TaskTable({ tasks, onTaskClick }: Props) {
       <table className="task-table">
         <thead>
           <tr>
+            <th>Key</th>
             <th>Title</th>
             <th>Status</th>
             <th>Priority</th>
@@ -31,9 +32,10 @@ export default function TaskTable({ tasks, onTaskClick }: Props) {
             const stats = t.subtask_stats
             return (
               <tr key={t.id} className="tt-row" onClick={() => onTaskClick?.(t)}>
+                <td className="tt-key">{t.task_key || '—'}</td>
                 <td className="tt-title">{t.title}</td>
-                <td><span className={`status-badge ${t.status}`}>{t.status}</span></td>
-                <td>P{t.priority}</td>
+                <td><span className={`status-badge status-${t.status}`}>{t.status.replace('_', ' ')}</span></td>
+                <td><span className={`priority-badge priority-${t.priority}`}>{t.priority}</span></td>
                 <td className="tt-subtasks">
                   {stats && stats.total > 0 ? (
                     <span title={`${stats.done}/${stats.total} done`}>

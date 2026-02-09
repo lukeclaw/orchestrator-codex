@@ -19,11 +19,32 @@ export default function ConfirmPopover({
   variant = 'danger',
 }: Props) {
   const [open, setOpen] = useState(false)
+  const [position, setPosition] = useState<{ top?: number; bottom?: number; right: number }>({ right: 0 })
   const popoverRef = useRef<HTMLDivElement>(null)
   const triggerRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     if (!open) return
+
+    // Calculate position based on trigger element and available space
+    if (triggerRef.current) {
+      const rect = triggerRef.current.getBoundingClientRect()
+      const spaceBelow = window.innerHeight - rect.bottom
+      const spaceAbove = rect.top
+      const popoverHeight = 120
+      const popoverWidth = 200
+      
+      // Calculate right position (align to right edge of trigger)
+      const rightPos = window.innerWidth - rect.right
+      
+      if (spaceBelow < popoverHeight && spaceAbove > spaceBelow) {
+        // Position above
+        setPosition({ bottom: window.innerHeight - rect.top + 8, right: rightPos })
+      } else {
+        // Position below
+        setPosition({ top: rect.bottom + 8, right: rightPos })
+      }
+    }
 
     function handleClickOutside(e: MouseEvent) {
       if (
@@ -69,7 +90,11 @@ export default function ConfirmPopover({
     <div className="confirm-popover-wrapper" ref={triggerRef}>
       {children({ onClick: handleTriggerClick })}
       {open && (
-        <div className={`confirm-popover ${variant}`} ref={popoverRef}>
+        <div 
+          className={`confirm-popover ${variant}`} 
+          ref={popoverRef}
+          style={position}
+        >
           <p className="confirm-popover-message">{message}</p>
           <div className="confirm-popover-actions">
             <button

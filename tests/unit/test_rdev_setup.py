@@ -9,15 +9,20 @@ from orchestrator.terminal.session import setup_rdev_worker
 class TestSetupRdevWorker:
     @patch("orchestrator.terminal.session.tmux")
     @patch("orchestrator.terminal.session.ssh")
+    @patch("orchestrator.terminal.session.generate_worker_scripts")
+    @patch("orchestrator.terminal.session.generate_hooks_settings")
     @patch("builtins.open", mock_open(read_data="Worker template SESSION_ID"))
     @patch("orchestrator.terminal.session.os.path.exists", return_value=True)
-    def test_successful_setup(self, _exists, mock_ssh, mock_tmux, db):
+    @patch("orchestrator.terminal.session.os.makedirs")
+    def test_successful_setup(self, _makedirs, _exists, mock_hooks, mock_scripts, mock_ssh, mock_tmux, db):
         seed_all(db)
         mock_ssh.wait_for_prompt.return_value = True
         mock_tmux.create_window.return_value = "orchestrator:w1-tunnel"
         mock_tmux.send_keys.return_value = True
         mock_ssh.setup_rdev_tunnel.return_value = True
         mock_ssh.rdev_connect.return_value = True
+        mock_scripts.return_value = "/tmp/orchestrator/workers/w1/bin"
+        mock_hooks.return_value = "/tmp/orchestrator/workers/w1/configs"
 
         result = setup_rdev_worker(
             db, "session-id-123", "w1", "subs-mt/sleepy-franklin",

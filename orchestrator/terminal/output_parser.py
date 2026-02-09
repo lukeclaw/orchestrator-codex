@@ -1,4 +1,8 @@
-"""Tier 1 pattern detection on captured terminal output (regex-based)."""
+"""Tier 1 pattern detection on captured terminal output (regex-based).
+
+NOTE: Worker status is managed by Claude Code hooks (see worker/cli_scripts.py).
+This module only detects specific events like PR creation, test results, etc.
+"""
 
 from __future__ import annotations
 
@@ -7,16 +11,7 @@ from dataclasses import dataclass
 from enum import Enum
 
 
-class SessionState(Enum):
-    IDLE = "idle"
-    WORKING = "working"
-    WAITING = "waiting"
-    ERROR = "error"
-    UNKNOWN = "unknown"
-
-
 class EventType(Enum):
-    STATE_CHANGE = "state_change"
     TEST_PASS = "test_pass"
     TEST_FAIL = "test_fail"
     PR_CREATED = "pr_created"
@@ -34,13 +29,6 @@ class OutputEvent:
 
 
 # --- Patterns ---
-
-# Claude Code idle prompt (waiting for user input)
-IDLE_PATTERNS = [
-    re.compile(r"^>\s*$", re.MULTILINE),  # bare ">" prompt
-    re.compile(r"^\s*\$\s*$", re.MULTILINE),  # bare "$" prompt
-    re.compile(r"What would you like to do", re.IGNORECASE),
-]
 
 # Test results
 TEST_PASS_PATTERNS = [
@@ -93,31 +81,6 @@ COMPACT_PATTERNS = [
     re.compile(r"conversation.*summarized", re.IGNORECASE),
 ]
 
-# Waiting for user input (Claude Code permission/continuation prompts)
-WAITING_PATTERNS = [
-    # Claude Code tool approval prompts
-    re.compile(r"Allow\s+\w+", re.IGNORECASE),  # "Allow Read", "Allow Write", etc.
-    re.compile(r"Do you want to proceed", re.IGNORECASE),
-    re.compile(r"Shall I\s+(continue|proceed)", re.IGNORECASE),
-    re.compile(r"Want me to\s+(continue|proceed)", re.IGNORECASE),
-    re.compile(r"Continue\?", re.IGNORECASE),
-    re.compile(r"Press Enter to continue", re.IGNORECASE),
-    re.compile(r"Has this been completed", re.IGNORECASE),
-    re.compile(r"\(y/n\)", re.IGNORECASE),
-    re.compile(r"\(Y/n\)"),
-    re.compile(r"\(yes/no\)", re.IGNORECASE),
-    re.compile(r"Would you like me to", re.IGNORECASE),
-    re.compile(r"Should I\s+(continue|proceed|go ahead)", re.IGNORECASE),
-]
-
-# Working indicators
-WORKING_PATTERNS = [
-    re.compile(r"Reading file", re.IGNORECASE),
-    re.compile(r"Writing to", re.IGNORECASE),
-    re.compile(r"Editing file", re.IGNORECASE),
-    re.compile(r"Running:", re.IGNORECASE),
-    re.compile(r"Searching", re.IGNORECASE),
-]
 
 
 def parse_output(output: str) -> list[OutputEvent]:
@@ -200,38 +163,3 @@ def parse_output(output: str) -> list[OutputEvent]:
                 break
 
     return events
-
-
-def detect_state(output: str) -> SessionState:
-    """Detect the current session state from terminal output.
-
-    Analyzes the last few lines of output to determine state.
-    """
-    if not output.strip():
-        return SessionState.UNKNOWN
-
-    # Check recent lines (last ~10 lines)
-    recent = "\n".join(output.strip().split("\n")[-10:])
-
-    # Check for waiting state first (highest priority — user bottleneck)
-    for pattern in WAITING_PATTERNS:
-        if pattern.search(recent):
-            return SessionState.WAITING
-
-    # Check for working state (most common during active sessions)
-    for pattern in WORKING_PATTERNS:
-        if pattern.search(recent):
-            return SessionState.WORKING
-
-    # Check for error state
-    for pattern in ERROR_PATTERNS:
-        if pattern.search(recent):
-            return SessionState.ERROR
-
-    # Check for idle (prompt visible)
-    for pattern in IDLE_PATTERNS:
-        if pattern.search(recent):
-            return SessionState.IDLE
-
-    # Default: if there's recent output, assume working
-    return SessionState.WORKING

@@ -77,12 +77,28 @@ curl -s -X PATCH http://127.0.0.1:8093/api/decisions/DECISION_ID \
 
 ### Context / Knowledge Store
 
+Context items have three scopes:
+- **global** — Readable by both brain and workers. Use for shared knowledge.
+- **brain** — Readable by brain only. Workers cannot see these. Use for brain-specific notes, strategies, or sensitive information.
+- **project** — Scoped to a specific project. Readable by workers assigned to that project.
+
+**2-step lookup pattern** (saves context window):
+
 ```bash
-# List all context items (optional filters: ?scope=global&project_id=X&category=Y&search=Z)
+# Step 1: List context items (returns titles + descriptions only, no full content)
 curl -s http://127.0.0.1:8093/api/context | jq
 
-# Get global context only
+# Step 2: Read full content of specific items you need
+curl -s http://127.0.0.1:8093/api/context/ITEM_ID | jq
+```
+
+List with filters:
+```bash
+# Get global context only (shared with workers)
 curl -s 'http://127.0.0.1:8093/api/context?scope=global' | jq
+
+# Get brain-only context (private to brain)
+curl -s 'http://127.0.0.1:8093/api/context?scope=brain' | jq
 
 # Get context for a specific project
 curl -s 'http://127.0.0.1:8093/api/context?project_id=PROJECT_ID' | jq
@@ -90,10 +106,18 @@ curl -s 'http://127.0.0.1:8093/api/context?project_id=PROJECT_ID' | jq
 # Search context by keyword
 curl -s 'http://127.0.0.1:8093/api/context?search=authentication' | jq
 
-# Create a context item (scope: global or project)
+# Include full content in list (if you need everything at once)
+curl -s 'http://127.0.0.1:8093/api/context?include_content=true' | jq
+
+# Create global context (brain + workers can read)
 curl -s -X POST http://127.0.0.1:8093/api/context \
   -H 'Content-Type: application/json' \
   -d '{"title": "Coding style", "content": "Use 2-space indentation...", "scope": "global", "category": "convention", "source": "brain"}' | jq
+
+# Create brain-only context (workers cannot read)
+curl -s -X POST http://127.0.0.1:8093/api/context \
+  -H 'Content-Type: application/json' \
+  -d '{"title": "Coordination strategy", "content": "Worker-1 handles API, Worker-2 handles UI...", "scope": "brain", "category": "note", "source": "brain"}' | jq
 
 # Create project-scoped context
 curl -s -X POST http://127.0.0.1:8093/api/context \
@@ -109,11 +133,12 @@ curl -s -X PATCH http://127.0.0.1:8093/api/context/ITEM_ID \
 curl -s -X DELETE http://127.0.0.1:8093/api/context/ITEM_ID | jq
 ```
 
-Use context to store:
-- **Global context** (scope: "global"): coding conventions, architecture decisions, shared requirements
-- **Project context** (scope: "project"): project-specific requirements, API patterns, worker instructions
+**Scope usage guide:**
+- **Global** (scope: "global"): Coding conventions, architecture decisions, shared requirements — anything workers need to know
+- **Brain** (scope: "brain"): Coordination strategies, worker assignments, internal notes, sensitive decisions — things only you need
+- **Project** (scope: "project"): Project-specific requirements, API patterns, worker instructions for that project
 
-Categories: `requirement`, `convention`, `reference`, `note`
+Categories: `instruction`, `requirement`, `convention`, `reference`, `note`
 
 ### Activity Log
 

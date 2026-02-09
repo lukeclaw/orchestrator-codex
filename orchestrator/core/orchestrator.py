@@ -180,7 +180,7 @@ class Orchestrator:
                     conn, task_id, assigned_session_id=session.id, status="in_progress"
                 )
                 sessions_repo.update_session(
-                    conn, session.id, current_task_id=task_id, status="working"
+                    conn, session.id, status="working"
                 )
 
                 # Compose and send context to the worker

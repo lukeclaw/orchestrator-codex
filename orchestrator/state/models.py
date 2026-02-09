@@ -7,6 +7,35 @@ from dataclasses import dataclass, field
 from datetime import datetime
 
 
+def generate_task_prefix(name: str) -> str:
+    """Generate a 3-letter uppercase prefix from project name.
+    
+    Examples:
+        "Unit Test Improve" -> "UTI"
+        "API Gateway" -> "AG"
+        "my-awesome-project" -> "MAP"
+    """
+    # Split by spaces, hyphens, underscores
+    import re
+    words = re.split(r'[\s\-_]+', name.strip())
+    words = [w for w in words if w]  # Remove empty strings
+    
+    if not words:
+        return "TSK"
+    
+    if len(words) >= 3:
+        # Take first letter of first 3 words
+        prefix = ''.join(w[0] for w in words[:3])
+    elif len(words) == 2:
+        # Take first letter of each word
+        prefix = ''.join(w[0] for w in words)
+    else:
+        # Single word: take first 3 letters
+        prefix = words[0][:3]
+    
+    return prefix.upper()
+
+
 @dataclass
 class Project:
     id: str
@@ -14,6 +43,7 @@ class Project:
     description: str | None = None
     status: str = "active"
     target_date: str | None = None
+    task_prefix: str | None = None  # e.g., "UTI" for human-readable task keys
     created_at: str = ""
     updated_at: str = ""
 
@@ -23,14 +53,14 @@ class Session:
     id: str
     name: str
     host: str
-    mp_path: str | None = None
+    work_dir: str | None = None
     tmux_window: str | None = None
     tunnel_pane: str | None = None
     status: str = "idle"
     takeover_mode: bool = False
-    current_task_id: str | None = None
     created_at: str = ""
     last_activity: str | None = None
+    session_type: str = "worker"  # "worker" | "brain" | "system"
 
     def __post_init__(self):
         self.takeover_mode = bool(self.takeover_mode)
@@ -43,7 +73,7 @@ class Task:
     title: str
     description: str | None = None
     status: str = "todo"
-    priority: int = 0
+    priority: str = "M"  # H (High), M (Medium), L (Low)
     assigned_session_id: str | None = None
     blocked_by_decision_id: str | None = None
     created_at: str = ""
@@ -52,6 +82,7 @@ class Task:
     parent_task_id: str | None = None
     notes: str | None = None
     links: str | None = None  # JSON array of {url, title, type}
+    task_index: int | None = None  # Sequential number within project for human-readable key
 
     @property
     def links_list(self) -> list[dict]:
@@ -98,19 +129,6 @@ class Decision:
             return json.loads(self.options)
         except (json.JSONDecodeError, TypeError):
             return []
-
-
-@dataclass
-class PullRequest:
-    id: str
-    url: str
-    task_id: str | None = None
-    session_id: str | None = None
-    number: int | None = None
-    title: str | None = None
-    status: str = "open"
-    created_at: str = ""
-    merged_at: str | None = None
 
 
 @dataclass
@@ -235,17 +253,12 @@ class LearnedPattern:
 
 
 @dataclass
-class PrDependency:
-    pr_id: str
-    depends_on_pr_id: str
-
-
-@dataclass
 class ContextItem:
     id: str
     scope: str = "global"
     project_id: str | None = None
     title: str = ""
+    description: str | None = None
     content: str = ""
     category: str | None = None
     source: str | None = None

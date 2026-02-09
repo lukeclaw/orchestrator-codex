@@ -45,19 +45,38 @@ def list_tasks(
     return [Task(**dict(r)) for r in rows]
 
 
+def _get_next_task_index(conn: sqlite3.Connection, project_id: str, parent_task_id: str | None) -> int:
+    """Get the next task_index for a project or parent task."""
+    if parent_task_id:
+        # For subtasks, count existing subtasks under the parent
+        row = conn.execute(
+            "SELECT COALESCE(MAX(task_index), 0) + 1 as next_idx FROM tasks WHERE parent_task_id = ?",
+            (parent_task_id,)
+        ).fetchone()
+    else:
+        # For top-level tasks, count existing top-level tasks in the project
+        row = conn.execute(
+            "SELECT COALESCE(MAX(task_index), 0) + 1 as next_idx FROM tasks WHERE project_id = ? AND parent_task_id IS NULL",
+            (project_id,)
+        ).fetchone()
+    return row["next_idx"] if row else 1
+
+
 def create_task(
     conn: sqlite3.Connection,
     project_id: str,
     title: str,
     description: str | None = None,
-    priority: int = 0,
+    priority: str = "M",  # H (High), M (Medium), L (Low)
     parent_task_id: str | None = None,
 ) -> Task:
     id = str(uuid.uuid4())
+    # Auto-generate task_index
+    task_index = _get_next_task_index(conn, project_id, parent_task_id)
     conn.execute(
-        """INSERT INTO tasks (id, project_id, title, description, priority, parent_task_id)
-           VALUES (?, ?, ?, ?, ?, ?)""",
-        (id, project_id, title, description, priority, parent_task_id),
+        """INSERT INTO tasks (id, project_id, title, description, priority, parent_task_id, task_index)
+           VALUES (?, ?, ?, ?, ?, ?, ?)""",
+        (id, project_id, title, description, priority, parent_task_id, task_index),
     )
     conn.commit()
     return get_task(conn, id)

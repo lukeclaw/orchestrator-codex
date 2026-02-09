@@ -21,14 +21,14 @@ class TaskCreate(BaseModel):
     project_id: str
     title: str
     description: str | None = None
-    priority: int = 0
+    priority: str = "M"  # H (High), M (Medium), L (Low)
     parent_task_id: str | None = None
 
 
 class TaskUpdate(BaseModel):
     status: str | None = None
     assigned_session_id: str | None = None
-    priority: int | None = None
+    priority: str | None = None  # H (High), M (Medium), L (Low)
     title: str | None = None
     description: str | None = None
     notes: str | None = None
@@ -43,6 +43,24 @@ class TaskLinkAction(BaseModel):
     link_type: str | None = None  # pr, doc, reference, etc.
 
 
+def _get_task_key(t, db) -> str | None:
+    """Generate human-readable task key like UTI-1 or UTI-1-1 for subtasks."""
+    if t.task_index is None:
+        return None
+    
+    project = projects_repo.get_project(db, t.project_id)
+    if not project or not project.task_prefix:
+        return None
+    
+    if t.parent_task_id:
+        # Subtask: get parent's index
+        parent = repo.get_task(db, t.parent_task_id)
+        if parent and parent.task_index is not None:
+            return f"{project.task_prefix}-{parent.task_index}-{t.task_index}"
+    
+    return f"{project.task_prefix}-{t.task_index}"
+
+
 def _serialize_task(t, include_subtask_stats: bool = False, db=None) -> dict:
     result = {
         "id": t.id, "project_id": t.project_id, "title": t.title,
@@ -50,6 +68,8 @@ def _serialize_task(t, include_subtask_stats: bool = False, db=None) -> dict:
         "priority": t.priority, "assigned_session_id": t.assigned_session_id,
         "parent_task_id": t.parent_task_id, "notes": t.notes,
         "links": t.links_list,
+        "task_index": t.task_index,
+        "task_key": _get_task_key(t, db) if db else None,
         "created_at": t.created_at, "started_at": t.started_at,
         "completed_at": t.completed_at,
     }
@@ -221,7 +241,6 @@ def delete_task(task_id: str, db=Depends(get_db)):
             sessions_repo.update_session(
                 db, session_id,
                 status="idle",
-                current_task_id=None,
             )
             logger.info("Unassigned worker session %s (now idle) for deleted task %s", session_id, task_id)
         except Exception:

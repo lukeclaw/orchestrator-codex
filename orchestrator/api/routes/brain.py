@@ -82,8 +82,9 @@ def start_brain(db=Depends(get_db)):
                 db,
                 name=BRAIN_SESSION_NAME,
                 host="local",
-                mp_path=brain_dir,
+                work_dir=brain_dir,
                 tmux_window=target,
+                session_type="brain",
             )
             session_id = s.id
 
@@ -137,11 +138,11 @@ def brain_sync(db=Depends(get_db)):
         raise HTTPException(400, "Brain is not running")
 
     # Gather non-brain sessions that are actively working/waiting/error
-    all_sessions = sessions_repo.list_sessions(db)
+    # Get only worker sessions (excludes brain)
+    worker_sessions = sessions_repo.list_sessions(db, session_type="worker")
     active_workers = [
-        s for s in all_sessions
-        if s.name != BRAIN_SESSION_NAME
-        and s.status not in ("idle", "disconnected")
+        s for s in worker_sessions
+        if s.status not in ("idle", "disconnected")
     ]
 
     if not active_workers:

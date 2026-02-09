@@ -22,6 +22,12 @@
   white-space: nowrap;
 }
 
+.tc-key {
+  color: var(--accent);
+  font-weight: 600;
+  margin-right: 4px;
+}
+
 .tc-desc {
   font-size: 12px;
   color: var(--text-secondary);

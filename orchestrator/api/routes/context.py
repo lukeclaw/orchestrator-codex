@@ -12,6 +12,7 @@ router = APIRouter()
 class ContextCreate(BaseModel):
     title: str
     content: str
+    description: str | None = None
     scope: str = "global"
     project_id: str | None = None
     category: str | None = None
@@ -22,6 +23,7 @@ class ContextCreate(BaseModel):
 class ContextUpdate(BaseModel):
     title: str | None = None
     content: str | None = None
+    description: str | None = None
     scope: str | None = None
     project_id: str | None = None
     category: str | None = None
@@ -29,19 +31,23 @@ class ContextUpdate(BaseModel):
     metadata: str | None = None
 
 
-def _serialize(c):
-    return {
+def _serialize(c, include_content: bool = True):
+    """Serialize context item. Set include_content=False for list views."""
+    result = {
         "id": c.id,
         "scope": c.scope,
         "project_id": c.project_id,
         "title": c.title,
-        "content": c.content,
+        "description": c.description,
         "category": c.category,
         "source": c.source,
         "metadata": c.metadata,
         "created_at": c.created_at,
         "updated_at": c.updated_at,
     }
+    if include_content:
+        result["content"] = c.content
+    return result
 
 
 @router.get("/context")
@@ -50,10 +56,14 @@ def list_context(
     project_id: str | None = None,
     category: str | None = None,
     search: str | None = None,
+    include_content: bool = False,
     db=Depends(get_db),
 ):
+    """List context items. By default returns only title/description (no content).
+    Set include_content=true to get full content (for backward compatibility or specific needs).
+    """
     items = repo.list_context(db, scope=scope, project_id=project_id, category=category, search=search)
-    return [_serialize(c) for c in items]
+    return [_serialize(c, include_content=include_content) for c in items]
 
 
 @router.get("/context/{item_id}")
@@ -70,6 +80,7 @@ def create_context_item(body: ContextCreate, db=Depends(get_db)):
         db,
         title=body.title,
         content=body.content,
+        description=body.description,
         scope=body.scope,
         project_id=body.project_id,
         category=body.category,
@@ -87,7 +98,7 @@ def update_context_item(item_id: str, body: ContextUpdate, db=Depends(get_db)):
 
     kwargs = {}
     data = body.model_dump(exclude_unset=True)
-    for field in ("title", "content", "scope", "project_id", "category", "source", "metadata"):
+    for field in ("title", "content", "description", "scope", "project_id", "category", "source", "metadata"):
         if field in data:
             kwargs[field] = data[field]
 

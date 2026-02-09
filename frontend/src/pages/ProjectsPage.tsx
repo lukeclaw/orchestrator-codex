@@ -1,21 +1,36 @@
-import { useState, useCallback } from 'react'
+import { useState } from 'react'
 import { useProjects } from '../hooks/useProjects'
-import { useTasks } from '../hooks/useTasks'
 import { useApp } from '../context/AppContext'
+import { api } from '../api/client'
+import type { Project } from '../api/types'
 import ProjectCard from '../components/projects/ProjectCard'
 import ProjectForm from '../components/projects/ProjectForm'
+import ProjectEditModal from '../components/projects/ProjectEditModal'
 import FilterBar from '../components/common/FilterBar'
 import './ProjectsPage.css'
 
 export default function ProjectsPage() {
-  const { projects, loading, create } = useProjects()
-  const { tasks, refresh: refreshApp } = useApp()
+  const { projects, loading, create, fetch: refreshProjects } = useProjects()
+  const { refresh: refreshApp } = useApp()
   const [showForm, setShowForm] = useState(false)
   const [statusFilter, setStatusFilter] = useState('')
+  const [editingProject, setEditingProject] = useState<Project | null>(null)
 
   const filtered = statusFilter
     ? projects.filter(p => p.status === statusFilter)
     : projects
+
+  async function handleUpdate(projectId: string, data: { name?: string; description?: string; status?: string; target_date?: string }) {
+    await api(`/api/projects/${projectId}`, { method: 'PATCH', body: JSON.stringify(data) })
+    refreshProjects()
+    refreshApp()
+  }
+
+  async function handleDelete(projectId: string) {
+    await api(`/api/projects/${projectId}`, { method: 'DELETE' })
+    refreshProjects()
+    refreshApp()
+  }
 
   return (
     <div className="projects-page">
@@ -52,11 +67,7 @@ export default function ProjectsPage() {
       ) : (
         <div className="projects-grid">
           {filtered.map(p => (
-            <ProjectCard
-              key={p.id}
-              project={p}
-              tasks={tasks.filter(t => t.project_id === p.id)}
-            />
+            <ProjectCard key={p.id} project={p} onEdit={setEditingProject} />
           ))}
         </div>
       )}
@@ -65,6 +76,13 @@ export default function ProjectsPage() {
         open={showForm}
         onClose={() => setShowForm(false)}
         onSubmit={async (body) => { const p = await create(body); refreshApp(); return p }}
+      />
+
+      <ProjectEditModal
+        project={editingProject}
+        onClose={() => setEditingProject(null)}
+        onUpdate={handleUpdate}
+        onDelete={handleDelete}
       />
     </div>
   )

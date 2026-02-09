@@ -18,12 +18,12 @@ def create_snapshot(conn: sqlite3.Connection, session_id: str) -> SessionSnapsho
     if session is None:
         raise ValueError(f"Session not found: {session_id}")
 
-    # Current task summary
+    # Current task summary - look up by assigned_session_id
     task_summary = None
-    if session.current_task_id:
-        task = tasks.get_task(conn, session.current_task_id)
-        if task:
-            task_summary = f"{task.title}: {task.description or 'No description'} (status: {task.status})"
+    assigned_tasks = tasks.list_tasks(conn, assigned_session_id=session_id)
+    if assigned_tasks:
+        task = assigned_tasks[0]
+        task_summary = f"{task.title}: {task.description or 'No description'} (status: {task.status})"
 
     # Key decisions
     from orchestrator.state.repositories.decisions import list_decisions
@@ -35,8 +35,8 @@ def create_snapshot(conn: sqlite3.Connection, session_id: str) -> SessionSnapsho
 
     # Last known state
     last_state = f"Session {session.name}: status={session.status}, host={session.host}"
-    if session.mp_path:
-        last_state += f", path={session.mp_path}"
+    if session.work_dir:
+        last_state += f", path={session.work_dir}"
 
     snapshot_id = str(uuid.uuid4())
     conn.execute(

@@ -241,13 +241,13 @@ CREATE TABLE skill_templates (
 -- SCHEMA VERSION
 -- ============================================================
 
-CREATE TABLE schema_version (
+CREATE TABLE IF NOT EXISTS schema_version (
     version INTEGER PRIMARY KEY,
     applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     description TEXT
 );
 
-INSERT INTO schema_version (version, description)
+INSERT OR REPLACE INTO schema_version (version, description)
 VALUES (1, 'Initial schema — all tables from PRD v1.5 Section 8.6');
 
 -- ============================================================

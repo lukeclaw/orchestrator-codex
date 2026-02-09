@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from 'react'
-import type { Session, Decision, Activity, Project, Task, PullRequest } from '../api/types'
+import type { Session, Decision, Activity, Project, Task } from '../api/types'
 import { api } from '../api/client'
 
 interface AppState {
@@ -9,7 +9,6 @@ interface AppState {
   activities: Activity[]
   projects: Project[]
   tasks: Task[]
-  prs: PullRequest[]
   connected: boolean
   loading: boolean
   refresh: () => void
@@ -23,7 +22,6 @@ const AppContext = createContext<AppState>({
   activities: [],
   projects: [],
   tasks: [],
-  prs: [],
   connected: false,
   loading: true,
   refresh: () => {},
@@ -40,26 +38,23 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [activities, setActivities] = useState<Activity[]>([])
   const [projects, setProjects] = useState<Project[]>([])
   const [tasks, setTasks] = useState<Task[]>([])
-  const [prs, setPrs] = useState<PullRequest[]>([])
   const [connected, setConnected] = useState(false)
   const [loading, setLoading] = useState(true)
 
   const fetchAll = useCallback(async () => {
     try {
-      const [s, d, a, p, t, pr] = await Promise.all([
-        api<Session[]>('/api/sessions'),
+      const [s, d, a, p, t] = await Promise.all([
+        api<Session[]>('/api/sessions?session_type=worker'),
         api<Decision[]>('/api/decisions/pending'),
         api<Activity[]>('/api/activities?limit=20'),
         api<Project[]>('/api/projects').catch(() => []),
         api<Task[]>('/api/tasks').catch(() => []),
-        api<PullRequest[]>('/api/prs').catch(() => []),
       ])
       setSessions(s)
       setDecisions(d)
       setActivities(a)
       setProjects(p)
       setTasks(t)
-      setPrs(pr)
     } catch (e) {
       console.error('Failed to fetch data:', e)
     } finally {
@@ -101,14 +96,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
     return () => clearInterval(interval)
   }, [fetchAll])
 
-  const workers = sessions.filter(s => s.name !== 'brain')
+  // sessions already filtered by session_type=worker from API
+  const workers = sessions
 
   const removeSession = useCallback((id: string) => {
     setSessions(prev => prev.filter(s => s.id !== id))
   }, [])
 
   return (
-    <AppContext.Provider value={{ sessions, workers, decisions, activities, projects, tasks, prs, connected, loading, refresh: fetchAll, removeSession }}>
+    <AppContext.Provider value={{ sessions, workers, decisions, activities, projects, tasks, connected, loading, refresh: fetchAll, removeSession }}>
       {children}
     </AppContext.Provider>
   )

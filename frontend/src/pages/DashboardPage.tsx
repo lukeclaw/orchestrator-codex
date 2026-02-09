@@ -28,11 +28,7 @@ export default function DashboardPage() {
           </div>
           <div className="dp-scroll">
             {activeProjects.map(p => (
-              <ProjectCard
-                key={p.id}
-                project={p}
-                tasks={tasks.filter(t => t.project_id === p.id)}
-              />
+              <ProjectCard key={p.id} project={p} />
             ))}
           </div>
         </section>

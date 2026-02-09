@@ -2,6 +2,9 @@
 
 This module is READ-ONLY — it only reads terminal state and emits events.
 All database writes happen in the StateManager (core/state_manager.py).
+
+NOTE: Worker status is managed by Claude Code hooks (see worker/cli_scripts.py).
+This monitor only detects specific events like PR creation, test results, etc.
 """
 
 from __future__ import annotations
@@ -13,18 +16,12 @@ import sqlite3
 from orchestrator.core.events import Event, publish
 from orchestrator.state.repositories import sessions as sessions_repo
 from orchestrator.terminal import manager as tmux
-from orchestrator.terminal.output_parser import (
-    EventType,
-    SessionState,
-    detect_state,
-    parse_output,
-)
+from orchestrator.terminal.output_parser import parse_output
 
 logger = logging.getLogger(__name__)
 
 # Track previous output per session to detect changes
 _previous_output: dict[str, str] = {}
-_previous_state: dict[str, str] = {}
 
 
 async def poll_session(
@@ -34,8 +31,9 @@ async def poll_session(
 ) -> list[Event]:
     """Poll a single session and return any events detected.
     
-    This function is READ-ONLY. It detects state changes and emits events,
-    but does NOT write to the database. The StateManager handles all writes.
+    This function is READ-ONLY. It parses terminal output for specific events
+    (PR created, tests passed, etc.) but does NOT guess worker status.
+    Worker status is managed by Claude Code hooks.
     """
     output = tmux.capture_output(tmux_session, session_name, lines=50)
 
@@ -47,24 +45,7 @@ async def poll_session(
 
     events = []
 
-    # Detect state change
-    new_state = detect_state(output)
-    old_state = _previous_state.get(session_name)
-
-    if old_state != new_state.value:
-        _previous_state[session_name] = new_state.value
-
-        # Emit state change event — StateManager will handle DB update
-        events.append(Event(
-            type="session.state_changed",
-            data={
-                "session": session_name,
-                "old_state": old_state,
-                "new_state": new_state.value,
-            },
-        ))
-
-    # Parse for specific events
+    # Parse for specific events (PR created, tests, builds, errors, etc.)
     parsed = parse_output(output)
     for pe in parsed:
         event = Event(
@@ -121,4 +102,3 @@ async def monitor_loop(
 def clear_state():
     """Clear cached state (for testing)."""
     _previous_output.clear()
-    _previous_state.clear()

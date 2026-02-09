@@ -1,9 +1,11 @@
-"""Tests for output parser — pattern detection against sample terminal outputs."""
+"""Tests for output parser — pattern detection against sample terminal outputs.
+
+NOTE: Worker status is managed by Claude Code hooks. This module only tests
+event detection (PR created, tests passed, etc.), not status detection.
+"""
 
 from orchestrator.terminal.output_parser import (
     EventType,
-    SessionState,
-    detect_state,
     parse_output,
 )
 
@@ -73,33 +75,3 @@ ValueError: bad"""
         output = "Compiled successfully in 2.5s"
         events = parse_output(output)
         assert any(e.event_type == EventType.BUILD_SUCCESS for e in events)
-
-
-# --- State Detection ---
-
-class TestDetectState:
-    def test_idle_bare_prompt(self):
-        output = "some previous output\n>\n"
-        assert detect_state(output) == SessionState.IDLE
-
-    def test_working_reading_file(self):
-        output = "Reading file src/main.py..."
-        assert detect_state(output) == SessionState.WORKING
-
-    def test_working_running_command(self):
-        output = "Running: pytest tests/"
-        assert detect_state(output) == SessionState.WORKING
-
-    def test_error_traceback(self):
-        output = """Traceback (most recent call last):
-  File "x.py", line 1
-TypeError: bad"""
-        assert detect_state(output) == SessionState.ERROR
-
-    def test_unknown_empty_output(self):
-        assert detect_state("") == SessionState.UNKNOWN
-        assert detect_state("   ") == SessionState.UNKNOWN
-
-    def test_working_editing(self):
-        output = "Editing file orchestrator/main.py"
-        assert detect_state(output) == SessionState.WORKING

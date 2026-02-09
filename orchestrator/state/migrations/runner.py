@@ -37,11 +37,12 @@ def get_pending_migrations(current_version: int) -> list[tuple[int, Path]]:
 
 def apply_migrations(conn: sqlite3.Connection) -> list[int]:
     """Apply all pending migrations. Returns list of applied version numbers."""
-    # Ensure schema_version table exists
+    # Ensure schema_version table exists (must match 001_initial.sql schema)
     conn.execute("""
         CREATE TABLE IF NOT EXISTS schema_version (
             version INTEGER PRIMARY KEY,
-            applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            description TEXT
         )
     """)
     conn.commit()
@@ -55,16 +56,23 @@ def apply_migrations(conn: sqlite3.Connection) -> list[int]:
         try:
             conn.executescript(sql)
         except sqlite3.OperationalError as e:
-            # Handle "duplicate column" errors gracefully - column already exists
-            if "duplicate column" in str(e).lower():
+            # Handle common migration errors gracefully
+            err_msg = str(e).lower()
+            if "duplicate column" in err_msg:
                 pass  # Column already exists, migration is effectively applied
+            elif "already exists" in err_msg:
+                pass  # Table already exists, migration is effectively applied
             else:
                 raise
-        # Record that this migration was applied
-        conn.execute(
-            "INSERT OR REPLACE INTO schema_version (version) VALUES (?)",
-            (version,)
-        )
+        # Record that this migration was applied (only if not already recorded by migration itself)
+        existing = conn.execute(
+            "SELECT version FROM schema_version WHERE version = ?", (version,)
+        ).fetchone()
+        if not existing:
+            conn.execute(
+                "INSERT INTO schema_version (version) VALUES (?)",
+                (version,)
+            )
         conn.commit()
         applied.append(version)
 

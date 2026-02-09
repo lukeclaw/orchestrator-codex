@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import '@xterm/xterm/css/xterm.css'
@@ -14,6 +14,7 @@ export default function TerminalView({ sessionId, onUserInput }: Props) {
   const terminalRef = useRef<Terminal | null>(null)
   const wsRef = useRef<WebSocket | null>(null)
   const fitAddonRef = useRef<FitAddon | null>(null)
+  const [isFocused, setIsFocused] = useState(false)
 
   useEffect(() => {
     if (!termRef.current) return
@@ -104,6 +105,15 @@ export default function TerminalView({ sessionId, onUserInput }: Props) {
       onUserInput?.()
     })
 
+    // Track focus state
+    const textarea = termRef.current.querySelector('textarea')
+    const handleFocus = () => setIsFocused(true)
+    const handleBlur = () => setIsFocused(false)
+    if (textarea) {
+      textarea.addEventListener('focus', handleFocus)
+      textarea.addEventListener('blur', handleBlur)
+    }
+
     // Handle resize
     let resizeTimeout: ReturnType<typeof setTimeout>
     const observer = new ResizeObserver(() => {
@@ -125,13 +135,17 @@ export default function TerminalView({ sessionId, onUserInput }: Props) {
     return () => {
       clearTimeout(resizeTimeout)
       observer.disconnect()
+      if (textarea) {
+        textarea.removeEventListener('focus', handleFocus)
+        textarea.removeEventListener('blur', handleBlur)
+      }
       ws.close()
       terminal.dispose()
     }
   }, [sessionId])
 
   return (
-    <div className="terminal-container">
+    <div className={`terminal-container${isFocused ? ' terminal-focused' : ''}`}>
       <div className="terminal-view" ref={termRef} data-testid="terminal-view" />
     </div>
   )

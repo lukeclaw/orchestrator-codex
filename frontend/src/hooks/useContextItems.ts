@@ -7,6 +7,7 @@ interface ContextFilters {
   project_id?: string
   category?: string
   search?: string
+  include_content?: boolean
 }
 
 export function useContextItems(filters?: ContextFilters) {
@@ -22,6 +23,7 @@ export function useContextItems(filters?: ContextFilters) {
       if (active?.project_id) params.set('project_id', active.project_id)
       if (active?.category) params.set('category', active.category)
       if (active?.search) params.set('search', active.search)
+      if (active?.include_content) params.set('include_content', 'true')
       const qs = params.toString()
       const data = await api<ContextItem[]>(`/api/context${qs ? `?${qs}` : ''}`)
       setItems(data)
@@ -30,13 +32,19 @@ export function useContextItems(filters?: ContextFilters) {
     } finally {
       setLoading(false)
     }
-  }, [filters?.scope, filters?.project_id, filters?.category, filters?.search])
+  }, [filters?.scope, filters?.project_id, filters?.category, filters?.search, filters?.include_content])
 
   useEffect(() => { fetchItems() }, [fetchItems])
+
+  // Fetch a single context item with full content
+  const getItem = useCallback(async (id: string): Promise<ContextItem> => {
+    return api<ContextItem>(`/api/context/${id}`)
+  }, [])
 
   const create = useCallback(async (body: {
     title: string
     content: string
+    description?: string
     scope?: string
     project_id?: string
     category?: string
@@ -50,7 +58,7 @@ export function useContextItems(filters?: ContextFilters) {
     return item
   }, [])
 
-  const update = useCallback(async (id: string, body: Partial<Pick<ContextItem, 'title' | 'content' | 'scope' | 'project_id' | 'category' | 'source'>>) => {
+  const update = useCallback(async (id: string, body: Partial<Pick<ContextItem, 'title' | 'content' | 'description' | 'scope' | 'project_id' | 'category' | 'source'>>) => {
     const item = await api<ContextItem>(`/api/context/${id}`, {
       method: 'PATCH',
       body: JSON.stringify(body),
@@ -64,5 +72,5 @@ export function useContextItems(filters?: ContextFilters) {
     setItems(prev => prev.filter(x => x.id !== id))
   }, [])
 
-  return { items, loading, fetch: fetchItems, create, update, remove }
+  return { items, loading, fetch: fetchItems, getItem, create, update, remove }
 }

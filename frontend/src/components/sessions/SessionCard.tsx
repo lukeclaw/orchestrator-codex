@@ -24,13 +24,13 @@ export default function SessionCard({ session }: Props) {
       </div>
       <div className="sc-detail">
         <span className="sc-host">{session.host}</span>
-        {session.mp_path && <span className="sc-path">{session.mp_path}</span>}
+        {session.work_dir && <span className="sc-path">{session.work_dir}</span>}
       </div>
       <div className="sc-footer">
         <span className="sc-task">
           {session.status === 'waiting'
             ? 'Needs attention'
-            : session.current_task_id ? 'Task assigned' : 'No task'}
+            : session.status === 'working' ? 'Task assigned' : 'No task'}
         </span>
         <span className="sc-activity">{timeAgo(session.last_activity)}</span>
       </div>

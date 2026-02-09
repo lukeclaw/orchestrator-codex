@@ -112,7 +112,7 @@ def _assign_task(conn: sqlite3.Connection, params: dict, tmux_session: str) -> d
         return {"ok": False, "error": f"Session not found: {session_name}"}
 
     tasks.update_task(conn, task_id, assigned_session_id=session.id, status="in_progress")
-    sessions.update_session(conn, session.id, current_task_id=task_id, status="working")
+    sessions.update_session(conn, session.id, status="working")
 
     activities.log_activity(
         conn, "task_assigned",

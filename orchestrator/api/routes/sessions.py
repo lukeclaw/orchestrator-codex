@@ -22,7 +22,7 @@ from orchestrator.terminal.manager import (
     send_keys,
 )
 from orchestrator.terminal.ssh import is_rdev_host
-from orchestrator.worker.cli_scripts import generate_worker_scripts, get_path_export_command
+from orchestrator.worker.cli_scripts import generate_worker_scripts, generate_hooks_settings, get_path_export_command
 
 logger = logging.getLogger(__name__)
 
@@ -38,7 +38,7 @@ RDEV_CACHE_TTL = 3600  # 1 hour in seconds
 class SessionCreate(BaseModel):
     name: str
     host: str
-    mp_path: str | None = None
+    work_dir: str | None = None
     task_id: str | None = None
 
 
@@ -54,17 +54,27 @@ class SendMessage(BaseModel):
 def _serialize_session(s):
     return {
         "id": s.id, "name": s.name, "host": s.host,
-        "mp_path": s.mp_path, "tmux_window": s.tmux_window,
+        "work_dir": s.work_dir, "tmux_window": s.tmux_window,
         "tunnel_pane": s.tunnel_pane,
         "status": s.status, "takeover_mode": s.takeover_mode,
-        "current_task_id": s.current_task_id,
         "created_at": s.created_at, "last_activity": s.last_activity,
+        "session_type": s.session_type,
     }
 
 
 @router.get("/sessions")
-def list_sessions(status: str | None = None, db=Depends(get_db)):
-    sessions = repo.list_sessions(db, status=status)
+def list_sessions(
+    status: str | None = None,
+    session_type: str | None = None,
+    db=Depends(get_db),
+):
+    """List sessions.
+    
+    Args:
+        status: Filter by session status (idle, working, etc.)
+        session_type: Filter by session type (worker, brain, system)
+    """
+    sessions = repo.list_sessions(db, status=status, session_type=session_type)
     return [_serialize_session(s) for s in sessions]
 
 
@@ -163,24 +173,37 @@ def get_session(session_id: str, db=Depends(get_db)):
     return _serialize_session(s)
 
 
+def _sanitize_worker_name(name: str) -> str:
+    """Sanitize worker name to avoid folder structure issues.
+    
+    Replaces / and \ with _ since these affect directory paths.
+    """
+    return re.sub(r'[/\\]', '_', name.strip())
+
+
 @router.post("/sessions", status_code=201)
 def create_session(body: SessionCreate, request: Request, db=Depends(get_db)):
+    # Sanitize name to avoid folder structure issues
+    sanitized_name = _sanitize_worker_name(body.name)
+    
     # Create tmux window for the session
     tmux_session_name = "orchestrator"
     tmux_window = None
     try:
-        target = ensure_window(tmux_session_name, body.name)
+        target = ensure_window(tmux_session_name, sanitized_name)
         tmux_window = target
-        logger.info("Created tmux window for session %s: %s", body.name, target)
+        logger.info("Created tmux window for session %s: %s", sanitized_name, target)
     except Exception:
-        logger.warning("Could not create tmux window for session %s", body.name, exc_info=True)
+        logger.warning("Could not create tmux window for session %s", sanitized_name, exc_info=True)
 
-    # Set up worker directory
-    worker_dir = os.path.join(WORKER_BASE_DIR, body.name)
-    mp_path = body.mp_path or worker_dir
-    os.makedirs(worker_dir, exist_ok=True)
+    # Set up tmp directory for CLI scripts and configs
+    tmp_dir = os.path.join(WORKER_BASE_DIR, sanitized_name)
+    os.makedirs(tmp_dir, exist_ok=True)
+    
+    # work_dir is where Claude runs - user-specified or defaults
+    work_dir = body.work_dir  # Can be None, will be set later based on host
 
-    s = repo.create_session(db, body.name, body.host, mp_path, tmux_window=tmux_window)
+    s = repo.create_session(db, sanitized_name, body.host, work_dir, tmux_window=tmux_window)
 
     if is_rdev_host(body.host):
         # rdev worker — launch full setup in background thread
@@ -198,9 +221,11 @@ def create_session(body: SessionCreate, request: Request, db=Depends(get_db)):
             bg_conn = get_connection(db_path) if db_path else db
             try:
                 result = setup_rdev_worker(
-                    bg_conn, s.id, body.name, body.host,
+                    bg_conn, s.id, sanitized_name, body.host,
                     tmux_session_name, api_port,
                     task_id=body.task_id,
+                    work_dir=work_dir,
+                    tmp_dir=tmp_dir,
                 )
                 if result["ok"]:
                     tunnel_target = f"{tmux_session_name}:{result['tunnel_window']}"
@@ -212,13 +237,12 @@ def create_session(body: SessionCreate, request: Request, db=Depends(get_db)):
                     if body.task_id:
                         from orchestrator.state.repositories import tasks
                         tasks.update_task(bg_conn, body.task_id, assigned_session_id=s.id, status="in_progress")
-                        repo.update_session(bg_conn, s.id, current_task_id=body.task_id)
-                    logger.info("rdev worker %s setup complete", body.name)
+                    logger.info("rdev worker %s setup complete", sanitized_name)
                 else:
                     repo.update_session(bg_conn, s.id, status="error")
-                    logger.error("rdev worker %s setup failed: %s", body.name, result.get("error"))
+                    logger.error("rdev worker %s setup failed: %s", sanitized_name, result.get("error"))
             except Exception:
-                logger.exception("rdev background setup failed for %s", body.name)
+                logger.exception("rdev background setup failed for %s", sanitized_name)
                 try:
                     repo.update_session(bg_conn, s.id, status="error")
                 except Exception:
@@ -238,44 +262,62 @@ def create_session(body: SessionCreate, request: Request, db=Depends(get_db)):
         source_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
         template_src = os.path.join(source_root, "prompts", "worker_claude_template.md")
         worker_prompt = None
-        
-        # Generate CLI scripts (task_id fetched dynamically by scripts)
         config = getattr(request.app.state, "config", {})
         api_port = config.get("server", {}).get("port", 8093)
         
+        # Generate CLI scripts in tmp_dir/bin/
         bin_dir = generate_worker_scripts(
-            worker_dir=worker_dir,
-            worker_name=body.name,
+            worker_dir=tmp_dir,
+            worker_name=sanitized_name,
             session_id=s.id,
             api_base=f"http://127.0.0.1:{api_port}",
         )
-        logger.info("Generated CLI scripts for local worker %s in %s", body.name, bin_dir)
+        logger.info("Generated CLI scripts for local worker %s in %s", sanitized_name, bin_dir)
+        
+        # Generate Claude Code hooks in tmp_dir/configs/
+        configs_dir = os.path.join(tmp_dir, "configs")
+        os.makedirs(configs_dir, exist_ok=True)
+        settings_path = generate_hooks_settings(
+            worker_dir=configs_dir,
+            session_id=s.id,
+            api_base=f"http://127.0.0.1:{api_port}",
+        )
+        logger.info("Generated hooks settings for local worker %s in %s", sanitized_name, settings_path)
         
         if os.path.exists(template_src):
             try:
                 with open(template_src) as f:
                     worker_prompt = f.read().replace("SESSION_ID", s.id)
             except Exception:
-                logger.warning("Could not read worker prompt for %s", body.name, exc_info=True)
+                logger.warning("Could not read worker prompt for %s", sanitized_name, exc_info=True)
 
-        # cd to working directory, export PATH, and launch claude
+        # cd to working directory, export PATH, and launch claude with --settings
         if tmux_window:
             try:
                 import shlex
-                # Build command: cd, export PATH, launch claude
-                cmd_parts = [f"cd {mp_path}"]
-                path_export = get_path_export_command(os.path.join(worker_dir, "bin"))
+                cmd_parts = []
+                
+                # cd to work_dir if specified, otherwise stay in current dir
+                if work_dir:
+                    cmd_parts.append(f"cd {work_dir}")
+                
+                # Export PATH to include CLI scripts
+                path_export = get_path_export_command(os.path.join(tmp_dir, "bin"))
                 cmd_parts.append(path_export)
+                
+                # Build claude command with --settings for hooks
+                settings_file = os.path.join(tmp_dir, "configs", "settings.json")
+                claude_args = [f"--settings {shlex.quote(settings_file)}"]
                 
                 if worker_prompt:
                     quoted_prompt = shlex.quote(worker_prompt)
-                    cmd_parts.append(f"claude --append-system-prompt {quoted_prompt}")
-                else:
-                    cmd_parts.append("claude")
+                    claude_args.append(f"--append-system-prompt {quoted_prompt}")
+                
+                cmd_parts.append(f"claude {' '.join(claude_args)}")
                 
                 cmd = " && ".join(cmd_parts)
                 send_keys(tmux_session_name, body.name, cmd, enter=True)
-                logger.info("Launched claude in %s for local worker %s", mp_path, body.name)
+                logger.info("Launched claude for local worker %s (work_dir=%s)", body.name, work_dir)
             except Exception:
                 logger.warning("Could not launch claude for local worker %s", body.name, exc_info=True)
 
@@ -287,11 +329,27 @@ def update_session(session_id: str, body: SessionUpdate, db=Depends(get_db)):
     s = repo.get_session(db, session_id)
     if s is None:
         raise HTTPException(404, "Session not found")
+    
+    old_status = s.status
     updated = repo.update_session(
         db, session_id,
         status=body.status,
         takeover_mode=body.takeover_mode,
     )
+    
+    # Publish event for WebSocket broadcast if status changed
+    if body.status and body.status != old_status:
+        from orchestrator.core.events import Event, publish
+        publish(Event(
+            type="session.status_changed",
+            data={
+                "session_id": session_id,
+                "session_name": s.name,
+                "old_status": old_status,
+                "new_status": body.status,
+            },
+        ))
+    
     return {"id": updated.id, "status": updated.status}
 
 
@@ -358,14 +416,8 @@ def delete_session(session_id: str, db=Depends(get_db)):
         except Exception:
             logger.warning("Could not remove local worker directory %s", worker_scripts_dir, exc_info=True)
 
-    # Clean up worker mp_path if different from scripts dir and in tmp
-    if s.mp_path and s.mp_path != worker_scripts_dir:
-        if os.path.exists(s.mp_path) and "/tmp/" in s.mp_path:
-            try:
-                shutil.rmtree(s.mp_path)
-                logger.info("Removed worker mp_path %s for session %s", s.mp_path, s.name)
-            except Exception:
-                logger.warning("Could not remove worker mp_path %s", s.mp_path, exc_info=True)
+    # Note: work_dir is NOT cleaned up - it's the user's working directory
+    # Only tmp_dir (worker_scripts_dir) is cleaned up above
 
     repo.delete_session(db, session_id)
     return {"ok": True}
@@ -472,7 +524,7 @@ def stop_session(session_id: str, db=Depends(get_db)):
         raise HTTPException(404, "Session not found")
 
     if not s.tmux_window:
-        repo.update_session(db, session_id, status="idle", current_task_id=None)
+        repo.update_session(db, session_id, status="idle")
         return {"ok": True, "message": "No tmux window, marked as idle"}
 
     if ":" in s.tmux_window:
@@ -492,10 +544,11 @@ def stop_session(session_id: str, db=Depends(get_db)):
     except Exception:
         logger.warning("Could not send stop commands to session %s", s.name, exc_info=True)
 
-    # Unassign current task if any
-    if s.current_task_id:
-        from orchestrator.state.repositories import tasks as tasks_repo
-        tasks_repo.update_task(db, s.current_task_id, assigned_session_id=None, status="todo")
+    # Unassign any tasks assigned to this session
+    from orchestrator.state.repositories import tasks as tasks_repo
+    assigned_tasks = tasks_repo.list_tasks(db, assigned_session_id=session_id)
+    for task in assigned_tasks:
+        tasks_repo.update_task(db, task.id, assigned_session_id=None, status="todo")
 
-    repo.update_session(db, session_id, status="idle", current_task_id=None)
+    repo.update_session(db, session_id, status="idle")
     return {"ok": True, "message": f"Session {s.name} stopped and cleared"}

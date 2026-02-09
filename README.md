@@ -98,11 +98,52 @@ When the backend is running, OpenAPI docs are available at:
 - http://localhost:8093/docs (Swagger UI)
 - http://localhost:8093/redoc (ReDoc)
 
+## Database
+
+**IMPORTANT:** The orchestrator uses a single SQLite database. Do NOT create additional database files.
+
+| File | Purpose |
+|------|---------|
+| `data/orchestrator.db` | **Production database** — used by the server |
+
+The database path is configured in `config.yaml`:
+```yaml
+database:
+  path: "data/orchestrator.db"    # Relative to project root
+```
+
+### Applying Migrations
+
+Migrations run automatically on server startup. To manually apply migrations:
+
+```bash
+cd orchestrator
+.venv/bin/python -c "
+from orchestrator.state.db import get_connection
+from orchestrator.state.migrations.runner import apply_migrations
+conn = get_connection('data/orchestrator.db')  # ALWAYS use this path
+apply_migrations(conn)
+conn.close()
+"
+```
+
+### Checking Database Schema
+
+```bash
+.venv/bin/python -c "
+from orchestrator.state.db import get_connection
+conn = get_connection('data/orchestrator.db')
+cursor = conn.execute('PRAGMA table_info(sessions)')
+print([row[1] for row in cursor.fetchall()])
+conn.close()
+"
+```
+
 ## Configuration
 
 Edit `config.yaml` for:
 - Server port (`server.port`)
-- Database path (`database.path`)
+- Database path (`database.path`) — **do not change unless you know what you're doing**
 - tmux session name (`tmux.session_name`)
 - Monitoring intervals
 - Logging level

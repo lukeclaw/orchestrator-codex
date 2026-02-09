@@ -3,13 +3,12 @@ import { useApp } from '../../context/AppContext'
 import './StatsBar.css'
 
 export default function StatsBar() {
-  const { workers, decisions, projects, tasks, prs } = useApp()
+  const { workers, decisions, projects, tasks } = useApp()
 
   const activeSessions = workers.filter(s => s.status !== 'disconnected').length
   const waitingSessions = workers.filter(s => s.status === 'waiting').length
   const activeProjects = projects.filter(p => p.status === 'active').length
   const inProgressTasks = tasks.filter(t => t.status === 'in_progress').length
-  const openPRs = prs.filter(p => p.status === 'open').length
 
   return (
     <section className="stats-bar" data-testid="stats-bar">
@@ -34,10 +33,6 @@ export default function StatsBar() {
       <Link to="/decisions" className="stat" data-testid="stat-decisions">
         <div className="stat-value" id="stat-decisions-val">{decisions.length}</div>
         <div className="stat-label">Pending Decisions</div>
-      </Link>
-      <Link to="/prs" className="stat" data-testid="stat-prs">
-        <div className="stat-value">{openPRs}</div>
-        <div className="stat-label">Open PRs</div>
       </Link>
     </section>
   )

@@ -16,10 +16,11 @@ from orchestrator.state.repositories import (
 
 class TestSessionsRepo:
     def test_create_and_get(self, db):
-        s = sessions.create_session(db, "worker-1", "rdev1.example.com", "/path/to/mp")
+        s = sessions.create_session(db, "worker-1", "rdev1.example.com", work_dir="/path/to/repo")
         assert s.name == "worker-1"
         assert s.host == "rdev1.example.com"
         assert s.status == "idle"
+        assert s.work_dir == "/path/to/repo"
 
         fetched = sessions.get_session(db, s.id)
         assert fetched.name == s.name

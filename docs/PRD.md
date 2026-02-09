@@ -40,14 +40,14 @@ At the end of the day: run many terminals and rdev sessions at the same time and
 
 ```
 PROJECT          = A high-level initiative with a goal (e.g., "Migrate auth to OAuth 2.0")
-  TASK           = A unit of work assignable to one worker (e.g., "Add OAuth callback in voyager-web")
+  TASK           = A unit of work assignable to one worker (e.g., "UTI-1: Add OAuth callback")
+    SUBTASK      = Smaller units of work within a task (e.g., "UTI-1-1: Write tests")
     WORKER       = A Claude Code session (terminal) that executes tasks
-      PR         = Pull request created by a worker while executing a task
   DECISION       = A question requiring human input to proceed
-  CONTEXT        = Persistent project knowledge that survives worker restarts
+  CONTEXT        = Persistent knowledge with scoped visibility (global, brain-only, project)
 ```
 
-Hierarchy: `Project → Tasks → Workers → PRs`
+Hierarchy: `Project → Tasks → Subtasks → Workers`
 
 A worker is assigned to one task at a time. When done, it picks up the next task from the project queue.
 
@@ -61,7 +61,7 @@ A web UI at `localhost:8093` showing:
 
 - **All workers**: which is working, waiting, idle, or dead
 - **All tasks**: kanban board (TODO / IN PROGRESS / DONE / BLOCKED)
-- **All PRs**: created, in review, merged — linked to tasks
+- **All tasks**: with human-readable keys (e.g., UTI-1, UTI-1-1 for subtasks)
 - **Decision queue**: pending items that need my input, sorted by urgency
 - **Activity feed**: chronological log of what happened across all workers
 
@@ -81,10 +81,21 @@ A web UI at `localhost:8093` showing:
 - Workers report progress: task status, PRs created, blockers hit
 - Centralized state in SQLite — workers read/write via API
 
-### 3.4 Context Persistence
+### 3.4 Context System
 
-- Each project has stored context (goals, conventions, prior decisions)
-- When a worker starts or recovers, it gets a "re-brief" with current task + context
+Context items store persistent knowledge with **scoped visibility**:
+
+| Scope | Brain | Workers | Use Case |
+|-------|-------|---------|----------|
+| **global** | ✅ | ✅ | Coding conventions, shared requirements |
+| **brain** | ✅ | ❌ | Coordination strategies, internal notes |
+| **project** | ✅ | ✅ (assigned) | Project-specific requirements, worker instructions |
+
+**Categories**: `instruction`, `requirement`, `convention`, `reference`, `note`
+
+- **Instruction** category items are **mandatory** — workers must follow them
+- Context items have a **description** field for lightweight listing (workers fetch full content on demand)
+- When a worker starts or recovers, it gets a "re-brief" with current task + relevant context
 - Context survives worker crashes, `/compact`, and restarts
 - Zero context lives in my head — it's all in the system
 
@@ -134,14 +145,57 @@ Workers talk to the orchestrator via **scoped CLI tools** that are auto-generate
 
 ### 3.7 Lifecycle Management
 
+**Worker Status States:**
+
+| Status | Meaning | Triggered By |
+|--------|---------|--------------|
+| **connecting** | Worker created, Claude Code not started yet | Session creation in orchestrator |
+| **idle** | Claude Code started, ready for task assignment | `SessionStart` hook |
+| **working** | Actively processing (task assigned or user input) | `UserPromptSubmit` hook, task assignment |
+| **waiting** | Claude finished responding, awaiting review/input | `Stop` hook (Claude stops), `Notification` hook |
+| **paused** | User manually paused the worker | Manual user action |
+| **error** | Worker encountered an error | Error detection |
+| **disconnected** | Worker session lost | Heartbeat failure |
+
+**Status Management via Claude Code Hooks:**
+
+Worker status is managed automatically via Claude Code hooks defined in `.claude/settings.json`:
+- `SessionStart` → sets status to `idle`
+- `UserPromptSubmit` → sets status to `working`
+- `Stop` → sets status to `waiting`
+- `Notification` → sets status to `waiting` (when Claude needs user input)
+
+This removes the need for workers to manually call `orch-worker update --status`.
+
+**Worker Directory Structure:**
+
+Each worker has two distinct directory concepts:
+
+| Directory | Location | Purpose |
+|-----------|----------|---------|
+| `work_dir` | User-specified, or defaults to rdev home / localhost tmp | Where Claude Code runs and the worker performs its task |
+| `tmp_dir` | `/tmp/orchestrator/workers/{name}/` | Internal orchestrator files (CLI scripts, configs, caches) |
+
+**tmp_dir contents:**
+- `bin/` — CLI scripts (`orch-task`, `orch-subtask`, `orch-worker`, `orch-context`)
+- `configs/` — Claude Code settings (`settings.json` with hooks)
+- `.task_cache` — Cached task info (5-min TTL)
+
+**Important:** Workers never directly access `tmp_dir` files. Instead:
+- CLI scripts are available via PATH environment variable
+- Claude Code loads hooks via `claude --settings {tmp_dir}/configs/settings.json`
+
 **Worker Session Lifecycle:**
 
 | Event | Behavior |
 |-------|----------|
-| **Create session** | Generate CLI scripts in `/tmp/orchestrator/workers/{name}/bin/`, add to PATH |
-| **Assign task** | Worker fetches task_id dynamically via CLI (cached for 5 min) |
+| **Create session** | Generate CLI scripts in `tmp_dir/bin/`, hooks in `tmp_dir/configs/`, status = `connecting` |
+| **Claude Code starts** | `SessionStart` hook fires, status → `idle` |
+| **Assign task** | Worker fetches task_id dynamically via CLI (cached for 5 min), status → `working` |
+| **User input** | `UserPromptSubmit` hook fires, status → `working` |
+| **Claude responds** | `Stop` hook fires, status → `waiting` |
 | **Reassign task** | Worker runs `--refresh` or waits for cache TTL to pick up new task |
-| **Delete session** | Full cleanup: kill tmux window, kill tunnel (rdev), remove `/tmp/orchestrator/workers/{name}/` |
+| **Delete session** | Full cleanup: kill tmux window, kill tunnel (rdev), remove `tmp_dir` |
 
 **Task Lifecycle:**
 
@@ -244,10 +298,6 @@ Terminal Monitor (polls every 2-5s)
 - `GET/POST /api/tasks` — list (with filters) / create
 - `GET/PATCH/DELETE /api/tasks/:id` — get / update / remove
 
-**PR tracking**
-- `GET/POST /api/prs` — list / create
-- `PATCH /api/prs/:id` — update status
-
 **Decision queue**
 - `GET /api/decisions` — list pending
 - `POST /api/decisions` — create (worker requests decision)
@@ -269,10 +319,10 @@ Terminal Monitor (polls every 2-5s)
 ### 4.4 Data Model
 
 ```
-sessions       (id, name, host, mp_path, status, tmux_window, last_activity)
-projects       (id, name, description, status, context, created_at)
-tasks          (id, project_id, title, description, status, assigned_session_id, dependencies)
-prs            (id, session_id, task_id, repo, pr_number, url, status)
+sessions       (id, name, host, work_dir, status, tmux_window, last_activity, session_type)
+projects       (id, name, description, status, task_prefix, created_at)
+tasks          (id, project_id, title, description, status, priority, assigned_session_id, parent_task_id, task_index)
+context_items  (id, scope, project_id, title, description, content, category, source, metadata)
 decisions      (id, session_id, task_id, question, context, urgency, status, response)
 activities     (id, session_id, project_id, type, summary, details, created_at)
 ```
@@ -288,7 +338,7 @@ activities     (id, session_id, project_id, type, summary, details, created_at)
 | Dashboard + session cards | Working | Live state from monitor (working/idle/waiting/error) |
 | Terminal streaming | Working | xterm.js via WebSocket, send-keys, resize |
 | Project/task CRUD | Working | Full REST API + UI |
-| PR tracking | Working | API + UI, linked to sessions/tasks |
+| Task indexing | Working | Human-readable keys (UTI-1, UTI-1-1), project prefixes |
 | Decision queue | Working | Create, respond, dismiss — UI + API |
 | Activity feed | Working | Chronological log of all events |
 | Terminal monitor | Working | Polls tmux, detects state via regex |
@@ -404,3 +454,5 @@ activities     (id, session_id, project_id, type, summary, details, created_at)
 | 2.0 | 2026-02-07 | Rewritten: pain points front and center, simplified from 3600 lines to focused requirements |
 | 2.1 | 2026-02-07 | Added Section 3.7 (Orchestration Engine), Section 4.5 (What's Built), settings endpoint |
 | 2.2 | 2026-02-08 | Added Section 3.6 (Worker CLI tools: orch-task, orch-subtask, orch-worker, orch-context), Section 3.7 (Lifecycle Management: cleanup, cascading deletes, worker reuse) |
+| 2.3 | 2026-02-09 | Added detailed worker status states and Claude Code hooks-based automatic status management |
+| 2.4 | 2026-02-08 | Removed PR tracking (not useful). Added context scopes (global/brain/project), description field, instruction category. Task priority changed from numeric to H/M/L. Human-readable task keys (UTI-1). |

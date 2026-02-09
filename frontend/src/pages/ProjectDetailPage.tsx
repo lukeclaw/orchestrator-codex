@@ -1,22 +1,29 @@
 import { useEffect, useState, useCallback } from 'react'
-import { useParams, Link } from 'react-router-dom'
-import type { Project, Task, PullRequest, Session, ContextItem } from '../api/types'
+import { useParams, Link, useNavigate } from 'react-router-dom'
+import type { ContextItem, Task } from '../api/types'
 import { api } from '../api/client'
+import { useApp } from '../context/AppContext'
 import TaskBoard from '../components/tasks/TaskBoard'
 import TaskTable from '../components/tasks/TaskTable'
 import TaskForm from '../components/tasks/TaskForm'
 import TaskDetailModal from '../components/tasks/TaskDetailModal'
 import ContextModal from '../components/context/ContextModal'
+import ProjectEditModal from '../components/projects/ProjectEditModal'
 import WorkerCard from '../components/workers/WorkerCard'
-import ProgressBar from '../components/common/ProgressBar'
 import './ProjectDetailPage.css'
 
 export default function ProjectDetailPage() {
   const { id } = useParams<{ id: string }>()
-  const [project, setProject] = useState<Project | null>(null)
-  const [tasks, setTasks] = useState<Task[]>([])
-  const [prs, setPrs] = useState<PullRequest[]>([])
-  const [sessions, setSessions] = useState<Session[]>([])
+  const navigate = useNavigate()
+  
+  // Use shared state from AppContext for sessions, tasks, projects
+  const { sessions, tasks: allTasks, projects, refresh, removeSession } = useApp()
+  
+  // Derive data from shared state
+  const project = projects.find(p => p.id === id) || null
+  const tasks = allTasks.filter(t => t.project_id === id)
+  
+  // Local state for page-specific data
   const [contextItems, setContextItems] = useState<ContextItem[]>([])
   const [error, setError] = useState('')
   const [showTaskForm, setShowTaskForm] = useState(false)
@@ -24,46 +31,48 @@ export default function ProjectDetailPage() {
   const [selectedTask, setSelectedTask] = useState<Task | null>(null)
   const [selectedContext, setSelectedContext] = useState<ContextItem | null>(null)
   const [showNewContext, setShowNewContext] = useState(false)
+  const [showEditProject, setShowEditProject] = useState(false)
 
-  const load = useCallback(async () => {
+  // Load context items (not in shared state)
+  const loadContext = useCallback(async () => {
     if (!id) return
     try {
-      const [p, t, pr, s, ctx] = await Promise.all([
-        api<Project>(`/api/projects/${id}`),
-        api<Task[]>(`/api/tasks?project_id=${id}`).catch(() => []),
-        api<PullRequest[]>('/api/prs').catch(() => []),
-        api<Session[]>('/api/sessions').catch(() => []),
-        api<ContextItem[]>(`/api/context?project_id=${id}`).catch(() => []),
-      ])
-      setProject(p)
-      setTasks(t)
-      setPrs(pr)
-      setSessions(s)
+      const ctx = await api<ContextItem[]>(`/api/context?project_id=${id}`).catch(() => [])
       setContextItems(ctx)
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to load project')
+      setError(e instanceof Error ? e.message : 'Failed to load context')
     }
   }, [id])
 
-  useEffect(() => { load() }, [load])
+  useEffect(() => { loadContext() }, [loadContext])
 
-  async function createTask(body: { project_id: string; title: string; description?: string; priority?: number }) {
+  async function createTask(body: { project_id: string; title: string; description?: string; priority?: string }) {
     await api('/api/tasks', { method: 'POST', body: JSON.stringify(body) })
-    load()
+    refresh()
   }
 
   async function updateTask(taskId: string, body: Partial<Task>) {
     await api(`/api/tasks/${taskId}`, { method: 'PATCH', body: JSON.stringify(body) })
-    load()
+    refresh()
   }
 
   async function deleteTask(taskId: string) {
     await api(`/api/tasks/${taskId}`, { method: 'DELETE' })
-    load()
+    refresh()
   }
 
   function handleTaskClick(task: Task) {
     setSelectedTask(task)
+  }
+
+  async function handleProjectUpdate(projectId: string, data: { name?: string; description?: string; status?: string; target_date?: string }) {
+    await api(`/api/projects/${projectId}`, { method: 'PATCH', body: JSON.stringify(data) })
+    refresh()
+  }
+
+  async function handleProjectDelete(projectId: string) {
+    await api(`/api/projects/${projectId}`, { method: 'DELETE' })
+    navigate('/projects')
   }
 
   if (error) {
@@ -86,46 +95,64 @@ export default function ProjectDetailPage() {
     parentTasks.some(t => t.assigned_session_id === s.id)
   )
 
+  function handleWorkerRemove(sessionId: string) {
+    removeSession(sessionId)
+  }
+
   return (
     <div className="project-detail">
-      <div className="pd-nav">
-        <Link to="/projects" className="btn btn-secondary btn-sm">&larr; Projects</Link>
-      </div>
-
       <div className="pd-header">
-        <div>
+        <div className="pd-title-row">
+          <Link to="/projects" className="pd-back-btn" title="Back to Projects">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="15 18 9 12 15 6" />
+            </svg>
+          </Link>
           <h1>{project.name}</h1>
-          {project.description && <p className="pd-desc">{project.description}</p>}
+          <button
+            type="button"
+            className="pd-edit-btn"
+            onClick={() => setShowEditProject(true)}
+            title="Edit project"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+              <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+            </svg>
+          </button>
+          <span className={`status-badge ${project.status}`}>{project.status}</span>
         </div>
-        <span className={`status-badge ${project.status}`}>{project.status}</span>
+        {project.description && <p className="pd-desc">{project.description}</p>}
       </div>
 
-      <div className="pd-meta">
-        <div className="pd-progress">
-          <ProgressBar done={doneTasks} total={tasks.length} />
-        </div>
-        {project.target_date && (
+      {project.target_date && (
+        <div className="pd-meta">
           <span className="pd-date">Target: {new Date(project.target_date).toLocaleDateString()}</span>
-        )}
-      </div>
+        </div>
+      )}
 
       {/* Workers */}
-      {assignedSessions.length > 0 && (
-        <section className="pd-section">
-          <h2>Workers ({assignedSessions.length})</h2>
+      <section className="pd-section">
+        <h2>Workers ({assignedSessions.length})</h2>
+        {assignedSessions.length > 0 ? (
           <div className="pd-worker-grid">
             {assignedSessions.map(s => (
-              <WorkerCard key={s.id} session={s} />
+              <WorkerCard key={s.id} session={s} onRemove={handleWorkerRemove} />
             ))}
           </div>
-        </section>
-      )}
+        ) : (
+          <p className="empty-state">No workers assigned to tasks in this project</p>
+        )}
+      </section>
 
       {/* Tasks */}
       <section className="pd-section">
         <div className="pd-section-header">
-          <h2>Tasks ({parentTasks.length})</h2>
-          <div className="pd-section-actions">
+          <div className="pd-section-title-row">
+            <h2>Tasks</h2>
+            <span className="pd-progress-text">
+              {doneTasks}/{parentTasks.length} ({parentTasks.length > 0 ? Math.round((doneTasks / parentTasks.length) * 100) : 0}%)
+            </span>
             <div className="toggle-group toggle-sm">
               <button
                 type="button"
@@ -142,10 +169,10 @@ export default function ProjectDetailPage() {
                 Table
               </button>
             </div>
-            <button className="btn btn-primary btn-sm" onClick={() => setShowTaskForm(true)}>
-              + Add Task
-            </button>
           </div>
+          <button className="btn btn-primary btn-sm" onClick={() => setShowTaskForm(true)}>
+            + Add Task
+          </button>
         </div>
         {taskViewMode === 'board' ? (
           <TaskBoard tasks={parentTasks} onTaskClick={handleTaskClick} />
@@ -153,23 +180,6 @@ export default function ProjectDetailPage() {
           <TaskTable tasks={parentTasks} onTaskClick={handleTaskClick} />
         )}
       </section>
-
-      {/* PRs */}
-      {prs.length > 0 && (
-        <section className="pd-section">
-          <h2>Pull Requests</h2>
-          <div className="pd-prs">
-            {prs.map(pr => (
-              <div key={pr.id} className="pd-pr-item">
-                <a href={pr.url} target="_blank" rel="noopener noreferrer">
-                  {pr.number ? `#${pr.number} ` : ''}{pr.title || pr.url}
-                </a>
-                <span className={`status-badge ${pr.status}`}>{pr.status}</span>
-              </div>
-            ))}
-          </div>
-        </section>
-      )}
 
       {/* Context */}
       <section className="pd-section">
@@ -194,7 +204,7 @@ export default function ProjectDetailPage() {
                   <strong>{c.title}</strong>
                   <span className="pd-context-time">{c.updated_at ? new Date(c.updated_at).toLocaleDateString() : ''}</span>
                 </div>
-                <p className="pd-context-preview">{c.content.slice(0, 150)}{c.content.length > 150 ? '...' : ''}</p>
+                <p className="pd-context-preview">{c.description || (c.content?.slice(0, 150) || '') + ((c.content?.length || 0) > 150 ? '...' : '')}</p>
               </div>
             ))}
           </div>
@@ -237,12 +247,19 @@ export default function ProjectDetailPage() {
               body: JSON.stringify(body),
             })
           }
-          load()
+          loadContext()
         }}
         onDelete={async (ctxId) => {
           await api(`/api/context/${ctxId}`, { method: 'DELETE' })
-          load()
+          loadContext()
         }}
+      />
+
+      <ProjectEditModal
+        project={showEditProject ? project : null}
+        onClose={() => setShowEditProject(false)}
+        onUpdate={handleProjectUpdate}
+        onDelete={handleProjectDelete}
       />
     </div>
   )

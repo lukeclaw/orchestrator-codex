@@ -32,7 +32,7 @@ export function useTasks(filters?: TaskFilters) {
 
   useEffect(() => { fetch() }, [fetch])
 
-  const create = useCallback(async (body: { project_id: string; title: string; description?: string; priority?: number }) => {
+  const create = useCallback(async (body: { project_id: string; title: string; description?: string; priority?: string }) => {
     const t = await api<Task>('/api/tasks', {
       method: 'POST',
       body: JSON.stringify(body),

@@ -49,15 +49,16 @@ def create_context_item(
     content: str,
     scope: str = "global",
     project_id: str | None = None,
+    description: str | None = None,
     category: str | None = None,
     source: str | None = None,
     metadata: str | None = None,
 ) -> ContextItem:
     id = str(uuid.uuid4())
     conn.execute(
-        """INSERT INTO context_items (id, scope, project_id, title, content, category, source, metadata)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-        (id, scope, project_id, title, content, category, source, metadata),
+        """INSERT INTO context_items (id, scope, project_id, title, description, content, category, source, metadata)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        (id, scope, project_id, title, description, content, category, source, metadata),
     )
     conn.commit()
     return get_context_item(conn, id)
@@ -70,6 +71,7 @@ def update_context_item(
     content: str | None = None,
     scope: str | None = None,
     project_id: str | None = ...,
+    description: str | None = ...,
     category: str | None = ...,
     source: str | None = ...,
     metadata: str | None = ...,
@@ -89,6 +91,9 @@ def update_context_item(
     if project_id is not ...:
         sets.append("project_id = ?")
         params.append(project_id)
+    if description is not ...:
+        sets.append("description = ?")
+        params.append(description)
     if category is not ...:
         sets.append("category = ?")
         params.append(category)

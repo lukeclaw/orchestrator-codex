@@ -61,6 +61,27 @@
   flex-wrap: wrap;
 }
 
+.tdm-add-link-form input[type="url"],
+.tdm-add-link-form input[type="text"] {
+  padding: 8px 12px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text-primary);
+  font-size: 14px;
+}
+
+.tdm-add-link-form input[type="url"]:focus,
+.tdm-add-link-form input[type="text"]:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-muted);
+}
+
+.tdm-add-link-form input::placeholder {
+  color: var(--text-muted);
+}
+
 .tdm-add-link-form input[type="url"] {
   flex: 2;
   min-width: 200px;
@@ -73,6 +94,58 @@
 
 .tdm-add-link-form select {
   width: 100px;
+  padding: 8px 12px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text-primary);
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.tdm-add-link-form select:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-muted);
+}
+
+.tdm-link-form-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.tdm-link-action-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.tdm-link-action-btn.confirm {
+  background: var(--green-muted);
+  color: var(--green);
+}
+
+.tdm-link-action-btn.confirm:hover {
+  background: var(--green);
+  color: white;
+}
+
+.tdm-link-action-btn.cancel {
+  background: transparent;
+  color: var(--text-muted);
+}
+
+.tdm-link-action-btn.cancel:hover {
+  background: var(--surface-hover);
+  color: var(--text-primary);
 }
 
 .tdm-links-list {
@@ -249,8 +322,15 @@
   margin-top: 16px;
 }
 
+.tdm-subtasks-progress {
+  font-size: 13px;
+  color: var(--text-muted);
+  margin-left: 8px;
+  margin-right: auto;
+}
+
 .tdm-subtasks-container {
-  max-height: 350px;
+  max-height: 400px;
   overflow-y: auto;
   margin-top: 8px;
 }

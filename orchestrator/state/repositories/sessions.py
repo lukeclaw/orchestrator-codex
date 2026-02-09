@@ -21,13 +21,32 @@ def get_session_by_name(conn: sqlite3.Connection, name: str) -> Session | None:
     return Session(**dict(row))
 
 
-def list_sessions(conn: sqlite3.Connection, status: str | None = None) -> list[Session]:
+def list_sessions(
+    conn: sqlite3.Connection,
+    status: str | None = None,
+    session_type: str | None = None,
+) -> list[Session]:
+    """List sessions with optional filters.
+    
+    Args:
+        status: Filter by session status (idle, working, etc.)
+        session_type: Filter by session type (worker, brain, system)
+    """
+    conditions = []
+    params = []
     if status:
-        rows = conn.execute(
-            "SELECT * FROM sessions WHERE status = ? ORDER BY name", (status,)
-        ).fetchall()
-    else:
-        rows = conn.execute("SELECT * FROM sessions ORDER BY name").fetchall()
+        conditions.append("status = ?")
+        params.append(status)
+    if session_type:
+        conditions.append("session_type = ?")
+        params.append(session_type)
+    
+    query = "SELECT * FROM sessions"
+    if conditions:
+        query += " WHERE " + " AND ".join(conditions)
+    query += " ORDER BY name"
+    
+    rows = conn.execute(query, params).fetchall()
     return [Session(**dict(r)) for r in rows]
 
 
@@ -36,14 +55,15 @@ def create_session(
     conn: sqlite3.Connection,
     name: str,
     host: str,
-    mp_path: str | None = None,
+    work_dir: str | None = None,
     tmux_window: str | None = None,
+    session_type: str = "worker",
 ) -> Session:
     id = str(uuid.uuid4())
     conn.execute(
-        """INSERT INTO sessions (id, name, host, mp_path, tmux_window)
-           VALUES (?, ?, ?, ?, ?)""",
-        (id, name, host, mp_path, tmux_window),
+        """INSERT INTO sessions (id, name, host, work_dir, tmux_window, session_type)
+           VALUES (?, ?, ?, ?, ?, ?)""",
+        (id, name, host, work_dir, tmux_window, session_type),
     )
     conn.commit()
     return get_session(conn, id)
@@ -56,7 +76,6 @@ def update_session(
     status: str | None = None,
     tmux_window: str | None = None,
     tunnel_pane: str | None = ...,
-    current_task_id: str | None = ...,
     takeover_mode: bool | None = None,
     last_activity: str | None = None,
 ) -> Session | None:
@@ -71,9 +90,6 @@ def update_session(
     if tunnel_pane is not ...:
         sets.append("tunnel_pane = ?")
         params.append(tunnel_pane)
-    if current_task_id is not ...:
-        sets.append("current_task_id = ?")
-        params.append(current_task_id)
     if takeover_mode is not None:
         sets.append("takeover_mode = ?")
         params.append(takeover_mode)
@@ -105,7 +121,6 @@ def delete_session(conn: sqlite3.Connection, id: str) -> bool:
         conn.execute("DELETE FROM project_workers WHERE session_id = ?", (id,))
         conn.execute("UPDATE tasks SET assigned_session_id = NULL WHERE assigned_session_id = ?", (id,))
         conn.execute("UPDATE decisions SET session_id = NULL WHERE session_id = ?", (id,))
-        conn.execute("UPDATE pull_requests SET session_id = NULL WHERE session_id = ?", (id,))
         cursor = conn.execute("DELETE FROM sessions WHERE id = ?", (id,))
     return cursor.rowcount > 0
 

@@ -8,6 +8,7 @@ Scripts use file-based caching for task info to minimize API calls.
 Cache TTL is 5 minutes by default.
 """
 
+import json
 import os
 import stat
 
@@ -22,6 +23,18 @@ WORKER_DIR="{worker_dir}"
 CACHE_FILE="$WORKER_DIR/.task_cache"
 CACHE_TTL=300  # 5 minutes in seconds
 
+# Get file modification time (cross-platform: macOS and Linux)
+get_file_mtime() {{
+    local file="$1"
+    if [[ "$(uname)" == "Darwin" ]]; then
+        # macOS: stat -f %m returns modification time
+        stat -f %m "$file" 2>/dev/null
+    else
+        # Linux: stat -c %Y returns modification time
+        stat -c %Y "$file" 2>/dev/null
+    fi
+}}
+
 # Load task info from cache or API
 load_task_info() {{
     local force_refresh="$1"
@@ -29,9 +42,12 @@ load_task_info() {{
     
     # Check if cache exists and is fresh
     if [[ -f "$CACHE_FILE" && "$force_refresh" != "true" ]]; then
-        local cache_age=$(($(date +%s) - $(stat -f %m "$CACHE_FILE" 2>/dev/null || stat -c %Y "$CACHE_FILE" 2>/dev/null || echo 0)))
-        if [[ $cache_age -lt $CACHE_TTL ]]; then
-            cache_valid=true
+        local file_mtime=$(get_file_mtime "$CACHE_FILE")
+        if [[ -n "$file_mtime" ]]; then
+            local cache_age=$(($(date +%s) - file_mtime))
+            if [[ $cache_age -lt $CACHE_TTL ]]; then
+                cache_valid=true
+            fi
         fi
     fi
     
@@ -39,17 +55,16 @@ load_task_info() {{
         # Load from cache
         source "$CACHE_FILE"
     else
-        # Fetch from API
-        local session_info=$(curl -s "$API_BASE/api/sessions/$SESSION_ID")
-        TASK_ID=$(echo "$session_info" | jq -r '.current_task_id // empty')
+        # Fetch tasks assigned to this session
+        local tasks_json=$(curl -s "$API_BASE/api/tasks?assigned_session_id=$SESSION_ID")
+        TASK_ID=$(echo "$tasks_json" | jq -r '.[0].id // empty')
         
         if [[ -z "$TASK_ID" || "$TASK_ID" == "null" ]]; then
             echo "Error: No task assigned to this worker" >&2
             return 1
         fi
         
-        local task_info=$(curl -s "$API_BASE/api/tasks/$TASK_ID")
-        PROJECT_ID=$(echo "$task_info" | jq -r '.project_id // empty')
+        PROJECT_ID=$(echo "$tasks_json" | jq -r '.[0].project_id // empty')
         
         # Write cache
         mkdir -p "$WORKER_DIR"
@@ -425,19 +440,29 @@ show_help() {{
     echo "Usage: orch-context <command> [options]"
     echo ""
     echo "Commands:"
-    echo "  show --scope SCOPE        Show context (project|global)"
+    echo "  list --scope SCOPE        List context items with titles and descriptions (no full content)"
+    echo "  read ID [ID2 ...]         Read full content of specific context item(s)"
     echo "  tasks                     List all project tasks"
+    echo ""
+    echo "Scopes:"
+    echo "  project                   Context for assigned project"
+    echo "  global                    Shared context across all projects"
     echo ""
     echo "Options:"
     echo "  --refresh                 Force refresh task info from API"
     echo ""
     echo "Examples:"
-    echo "  orch-context show --scope project"
-    echo "  orch-context show --scope global"
-    echo "  orch-context tasks"
+    echo "  orch-context list --scope project    # List project context (titles + descriptions)"
+    echo "  orch-context list --scope global     # List global context (titles + descriptions)"
+    echo "  orch-context read abc123             # Read full content of item abc123"
+    echo "  orch-context read abc123 def456      # Read multiple items"
+    echo "  orch-context tasks                   # List all project tasks"
+    echo ""
+    echo "Workflow: Use 'list' first to see available context, then 'read' to fetch full content"
+    echo "          of relevant items. This saves your context window."
 }}
 
-cmd_show() {{
+cmd_list() {{
     local scope=""
     while [[ $# -gt 0 ]]; do
         case "$1" in
@@ -460,10 +485,12 @@ cmd_show() {{
     case "$scope" in
         project)
             load_task_info "$FORCE_REFRESH" || exit 1
-            curl -s "$API_BASE/api/context?project_id=$PROJECT_ID" | jq .
+            # List without content (default behavior)
+            curl -s "$API_BASE/api/context?project_id=$PROJECT_ID" | jq '.[] | {{id: .id, title: .title, description: .description, category: .category}}'
             ;;
         global)
-            curl -s "$API_BASE/api/context?scope=global" | jq .
+            # List without content (default behavior)
+            curl -s "$API_BASE/api/context?scope=global" | jq '.[] | {{id: .id, title: .title, description: .description, category: .category}}'
             ;;
         *)
             echo "Error: Invalid scope. Use 'project' or 'global'" >&2
@@ -472,15 +499,34 @@ cmd_show() {{
     esac
 }}
 
+cmd_read() {{
+    if [[ $# -eq 0 ]]; then
+        echo "Error: At least one context item ID is required" >&2
+        echo "Usage: orch-context read ID [ID2 ...]" >&2
+        exit 1
+    fi
+    
+    # Fetch full content for each ID
+    for item_id in "$@"; do
+        echo "=== Context: $item_id ==="
+        curl -s "$API_BASE/api/context/$item_id" | jq .
+        echo ""
+    done
+}}
+
 cmd_tasks() {{
     load_task_info "$FORCE_REFRESH" || exit 1
     curl -s "$API_BASE/api/tasks?project_id=$PROJECT_ID" | jq .
 }}
 
 case "$1" in
-    show)
+    list)
         shift
-        cmd_show "$@"
+        cmd_list "$@"
+        ;;
+    read)
+        shift
+        cmd_read "$@"
         ;;
     tasks)
         shift
@@ -555,3 +601,147 @@ def generate_worker_scripts(
 def get_path_export_command(bin_dir: str) -> str:
     """Get the shell command to add bin_dir to PATH."""
     return f'export PATH="{bin_dir}:$PATH"'
+
+
+def generate_hooks_settings(
+    worker_dir: str,
+    session_id: str,
+    api_base: str = "http://127.0.0.1:8093",
+) -> str:
+    """Generate Claude Code hooks settings.json for automatic status management.
+    
+    Creates hooks/update-status.sh and settings.json in the given directory.
+    The settings.json is meant to be loaded via `claude --settings <path>`.
+    
+    Directory structure created:
+        worker_dir/
+            hooks/
+                update-status.sh
+            settings.json
+    
+    Args:
+        worker_dir: Directory to generate hooks in (e.g., tmp_dir/configs/)
+        session_id: Worker's session ID
+        api_base: API base URL
+        
+    Returns:
+        Path to the directory containing settings.json
+    """
+    hooks_dir = os.path.join(worker_dir, "hooks")
+    os.makedirs(hooks_dir, exist_ok=True)
+    
+    # Create hook script that updates worker status
+    hook_script_path = os.path.join(hooks_dir, "update-status.sh")
+    hook_script = f'''#!/bin/bash
+# Hook script to update worker status in orchestrator
+# Generated for session: {session_id}
+
+SESSION_ID="{session_id}"
+API_BASE="{api_base}"
+
+# Read JSON input from stdin
+INPUT=$(cat)
+
+# Get the hook event name
+EVENT=$(echo "$INPUT" | jq -r '.hook_event_name // empty')
+
+# Determine status based on event
+case "$EVENT" in
+    SessionStart)
+        STATUS="idle"
+        ;;
+    UserPromptSubmit)
+        STATUS="working"
+        ;;
+    Stop|Notification)
+        STATUS="waiting"
+        ;;
+    SessionEnd)
+        STATUS="connecting"
+        ;;
+    *)
+        # Unknown event, do nothing
+        exit 0
+        ;;
+esac
+
+# Update worker status via API
+curl -s -X PATCH "$API_BASE/api/sessions/$SESSION_ID" \\
+    -H 'Content-Type: application/json' \\
+    -d "{{\\"status\\": \\"$STATUS\\"}}" > /dev/null 2>&1
+
+exit 0
+'''
+    
+    with open(hook_script_path, "w") as f:
+        f.write(hook_script)
+    
+    # Make executable
+    os.chmod(hook_script_path, os.stat(hook_script_path).st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+    
+    # Create settings.json with hooks configuration
+    settings = {
+        "hooks": {
+            "SessionStart": [
+                {
+                    "matcher": "",
+                    "hooks": [
+                        {
+                            "type": "command",
+                            "command": hook_script_path
+                        }
+                    ]
+                }
+            ],
+            "UserPromptSubmit": [
+                {
+                    "matcher": "",
+                    "hooks": [
+                        {
+                            "type": "command",
+                            "command": hook_script_path
+                        }
+                    ]
+                }
+            ],
+            "Stop": [
+                {
+                    "matcher": "",
+                    "hooks": [
+                        {
+                            "type": "command",
+                            "command": hook_script_path
+                        }
+                    ]
+                }
+            ],
+            "Notification": [
+                {
+                    "matcher": "",
+                    "hooks": [
+                        {
+                            "type": "command",
+                            "command": hook_script_path
+                        }
+                    ]
+                }
+            ],
+            "SessionEnd": [
+                {
+                    "matcher": "",
+                    "hooks": [
+                        {
+                            "type": "command",
+                            "command": hook_script_path
+                        }
+                    ]
+                }
+            ]
+        }
+    }
+    
+    settings_path = os.path.join(worker_dir, "settings.json")
+    with open(settings_path, "w") as f:
+        json.dump(settings, f, indent=2)
+    
+    return worker_dir

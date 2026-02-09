@@ -96,37 +96,46 @@
   gap: 8px;
 }
 
-.cp-card {
+.cp-item {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px 16px;
   cursor: pointer;
-  transition: border-color 0.15s;
+  transition: border-color 0.15s, background 0.15s;
 }
 
-.cp-card:hover {
+.cp-item:hover {
   border-color: var(--accent);
+  background: var(--surface-raised);
 }
 
-.cp-card.expanded {
-  cursor: default;
-}
-
-.cp-card-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.cp-card-title {
+.cp-item-header {
   display: flex;
   align-items: center;
   gap: 8px;
-  min-width: 0;
+  flex-wrap: wrap;
 }
 
-.cp-card-title strong {
+.cp-item-title {
+  flex: 1;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.cp-item-time {
+  font-size: 12px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.cp-item-desc {
+  margin: 8px 0 0;
+  font-size: 13px;
+  color: var(--text-secondary);
+  line-height: 1.4;
 }
 
 .cp-scope-badge {
@@ -141,6 +150,11 @@
 .cp-scope-badge.global {
   background: var(--accent-muted);
   color: var(--accent);
+}
+
+.cp-scope-badge.brain {
+  background: rgba(198, 120, 221, 0.15);
+  color: #c678dd;
 }
 
 .cp-scope-badge.project {

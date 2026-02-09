@@ -192,11 +192,15 @@ def _show_status(conn):
                 "error": "red",
                 "disconnected": "dim",
             }.get(s.status, "white")
+            # Look up task assigned to this session
+            from orchestrator.state.repositories import tasks as tasks_repo
+            assigned = tasks_repo.list_tasks(conn, assigned_session_id=s.id)
+            task_id = assigned[0].id if assigned else "-"
             table.add_row(
                 s.name,
                 s.host,
                 f"[{status_color}]{s.status}[/{status_color}]",
-                s.current_task_id or "-",
+                task_id,
             )
         console.print(table)
 
@@ -214,11 +218,11 @@ def _handle_add(conn, config: dict, user_input: str):
 
     name = parts[1]
     host = parts[2]
-    mp_path = parts[3] if len(parts) > 3 else None
+    work_dir = parts[3] if len(parts) > 3 else None
     tmux_session = config.get("tmux", {}).get("session_name", "orchestrator")
 
     try:
-        session = create_session(conn, name, host, mp_path, tmux_session)
+        session = create_session(conn, name, host, work_dir, tmux_session)
         console.print(f"[green]Created session:[/green] {session.name} ({session.host})")
         console.print(f"  tmux target: {session.tmux_window}")
     except Exception as e:

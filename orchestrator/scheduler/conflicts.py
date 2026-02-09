@@ -16,21 +16,21 @@ class Conflict:
 
 
 def detect_path_conflicts(conn: sqlite3.Connection) -> list[Conflict]:
-    """Detect sessions that share the same mp_path (working directory)."""
+    """Detect sessions that share the same work_dir (working directory)."""
     all_sessions = sessions.list_sessions(conn)
-    active = [s for s in all_sessions if s.status in ("working", "idle") and s.mp_path]
+    active = [s for s in all_sessions if s.status in ("working", "idle") and s.work_dir]
 
     conflicts = []
     seen_paths: dict[str, str] = {}
 
     for s in active:
-        if s.mp_path in seen_paths:
+        if s.work_dir in seen_paths:
             conflicts.append(Conflict(
-                session_a=seen_paths[s.mp_path],
+                session_a=seen_paths[s.work_dir],
                 session_b=s.name,
-                overlap=f"Same working directory: {s.mp_path}",
+                overlap=f"Same working directory: {s.work_dir}",
             ))
         else:
-            seen_paths[s.mp_path] = s.name
+            seen_paths[s.work_dir] = s.name
 
     return conflicts

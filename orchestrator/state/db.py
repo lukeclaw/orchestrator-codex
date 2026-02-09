@@ -1,4 +1,13 @@
-"""SQLite database connection with WAL mode, retry logic, and connection factory."""
+"""SQLite database connection with WAL mode, retry logic, and connection factory.
+
+IMPORTANT: The production database is located at `data/orchestrator.db`.
+This path is configured in `config.yaml` under `database.path`.
+
+When running migrations or debugging, ALWAYS use:
+    conn = get_connection('data/orchestrator.db')
+
+Do NOT create new database files (e.g., 'orchestrator.db' in project root).
+"""
 
 from __future__ import annotations
 

@@ -3,7 +3,7 @@
 import sqlite3
 import uuid
 
-from orchestrator.state.models import Project, ProjectWorker
+from orchestrator.state.models import Project, ProjectWorker, generate_task_prefix
 
 
 def get_project(conn: sqlite3.Connection, id: str) -> Project | None:
@@ -28,12 +28,16 @@ def create_project(
     name: str,
     description: str | None = None,
     target_date: str | None = None,
+    task_prefix: str | None = None,
 ) -> Project:
     id = str(uuid.uuid4())
+    # Auto-generate task_prefix if not provided
+    if task_prefix is None:
+        task_prefix = generate_task_prefix(name)
     conn.execute(
-        """INSERT INTO projects (id, name, description, target_date)
-           VALUES (?, ?, ?, ?)""",
-        (id, name, description, target_date),
+        """INSERT INTO projects (id, name, description, target_date, task_prefix)
+           VALUES (?, ?, ?, ?, ?)""",
+        (id, name, description, target_date, task_prefix),
     )
     conn.commit()
     return get_project(conn, id)

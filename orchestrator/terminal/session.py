@@ -12,7 +12,7 @@ from orchestrator.state.models import Session
 from orchestrator.state.repositories import sessions as sessions_repo
 from orchestrator.terminal import manager as tmux
 from orchestrator.terminal import ssh
-from orchestrator.worker.cli_scripts import generate_worker_scripts, get_path_export_command
+from orchestrator.worker.cli_scripts import generate_worker_scripts, generate_hooks_settings, get_path_export_command
 
 logger = logging.getLogger(__name__)
 
@@ -23,7 +23,7 @@ def create_session(
     conn: sqlite3.Connection,
     name: str,
     host: str,
-    mp_path: str | None = None,
+    work_dir: str | None = None,
     tmux_session: str = "orchestrator",
 ) -> Session:
     """Create a new session: tmux window, SSH, cd to path, persist to DB."""
@@ -37,15 +37,15 @@ def create_session(
         time.sleep(2)
 
     # cd to working directory if specified
-    if mp_path:
-        tmux.send_keys(tmux_session, name, f"cd {mp_path}")
+    if work_dir:
+        tmux.send_keys(tmux_session, name, f"cd {work_dir}")
         time.sleep(0.5)
 
     # Persist to DB
     session = sessions_repo.create_session(
-        conn, name=name, host=host, mp_path=mp_path, tmux_window=target
+        conn, name=name, host=host, work_dir=work_dir, tmux_window=target
     )
-    logger.info("Created session: %s (host=%s, path=%s)", name, host, mp_path)
+    logger.info("Created session: %s (host=%s, path=%s)", name, host, work_dir)
     return session
 
 
@@ -121,14 +121,21 @@ def setup_rdev_worker(
     api_port: int = 8093,
     task_id: str | None = None,
     project_id: str | None = None,
+    work_dir: str | None = None,
+    tmp_dir: str | None = None,
 ) -> dict:
     """Set up a full rdev worker: tunnel, SSH, Claude, prompt.
 
     Returns {"ok": True, "tunnel_window": ...} on success,
     or {"ok": False, "error": "..."} on failure.
+    
+    Args:
+        work_dir: Where Claude Code runs (user's codebase). If None, uses rdev home.
+        tmp_dir: Local tmp directory for generating scripts/configs before copying to remote.
     """
     tunnel_name = f"{name}-tunnel"
-    worker_dir = f"/tmp/orchestrator/workers/{name}"
+    remote_tmp_dir = f"/tmp/orchestrator/workers/{name}"
+    local_tmp_dir = tmp_dir or f"/tmp/orchestrator/workers/{name}"
 
     try:
         # 1. Create tunnel window and start reverse SSH tunnel
@@ -147,9 +154,9 @@ def setup_rdev_worker(
 
         # 4. Generate CLI scripts (task_id fetched dynamically by scripts)
         # Generate CLI scripts locally first
-        os.makedirs(worker_dir, exist_ok=True)
+        os.makedirs(local_tmp_dir, exist_ok=True)
         bin_dir = generate_worker_scripts(
-            worker_dir=worker_dir,
+            worker_dir=local_tmp_dir,
             worker_name=name,
             session_id=session_id,
             api_base=f"http://127.0.0.1:{api_port}",
@@ -158,7 +165,7 @@ def setup_rdev_worker(
         
         # Copy scripts to remote via SSH
         # Create remote directory and copy scripts
-        tmux.send_keys(tmux_session, name, f"mkdir -p {worker_dir}/bin", enter=True)
+        tmux.send_keys(tmux_session, name, f"mkdir -p {remote_tmp_dir}/bin", enter=True)
         time.sleep(0.5)
         
         # Copy each script file to remote
@@ -169,20 +176,67 @@ def setup_rdev_worker(
                     script_content = f.read()
                 # Use heredoc to write script content
                 tmux.send_keys(tmux_session, name, 
-                    f"cat > {worker_dir}/bin/{script_name} << 'ORCHEOF'\n{script_content}\nORCHEOF", 
+                    f"cat > {remote_tmp_dir}/bin/{script_name} << 'ORCHEOF'\n{script_content}\nORCHEOF", 
                     enter=True)
                 time.sleep(0.3)
-                tmux.send_keys(tmux_session, name, f"chmod +x {worker_dir}/bin/{script_name}", enter=True)
+                tmux.send_keys(tmux_session, name, f"chmod +x {remote_tmp_dir}/bin/{script_name}", enter=True)
                 time.sleep(0.2)
         
         # Export PATH
-        path_export = get_path_export_command(f"{worker_dir}/bin")
+        path_export = get_path_export_command(f"{remote_tmp_dir}/bin")
         tmux.send_keys(tmux_session, name, path_export, enter=True)
         time.sleep(0.5)
         logger.info("Copied CLI scripts to remote and updated PATH")
+        
+        # 4b. Generate and copy hooks settings for automatic status updates
+        # Generate locally in configs/ subdirectory
+        local_configs_dir = os.path.join(local_tmp_dir, "configs")
+        os.makedirs(local_configs_dir, exist_ok=True)
+        claude_dir = generate_hooks_settings(
+            worker_dir=local_configs_dir,
+            session_id=session_id,
+            api_base=f"http://127.0.0.1:{api_port}",
+        )
+        logger.info("Generated hooks settings in %s", claude_dir)
+        
+        # Create remote configs directory and copy hooks
+        tmux.send_keys(tmux_session, name, f"mkdir -p {remote_tmp_dir}/configs/hooks", enter=True)
+        time.sleep(0.3)
+        
+        # Copy hook script
+        hook_script_path = os.path.join(claude_dir, "hooks", "update-status.sh")
+        if os.path.exists(hook_script_path):
+            with open(hook_script_path) as f:
+                hook_content = f.read()
+            tmux.send_keys(tmux_session, name,
+                f"cat > {remote_tmp_dir}/configs/hooks/update-status.sh << 'ORCHEOF'\n{hook_content}\nORCHEOF",
+                enter=True)
+            time.sleep(0.3)
+            tmux.send_keys(tmux_session, name, f"chmod +x {remote_tmp_dir}/configs/hooks/update-status.sh", enter=True)
+            time.sleep(0.2)
+        
+        # Copy settings.json
+        settings_path = os.path.join(claude_dir, "settings.json")
+        if os.path.exists(settings_path):
+            with open(settings_path) as f:
+                settings_content = f.read()
+            tmux.send_keys(tmux_session, name,
+                f"cat > {remote_tmp_dir}/configs/settings.json << 'ORCHEOF'\n{settings_content}\nORCHEOF",
+                enter=True)
+            time.sleep(0.3)
+        
+        logger.info("Copied hooks settings to remote")
 
-        # 5. Launch Claude with worker prompt via --append-system-prompt
+        # 5. cd to work_dir if specified, then launch Claude with --settings
+        if work_dir:
+            tmux.send_keys(tmux_session, name, f"cd {work_dir}", enter=True)
+            time.sleep(0.3)
+        
         template_path = os.path.join(_SOURCE_ROOT, "prompts", "worker_claude_template.md")
+        settings_file = f"{remote_tmp_dir}/configs/settings.json"
+        
+        # Build claude command with --settings for hooks
+        claude_args = [f"--settings {settings_file}", "--dangerously-skip-permissions"]
         
         if os.path.exists(template_path):
             with open(template_path) as f:
@@ -193,14 +247,12 @@ def setup_rdev_worker(
             if project_id:
                 rendered = rendered.replace("PROJECT_ID", project_id)
             
-            # Use shlex.quote for safe shell escaping - no tmp files needed
+            # Use shlex.quote for safe shell escaping
             quoted_prompt = shlex.quote(rendered)
-            tmux.send_keys(tmux_session, name, f"claude --dangerously-skip-permissions --append-system-prompt {quoted_prompt}")
-            logger.info("Launched Claude Code with worker prompt in %s", name)
-        else:
-            logger.warning("Worker template not found at %s", template_path)
-            tmux.send_keys(tmux_session, name, "claude --dangerously-skip-permissions")
-            logger.info("Launched Claude Code (no worker prompt) in %s", name)
+            claude_args.append(f"--append-system-prompt {quoted_prompt}")
+        
+        tmux.send_keys(tmux_session, name, f"claude {' '.join(claude_args)}")
+        logger.info("Launched Claude Code for rdev worker %s (work_dir=%s)", name, work_dir)
 
         return {"ok": True, "tunnel_window": tunnel_name}
 

@@ -188,7 +188,7 @@ export default function WorkerCard({
       <div className="wc-footer">
         <span className="wc-host">{session.host}</span>
         <span className="wc-task">
-          {session.current_task_id ? 'Task assigned' : 'No task'}
+          {session.status === 'working' ? 'Task assigned' : 'No task'}
         </span>
         <span className="wc-activity">{timeAgo(session.last_activity)}</span>
       </div>

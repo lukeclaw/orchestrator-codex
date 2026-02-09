@@ -37,7 +37,7 @@ export default function TaskDetailModal({ task, sessions, onClose, onUpdate, onD
   const [showAddLink, setShowAddLink] = useState(false)
   const [subtaskViewMode, setSubtaskViewMode] = useState<'board' | 'table'>('board')
 
-  // Reset navigation when task prop changes (modal opens with new task)
+  // Reset navigation and form state when task prop changes (modal opens with new task)
   useEffect(() => {
     if (task) {
       setCurrentTask(task)
@@ -46,6 +46,11 @@ export default function TaskDetailModal({ task, sessions, onClose, onUpdate, onD
       setCurrentTask(null)
       setParentTask(null)
     }
+    // Reset add link form when modal opens/closes
+    setShowAddLink(false)
+    setNewLinkUrl('')
+    setNewLinkTitle('')
+    setNewLinkType('reference')
   }, [task])
 
   // Load form state when currentTask changes
@@ -151,7 +156,7 @@ export default function TaskDetailModal({ task, sessions, onClose, onUpdate, onD
   const modalTitle = isSubtask ? 'Subtask Details' : 'Task Details'
 
   return (
-    <Modal open={!!task} onClose={onClose} title={modalTitle} extraWide>
+    <Modal open={!!task} onClose={onClose} title={modalTitle} extraWide closeOnOutsideClick={false}>
       {/* Back button for subtask navigation */}
       {isSubtask && (
         <div className="tdm-back-nav">
@@ -206,32 +211,34 @@ export default function TaskDetailModal({ task, sessions, onClose, onUpdate, onD
             </select>
           </div>
 
-          <div className="form-group">
-            <label>Assigned Worker</label>
-            <select
-              className="filter-select"
-              value={assignedSession}
-              onChange={e => setAssignedSession(e.target.value)}
-              data-testid="assign-session-select"
-              disabled={!isEditable}
-            >
-              <option value="">Unassigned</option>
-              {sessions.map(s => (
-                <option key={s.id} value={s.id}>{s.name} ({s.status})</option>
-              ))}
-            </select>
-          </div>
+          {!isSubtask && (
+            <div className="form-group">
+              <label>Assigned Worker</label>
+              <select
+                className="filter-select"
+                value={assignedSession}
+                onChange={e => setAssignedSession(e.target.value)}
+                data-testid="assign-session-select"
+                disabled={!isEditable}
+              >
+                <option value="">Unassigned</option>
+                {sessions.map(s => (
+                  <option key={s.id} value={s.id}>{s.name} ({s.status})</option>
+                ))}
+              </select>
+            </div>
+          )}
         </div>
 
         {/* Links Section */}
         <div className="tdm-section">
           <div className="tdm-section-header">
             <label>Links ({links.length})</label>
-            {isEditable && (
+            {isEditable && !showAddLink && (
               <button
                 type="button"
                 className="btn btn-sm btn-secondary"
-                onClick={() => setShowAddLink(!showAddLink)}
+                onClick={() => setShowAddLink(true)}
               >
                 + Add Link
               </button>
@@ -256,9 +263,34 @@ export default function TaskDetailModal({ task, sessions, onClose, onUpdate, onD
                   <option key={t} value={t}>{t}</option>
                 ))}
               </select>
-              <button type="button" className="btn btn-sm btn-primary" onClick={handleAddLink}>
-                Add
-              </button>
+              <div className="tdm-link-form-actions">
+                <button
+                  type="button"
+                  className="tdm-link-action-btn confirm"
+                  onClick={handleAddLink}
+                  title="Add link"
+                >
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                    <polyline points="20 6 9 17 4 12" />
+                  </svg>
+                </button>
+                <button
+                  type="button"
+                  className="tdm-link-action-btn cancel"
+                  onClick={() => {
+                    setShowAddLink(false)
+                    setNewLinkUrl('')
+                    setNewLinkTitle('')
+                    setNewLinkType('reference')
+                  }}
+                  title="Cancel"
+                >
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                    <line x1="18" y1="6" x2="6" y2="18" />
+                    <line x1="6" y1="6" x2="18" y2="18" />
+                  </svg>
+                </button>
+              </div>
             </div>
           )}
           {links.length === 0 ? (
@@ -286,10 +318,15 @@ export default function TaskDetailModal({ task, sessions, onClose, onUpdate, onD
         </div>
 
         {/* Subtasks Section */}
-        {subtasks.length > 0 && (
+        {subtasks.length > 0 && (() => {
+          const doneSubtasks = subtasks.filter(st => st.status === 'done').length
+          const totalSubtasks = subtasks.length
+          const pct = Math.round((doneSubtasks / totalSubtasks) * 100)
+          return (
           <div className="tdm-section tdm-subtasks-section">
             <div className="tdm-section-header">
-              <label>Subtasks ({subtasks.length})</label>
+              <label>Subtasks</label>
+              <span className="tdm-subtasks-progress">{doneSubtasks}/{totalSubtasks} ({pct}%)</span>
               <div className="toggle-group toggle-sm">
                 <button
                   type="button"
@@ -315,7 +352,8 @@ export default function TaskDetailModal({ task, sessions, onClose, onUpdate, onD
               )}
             </div>
           </div>
-        )}
+          )
+        })()}
       </div>
       <div className="modal-footer">
         {isEditable && onDelete && (

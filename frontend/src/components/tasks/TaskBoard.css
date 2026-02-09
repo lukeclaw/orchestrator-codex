@@ -1,6 +1,6 @@
 .task-board {
   display: grid;
-  grid-template-columns: repeat(4, minmax(160px, 280px));
+  grid-template-columns: repeat(4, minmax(25%, 1fr));
   gap: 12px;
   min-height: 300px;
   overflow-x: auto;

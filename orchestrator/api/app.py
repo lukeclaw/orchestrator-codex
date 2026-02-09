@@ -102,6 +102,8 @@ def create_app(
     )
 
     # Database
+    # IMPORTANT: Production database is at `data/orchestrator.db` (configured in config.yaml).
+    # Do NOT create additional database files. Migrations run automatically on startup.
     resolved_db_path = None
     if db is not None:
         app.state.conn = db
@@ -119,6 +121,7 @@ def create_app(
         else:
             from orchestrator.main import PROJECT_ROOT, load_config
             config = load_config()
+            # Default: data/orchestrator.db (relative to project root)
             resolved_db_path = str(PROJECT_ROOT / config["database"]["path"])
             conn = get_connection(resolved_db_path)
         apply_migrations(conn)
@@ -138,7 +141,6 @@ def create_app(
         context,
         decisions,
         health,
-        prs,
         projects,
         reporting,
         sessions,
@@ -153,7 +155,6 @@ def create_app(
     app.include_router(reporting.router, prefix="/api", tags=["reporting"])
     app.include_router(chat.router, prefix="/api", tags=["chat"])
     app.include_router(context.router, prefix="/api", tags=["context"])
-    app.include_router(prs.router, prefix="/api", tags=["prs"])
     app.include_router(health.router, prefix="/api", tags=["health"])
     app.include_router(activities.router, prefix="/api", tags=["activities"])
     app.include_router(settings.router, prefix="/api", tags=["settings"])

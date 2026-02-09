@@ -154,3 +154,32 @@
 .rdev-accessed {
   color: var(--text-muted);
 }
+
+/* Field validation styles */
+.field-required {
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--danger);
+  margin-left: 4px;
+}
+
+.field-optional {
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--text-muted);
+  margin-left: 4px;
+}
+
+.field-error {
+  color: var(--danger);
+  font-size: 12px;
+  margin-top: 4px;
+}
+
+.input-error {
+  border-color: var(--danger) !important;
+}
+
+.input-error:focus {
+  box-shadow: 0 0 0 2px rgba(239, 68, 68, 0.2);
+}

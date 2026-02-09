@@ -217,7 +217,7 @@ def list_sessions(status: str | None = None) -> str:
             rows = conn.execute(
                 """SELECT s.*, t.title as current_task_title
                    FROM sessions s
-                   LEFT JOIN tasks t ON s.current_task_id = t.id
+                   LEFT JOIN tasks t ON t.assigned_session_id = s.id
                    WHERE s.status = ? ORDER BY s.name""",
                 (status,),
             ).fetchall()
@@ -225,7 +225,7 @@ def list_sessions(status: str | None = None) -> str:
             rows = conn.execute(
                 """SELECT s.*, t.title as current_task_title
                    FROM sessions s
-                   LEFT JOIN tasks t ON s.current_task_id = t.id
+                   LEFT JOIN tasks t ON t.assigned_session_id = s.id
                    ORDER BY s.name""",
             ).fetchall()
         return json.dumps(_rows_to_dicts(rows), indent=2, default=str)
@@ -263,7 +263,7 @@ def create_session(name: str, host: str = "localhost", working_directory: str | 
 
         session_id = str(uuid.uuid4())
         conn.execute(
-            "INSERT INTO sessions (id, name, host, mp_path, tmux_window) VALUES (?, ?, ?, ?, ?)",
+            "INSERT INTO sessions (id, name, host, work_dir, tmux_window) VALUES (?, ?, ?, ?, ?)",
             (session_id, name, host, working_directory, target),
         )
         conn.commit()

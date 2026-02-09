@@ -1,0 +1,29 @@
+.pem-error {
+  color: var(--red);
+  font-size: 13px;
+  margin-top: 8px;
+}
+
+.pem-footer {
+  justify-content: space-between !important;
+}
+
+.pem-delete-area {
+  display: flex;
+  align-items: center;
+}
+
+.pem-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.form-row {
+  display: flex;
+  gap: 16px;
+}
+
+.form-row .form-group {
+  flex: 1;
+}

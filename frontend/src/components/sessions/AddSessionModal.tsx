@@ -30,18 +30,69 @@ const WORKER_BASE_DIR = '/tmp/orchestrator/workers'
 
 export default function AddSessionModal({ open, onClose }: Props) {
   const { refresh } = useApp()
-  const [name, setName] = useState(generateWorkerName)
   const [workerType, setWorkerType] = useState<'rdev' | 'local'>('local')
-  const [selectedRdev, setSelectedRdev] = useState<string>('')
+  
+  // Local worker state
+  const [localName, setLocalName] = useState(generateWorkerName)
   const [host, setHost] = useState('localhost')
   const [mpPath, setMpPath] = useState('')
+  
+  // Rdev worker state
+  const [rdevName, setRdevName] = useState('')
+  const [selectedRdev, setSelectedRdev] = useState<string>('')
+  
+  // Shared state
   const [error, setError] = useState('')
   const [creating, setCreating] = useState(false)
+  
+  // Track which fields have been touched for validation
+  const [touchedFields, setTouchedFields] = useState<Set<string>>(new Set())
   
   // Rdev list state
   const [rdevs, setRdevs] = useState<RdevInstance[]>([])
   const [loadingRdevs, setLoadingRdevs] = useState(false)
   const [rdevError, setRdevError] = useState('')
+  
+  // Get current name based on worker type
+  const name = workerType === 'rdev' ? rdevName : localName
+  const setName = workerType === 'rdev' ? setRdevName : setLocalName
+  
+  // Reset state when modal is closed
+  useEffect(() => {
+    if (!open) {
+      setWorkerType('local')
+      setLocalName(generateWorkerName())
+      setHost('localhost')
+      setMpPath('')
+      setRdevName('')
+      setSelectedRdev('')
+      setError('')
+      setRdevError('')
+      setTouchedFields(new Set())
+    }
+  }, [open])
+  
+  // Mark field as touched
+  const touchField = (field: string) => {
+    setTouchedFields(prev => new Set(prev).add(field))
+  }
+  
+  // Validation helper
+  const validateForm = () => {
+    const currentName = workerType === 'rdev' ? rdevName : localName
+    const hasName = !!currentName.trim()
+    const hasRdev = workerType === 'rdev' && !!selectedRdev
+    const hasHost = workerType === 'local' && !!host.trim()
+    return hasName && (hasRdev || hasHost)
+  }
+  
+  // Error messages (shown when field is touched and invalid)
+  const nameError = touchedFields.has('name') && !name.trim() ? 'Worker name is required' : ''
+  const rdevError2 = touchedFields.has('rdev') && workerType === 'rdev' && !selectedRdev ? 'Please select an rdev instance' : ''
+  const hostError = touchedFields.has('host') && workerType === 'local' && !host.trim() ? 'Host is required' : ''
+  
+  // Form is valid when all required fields are filled
+  const isFormValid = validateForm()
 
   // Fetch rdev list (forceRefresh bypasses server cache)
   const fetchRdevs = useCallback(async (forceRefresh = false) => {
@@ -74,12 +125,16 @@ export default function AddSessionModal({ open, onClose }: Props) {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
-    if (!name.trim()) return
+    // Touch all fields to show any remaining errors
+    setTouchedFields(new Set(['name', 'rdev', 'host']))
+    if (!validateForm()) return
     setError('')
     setCreating(true)
 
     try {
-      const payload: Record<string, unknown> = { name: name.trim() }
+      // Sanitize name: replace / and \ with _ to avoid folder structure issues
+      const sanitizedName = name.trim().replace(/[/\\]/g, '_')
+      const payload: Record<string, unknown> = { name: sanitizedName }
 
       if (workerType === 'rdev') {
         if (!selectedRdev) return
@@ -87,18 +142,13 @@ export default function AddSessionModal({ open, onClose }: Props) {
       } else {
         if (!host.trim()) return
         payload.host = host.trim()
-        payload.mp_path = mpPath.trim() || null
+        payload.work_dir = mpPath.trim() || null
       }
 
       await api('/api/sessions', {
         method: 'POST',
         body: JSON.stringify(payload),
       })
-      // Reset with new defaults for next use
-      setName(generateWorkerName())
-      setSelectedRdev('')
-      setHost('localhost')
-      setMpPath('')
       onClose()
       refresh()
     } catch (e) {
@@ -109,7 +159,7 @@ export default function AddSessionModal({ open, onClose }: Props) {
   }
 
   return (
-    <Modal open={open} onClose={onClose} title="Add New Worker">
+    <Modal open={open} onClose={onClose} title="Add New Worker" closeOnOutsideClick={false}>
       <form onSubmit={handleSubmit} data-testid="add-session-form">
         <div className="modal-body">
           <div className="form-group">
@@ -133,21 +183,26 @@ export default function AddSessionModal({ open, onClose }: Props) {
           </div>
 
           <div className="form-group">
-            <label>Worker Name</label>
+            <label>Worker Name <span className="field-required">*required</span></label>
             <input
               type="text"
               data-testid="session-name-input"
               value={name}
-              onChange={e => setName(e.target.value)}
+              onChange={e => {
+                setName(e.target.value)
+                touchField('name')
+              }}
+              onBlur={() => touchField('name')}
               placeholder="e.g. api-worker"
-              required
+              className={nameError ? 'input-error' : ''}
             />
+            {nameError && <div className="field-error">{nameError}</div>}
           </div>
 
           {workerType === 'rdev' ? (
             <div className="form-group">
               <div className="rdev-list-header">
-                <label>Select rdev Instance</label>
+                <label>Select rdev Instance <span className="field-required">*required</span></label>
                 <button
                   type="button"
                   className="btn-icon"
@@ -168,16 +223,19 @@ export default function AddSessionModal({ open, onClose }: Props) {
               ) : rdevs.length === 0 ? (
                 <div className="rdev-empty">No rdev instances found. Create one with <code>rdev create</code></div>
               ) : (
+                <>
                 <div className="rdev-list">
                   {rdevs.map(rdev => (
                     <div
                       key={rdev.name}
                       className={`rdev-item ${selectedRdev === rdev.name ? 'selected' : ''} ${rdev.in_use ? 'in-use' : ''} ${rdev.state !== 'RUNNING' ? 'not-running' : ''}`}
                       onClick={() => {
+                        touchField('rdev')
                         if (!rdev.in_use && rdev.state === 'RUNNING') {
                           setSelectedRdev(rdev.name)
                           // Auto-set worker name to rdev name
                           setName(rdev.name)
+                          touchField('name')
                         }
                       }}
                     >
@@ -195,29 +253,36 @@ export default function AddSessionModal({ open, onClose }: Props) {
                     </div>
                   ))}
                 </div>
+                  {rdevError2 && <div className="field-error">{rdevError2}</div>}
+                </>
               )}
             </div>
           ) : (
             <>
               <div className="form-group">
-                <label>Host</label>
+                <label>Host <span className="field-required">*required</span></label>
                 <input
                   type="text"
                   data-testid="session-host-input"
                   value={host}
-                  onChange={e => setHost(e.target.value)}
+                  onChange={e => {
+                    setHost(e.target.value)
+                    touchField('host')
+                  }}
+                  onBlur={() => touchField('host')}
                   placeholder="localhost"
-                  required
+                  className={hostError ? 'input-error' : ''}
                 />
+                {hostError && <div className="field-error">{hostError}</div>}
               </div>
               <div className="form-group">
-                <label>Working Directory</label>
+                <label>Working Directory <span className="field-optional">(optional)</span></label>
                 <input
                   type="text"
                   data-testid="session-path-input"
                   value={mpPath}
                   onChange={e => setMpPath(e.target.value)}
-                  placeholder="e.g. /src/my-project (optional)"
+                  placeholder="e.g. /src/my-project"
                 />
               </div>
             </>
@@ -231,7 +296,7 @@ export default function AddSessionModal({ open, onClose }: Props) {
             type="submit"
             className="btn btn-primary"
             data-testid="create-session-btn"
-            disabled={creating}
+            disabled={creating || !isFormValid}
           >
             {creating ? 'Creating...' : 'Create Worker'}
           </button>

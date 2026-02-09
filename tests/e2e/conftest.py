@@ -37,11 +37,11 @@ def e2e_db_path():
 
     # --- Sessions (3 with different statuses) ---
     conn.execute(
-        "INSERT INTO sessions (id, name, host, status, mp_path) "
+        "INSERT INTO sessions (id, name, host, status, work_dir) "
         "VALUES ('s1', 'worker-alpha', 'localhost', 'working', '/src/project-a')"
     )
     conn.execute(
-        "INSERT INTO sessions (id, name, host, status, mp_path) "
+        "INSERT INTO sessions (id, name, host, status, work_dir) "
         "VALUES ('s2', 'worker-beta', 'localhost', 'idle', '/src/project-b')"
     )
     conn.execute(

@@ -1,8 +1,9 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
-import type { Session, Task, PullRequest, Activity } from '../api/types'
+import type { Activity } from '../api/types'
 import { api } from '../api/client'
 import { useNotify } from '../context/NotificationContext'
+import { useApp } from '../context/AppContext'
 import TerminalView from '../components/terminal/TerminalView'
 import { timeAgo } from '../components/common/TimeAgo'
 import { IconArrowLeft } from '../components/common/Icons'
@@ -13,38 +14,36 @@ export default function SessionDetailPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
   const notify = useNotify()
-  const [session, setSession] = useState<Session | null>(null)
-  const [tasks, setTasks] = useState<Task[]>([])
-  const [prs, setPrs] = useState<PullRequest[]>([])
+  
+  // Use shared state from AppContext for session
+  const { sessions, tasks: allTasks, refresh } = useApp()
+  const session = sessions.find(s => s.id === id) || null
+  const tasks = allTasks.filter(t => t.assigned_session_id === id)
+  
+  // Local state for page-specific data
   const [activities, setActivities] = useState<Activity[]>([])
   const [error, setError] = useState('')
   const [sendMsg, setSendMsg] = useState('')
 
-  useEffect(() => {
+  // Load page-specific data (activities)
+  const loadPageData = useCallback(async () => {
     if (!id) return
-    async function load() {
-      try {
-        const [s, t, p, a] = await Promise.all([
-          api<Session>(`/api/sessions/${id}`),
-          api<Task[]>(`/api/tasks?assigned_session_id=${id}`).catch(() => []),
-          api<PullRequest[]>(`/api/prs?session_id=${id}`).catch(() => []),
-          api<Activity[]>(`/api/activities?session_id=${id}&limit=10`).catch(() => []),
-        ])
-        setSession(s)
-        setTasks(t)
-        setPrs(p)
-        setActivities(a)
-      } catch (e) {
-        setError(e instanceof Error ? e.message : 'Failed to load session')
-      }
+    try {
+      const a = await api<Activity[]>(`/api/activities?session_id=${id}&limit=10`).catch(() => [])
+      setActivities(a)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to load session data')
     }
-    load()
   }, [id])
+
+  // Initial load of page-specific data
+  useEffect(() => { loadPageData() }, [loadPageData])
 
   async function handleDelete() {
     if (!id) return
     try {
       await api(`/api/sessions/${id}`, { method: 'DELETE' })
+      refresh()
       navigate('/')
     } catch (e) {
       notify(e instanceof Error ? e.message : 'Failed to delete', 'error')
@@ -94,10 +93,10 @@ export default function SessionDetailPage() {
             <span className="sd-meta-label">Host</span>
             <span className="sd-meta-value">{session.host}</span>
           </span>
-          {session.mp_path && (
+          {session.work_dir && (
             <span className="sd-meta-item">
               <span className="sd-meta-label">Path</span>
-              <span className="sd-meta-value">{session.mp_path}</span>
+              <span className="sd-meta-value">{session.work_dir}</span>
             </span>
           )}
           <span className="sd-meta-item">
@@ -108,9 +107,6 @@ export default function SessionDetailPage() {
         <div className="sd-topbar-actions">
           {tasks.length > 0 && (
             <span className="sd-chip">{tasks.length} task{tasks.length > 1 ? 's' : ''}</span>
-          )}
-          {prs.length > 0 && (
-            <span className="sd-chip">{prs.length} PR{prs.length > 1 ? 's' : ''}</span>
           )}
           {activities.length > 0 && (
             <span className="sd-chip">{activities.length} events</span>
