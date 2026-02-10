@@ -34,6 +34,15 @@ orch-task update --status blocked
 # Add notes about your progress or findings
 orch-task update --notes "Found root cause in auth module. Fix requires updating config."
 
+# Add a link to the task (e.g., PR link)
+orch-task update --add-link "https://github.com/org/repo/pull/123" --add-link-tag PR
+
+# Clear all links (useful if you need to replace them)
+orch-task update --clear-links
+
+# Replace links (clear + add in one command)
+orch-task update --clear-links --add-link "https://github.com/org/repo/pull/456" --add-link-tag PR
+
 # For multi-line notes, use heredoc with --notes-stdin (recommended):
 orch-task update --notes-stdin <<'EOF'
 ## Investigation Summary
@@ -73,6 +82,9 @@ The description is used to verify completion. Keep it short and verifiable.
 # List all subtasks under your task
 orch-subtask list
 
+# Show a specific subtask
+orch-subtask show --id SUBTASK_UUID
+
 # Create subtasks with CONCISE deliverable descriptions
 orch-subtask create --title "Add rate limiting to API" \
   --description "PR merged: Rate limiting (100 req/min) on /api/users endpoint"
@@ -82,6 +94,9 @@ orch-subtask create --title "Update API documentation" \
 
 # Update subtask status (use the UUID from list output)
 orch-subtask update --id SUBTASK_UUID --status done
+
+# Update subtask description
+orch-subtask update --id SUBTASK_UUID --description "Updated deliverable description"
 
 # Add notes about findings or progress
 orch-subtask update --id SUBTASK_UUID --notes "Identified issue in config parsing"
@@ -105,6 +120,15 @@ orch-subtask update --id SUBTASK_UUID --add-link "https://github.com/org/repo/pu
 
 # Update subtask with multiple changes
 orch-subtask update --id SUBTASK_UUID --status done --add-link "https://github.com/org/repo/pull/123" --add-link-tag "PR"
+
+# Clear all links from a subtask
+orch-subtask update --id SUBTASK_UUID --clear-links
+
+# Replace links (clear + add in one command)
+orch-subtask update --id SUBTASK_UUID --clear-links --add-link "https://new-pr.url" --add-link-tag "PR"
+
+# Delete a subtask (if created by mistake)
+orch-subtask delete --id SUBTASK_UUID
 ```
 
 ### Notifications (`orch-notify`)

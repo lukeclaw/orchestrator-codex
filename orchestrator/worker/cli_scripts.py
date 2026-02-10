@@ -128,6 +128,9 @@ show_help() {{
     echo "  --status STATUS               Update status (in_progress|blocked) - workers cannot set done"
     echo "  --notes NOTES                 Update notes (findings, progress, observations)"
     echo "  --notes-stdin                 Read notes from stdin (for multi-line content)"
+    echo "  --add-link URL                Add a link to the task"
+    echo "  --add-link-tag TAG            Tag for the link (e.g., PR, DOC, ISSUE)"
+    echo "  --clear-links                 Remove all links (can combine with --add-link to replace)"
     echo ""
     echo "Options:"
     echo "  --refresh                     Force refresh task info from API"
@@ -138,6 +141,9 @@ show_help() {{
     echo "  orch-task update --status in_progress"
     echo "  orch-task update --status blocked"
     echo "  orch-task update --notes \\"Found issue in auth module\\""
+    echo "  orch-task update --add-link \\"https://github.com/org/repo/pull/123\\" --add-link-tag PR"
+    echo "  orch-task update --clear-links                              # Remove all links"
+    echo "  orch-task update --clear-links --add-link \\"https://new.url\\" # Replace links"
 }}
 
 cmd_show() {{
@@ -148,7 +154,7 @@ cmd_show() {{
 cmd_update() {{
     load_task_info "$FORCE_REFRESH" || exit 1
     
-    local status="" notes="" notes_stdin=""
+    local status="" notes="" notes_stdin="" add_link="" add_link_tag="" clear_links=""
     while [[ $# -gt 0 ]]; do
         case "$1" in
             --status)
@@ -163,6 +169,18 @@ cmd_update() {{
                 notes_stdin="1"
                 shift
                 ;;
+            --add-link)
+                add_link="$2"
+                shift 2
+                ;;
+            --add-link-tag)
+                add_link_tag="$2"
+                shift 2
+                ;;
+            --clear-links)
+                clear_links="1"
+                shift
+                ;;
             *)
                 echo "Unknown option: $1" >&2
                 exit 1
@@ -175,8 +193,8 @@ cmd_update() {{
         notes=$(cat)
     fi
     
-    if [[ -z "$status" && -z "$notes" ]]; then
-        echo "Error: --status or --notes is required" >&2
+    if [[ -z "$status" && -z "$notes" && -z "$add_link" && -z "$clear_links" ]]; then
+        echo "Error: --status, --notes, --add-link, or --clear-links is required" >&2
         exit 1
     fi
     
@@ -195,6 +213,22 @@ cmd_update() {{
         local escaped_notes=$(json_encode "$notes")
         [[ "$first" != true ]] && json="$json, "
         json="$json\\"notes\\": \\"$escaped_notes\\""; first=false
+    fi
+    if [[ -n "$clear_links" || -n "$add_link" ]]; then
+        local updated_links="[]"
+        if [[ -z "$clear_links" && -n "$add_link" ]]; then
+            # Just adding - fetch existing links first
+            updated_links=$(curl -s "$API_BASE/api/tasks/$TASK_ID" | jq -c '.links // []')
+        fi
+        if [[ -n "$add_link" ]]; then
+            local new_link="{{\\"url\\": \\"$add_link\\"}}"
+            if [[ -n "$add_link_tag" ]]; then
+                new_link="{{\\"url\\": \\"$add_link\\", \\"tag\\": \\"$add_link_tag\\"}}"
+            fi
+            updated_links=$(echo "$updated_links" | jq -c ". + [$new_link]")
+        fi
+        [[ "$first" != true ]] && json="$json, "
+        json="$json\\"links\\": $updated_links"; first=false
     fi
     json="$json}}"
     
@@ -229,9 +263,11 @@ show_help() {{
     echo ""
     echo "Commands:"
     echo "  list                      List all subtasks"
+    echo "  show --id ID              Show a specific subtask"
     echo "  create --title TITLE [--description DESC] [--links URL1,URL2]"
     echo "                            Create a new subtask"
     echo "  update --id ID [options]  Update a subtask"
+    echo "  delete --id ID            Delete a subtask"
     echo ""
     echo "Create Options:"
     echo "  --description DESC        Subtask description"
@@ -240,24 +276,96 @@ show_help() {{
     echo ""
     echo "Update Options:"
     echo "  --status STATUS           Update status"
+    echo "  --description DESC        Update description"
+    echo "  --description-stdin       Read description from stdin (for multi-line)"
     echo "  --notes NOTES             Update notes (findings, progress)"
     echo "  --notes-stdin             Read notes from stdin (for multi-line)"
-    echo "  --links URLS              Replace all links (comma-separated)"
     echo "  --add-link URL            Add a link"
     echo "  --add-link-tag TAG        Tag for the link (e.g., PR, DOC)"
+    echo "  --clear-links             Remove all links (can combine with --add-link to replace)"
     echo ""
     echo "Examples:"
     echo "  orch-subtask list"
+    echo "  orch-subtask show --id UUID"
     echo "  orch-subtask create --title \\"Fix bug\\" --description \\"Details\\""
     echo "  orch-subtask create --title \\"Add tests\\" --links \\"http://pr1,http://doc1\\""
     echo "  orch-subtask update --id UUID --status done"
     echo "  orch-subtask update --id UUID --notes \\"Root cause found in config\\""
     echo "  orch-subtask update --id UUID --add-link \\"http://github.com/pr/123\\" --add-link-tag PR"
+    echo "  orch-subtask update --id UUID --clear-links                                # Remove all links"
+    echo "  orch-subtask update --id UUID --clear-links --add-link \\"http://new.url\\" # Replace links"
+    echo "  orch-subtask delete --id UUID"
 }}
 
 cmd_list() {{
     load_task_info "$FORCE_REFRESH" || exit 1
     curl -s "$API_BASE/api/tasks/$TASK_ID/subtasks" | jq .
+}}
+
+cmd_show() {{
+    load_task_info "$FORCE_REFRESH" || exit 1
+    local subtask_id=""
+    
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --id)
+                subtask_id="$2"
+                shift 2
+                ;;
+            *)
+                echo "Unknown option: $1" >&2
+                exit 1
+                ;;
+        esac
+    done
+    
+    if [[ -z "$subtask_id" ]]; then
+        echo "Error: --id is required" >&2
+        exit 1
+    fi
+    
+    # Verify subtask belongs to our task
+    local subtask_json=$(curl -s "$API_BASE/api/tasks/$subtask_id")
+    local parent=$(echo "$subtask_json" | jq -r '.parent_task_id // empty')
+    if [[ "$parent" != "$TASK_ID" ]]; then
+        echo "Error: Subtask $subtask_id does not belong to task $TASK_ID" >&2
+        exit 1
+    fi
+    
+    echo "$subtask_json" | jq .
+}}
+
+cmd_delete() {{
+    load_task_info "$FORCE_REFRESH" || exit 1
+    local subtask_id=""
+    
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --id)
+                subtask_id="$2"
+                shift 2
+                ;;
+            *)
+                echo "Unknown option: $1" >&2
+                exit 1
+                ;;
+        esac
+    done
+    
+    if [[ -z "$subtask_id" ]]; then
+        echo "Error: --id is required" >&2
+        exit 1
+    fi
+    
+    # Verify subtask belongs to our task
+    local parent=$(curl -s "$API_BASE/api/tasks/$subtask_id" | jq -r '.parent_task_id // empty')
+    if [[ "$parent" != "$TASK_ID" ]]; then
+        echo "Error: Subtask $subtask_id does not belong to task $TASK_ID" >&2
+        exit 1
+    fi
+    
+    curl -s -X DELETE "$API_BASE/api/tasks/$subtask_id" | jq .
+    echo "Subtask $subtask_id deleted."
 }}
 
 cmd_create() {{
@@ -340,11 +448,13 @@ cmd_update() {{
     load_task_info "$FORCE_REFRESH" || exit 1
     local subtask_id=""
     local status=""
+    local description=""
+    local description_stdin=""
     local notes=""
     local notes_stdin=""
-    local links=""
     local add_link=""
     local add_link_tag=""
+    local clear_links=""
     
     while [[ $# -gt 0 ]]; do
         case "$1" in
@@ -356,6 +466,14 @@ cmd_update() {{
                 status="$2"
                 shift 2
                 ;;
+            --description)
+                description="$2"
+                shift 2
+                ;;
+            --description-stdin)
+                description_stdin="1"
+                shift
+                ;;
             --notes)
                 notes="$2"
                 shift 2
@@ -364,10 +482,6 @@ cmd_update() {{
                 notes_stdin="1"
                 shift
                 ;;
-            --links)
-                links="$2"
-                shift 2
-                ;;
             --add-link)
                 add_link="$2"
                 shift 2
@@ -375,6 +489,10 @@ cmd_update() {{
             --add-link-tag)
                 add_link_tag="$2"
                 shift 2
+                ;;
+            --clear-links)
+                clear_links="1"
+                shift
                 ;;
             *)
                 echo "Unknown option: $1" >&2
@@ -388,7 +506,10 @@ cmd_update() {{
         exit 1
     fi
     
-    # Read notes from stdin if specified
+    # Read from stdin if specified
+    if [[ -n "$description_stdin" ]]; then
+        description=$(cat)
+    fi
     if [[ -n "$notes_stdin" ]]; then
         notes=$(cat)
     fi
@@ -409,6 +530,15 @@ cmd_update() {{
         first=false
     fi
     
+    if [[ -n "$description" ]]; then
+        local escaped_desc=$(json_encode "$description")
+        if [[ "$first" != true ]]; then
+            json="$json, "
+        fi
+        json="$json\\"description\\": \\"$escaped_desc\\""
+        first=false
+    fi
+    
     if [[ -n "$notes" ]]; then
         local escaped_notes=$(json_encode "$notes")
         if [[ "$first" != true ]]; then
@@ -418,37 +548,19 @@ cmd_update() {{
         first=false
     fi
     
-    if [[ -n "$links" ]]; then
-        # Replace all links
-        local links_json="["
-        local lfirst=true
-        IFS=',' read -ra URLS <<< "$links"
-        for url in "${{URLS[@]}}"; do
-            url=$(echo "$url" | xargs)
-            if [[ -n "$url" ]]; then
-                if [[ "$lfirst" != true ]]; then
-                    links_json="$links_json,"
-                fi
-                links_json="$links_json{{\\"url\\": \\"$url\\"}}"
-                lfirst=false
+    if [[ -n "$clear_links" || -n "$add_link" ]]; then
+        local updated_links="[]"
+        if [[ -z "$clear_links" && -n "$add_link" ]]; then
+            # Just adding - fetch existing links first
+            updated_links=$(curl -s "$API_BASE/api/tasks/$subtask_id" | jq -c '.links // []')
+        fi
+        if [[ -n "$add_link" ]]; then
+            local new_link="{{\\"url\\": \\"$add_link\\"}}"
+            if [[ -n "$add_link_tag" ]]; then
+                new_link="{{\\"url\\": \\"$add_link\\", \\"tag\\": \\"$add_link_tag\\"}}"
             fi
-        done
-        links_json="$links_json]"
-        if [[ "$first" != true ]]; then
-            json="$json, "
+            updated_links=$(echo "$updated_links" | jq -c ". + [$new_link]")
         fi
-        json="$json\\"links\\": $links_json"
-        first=false
-    fi
-    
-    if [[ -n "$add_link" ]]; then
-        # Fetch existing links and append
-        local existing=$(curl -s "$API_BASE/api/tasks/$subtask_id" | jq -c '.links // []')
-        local new_link="{{\\"url\\": \\"$add_link\\"}}"
-        if [[ -n "$add_link_tag" ]]; then
-            new_link="{{\\"url\\": \\"$add_link\\", \\"tag\\": \\"$add_link_tag\\"}}"
-        fi
-        local updated_links=$(echo "$existing" | jq -c ". + [$new_link]")
         if [[ "$first" != true ]]; then
             json="$json, "
         fi
@@ -473,6 +585,10 @@ case "$1" in
         shift
         cmd_list "$@"
         ;;
+    show)
+        shift
+        cmd_show "$@"
+        ;;
     create)
         shift
         cmd_create "$@"
@@ -480,6 +596,10 @@ case "$1" in
     update)
         shift
         cmd_update "$@"
+        ;;
+    delete)
+        shift
+        cmd_delete "$@"
         ;;
     -h|--help|"")
         show_help

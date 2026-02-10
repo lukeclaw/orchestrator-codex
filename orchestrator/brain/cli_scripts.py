@@ -290,12 +290,15 @@ show_help() {{
     echo "  --project-id ID               Project ID (required for create)"
     echo "  --title TITLE                 Task title (required for create)"
     echo "  --description DESC            Task description"
+    echo "  --description-stdin           Read description from stdin (for multi-line)"
     echo "  --notes NOTES                 Task notes (findings, progress, observations)"
+    echo "  --notes-stdin                 Read notes from stdin (for multi-line)"
     echo "  --status STATUS               Task status (todo|in_progress|done|blocked)"
     echo "  --priority PRIORITY           Priority (high|medium|low)"
     echo "  --parent-id ID                Parent task ID (for subtasks)"
     echo "  --add-link URL                Add a link to the task"
     echo "  --add-link-tag TAG            Tag for the link (e.g., PR, PRD, DOC)"
+    echo "  --clear-links                 Remove all links (can combine with --add-link to replace)"
     echo ""
     echo "Examples:"
     echo "  orch-tasks list --project-id abc123"
@@ -304,6 +307,8 @@ show_help() {{
     echo "  orch-tasks update task123 --status done"
     echo "  orch-tasks update task123 --notes \\"Found root cause in auth module\\""
     echo "  orch-tasks update task123 --add-link \\"https://github.com/pr/123\\" --add-link-tag PR"
+    echo "  orch-tasks update task123 --clear-links                                  # Remove all links"
+    echo "  orch-tasks update task123 --clear-links --add-link \\"https://new.url\\" # Replace links"
 }}
 
 cmd_list() {{
@@ -335,19 +340,36 @@ cmd_show() {{
     curl -s "$API_BASE/api/tasks/$id" | pp
 }}
 
+# Helper: JSON-encode a string (handles newlines, quotes, backslashes, etc.)
+json_encode() {{
+    if command -v jq &> /dev/null; then
+        # jq -Rs reads raw input, outputs JSON string (with quotes) - strip the quotes
+        printf '%s' "$1" | jq -Rs . | sed 's/^"//;s/"$//'
+    else
+        # Fallback to Python if jq not available
+        python3 -c "import json,sys; print(json.dumps(sys.stdin.read())[1:-1])" <<< "$1"
+    fi
+}}
+
 cmd_create() {{
-    local project_id="" title="" description="" status="" priority="" parent_id=""
+    local project_id="" title="" description="" description_stdin="" status="" priority="" parent_id=""
     while [[ $# -gt 0 ]]; do
         case "$1" in
             --project-id) project_id="$2"; shift 2 ;;
             --title) title="$2"; shift 2 ;;
             --description) description="$2"; shift 2 ;;
+            --description-stdin) description_stdin="1"; shift ;;
             --status) status="$2"; shift 2 ;;
             --priority) priority="$2"; shift 2 ;;
             --parent-id) parent_id="$2"; shift 2 ;;
             *) echo "Unknown option: $1" >&2; exit 1 ;;
         esac
     done
+    
+    # Read description from stdin if specified
+    if [[ -n "$description_stdin" ]]; then
+        description=$(cat)
+    fi
     
     if [[ -z "$project_id" ]]; then
         echo "Error: --project-id is required" >&2
@@ -359,7 +381,10 @@ cmd_create() {{
     fi
     
     local json="{{\\"project_id\\": \\"$project_id\\", \\"title\\": \\"$title\\""
-    [[ -n "$description" ]] && json="$json, \\"description\\": \\"$description\\""
+    if [[ -n "$description" ]]; then
+        local escaped_desc=$(json_encode "$description")
+        json="$json, \\"description\\": \\"$escaped_desc\\""
+    fi
     [[ -n "$status" ]] && json="$json, \\"status\\": \\"$status\\""
     [[ -n "$priority" ]] && json="$json, \\"priority\\": \\"$priority\\""
     [[ -n "$parent_id" ]] && json="$json, \\"parent_task_id\\": \\"$parent_id\\""
@@ -378,19 +403,30 @@ cmd_update() {{
         exit 1
     fi
     
-    local title="" description="" notes="" status="" priority="" add_link="" add_link_tag=""
+    local title="" description="" description_stdin="" notes="" notes_stdin="" status="" priority="" add_link="" add_link_tag="" clear_links=""
     while [[ $# -gt 0 ]]; do
         case "$1" in
             --title) title="$2"; shift 2 ;;
             --description) description="$2"; shift 2 ;;
+            --description-stdin) description_stdin="1"; shift ;;
             --notes) notes="$2"; shift 2 ;;
+            --notes-stdin) notes_stdin="1"; shift ;;
             --status) status="$2"; shift 2 ;;
             --priority) priority="$2"; shift 2 ;;
             --add-link) add_link="$2"; shift 2 ;;
             --add-link-tag) add_link_tag="$2"; shift 2 ;;
+            --clear-links) clear_links="1"; shift ;;
             *) echo "Unknown option: $1" >&2; exit 1 ;;
         esac
     done
+    
+    # Read from stdin if specified
+    if [[ -n "$description_stdin" ]]; then
+        description=$(cat)
+    fi
+    if [[ -n "$notes_stdin" ]]; then
+        notes=$(cat)
+    fi
     
     local json="{{"
     local first=true
@@ -398,12 +434,14 @@ cmd_update() {{
         json="$json\\"title\\": \\"$title\\""; first=false
     fi
     if [[ -n "$description" ]]; then
+        local escaped_desc=$(json_encode "$description")
         [[ "$first" != true ]] && json="$json, "
-        json="$json\\"description\\": \\"$description\\""; first=false
+        json="$json\\"description\\": \\"$escaped_desc\\""; first=false
     fi
     if [[ -n "$notes" ]]; then
+        local escaped_notes=$(json_encode "$notes")
         [[ "$first" != true ]] && json="$json, "
-        json="$json\\"notes\\": \\"$notes\\""; first=false
+        json="$json\\"notes\\": \\"$escaped_notes\\""; first=false
     fi
     if [[ -n "$status" ]]; then
         [[ "$first" != true ]] && json="$json, "
@@ -413,14 +451,19 @@ cmd_update() {{
         [[ "$first" != true ]] && json="$json, "
         json="$json\\"priority\\": \\"$priority\\""; first=false
     fi
-    if [[ -n "$add_link" ]]; then
-        # Fetch existing links and append
-        local existing=$(curl -s "$API_BASE/api/tasks/$id" | jq -c '.links // []')
-        local new_link="{{\\"url\\": \\"$add_link\\"}}"
-        if [[ -n "$add_link_tag" ]]; then
-            new_link="{{\\"url\\": \\"$add_link\\", \\"tag\\": \\"$add_link_tag\\"}}"
+    if [[ -n "$clear_links" || -n "$add_link" ]]; then
+        local updated_links="[]"
+        if [[ -z "$clear_links" && -n "$add_link" ]]; then
+            # Just adding - fetch existing links first
+            updated_links=$(curl -s "$API_BASE/api/tasks/$id" | jq -c '.links // []')
         fi
-        local updated_links=$(echo "$existing" | jq -c ". + [$new_link]")
+        if [[ -n "$add_link" ]]; then
+            local new_link="{{\\"url\\": \\"$add_link\\"}}"
+            if [[ -n "$add_link_tag" ]]; then
+                new_link="{{\\"url\\": \\"$add_link\\", \\"tag\\": \\"$add_link_tag\\"}}"
+            fi
+            updated_links=$(echo "$updated_links" | jq -c ". + [$new_link]")
+        fi
         [[ "$first" != true ]] && json="$json, "
         json="$json\\"links\\": $updated_links"; first=false
     fi

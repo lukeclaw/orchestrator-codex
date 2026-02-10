@@ -101,6 +101,19 @@ orch-tasks unassign <task-id>               # Unassign task
 # Add a link to a task (with optional tag like PR, PRD, DOC, ISSUE)
 orch-tasks update <id> --add-link "https://github.com/org/repo/pull/123" --add-link-tag "PR"
 orch-tasks update <id> --add-link "https://docs.example.com/spec" --add-link-tag "PRD"
+
+# Clear all links from a task
+orch-tasks update <id> --clear-links
+
+# Replace links (clear + add in one command)
+orch-tasks update <id> --clear-links --add-link "https://new-url.com" --add-link-tag "PR"
+
+# Update notes with multi-line content
+orch-tasks update <id> --notes-stdin <<'EOF'
+## Progress Update
+- Completed API implementation
+- Waiting for review
+EOF
 ```
 
 For multi-line descriptions, use heredoc with `--description-stdin`:
