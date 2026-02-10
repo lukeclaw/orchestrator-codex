@@ -134,7 +134,12 @@ export default function ProjectDetailPage() {
         {assignedSessions.length > 0 ? (
           <div className="pd-worker-grid">
             {assignedSessions.map(s => (
-              <WorkerCard key={s.id} session={s} onRemove={handleWorkerRemove} />
+              <WorkerCard
+                key={s.id}
+                session={s}
+                assignedTask={parentTasks.find(t => t.assigned_session_id === s.id) || null}
+                onRemove={handleWorkerRemove}
+              />
             ))}
           </div>
         ) : (

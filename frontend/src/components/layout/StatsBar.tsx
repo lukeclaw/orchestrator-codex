@@ -13,7 +13,7 @@ export default function StatsBar() {
     <section className="stats-bar" data-testid="stats-bar">
       <Link to="/workers" className="stat" data-testid="stat-sessions">
         <div className="stat-value" id="stat-sessions-val">{activeSessions}</div>
-        <div className="stat-label">Active Sessions</div>
+        <div className="stat-label">Workers</div>
       </Link>
       <Link to="/projects" className="stat" data-testid="stat-projects">
         <div className="stat-value">{activeProjects}</div>

@@ -16,7 +16,9 @@ from orchestrator.brain.cli_scripts import (
     BRAIN_CONTEXT_SCRIPT,
     BRAIN_SCRIPT_HEADER,
     BRAIN_WORKERS_SCRIPT,
+    BRAIN_PROJECTS_SCRIPT,
     BRAIN_TASKS_SCRIPT,
+    BRAIN_SEND_SCRIPT,
     BRAIN_NOTIFICATIONS_SCRIPT,
 )
 from orchestrator.worker.cli_scripts import (
@@ -303,3 +305,190 @@ class TestCrossPlatformCompatibility:
         )
         # Check brain context script which has json_encode
         assert "sed 's/^\"//;s/\"$//'" in BRAIN_CONTEXT_SCRIPT
+
+
+class TestJsonEscapingInBrainScripts:
+    """Tests verifying all brain CLI scripts properly escape JSON strings."""
+
+    def test_brain_header_has_json_encode(self):
+        """Verify json_encode is in brain script header for all scripts to use."""
+        assert "json_encode()" in BRAIN_SCRIPT_HEADER
+        assert "jq -Rs" in BRAIN_SCRIPT_HEADER
+
+    def test_brain_header_build_json_uses_json_encode(self):
+        """Verify build_json helper escapes string values."""
+        assert "escaped_value=$(json_encode \"$value\")" in BRAIN_SCRIPT_HEADER
+
+    def test_workers_script_escapes_name_and_host(self):
+        """Verify orch-workers create escapes name and host fields."""
+        assert 'escaped_name=$(json_encode "$name")' in BRAIN_WORKERS_SCRIPT
+        assert 'escaped_host=$(json_encode "$host")' in BRAIN_WORKERS_SCRIPT
+        assert 'escaped_work_dir=$(json_encode "$work_dir")' in BRAIN_WORKERS_SCRIPT
+
+    def test_projects_script_escapes_fields(self):
+        """Verify orch-projects create/update escapes all text fields."""
+        assert 'escaped_name=$(json_encode "$name")' in BRAIN_PROJECTS_SCRIPT
+        assert 'escaped_desc=$(json_encode "$description")' in BRAIN_PROJECTS_SCRIPT
+
+    def test_tasks_script_escapes_title(self):
+        """Verify orch-tasks create/update escapes title field."""
+        assert 'escaped_title=$(json_encode "$title")' in BRAIN_TASKS_SCRIPT
+
+    def test_tasks_script_escapes_links(self):
+        """Verify orch-tasks update escapes link URL and tag."""
+        assert 'escaped_link=$(json_encode "$add_link")' in BRAIN_TASKS_SCRIPT
+        assert 'escaped_tag=$(json_encode "$add_link_tag")' in BRAIN_TASKS_SCRIPT
+
+    def test_context_script_escapes_title_and_description(self):
+        """Verify orch-ctx create/update escapes title and description."""
+        # cmd_create
+        assert 'escaped_title=$(json_encode "$title")' in BRAIN_CONTEXT_SCRIPT
+        # cmd_update - description
+        assert 'escaped_desc=$(json_encode "$description")' in BRAIN_CONTEXT_SCRIPT
+
+    def test_send_script_escapes_message(self):
+        """Verify orch-send escapes message field."""
+        assert 'escaped_message=$(json_encode "$message")' in BRAIN_SEND_SCRIPT
+        assert '\\"message\\": \\"$escaped_message\\"' in BRAIN_SEND_SCRIPT
+
+    def test_notifications_script_escapes_message_and_link(self):
+        """Verify orch-notifications create escapes message and link fields."""
+        assert 'escaped_message=$(json_encode "$message")' in BRAIN_NOTIFICATIONS_SCRIPT
+        assert 'escaped_link=$(json_encode "$link")' in BRAIN_NOTIFICATIONS_SCRIPT
+
+
+class TestJsonEscapingInWorkerScripts:
+    """Tests verifying all worker CLI scripts properly escape JSON strings."""
+
+    def test_worker_header_has_json_encode(self):
+        """Verify json_encode is in worker script header."""
+        assert "json_encode()" in SCRIPT_HEADER
+        assert "jq -Rs" in SCRIPT_HEADER
+
+    def test_task_script_escapes_links(self):
+        """Verify orch-task update escapes link URL and tag."""
+        assert 'escaped_link=$(json_encode "$add_link")' in ORCH_TASK_SCRIPT
+        assert 'escaped_tag=$(json_encode "$add_link_tag")' in ORCH_TASK_SCRIPT
+
+    def test_subtask_script_escapes_title(self):
+        """Verify orch-subtask create escapes title field."""
+        assert 'escaped_title=$(json_encode "$title")' in ORCH_SUBTASK_SCRIPT
+
+    def test_subtask_script_escapes_links_in_create(self):
+        """Verify orch-subtask create escapes URLs in comma-separated links."""
+        assert 'escaped_url=$(json_encode "$url")' in ORCH_SUBTASK_SCRIPT
+
+    def test_subtask_script_escapes_links_in_update(self):
+        """Verify orch-subtask update escapes link URL and tag."""
+        assert 'escaped_link=$(json_encode "$add_link")' in ORCH_SUBTASK_SCRIPT
+        assert 'escaped_tag=$(json_encode "$add_link_tag")' in ORCH_SUBTASK_SCRIPT
+
+
+class TestJsonEncodeEdgeCases:
+    """Integration tests for json_encode handling various edge cases."""
+
+    @pytest.fixture
+    def json_encode_script(self):
+        """Create a minimal script that exposes json_encode for testing."""
+        script = '''#!/bin/bash
+json_encode() {
+    if command -v jq &> /dev/null; then
+        printf '%s' "$1" | jq -Rs . | sed 's/^"//;s/"$//'
+    else
+        python3 -c "import json,sys; print(json.dumps(sys.stdin.read())[1:-1])" <<< "$1"
+    fi
+}
+json_encode "$1"
+'''
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.sh', delete=False) as f:
+            f.write(script)
+            f.flush()
+            os.chmod(f.name, 0o755)
+            yield f.name
+        os.unlink(f.name)
+
+    def test_empty_string(self, json_encode_script):
+        """Test encoding an empty string."""
+        result = subprocess.run(
+            [json_encode_script, ""],
+            capture_output=True, text=True
+        )
+        assert result.returncode == 0
+        assert result.stdout.strip() == ""
+
+    def test_unicode_characters(self, json_encode_script):
+        """Test encoding unicode characters."""
+        result = subprocess.run(
+            [json_encode_script, "Hello 世界 🌍"],
+            capture_output=True, text=True
+        )
+        assert result.returncode == 0
+        # Unicode should pass through (jq handles unicode correctly)
+        assert "Hello" in result.stdout
+
+    def test_control_characters(self, json_encode_script):
+        """Test encoding control characters like carriage return."""
+        result = subprocess.run(
+            [json_encode_script, "line1\r\nline2"],
+            capture_output=True, text=True
+        )
+        assert result.returncode == 0
+        # \r should be escaped as \r
+        assert r"\r" in result.stdout or r"\n" in result.stdout
+
+    def test_mixed_special_characters(self, json_encode_script):
+        """Test encoding a complex string with multiple special chars."""
+        test_input = 'Path: C:\\Users\\test\nMessage: "Hello"\tTab here'
+        result = subprocess.run(
+            [json_encode_script, test_input],
+            capture_output=True, text=True
+        )
+        assert result.returncode == 0
+        encoded = result.stdout.strip()
+        # All special chars should be escaped
+        assert r'\\' in encoded  # backslashes
+        assert r'\n' in encoded  # newline
+        assert r'\"' in encoded  # quotes
+        assert r'\t' in encoded  # tab
+
+    def test_json_injection_attempt(self, json_encode_script):
+        """Test that JSON injection attempts are safely escaped."""
+        # Attempt to break out of JSON string
+        malicious = '", "injected": "value'
+        result = subprocess.run(
+            [json_encode_script, malicious],
+            capture_output=True, text=True
+        )
+        assert result.returncode == 0
+        encoded = result.stdout.strip()
+        # Quotes should be escaped, preventing injection
+        assert r'\"' in encoded
+        # The result should be a safe string that won't break JSON parsing
+        assert 'injected' in encoded  # content preserved
+
+    def test_multiline_code_block(self, json_encode_script):
+        """Test encoding a multi-line code block with various chars."""
+        code = '''def hello():
+    print("Hello, World!")
+    return {"key": "value"}'''
+        result = subprocess.run(
+            [json_encode_script, code],
+            capture_output=True, text=True
+        )
+        assert result.returncode == 0
+        encoded = result.stdout.strip()
+        assert r'\n' in encoded  # newlines escaped
+        assert r'\"' in encoded  # quotes escaped
+
+    def test_only_special_characters(self, json_encode_script):
+        """Test encoding a string of only special characters."""
+        result = subprocess.run(
+            [json_encode_script, '"\n\t\\'],
+            capture_output=True, text=True
+        )
+        assert result.returncode == 0
+        encoded = result.stdout.strip()
+        assert r'\"' in encoded
+        assert r'\n' in encoded
+        assert r'\t' in encoded
+        assert r'\\' in encoded

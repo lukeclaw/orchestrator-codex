@@ -107,11 +107,12 @@ class TmuxControlConnection:
             return False
             
         try:
-            # Escape special characters for tmux command
-            # Order matters: escape backslash first, then others
-            # Escape: \ " $ ` to prevent shell expansion
-            escaped = keys.replace('\\', '\\\\').replace('"', '\\"').replace('$', '\\$').replace('`', '\\`')
-            cmd = f'send-keys -t {self.target} -l "{escaped}"\n'
+            # Use hex mode (-H) to send raw bytes with no interpretation
+            # This avoids all escaping issues and passes through exactly what the user typed
+            # tmux -H expects space-separated hex pairs: "68 65 6c 6c 6f" for "hello"
+            key_bytes = keys.encode('utf-8')
+            hex_keys = ' '.join(f'{b:02x}' for b in key_bytes)
+            cmd = f'send-keys -H -t {self.target} {hex_keys}\n'
             self._process.stdin.write(cmd.encode())
             await self._process.stdin.drain()
             return True

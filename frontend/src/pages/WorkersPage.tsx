@@ -2,7 +2,6 @@ import { useState, useRef, useCallback } from 'react'
 import { useApp } from '../context/AppContext'
 import WorkerCard from '../components/workers/WorkerCard'
 import AddSessionModal from '../components/sessions/AddSessionModal'
-import FilterBar from '../components/common/FilterBar'
 import './WorkersPage.css'
 
 const ORDER_KEY = 'orchestrator-worker-order'
@@ -21,7 +20,14 @@ function saveOrder(ids: string[]) {
 }
 
 export default function WorkersPage() {
-  const { workers } = useApp()
+  const { workers, tasks } = useApp()
+  
+  // Build a map of session_id -> assigned task for quick lookup
+  const taskBySession = new Map(
+    tasks
+      .filter(t => t.assigned_session_id)
+      .map(t => [t.assigned_session_id!, t])
+  )
   const [showAddModal, setShowAddModal] = useState(false)
   const [statusFilter, setStatusFilter] = useState('')
   const [dragIdx, setDragIdx] = useState<number | null>(null)
@@ -102,32 +108,29 @@ export default function WorkersPage() {
     <div className="workers-page">
       <div className="page-header">
         <h1>Workers</h1>
-        <button
-          className="btn btn-primary"
-          data-testid="add-session-btn"
-          onClick={() => setShowAddModal(true)}
-        >
-          + Add Worker
-        </button>
+        <div className="page-header-actions">
+          <select
+            className="status-filter-select"
+            value={statusFilter}
+            onChange={e => setStatusFilter(e.target.value)}
+          >
+            <option value="">All ({workers.length})</option>
+            <option value="connecting">Connecting</option>
+            <option value="idle">Idle</option>
+            <option value="working">Working</option>
+            <option value="waiting">Waiting</option>
+            <option value="error">Error</option>
+            <option value="disconnected">Disconnected</option>
+          </select>
+          <button
+            className="btn btn-primary"
+            data-testid="add-session-btn"
+            onClick={() => setShowAddModal(true)}
+          >
+            + Add Worker
+          </button>
+        </div>
       </div>
-
-      <FilterBar
-        filters={[{
-          key: 'status',
-          label: 'Status',
-          value: statusFilter,
-          options: [
-            { value: '', label: `All (${workers.length})` },
-            { value: 'connecting', label: 'Connecting' },
-            { value: 'idle', label: 'Idle' },
-            { value: 'working', label: 'Working' },
-            { value: 'waiting', label: 'Waiting' },
-            { value: 'error', label: 'Error' },
-            { value: 'disconnected', label: 'Disconnected' },
-          ],
-        }]}
-        onChange={(_, v) => setStatusFilter(v)}
-      />
 
       {filtered.length > 0 ? (
         <div className="worker-grid" data-testid="session-grid">
@@ -135,6 +138,7 @@ export default function WorkersPage() {
             <WorkerCard
               key={s.id}
               session={s}
+              assignedTask={taskBySession.get(s.id) || null}
               onRemove={handleRemove}
               draggable={!statusFilter}
               onDragStart={handleDragStart(idx)}

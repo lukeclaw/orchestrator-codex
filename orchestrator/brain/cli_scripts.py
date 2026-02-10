@@ -25,6 +25,15 @@ pp() {{
     fi
 }}
 
+# Helper: JSON-encode a string (handles newlines, quotes, backslashes, etc.)
+json_encode() {{
+    if command -v jq &> /dev/null; then
+        printf '%s' "$1" | jq -Rs . | sed 's/^"//;s/"$//'
+    else
+        python3 -c "import json,sys; print(json.dumps(sys.stdin.read())[1:-1])" <<< "$1"
+    fi
+}}
+
 # Helper to build JSON payload from key=value pairs
 build_json() {{
     local json="{{"
@@ -39,7 +48,9 @@ build_json() {{
         if [[ "$value" =~ ^[0-9]+$ ]] || [[ "$value" == "true" ]] || [[ "$value" == "false" ]] || [[ "$value" == "null" ]]; then
             json="$json\\"$key\\": $value"
         else
-            json="$json\\"$key\\": \\"$value\\""
+            # Escape string value for JSON safety
+            local escaped_value=$(json_encode "$value")
+            json="$json\\"$key\\": \\"$escaped_value\\""
         fi
         first=false
     done
@@ -124,9 +135,17 @@ cmd_create() {{
         exit 1
     fi
     
-    local json="{{\\"name\\": \\"$name\\", \\"host\\": \\"$host\\""
-    [[ -n "$work_dir" ]] && json="$json, \\"work_dir\\": \\"$work_dir\\""
-    [[ -n "$task_id" ]] && json="$json, \\"task_id\\": \\"$task_id\\""
+    local escaped_name=$(json_encode "$name")
+    local escaped_host=$(json_encode "$host")
+    local json="{{\\"name\\": \\"$escaped_name\\", \\"host\\": \\"$escaped_host\\""
+    if [[ -n "$work_dir" ]]; then
+        local escaped_work_dir=$(json_encode "$work_dir")
+        json="$json, \\"work_dir\\": \\"$escaped_work_dir\\""
+    fi
+    if [[ -n "$task_id" ]]; then
+        local escaped_task_id=$(json_encode "$task_id")
+        json="$json, \\"task_id\\": \\"$escaped_task_id\\""
+    fi
     json="$json}}"
     
     curl -s -X POST "$API_BASE/api/sessions" \\
@@ -229,10 +248,20 @@ cmd_create() {{
         exit 1
     fi
     
-    local json="{{\\"name\\": \\"$name\\""
-    [[ -n "$description" ]] && json="$json, \\"description\\": \\"$description\\""
-    [[ -n "$status" ]] && json="$json, \\"status\\": \\"$status\\""
-    [[ -n "$task_prefix" ]] && json="$json, \\"task_prefix\\": \\"$task_prefix\\""
+    local escaped_name=$(json_encode "$name")
+    local json="{{\\"name\\": \\"$escaped_name\\""
+    if [[ -n "$description" ]]; then
+        local escaped_desc=$(json_encode "$description")
+        json="$json, \\"description\\": \\"$escaped_desc\\""
+    fi
+    if [[ -n "$status" ]]; then
+        local escaped_status=$(json_encode "$status")
+        json="$json, \\"status\\": \\"$escaped_status\\""
+    fi
+    if [[ -n "$task_prefix" ]]; then
+        local escaped_prefix=$(json_encode "$task_prefix")
+        json="$json, \\"task_prefix\\": \\"$escaped_prefix\\""
+    fi
     json="$json}}"
     
     curl -s -X POST "$API_BASE/api/projects" \\
@@ -262,19 +291,23 @@ cmd_update() {{
     local json="{{"
     local first=true
     if [[ -n "$name" ]]; then
-        json="$json\\"name\\": \\"$name\\""; first=false
+        local escaped_name=$(json_encode "$name")
+        json="$json\\"name\\": \\"$escaped_name\\""; first=false
     fi
     if [[ -n "$description" ]]; then
+        local escaped_desc=$(json_encode "$description")
         [[ "$first" != true ]] && json="$json, "
-        json="$json\\"description\\": \\"$description\\""; first=false
+        json="$json\\"description\\": \\"$escaped_desc\\""; first=false
     fi
     if [[ -n "$status" ]]; then
+        local escaped_status=$(json_encode "$status")
         [[ "$first" != true ]] && json="$json, "
-        json="$json\\"status\\": \\"$status\\""; first=false
+        json="$json\\"status\\": \\"$escaped_status\\""; first=false
     fi
     if [[ -n "$task_prefix" ]]; then
+        local escaped_prefix=$(json_encode "$task_prefix")
         [[ "$first" != true ]] && json="$json, "
-        json="$json\\"task_prefix\\": \\"$task_prefix\\""
+        json="$json\\"task_prefix\\": \\"$escaped_prefix\\""
     fi
     json="$json}}"
     
@@ -403,7 +436,8 @@ cmd_create() {{
         exit 1
     fi
     
-    local json="{{\\"project_id\\": \\"$project_id\\", \\"title\\": \\"$title\\""
+    local escaped_title=$(json_encode "$title")
+    local json="{{\\"project_id\\": \\"$project_id\\", \\"title\\": \\"$escaped_title\\""
     if [[ -n "$description" ]]; then
         local escaped_desc=$(json_encode "$description")
         json="$json, \\"description\\": \\"$escaped_desc\\""
@@ -454,7 +488,8 @@ cmd_update() {{
     local json="{{"
     local first=true
     if [[ -n "$title" ]]; then
-        json="$json\\"title\\": \\"$title\\""; first=false
+        local escaped_title=$(json_encode "$title")
+        json="$json\\"title\\": \\"$escaped_title\\""; first=false
     fi
     if [[ -n "$description" ]]; then
         local escaped_desc=$(json_encode "$description")
@@ -481,9 +516,11 @@ cmd_update() {{
             updated_links=$(curl -s "$API_BASE/api/tasks/$id" | jq -c '.links // []')
         fi
         if [[ -n "$add_link" ]]; then
-            local new_link="{{\\"url\\": \\"$add_link\\"}}"
+            local escaped_link=$(json_encode "$add_link")
+            local new_link="{{\\"url\\": \\"$escaped_link\\"}}"
             if [[ -n "$add_link_tag" ]]; then
-                new_link="{{\\"url\\": \\"$add_link\\", \\"tag\\": \\"$add_link_tag\\"}}"
+                local escaped_tag=$(json_encode "$add_link_tag")
+                new_link="{{\\"url\\": \\"$escaped_link\\", \\"tag\\": \\"$escaped_tag\\"}}"
             fi
             updated_links=$(echo "$updated_links" | jq -c ". + [$new_link]")
         fi
@@ -672,9 +709,13 @@ cmd_create() {{
     
     # JSON-encode content (handles newlines, quotes, backslashes, etc.)
     local escaped_content=$(json_encode "$content")
+    local escaped_title=$(json_encode "$title")
     
-    local json="{{\\"title\\": \\"$title\\", \\"content\\": \\"$escaped_content\\", \\"scope\\": \\"$scope\\", \\"source\\": \\"brain\\""
-    [[ -n "$description" ]] && json="$json, \\"description\\": \\"$description\\""
+    local json="{{\\"title\\": \\"$escaped_title\\", \\"content\\": \\"$escaped_content\\", \\"scope\\": \\"$scope\\", \\"source\\": \\"brain\\""
+    if [[ -n "$description" ]]; then
+        local escaped_desc=$(json_encode "$description")
+        json="$json, \\"description\\": \\"$escaped_desc\\""
+    fi
     [[ -n "$project_id" ]] && json="$json, \\"project_id\\": \\"$project_id\\""
     [[ -n "$category" ]] && json="$json, \\"category\\": \\"$category\\""
     json="$json}}"
@@ -708,7 +749,8 @@ cmd_update() {{
     local json="{{"
     local first=true
     if [[ -n "$title" ]]; then
-        json="$json\\"title\\": \\"$title\\""; first=false
+        local escaped_title=$(json_encode "$title")
+        json="$json\\"title\\": \\"$escaped_title\\""; first=false
     fi
     # Read content from stdin if specified
     if [[ -n "$content_stdin" ]]; then
@@ -727,8 +769,9 @@ cmd_update() {{
         json="$json\\"content\\": \\"$escaped_content\\""; first=false
     fi
     if [[ -n "$description" ]]; then
+        local escaped_desc=$(json_encode "$description")
         [[ "$first" != true ]] && json="$json, "
-        json="$json\\"description\\": \\"$description\\""; first=false
+        json="$json\\"description\\": \\"$escaped_desc\\""; first=false
     fi
     if [[ -n "$category" ]]; then
         [[ "$first" != true ]] && json="$json, "
@@ -794,9 +837,10 @@ if [[ -z "$tmux_session" ]]; then
 fi
 
 # Send message via orchestrator API
+escaped_message=$(json_encode "$message")
 curl -s -X POST "$API_BASE/api/sessions/$worker_id/send" \\
     -H 'Content-Type: application/json' \\
-    -d "{{\\"message\\": \\"$message\\"}}" | pp
+    -d "{{\\"message\\": \\"$escaped_message\\"}}" | pp
 '''
 
 # ============================================================================
@@ -885,9 +929,13 @@ cmd_create() {{
         exit 1
     fi
     
-    local json="{{\"message\": \"$message\", \"notification_type\": \"$type\""
+    local escaped_message=$(json_encode "$message")
+    local json="{{\"message\": \"$escaped_message\", \"notification_type\": \"$type\""
     [[ -n "$task_id" ]] && json="$json, \"task_id\": \"$task_id\""
-    [[ -n "$link" ]] && json="$json, \"link_url\": \"$link\""
+    if [[ -n "$link" ]]; then
+        local escaped_link=$(json_encode "$link")
+        json="$json, \"link_url\": \"$escaped_link\""
+    fi
     json="$json}}"
     
     curl -s -X POST "$API_BASE/api/notifications" \\

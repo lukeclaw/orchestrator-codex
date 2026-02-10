@@ -15,3 +15,8 @@
 .dashboard-projects {
   margin-bottom: 16px;
 }
+
+.dashboard-projects-scroll {
+  max-height: 300px;
+  overflow-y: auto;
+}

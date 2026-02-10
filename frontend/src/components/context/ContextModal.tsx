@@ -103,7 +103,7 @@ export default function ContextModal({ context, projectId, isNew, onClose, onSav
   }
 
   return (
-    <Modal open={isOpen} onClose={onClose} title={isNew ? 'Add Context' : 'Context Details'} wide closeOnOutsideClick={false}>
+    <Modal open={isOpen} onClose={onClose} title={isNew ? 'Add Context' : 'Context Details'} extraWide closeOnOutsideClick={false}>
       <div className="modal-body context-modal-body">
         <div className="form-group">
           <label>Title</label>

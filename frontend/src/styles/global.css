@@ -83,8 +83,6 @@ select:focus {
   min-height: 0;
   overflow-y: auto;
   padding: 20px 24px;
-  display: flex;
-  flex-direction: column;
 }
 
 /* Panel */

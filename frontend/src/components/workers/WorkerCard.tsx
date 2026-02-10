@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
-import type { Session } from '../../api/types'
+import type { Session, Task } from '../../api/types'
 import { api } from '../../api/client'
 import { useNotify } from '../../context/NotificationContext'
 import { timeAgo } from '../common/TimeAgo'
@@ -10,6 +10,7 @@ import './WorkerCard.css'
 
 interface Props {
   session: Session
+  assignedTask?: Task | null  // Task assigned to this worker
   onRemove?: (id: string) => void
   draggable?: boolean
   onDragStart?: (e: React.DragEvent) => void
@@ -19,7 +20,7 @@ interface Props {
 }
 
 export default function WorkerCard({
-  session, onRemove, draggable, onDragStart, onDragOver, onDragEnd, onDrop,
+  session, assignedTask, onRemove, draggable, onDragStart, onDragOver, onDragEnd, onDrop,
 }: Props) {
   const navigate = useNavigate()
   const notify = useNotify()
@@ -27,18 +28,35 @@ export default function WorkerCard({
   const [removing, setRemoving] = useState(false)
   const [actionPending, setActionPending] = useState(false)
   const intervalRef = useRef<ReturnType<typeof setInterval> | undefined>(undefined)
+  const hasLoadedRef = useRef(false)  // Track if we've done initial load
 
   useEffect(() => {
     let cancelled = false
+    hasLoadedRef.current = false  // Reset on session change
+    setPreview('')  // Clear old preview immediately
 
     async function fetchPreview() {
       try {
         const data = await api<{ content: string; status: string }>(
           `/api/sessions/${session.id}/preview`
         )
-        if (!cancelled) setPreview(data.content)
+        if (cancelled) return
+        
+        // Always update if we got content
+        // Only update to empty if we haven't loaded yet (first fetch failed)
+        if (data.content) {
+          setPreview(data.content)
+          hasLoadedRef.current = true
+        } else if (!hasLoadedRef.current) {
+          // First fetch returned empty - mark as loaded so we show "no output"
+          hasLoadedRef.current = true
+        }
+        // If already loaded and API returns empty, keep existing preview
       } catch {
-        // ignore — preview is best-effort
+        // On error during first load, mark as loaded (show "no output")
+        if (!cancelled && !hasLoadedRef.current) {
+          hasLoadedRef.current = true
+        }
       }
     }
 
@@ -114,7 +132,7 @@ export default function WorkerCard({
   }
 
   // Take last ~20 lines for the preview
-  const previewLines = preview.split('\n').slice(-20).join('\n')
+  const previewLines = preview ? preview.split('\n').slice(-20).join('\n') : ''
 
   return (
     <div
@@ -215,10 +233,8 @@ export default function WorkerCard({
 
       <div className="wc-footer">
         <span className="wc-host">{session.host}</span>
-        <span className="wc-task">
-          {session.status === 'working' ? 'Task assigned' : 'No task'}
-        </span>
-        <span className="wc-activity">{timeAgo(session.last_activity)}</span>
+        <span className="wc-task">{assignedTask ? assignedTask.task_key || 'Task assigned' : 'No task'}</span>
+        <span className="wc-activity">{session.last_activity ? timeAgo(session.last_activity) : 'just now'}</span>
       </div>
     </div>
   )

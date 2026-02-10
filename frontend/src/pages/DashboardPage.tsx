@@ -24,7 +24,9 @@ export default function DashboardPage() {
             <h2>Active Projects</h2>
             <Link to="/projects" className="btn btn-secondary btn-sm">View All</Link>
           </div>
-          <ProjectsTable projects={activeProjects} />
+          <div className="dashboard-projects-scroll">
+            <ProjectsTable projects={activeProjects} />
+          </div>
         </section>
       )}
 

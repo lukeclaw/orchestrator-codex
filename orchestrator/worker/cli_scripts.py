@@ -221,9 +221,11 @@ cmd_update() {{
             updated_links=$(curl -s "$API_BASE/api/tasks/$TASK_ID" | jq -c '.links // []')
         fi
         if [[ -n "$add_link" ]]; then
-            local new_link="{{\\"url\\": \\"$add_link\\"}}"
+            local escaped_link=$(json_encode "$add_link")
+            local new_link="{{\\"url\\": \\"$escaped_link\\"}}"
             if [[ -n "$add_link_tag" ]]; then
-                new_link="{{\\"url\\": \\"$add_link\\", \\"tag\\": \\"$add_link_tag\\"}}"
+                local escaped_tag=$(json_encode "$add_link_tag")
+                new_link="{{\\"url\\": \\"$escaped_link\\", \\"tag\\": \\"$escaped_tag\\"}}"
             fi
             updated_links=$(echo "$updated_links" | jq -c ". + [$new_link]")
         fi
@@ -411,7 +413,8 @@ cmd_create() {{
     fi
     
     # Build JSON payload
-    local json="{{\\"project_id\\": \\"$PROJECT_ID\\", \\"parent_task_id\\": \\"$TASK_ID\\", \\"title\\": \\"$title\\""
+    local escaped_title=$(json_encode "$title")
+    local json="{{\\"project_id\\": \\"$PROJECT_ID\\", \\"parent_task_id\\": \\"$TASK_ID\\", \\"title\\": \\"$escaped_title\\""
     
     if [[ -n "$description" ]]; then
         local escaped_desc=$(json_encode "$description")
@@ -429,7 +432,8 @@ cmd_create() {{
                 if [[ "$first" != true ]]; then
                     links_json="$links_json,"
                 fi
-                links_json="$links_json{{\\"url\\": \\"$url\\"}}"
+                local escaped_url=$(json_encode "$url")
+                links_json="$links_json{{\\"url\\": \\"$escaped_url\\"}}"
                 first=false
             fi
         done
@@ -555,9 +559,11 @@ cmd_update() {{
             updated_links=$(curl -s "$API_BASE/api/tasks/$subtask_id" | jq -c '.links // []')
         fi
         if [[ -n "$add_link" ]]; then
-            local new_link="{{\\"url\\": \\"$add_link\\"}}"
+            local escaped_link=$(json_encode "$add_link")
+            local new_link="{{\\"url\\": \\"$escaped_link\\"}}"
             if [[ -n "$add_link_tag" ]]; then
-                new_link="{{\\"url\\": \\"$add_link\\", \\"tag\\": \\"$add_link_tag\\"}}"
+                local escaped_tag=$(json_encode "$add_link_tag")
+                new_link="{{\\"url\\": \\"$escaped_link\\", \\"tag\\": \\"$escaped_tag\\"}}"
             fi
             updated_links=$(echo "$updated_links" | jq -c ". + [$new_link]")
         fi

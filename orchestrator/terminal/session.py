@@ -152,6 +152,15 @@ def setup_rdev_worker(
         if not ssh.wait_for_prompt(tmux_session, name, timeout=30):
             raise RuntimeError(f"Timed out waiting for shell prompt on {host}")
 
+        # 3b. Update Claude to latest version and ensure PATH includes ~/.local/bin
+        tmux.send_keys(tmux_session, name, "claude update", enter=True)
+        time.sleep(5)  # Wait for update to complete
+        tmux.send_keys(tmux_session, name, 
+            'echo \'export PATH="$HOME/.local/bin:$PATH"\' >> ~/.bashrc && source ~/.bashrc', 
+            enter=True)
+        time.sleep(1)
+        logger.info("Updated Claude and configured PATH for %s", name)
+
         # 4. Generate CLI scripts (task_id fetched dynamically by scripts)
         # Generate CLI scripts locally first
         os.makedirs(local_tmp_dir, exist_ok=True)
