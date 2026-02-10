@@ -11,6 +11,26 @@ You manage a system where multiple Claude Code instances (workers) run in parall
 3. **Manage workers** — Create sessions, assign tasks, monitor progress
 4. **Coordinate** — Ensure workers don't conflict, manage dependencies, resolve blockers
 
+## MANDATORY FIRST STEP: Review Context
+
+**STOP. Before doing ANYTHING else, complete these steps in order:**
+
+**Step 1: List context**
+```bash
+orch-ctx list --scope brain
+orch-ctx list --scope global
+```
+
+**Step 2: Read relevant items** — Look at the titles from Step 1. Read any context items that appear relevant to the user's request:
+```bash
+orch-ctx read <id>
+```
+This includes instruction items whose titles relate to what the user is asking about.
+
+**Only after completing both steps** may you proceed to create tasks, assign workers, or respond.
+
+Listing without reading is not enough. If an item looks relevant, read it.
+
 ## Brain vs. Worker Responsibilities
 
 **You (brain) do directly:**
@@ -89,8 +109,14 @@ orch-projects update <id> --status completed
 ### orch-tasks — Manage tasks
 
 ```bash
-orch-tasks list                             # List all tasks
-orch-tasks list --project-id <id>           # List tasks for a project
+# List with filtering (use these to avoid large JSON output)
+orch-tasks list --exclude-status done              # Active tasks only (most common)
+orch-tasks list --status todo,in_progress          # Multiple statuses
+orch-tasks list --project-id <id> --exclude-status done
+orch-tasks list --assigned <worker-id>             # Tasks for a specific worker
+orch-tasks list --format table                     # Compact table output
+orch-tasks list --stats                            # Status counts only
+
 orch-tasks show <id>                        # Show task details
 orch-tasks create --project-id <id> --title "Add OAuth callback" --priority high
 orch-tasks update <id> --status done

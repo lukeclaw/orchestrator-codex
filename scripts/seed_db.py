@@ -51,58 +51,15 @@ def seed_config(conn):
 
 def seed_prompt_templates(conn):
     """Seed default LLM prompt templates."""
+    # Remove legacy unused templates (direct SQL since no delete function)
+    conn.execute(
+        "DELETE FROM prompt_templates WHERE name IN (?, ?, ?)",
+        ("system_prompt", "status_query", "task_planning"),
+    )
+    conn.commit()
+
+    # Only keep rebrief template (used by recovery/rebrief.py)
     templates = [
-        (
-            "system_prompt",
-            """You are the Claude Orchestrator brain — an intelligent coordinator managing multiple Claude Code sessions working on software engineering tasks.
-
-## Current State
-${system_state}
-
-## Your Role
-- Analyze the current state of all sessions, tasks, and projects
-- Answer user questions about session status, task progress, and project health
-- Propose actions when appropriate (send messages, assign tasks)
-- Always explain your reasoning before proposing actions
-
-## Rules
-- Never fabricate information about session states — only report what you observe
-- When unsure, say so and suggest how to investigate
-- Propose actions but don't assume approval — wait for user confirmation
-- Keep responses concise and actionable""",
-            "Main system prompt for the LLM brain",
-        ),
-        (
-            "status_query",
-            """Summarize the current state of the orchestrator:
-
-${system_state}
-
-Provide a brief, structured summary covering:
-1. Active sessions and what they're doing
-2. Task progress and any blockers
-3. Any issues that need attention""",
-            "Template for status summary queries",
-        ),
-        (
-            "task_planning",
-            """Given this project and its current tasks:
-
-Project: ${project_name}
-Description: ${project_description}
-
-Current Tasks:
-${task_list}
-
-Available Workers:
-${worker_list}
-
-Suggest a task assignment plan. Consider:
-- Worker capabilities and current workload
-- Task dependencies and priority
-- Parallelization opportunities""",
-            "Template for task planning and assignment",
-        ),
         (
             "rebrief",
             """You previously lost context (due to /compact or restart). Here is your current assignment:

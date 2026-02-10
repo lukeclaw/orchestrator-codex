@@ -19,7 +19,8 @@ def get_task(conn: sqlite3.Connection, id: str) -> Task | None:
 def list_tasks(
     conn: sqlite3.Connection,
     project_id: str | None = None,
-    status: str | None = None,
+    status: str | list[str] | None = None,
+    exclude_status: str | list[str] | None = None,
     assigned_session_id: str | None = None,
     parent_task_id: str | None = ...,
     has_parent: bool | None = None,
@@ -30,8 +31,19 @@ def list_tasks(
         clauses.append("project_id = ?")
         params.append(project_id)
     if status:
-        clauses.append("status = ?")
-        params.append(status)
+        # Support single status or list of statuses
+        if isinstance(status, str):
+            status = [status]
+        placeholders = ",".join("?" * len(status))
+        clauses.append(f"status IN ({placeholders})")
+        params.extend(status)
+    if exclude_status:
+        # Support single status or list of statuses to exclude
+        if isinstance(exclude_status, str):
+            exclude_status = [exclude_status]
+        placeholders = ",".join("?" * len(exclude_status))
+        clauses.append(f"status NOT IN ({placeholders})")
+        params.extend(exclude_status)
     if assigned_session_id:
         clauses.append("assigned_session_id = ?")
         params.append(assigned_session_id)

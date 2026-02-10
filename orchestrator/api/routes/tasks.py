@@ -85,12 +85,22 @@ def _serialize_task(t, include_subtask_stats: bool = False, db=None) -> dict:
 def list_tasks(
     project_id: str | None = None,
     status: str | None = None,
+    exclude_status: str | None = None,
     assigned_session_id: str | None = None,
     parent_task_id: str | None = None,
     include_subtask_stats: bool = True,
     db=Depends(get_db),
 ):
-    kwargs = dict(project_id=project_id, status=status, assigned_session_id=assigned_session_id)
+    # Parse comma-separated status values
+    status_list = status.split(",") if status else None
+    exclude_list = exclude_status.split(",") if exclude_status else None
+    
+    kwargs = dict(
+        project_id=project_id,
+        status=status_list,
+        exclude_status=exclude_list,
+        assigned_session_id=assigned_session_id,
+    )
     if parent_task_id is not None:
         kwargs["parent_task_id"] = parent_task_id
     tasks = repo.list_tasks(db, **kwargs)

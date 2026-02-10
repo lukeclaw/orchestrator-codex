@@ -28,33 +28,45 @@ export default function WorkerCard({
   const [removing, setRemoving] = useState(false)
   const [actionPending, setActionPending] = useState(false)
   const intervalRef = useRef<ReturnType<typeof setInterval> | undefined>(undefined)
-  const hasLoadedRef = useRef(false)  // Track if we've done initial load
+  const hasLoadedRef = useRef(false)
+  const sessionIdRef = useRef(session.id)  // Track current session.id for race protection
+  const fetchGenRef = useRef(0)  // Generation counter to ignore stale fetches
+
+  // Update ref when session changes (for interval callbacks to read current value)
+  sessionIdRef.current = session.id
 
   useEffect(() => {
-    let cancelled = false
-    hasLoadedRef.current = false  // Reset on session change
+    // Increment generation - any in-flight fetches from previous session are now stale
+    const currentGen = ++fetchGenRef.current
+    const targetSessionId = session.id
+    
+    hasLoadedRef.current = false
     setPreview('')  // Clear old preview immediately
 
     async function fetchPreview() {
+      // Double-check we're still fetching for the right session
+      if (sessionIdRef.current !== targetSessionId || fetchGenRef.current !== currentGen) {
+        return  // Stale - session changed since this fetch/interval was created
+      }
+      
       try {
         const data = await api<{ content: string; status: string }>(
-          `/api/sessions/${session.id}/preview`
+          `/api/sessions/${targetSessionId}/preview`
         )
-        if (cancelled) return
         
-        // Always update if we got content
-        // Only update to empty if we haven't loaded yet (first fetch failed)
+        // Triple-check after await: session might have changed during fetch
+        if (sessionIdRef.current !== targetSessionId || fetchGenRef.current !== currentGen) {
+          return  // Stale response - discard
+        }
+        
         if (data.content) {
           setPreview(data.content)
           hasLoadedRef.current = true
         } else if (!hasLoadedRef.current) {
-          // First fetch returned empty - mark as loaded so we show "no output"
           hasLoadedRef.current = true
         }
-        // If already loaded and API returns empty, keep existing preview
       } catch {
-        // On error during first load, mark as loaded (show "no output")
-        if (!cancelled && !hasLoadedRef.current) {
+        if (sessionIdRef.current === targetSessionId && fetchGenRef.current === currentGen && !hasLoadedRef.current) {
           hasLoadedRef.current = true
         }
       }
@@ -64,7 +76,6 @@ export default function WorkerCard({
     intervalRef.current = setInterval(fetchPreview, 5000)
 
     return () => {
-      cancelled = true
       clearInterval(intervalRef.current)
     }
   }, [session.id])

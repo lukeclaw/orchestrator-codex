@@ -27,51 +27,64 @@ logger = logging.getLogger(__name__)
 TMUX_SESSION = "orchestrator"
 
 
+def _get_conn(websocket: WebSocket):
+    """Get a database connection, preferring factory for thread safety."""
+    factory = getattr(websocket.app.state, "conn_factory", None)
+    if factory:
+        return factory.create()
+    return websocket.app.state.conn
+
+
 async def terminal_websocket(websocket: WebSocket, session_id: str):
     """Stream terminal output and relay input for a session."""
     await websocket.accept()
 
     # Determine the tmux window name — use the session name from DB if possible
-    conn = websocket.app.state.conn
-    row = conn.execute(
-        "SELECT name, tmux_window FROM sessions WHERE id = ?", (session_id,)
-    ).fetchone()
-
-    if not row:
-        await websocket.send_json({"type": "error", "message": f"Session {session_id} not found"})
-        await websocket.close()
-        return
-
-    session_name = row["name"]
-    tmux_window = row["tmux_window"] or session_name
-
-    # Parse tmux target — could be "session:window" or just "window"
-    if ":" in tmux_window:
-        tmux_sess, tmux_win = tmux_window.split(":", 1)
-    else:
-        tmux_sess = TMUX_SESSION
-        tmux_win = tmux_window
-
-    # Auto-create tmux session and window if they don't exist
+    conn = _get_conn(websocket)
+    owns_conn = getattr(websocket.app.state, "conn_factory", None) is not None
     try:
-        target = ensure_window(tmux_sess, tmux_win)
-        logger.info("Terminal ready: %s", target)
+        row = conn.execute(
+            "SELECT name, tmux_window FROM sessions WHERE id = ?", (session_id,)
+        ).fetchone()
 
-        # Store the tmux_window back to DB if it was auto-created
-        if not row["tmux_window"]:
-            conn.execute(
-                "UPDATE sessions SET tmux_window = ? WHERE id = ?",
-                (f"{tmux_sess}:{tmux_win}", session_id),
-            )
-            conn.commit()
-    except Exception as e:
-        logger.exception("Failed to create tmux session/window")
-        await websocket.send_json({
-            "type": "error",
-            "message": f"Failed to create terminal: {e}",
-        })
-        await websocket.close()
-        return
+        if not row:
+            await websocket.send_json({"type": "error", "message": f"Session {session_id} not found"})
+            await websocket.close()
+            return
+
+        session_name = row["name"]
+        tmux_window = row["tmux_window"] or session_name
+
+        # Parse tmux target — could be "session:window" or just "window"
+        if ":" in tmux_window:
+            tmux_sess, tmux_win = tmux_window.split(":", 1)
+        else:
+            tmux_sess = TMUX_SESSION
+            tmux_win = tmux_window
+
+        # Auto-create tmux session and window if they don't exist
+        try:
+            target = ensure_window(tmux_sess, tmux_win)
+            logger.info("Terminal ready: %s", target)
+
+            # Store the tmux_window back to DB if it was auto-created
+            if not row["tmux_window"]:
+                conn.execute(
+                    "UPDATE sessions SET tmux_window = ? WHERE id = ?",
+                    (f"{tmux_sess}:{tmux_win}", session_id),
+                )
+                conn.commit()
+        except Exception as e:
+            logger.exception("Failed to create tmux session/window")
+            await websocket.send_json({
+                "type": "error",
+                "message": f"Failed to create terminal: {e}",
+            })
+            await websocket.close()
+            return
+    finally:
+        if owns_conn:
+            conn.close()
 
     # Wait for the client to send a resize before capturing initial content.
     # This ensures the tmux pane matches xterm's dimensions.

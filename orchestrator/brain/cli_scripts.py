@@ -334,13 +334,21 @@ show_help() {{
     echo "Usage: orch-tasks <command> [options]"
     echo ""
     echo "Commands:"
-    echo "  list [--project-id ID] [--status S]   List tasks"
+    echo "  list [options]                        List tasks"
     echo "  show <id>                             Show task details"
     echo "  create [options]                      Create a new task"
     echo "  update <id> [options]                 Update a task"
     echo "  delete <id>                           Delete a task"
     echo "  assign <task-id> <worker-id>          Assign task to worker"
     echo "  unassign <task-id>                    Unassign task from worker"
+    echo ""
+    echo "List Options:"
+    echo "  --project-id ID               Filter by project ID"
+    echo "  --status STATUS               Filter by status (comma-separated: todo,in_progress)"
+    echo "  --exclude-status STATUS       Exclude status (comma-separated: done,blocked)"
+    echo "  --assigned ID                 Filter by assigned worker ID"
+    echo "  --format FORMAT               Output format: json (default) or table"
+    echo "  --stats                       Show status counts only"
     echo ""
     echo "Create/Update Options:"
     echo "  --project-id ID               Project ID (required for create)"
@@ -357,23 +365,25 @@ show_help() {{
     echo "  --clear-links                 Remove all links (can combine with --add-link to replace)"
     echo ""
     echo "Examples:"
-    echo "  orch-tasks list --project-id abc123"
+    echo "  orch-tasks list --status todo,in_progress"
+    echo "  orch-tasks list --exclude-status done"
+    echo "  orch-tasks list --project-id abc123 --format table"
+    echo "  orch-tasks list --stats"
     echo "  orch-tasks create --project-id abc123 --title \\"Add OAuth callback\\" --priority high"
     echo "  orch-tasks assign task123 worker456"
     echo "  orch-tasks update task123 --status done"
-    echo "  orch-tasks update task123 --notes \\"Found root cause in auth module\\""
-    echo "  orch-tasks update task123 --add-link \\"https://github.com/pr/123\\" --add-link-tag PR"
-    echo "  orch-tasks update task123 --clear-links                                  # Remove all links"
-    echo "  orch-tasks update task123 --clear-links --add-link \\"https://new.url\\" # Replace links"
 }}
 
 cmd_list() {{
-    local project_id="" status="" assigned=""
+    local project_id="" status="" exclude_status="" assigned="" format="json" stats=""
     while [[ $# -gt 0 ]]; do
         case "$1" in
             --project-id) project_id="$2"; shift 2 ;;
             --status) status="$2"; shift 2 ;;
+            --exclude-status) exclude_status="$2"; shift 2 ;;
             --assigned) assigned="$2"; shift 2 ;;
+            --format) format="$2"; shift 2 ;;
+            --stats) stats="1"; shift ;;
             *) echo "Unknown option: $1" >&2; exit 1 ;;
         esac
     done
@@ -382,9 +392,21 @@ cmd_list() {{
     local sep="?"
     [[ -n "$project_id" ]] && url="$url${{sep}}project_id=$project_id" && sep="&"
     [[ -n "$status" ]] && url="$url${{sep}}status=$status" && sep="&"
+    [[ -n "$exclude_status" ]] && url="$url${{sep}}exclude_status=$exclude_status" && sep="&"
     [[ -n "$assigned" ]] && url="$url${{sep}}assigned_session_id=$assigned"
     
-    curl -s "$url" | pp
+    local result=$(curl -s "$url")
+    
+    if [[ -n "$stats" ]]; then
+        # Show status counts only
+        echo "$result" | jq -r 'group_by(.status) | map({{status: .[0].status, count: length}}) | .[] | "\\(.status): \\(.count)"'
+    elif [[ "$format" == "table" ]]; then
+        # Compact table output
+        echo "$result" | jq -r '["KEY", "STATUS", "ASSIGNED", "TITLE"], ["---", "------", "--------", "-----"], (.[] | [(.task_key // .id[0:8]), .status, (.assigned_session_id[0:8] // "-"), .title[0:50]]) | @tsv' | column -t -s $'\\t'
+    else
+        # Default JSON output
+        echo "$result" | pp
+    fi
 }}
 
 cmd_show() {{
@@ -638,7 +660,6 @@ cmd_list() {{
     [[ -n "$category" ]] && url="$url${{sep}}category=$category" && sep="&"
     [[ -n "$search" ]] && url="$url${{sep}}search=$search"
     
-    # Return only id, title, description, category for listing
     curl -s "$url" | jq '.[] | {{id: .id, title: .title, description: .description, category: .category, scope: .scope}}'
 }}
 

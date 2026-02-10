@@ -107,11 +107,15 @@ def create_app(
     resolved_db_path = None
     if db is not None:
         app.state.conn = db
+        # For test connections, create a factory that returns the same connection
+        # (tests may pass in-memory DBs that can't be reopened by path)
+        app.state.conn_factory = None
     elif db_path:
         resolved_db_path = db_path
         conn = get_connection(db_path)
         apply_migrations(conn)
         app.state.conn = conn
+        app.state.conn_factory = ConnectionFactory(db_path)
     else:
         # Check env var first (used by E2E tests), then fall back to config
         env_db_path = os.environ.get("ORCHESTRATOR_DB_PATH")
@@ -126,6 +130,7 @@ def create_app(
             conn = get_connection(resolved_db_path)
         apply_migrations(conn)
         app.state.conn = conn
+        app.state.conn_factory = ConnectionFactory(resolved_db_path)
     app.state.db_path = resolved_db_path
 
     # Static files — React build assets
