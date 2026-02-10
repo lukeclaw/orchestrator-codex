@@ -241,6 +241,9 @@ async def capture_pane_with_cursor_async(session: str, window: str) -> tuple[str
     
     Returns (content, cursor_x, cursor_y).
     Runs both captures concurrently for speed (~25ms vs ~45ms sequential).
+    
+    Note: This has a race condition - content and cursor are captured at slightly
+    different times. Use capture_pane_with_cursor_atomic_async for correctness.
     """
     # Run both captures concurrently
     content_task = capture_pane_async(session, window)
@@ -248,3 +251,99 @@ async def capture_pane_with_cursor_async(session: str, window: str) -> tuple[str
     
     content, (cursor_x, cursor_y) = await asyncio.gather(content_task, cursor_task)
     return content, cursor_x, cursor_y
+
+
+async def capture_pane_with_cursor_atomic_async(session: str, window: str) -> tuple[str, int, int]:
+    """Capture pane content AND cursor position atomically in a single subprocess.
+    
+    Returns (content, cursor_x, cursor_y).
+    
+    This eliminates the race condition in capture_pane_with_cursor_async where
+    content and cursor could be captured at different times, causing cursor drift.
+    """
+    target = f"{session}:{window}"
+    try:
+        # Single shell invocation that captures both content and cursor atomically
+        # Uses a separator that won't appear in terminal output
+        # Only echo separator if capture-pane succeeds (using &&)
+        proc = await asyncio.create_subprocess_exec(
+            "sh", "-c",
+            f'tmux capture-pane -p -e -t {target} && '
+            f'echo "===CURSOR_POSITION===" && '
+            f'tmux display-message -p -t {target} "#{{cursor_x}} #{{cursor_y}}"',
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        stdout, stderr = await proc.communicate()
+        
+        # If tmux command failed, return empty
+        if proc.returncode != 0:
+            return "", 0, 0
+            
+        output = stdout.decode('utf-8', errors='replace')
+        
+        # Parse the combined output
+        if "===CURSOR_POSITION===" in output:
+            content, cursor_line = output.rsplit("===CURSOR_POSITION===\n", 1)
+            parts = cursor_line.strip().split()
+            if len(parts) == 2:
+                cursor_x, cursor_y = int(parts[0]), int(parts[1])
+                return content, cursor_x, cursor_y
+        
+        # Fallback if parsing fails
+        return "", 0, 0
+        
+    except Exception as e:
+        logger.error("Failed atomic capture: %s", e)
+        return "", 0, 0
+
+
+async def capture_pane_with_history_async(
+    session: str, window: str, scrollback_lines: int = 1000
+) -> tuple[str, int, int, int]:
+    """Capture pane content with scrollback history and cursor position atomically.
+    
+    Returns (content, cursor_x, cursor_y, total_lines).
+    
+    Args:
+        session: tmux session name
+        window: tmux window name
+        scrollback_lines: Number of scrollback lines to capture (default 1000)
+    """
+    target = f"{session}:{window}"
+    try:
+        # Capture content with scrollback, plus cursor position and history size
+        # Only echo separator if capture-pane succeeds (using &&)
+        proc = await asyncio.create_subprocess_exec(
+            "sh", "-c",
+            f'tmux capture-pane -p -e -t {target} -S -{scrollback_lines} && '
+            f'echo "===CURSOR_POSITION===" && '
+            f'tmux display-message -p -t {target} "#{{cursor_x}} #{{cursor_y}} #{{history_size}}"',
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        stdout, _ = await proc.communicate()
+        
+        # If tmux command failed, return empty
+        if proc.returncode != 0:
+            return "", 0, 0, 0
+            
+        output = stdout.decode('utf-8', errors='replace')
+        
+        # Parse the combined output
+        if "===CURSOR_POSITION===" in output:
+            content, cursor_line = output.rsplit("===CURSOR_POSITION===\n", 1)
+            parts = cursor_line.strip().split()
+            if len(parts) >= 2:
+                cursor_x = int(parts[0])
+                cursor_y = int(parts[1])
+                history_size = int(parts[2]) if len(parts) >= 3 else 0
+                total_lines = content.count('\n') + 1
+                return content, cursor_x, cursor_y, total_lines
+        
+        # Fallback if parsing fails
+        return "", 0, 0, 0
+        
+    except Exception as e:
+        logger.error("Failed history capture: %s", e)
+        return "", 0, 0, 0

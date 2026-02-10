@@ -75,9 +75,10 @@ export default function TaskDetailPage() {
 
   useEffect(() => {
     if (task) {
-      setEditTitle(task.title)
-      setEditDesc(task.description || '')
-      setEditNotes(task.notes || '')
+      // Only sync fields from server when NOT actively editing them
+      if (!isEditingTitle) setEditTitle(task.title)
+      if (!isEditingDesc) setEditDesc(task.description || '')
+      if (!isEditingNotes) setEditNotes(task.notes || '')
       setStatus(task.status)
       setPriority(task.priority)
       setAssignedSession(task.assigned_session_id || '')
@@ -92,7 +93,7 @@ export default function TaskDetailPage() {
         .then(setNotifications)
         .catch(() => setNotifications([]))
     }
-  }, [task])
+  }, [task, isEditingTitle, isEditingDesc, isEditingNotes])
 
   const assignedWorker = sessions.find(s => s.id === task?.assigned_session_id)
   const isWorkerActive = assignedWorker && assignedWorker.status === 'working'

@@ -65,6 +65,7 @@
   box-sizing: border-box;
 }
 
+/* Allow xterm.js internal scrolling for scrollback history */
 .terminal-view .xterm-viewport {
-  overflow-y: hidden !important;
+  overflow-y: auto !important;
 }

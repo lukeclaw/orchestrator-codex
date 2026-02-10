@@ -21,8 +21,8 @@ export default function AutoSyncTimer({
   brainRunning,
   userInteractionRef,
 }: AutoSyncTimerProps) {
-  const [enabled, setEnabled] = useState(true)
-  const [timerState, setTimerState] = useState<TimerState>('counting')
+  const [enabled, setEnabled] = useState(false)  // Off by default - feature not fully ready
+  const [timerState, setTimerState] = useState<TimerState>('off')
   const [countdown, setCountdown] = useState(SYNC_INTERVAL)
   const [pauseCountdown, setPauseCountdown] = useState(0)
 

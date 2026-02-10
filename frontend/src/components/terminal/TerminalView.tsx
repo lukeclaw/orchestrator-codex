@@ -22,7 +22,7 @@ export default function TerminalView({ sessionId, onUserInput }: Props) {
     const terminal = new Terminal({
       convertEol: true,
       fontFamily: "'SF Mono', 'Menlo', 'Monaco', 'Consolas', monospace",
-      fontSize: 13,
+      fontSize: 12,
       lineHeight: 1.2,
       theme: {
         background: '#0d1117',
@@ -49,7 +49,7 @@ export default function TerminalView({ sessionId, onUserInput }: Props) {
       },
       cursorBlink: true,
       allowProposedApi: true,
-      scrollback: 0,  // Disable scrollback - keep it simple
+      scrollback: 1000,  // Enable scrollback for history viewing
     })
 
     const fitAddon = new FitAddon()
@@ -82,37 +82,72 @@ export default function TerminalView({ sessionId, onUserInput }: Props) {
 
     ws.onerror = () => ws.close()
 
-    // Track last content for smart diffing
+    // Track last content for smart diffing and scroll state
     let lastContent = ''
+    let userScrolledUp = false
+
+    // Track when user scrolls up to pause live updates
+    terminal.onScroll(() => {
+      const buffer = terminal.buffer.active
+      userScrolledUp = buffer.viewportY < buffer.baseY
+    })
 
     ws.onmessage = (event) => {
       try {
         const msg = JSON.parse(event.data)
-        if (msg.type === 'output') {
+        
+        if (msg.type === 'history') {
+          // Full history received (initial load or explicit request)
+          // Reset terminal and write all content including scrollback
+          terminal.reset()
+          terminal.write(msg.data)
+          // Position cursor
+          if (typeof msg.cursorX === 'number' && typeof msg.cursorY === 'number') {
+            terminal.write(`\x1b[${msg.cursorY + 1};${msg.cursorX + 1}H`)
+          }
+          terminal.scrollToBottom()
+          lastContent = msg.data
+          userScrolledUp = false
+        } else if (msg.type === 'output') {
+          // Skip live updates if user is viewing history
+          if (userScrolledUp) return
+          
           // Only update if content actually changed
           if (msg.data !== lastContent) {
-            lastContent = msg.data
+            const content = msg.data
             
-            // Trim content to terminal rows only if needed
-            let content = msg.data
-            const lineCount = (content.match(/\n/g) || []).length + 1
-            if (lineCount > terminal.rows) {
-              // Find the nth newline and slice there
-              let idx = 0
-              for (let i = 0; i < terminal.rows && idx < content.length; i++) {
-                const next = content.indexOf('\n', idx)
-                if (next === -1) break
-                idx = next + 1
+            // Check if this is a simple append (most common case for typing)
+            const isAppend = lastContent.length > 0 && 
+                            content.startsWith(lastContent) &&
+                            content.length - lastContent.length < 100
+            
+            if (isAppend) {
+              // Incremental update - just write the new part
+              const newPart = content.slice(lastContent.length)
+              terminal.write(newPart)
+            } else {
+              // Full redraw needed (scrollback change, resize, etc.)
+              // Trim content to terminal rows only if needed
+              let trimmedContent = content
+              const lineCount = (content.match(/\n/g) || []).length + 1
+              if (lineCount > terminal.rows) {
+                let idx = 0
+                for (let i = 0; i < terminal.rows && idx < content.length; i++) {
+                  const next = content.indexOf('\n', idx)
+                  if (next === -1) break
+                  idx = next + 1
+                }
+                trimmedContent = content.slice(0, idx > 0 ? idx - 1 : content.length)
               }
-              content = content.slice(0, idx > 0 ? idx - 1 : content.length)
+              terminal.write('\x1b[H\x1b[J' + trimmedContent)
             }
             
-            // Single write: home cursor, clear screen, content, then position cursor
-            let output = '\x1b[H\x1b[J' + content
+            // Position cursor
             if (typeof msg.cursorX === 'number' && typeof msg.cursorY === 'number') {
-              output += `\x1b[${msg.cursorY + 1};${msg.cursorX + 1}H`
+              terminal.write(`\x1b[${msg.cursorY + 1};${msg.cursorX + 1}H`)
             }
-            terminal.write(output)
+            
+            lastContent = content
           }
         } else if (msg.type === 'error') {
           terminal.write(`\r\n\x1b[31m${msg.message}\x1b[0m\r\n`)
@@ -122,10 +157,15 @@ export default function TerminalView({ sessionId, onUserInput }: Props) {
       }
     }
 
-    // Send keystrokes with local echo for immediate feedback
+    // Send keystrokes - also resume live updates if user was scrolled up
     terminal.onData(data => {
       if (ws.readyState === WebSocket.OPEN) {
         ws.send(JSON.stringify({ type: 'input', data }))
+        // Resume live updates when user types
+        if (userScrolledUp) {
+          userScrolledUp = false
+          terminal.scrollToBottom()
+        }
       }
       onUserInput?.()
     })
