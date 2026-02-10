@@ -4,6 +4,7 @@ import { useApp } from '../context/AppContext'
 import { api } from '../api/client'
 import type { Project } from '../api/types'
 import ProjectCard from '../components/projects/ProjectCard'
+import ProjectsTable from '../components/projects/ProjectsTable'
 import ProjectForm from '../components/projects/ProjectForm'
 import ProjectEditModal from '../components/projects/ProjectEditModal'
 import FilterBar from '../components/common/FilterBar'
@@ -15,6 +16,7 @@ export default function ProjectsPage() {
   const [showForm, setShowForm] = useState(false)
   const [statusFilter, setStatusFilter] = useState('')
   const [editingProject, setEditingProject] = useState<Project | null>(null)
+  const [viewMode, setViewMode] = useState<'table' | 'cards'>('table')
 
   const filtered = statusFilter
     ? projects.filter(p => p.status === statusFilter)
@@ -36,9 +38,27 @@ export default function ProjectsPage() {
     <div className="projects-page">
       <div className="page-header">
         <h1>Projects</h1>
-        <button className="btn btn-primary" onClick={() => setShowForm(true)}>
-          + New Project
-        </button>
+        <div className="page-header-actions">
+          <div className="toggle-group toggle-sm">
+            <button
+              type="button"
+              className={`toggle-btn${viewMode === 'table' ? ' active' : ''}`}
+              onClick={() => setViewMode('table')}
+            >
+              Table
+            </button>
+            <button
+              type="button"
+              className={`toggle-btn${viewMode === 'cards' ? ' active' : ''}`}
+              onClick={() => setViewMode('cards')}
+            >
+              Cards
+            </button>
+          </div>
+          <button className="btn btn-primary" onClick={() => setShowForm(true)}>
+            + New Project
+          </button>
+        </div>
       </div>
 
       <FilterBar
@@ -64,6 +84,10 @@ export default function ProjectsPage() {
             ? 'No projects yet. Create one to get started.'
             : 'No projects match the current filter.'}
         </p>
+      ) : viewMode === 'table' ? (
+        <div className="panel">
+          <ProjectsTable projects={filtered} onEdit={setEditingProject} />
+        </div>
       ) : (
         <div className="projects-grid">
           {filtered.map(p => (

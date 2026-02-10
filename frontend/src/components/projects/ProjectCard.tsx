@@ -1,6 +1,5 @@
 import { Link } from 'react-router-dom'
 import type { Project } from '../../api/types'
-import ProgressBar from '../common/ProgressBar'
 import './ProjectCard.css'
 
 interface Props {
@@ -27,10 +26,20 @@ export default function ProjectCard({ project, onEdit }: Props) {
   const stats = project.stats
   const taskStats = stats?.tasks
   const workerStats = stats?.workers
-  const contextStats = stats?.context
 
   const done = taskStats?.done ?? 0
   const total = taskStats?.total ?? 0
+  const inProgress = taskStats?.in_progress ?? 0
+  const blocked = taskStats?.blocked ?? 0
+  const working = workerStats?.working ?? 0
+
+  // Determine border color based on activity
+  const getBorderClass = () => {
+    if (blocked > 0) return 'border-blocked'
+    if (working > 0) return 'border-working'
+    if (inProgress > 0) return 'border-active'
+    return ''
+  }
 
   function handleEditClick(e: React.MouseEvent) {
     e.preventDefault()
@@ -38,8 +47,18 @@ export default function ProjectCard({ project, onEdit }: Props) {
     onEdit?.(project)
   }
 
+  // Build compact stats items
+  const statItems: { label: string; className: string }[] = []
+  if (taskStats) {
+    if (taskStats.in_progress > 0) statItems.push({ label: `${taskStats.in_progress} active`, className: 'active' })
+    if (taskStats.blocked > 0) statItems.push({ label: `${taskStats.blocked} blocked`, className: 'blocked' })
+  }
+  if (workerStats && workerStats.working > 0) {
+    statItems.push({ label: `${workerStats.working} working`, className: 'working' })
+  }
+
   return (
-    <Link to={`/projects/${project.id}`} className="project-card">
+    <Link to={`/projects/${project.id}`} className={`project-card ${getBorderClass()}`}>
       <div className="pc-header">
         <span className="pc-name">{project.name}</span>
         <div className="pc-header-actions">
@@ -56,7 +75,6 @@ export default function ProjectCard({ project, onEdit }: Props) {
               </svg>
             </button>
           )}
-          <span className={`status-badge ${project.status}`}>{project.status}</span>
         </div>
       </div>
       
@@ -64,69 +82,32 @@ export default function ProjectCard({ project, onEdit }: Props) {
         <p className="pc-desc">{project.description}</p>
       )}
       
-      {total > 0 && (
-        <div className="pc-progress">
-          <ProgressBar done={done} total={total} />
+      {/* Progress bar with inline count */}
+      <div className="pc-progress-row">
+        <div className="pc-progress-bar">
+          <div 
+            className="pc-progress-fill" 
+            style={{ width: total > 0 ? `${(done / total) * 100}%` : '0%' }}
+          />
         </div>
-      )}
+        <span className="pc-progress-count">{done}/{total}</span>
+      </div>
 
-      {stats && (
-        <div className="pc-stats">
-          <div className="pc-stat-group">
-            <span className="pc-stat-label">Tasks</span>
-            <div className="pc-stat-items">
-              {taskStats && taskStats.in_progress > 0 && (
-                <span className="pc-stat-item in-progress" title="In Progress">
-                  {taskStats.in_progress} active
-                </span>
-              )}
-              {taskStats && taskStats.blocked > 0 && (
-                <span className="pc-stat-item blocked" title="Blocked">
-                  {taskStats.blocked} blocked
-                </span>
-              )}
-              {taskStats && taskStats.todo > 0 && (
-                <span className="pc-stat-item todo" title="To Do">
-                  {taskStats.todo} todo
-                </span>
-              )}
-              <span className="pc-stat-item done" title="Done">
-                {done}/{total}
-              </span>
-            </div>
-          </div>
-
-          {workerStats && workerStats.total > 0 && (
-            <div className="pc-stat-group">
-              <span className="pc-stat-label">Workers</span>
-              <div className="pc-stat-items">
-                {workerStats.working > 0 && (
-                  <span className="pc-stat-item working">{workerStats.working} working</span>
-                )}
-                {workerStats.waiting > 0 && (
-                  <span className="pc-stat-item waiting">{workerStats.waiting} waiting</span>
-                )}
-                {workerStats.idle > 0 && (
-                  <span className="pc-stat-item idle">{workerStats.idle} idle</span>
-                )}
-              </div>
-            </div>
-          )}
-
-          {contextStats && contextStats.total > 0 && (
-            <div className="pc-stat-group">
-              <span className="pc-stat-label">Context</span>
-              <div className="pc-stat-items">
-                <span className="pc-stat-item">{contextStats.total} doc{contextStats.total !== 1 ? 's' : ''}</span>
-              </div>
-            </div>
-          )}
+      {/* Compact stats row */}
+      {statItems.length > 0 && (
+        <div className="pc-stats-row">
+          {statItems.map((item, i) => (
+            <span key={i} className={`pc-stat ${item.className}`}>
+              <span className="pc-stat-dot" />
+              {item.label}
+            </span>
+          ))}
         </div>
       )}
 
       <div className="pc-footer">
         <span className="pc-created" title={`Created ${new Date(project.created_at).toLocaleString()}`}>
-          Created {formatRelativeTime(project.created_at)}
+          {formatRelativeTime(project.created_at)}
         </span>
         {project.target_date && (
           <span className="pc-date">Due {new Date(project.target_date).toLocaleDateString()}</span>

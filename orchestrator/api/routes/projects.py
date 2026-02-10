@@ -24,6 +24,13 @@ def _get_project_stats(db, project_id: str) -> dict:
         "blocked": len([t for t in all_tasks if t.status == "blocked"]),
     }
     
+    # Subtask stats - all tasks with a parent_task_id
+    all_subtasks = tasks_repo.list_tasks(db, project_id=project_id, has_parent=True)
+    subtask_stats = {
+        "total": len(all_subtasks),
+        "done": len([t for t in all_subtasks if t.status == "done"]),
+    }
+    
     # Worker stats - sessions assigned to tasks in this project
     assigned_session_ids = set(t.assigned_session_id for t in all_tasks if t.assigned_session_id)
     workers = []
@@ -47,6 +54,7 @@ def _get_project_stats(db, project_id: str) -> dict:
     
     return {
         "tasks": task_stats,
+        "subtasks": subtask_stats,
         "workers": worker_stats,
         "context": context_stats,
     }

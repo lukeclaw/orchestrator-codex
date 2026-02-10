@@ -987,10 +987,10 @@
   align-items: center;
   gap: 6px;
   padding: 6px 10px;
-  background: var(--bg);
+  background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 6px;
-  color: var(--accent);
+  color: var(--text-primary);
   text-decoration: none;
   font-size: 13px;
   transition: all 0.15s;
@@ -1002,8 +1002,50 @@
 }
 
 .tdp-worker-link:hover {
-  border-color: var(--accent);
-  background: rgba(88, 166, 255, 0.1);
+  border-color: var(--text-muted);
+  background: var(--surface-hover);
+}
+
+/* Subtle status color hints for worker link */
+.tdp-worker-link.status-idle {
+  background: var(--surface);
+  color: var(--text-secondary);
+}
+
+.tdp-worker-link.status-working {
+  background: rgba(88, 166, 255, 0.08);
+  color: #58a6ff;
+  border-color: rgba(88, 166, 255, 0.25);
+}
+
+.tdp-worker-link.status-paused {
+  background: rgba(210, 153, 34, 0.08);
+  color: #d29922;
+  border-color: rgba(210, 153, 34, 0.25);
+}
+
+.tdp-worker-link.status-error {
+  background: rgba(248, 81, 73, 0.08);
+  color: #f85149;
+  border-color: rgba(248, 81, 73, 0.25);
+}
+
+.tdp-worker-link.status-waiting {
+  background: rgba(210, 153, 34, 0.08);
+  color: #d29922;
+  border-color: rgba(210, 153, 34, 0.25);
+}
+
+.tdp-worker-link.status-disconnected {
+  background: var(--surface);
+  color: var(--text-muted);
+  border-color: var(--border);
+}
+
+.tdp-worker-link.status-connecting {
+  background: rgba(88, 166, 255, 0.08);
+  color: #58a6ff;
+  border-color: rgba(88, 166, 255, 0.25);
 }
 
 .worker-status-dot {
@@ -1030,21 +1072,36 @@
   background: #f85149;
 }
 
-.tdp-assign-btn {
-  padding: 6px 12px;
-  background: var(--accent);
-  color: #fff;
-  border: none;
-  border-radius: 6px;
-  font-size: 12px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 0.15s;
-  white-space: nowrap;
+.worker-status-dot.status-waiting {
+  background: #d29922;
 }
 
-.tdp-assign-btn:hover {
-  background: #79b8ff;
+.worker-status-dot.status-disconnected {
+  background: var(--text-muted);
+}
+
+.worker-status-dot.status-connecting {
+  background: #58a6ff;
+}
+
+.tdp-assign-icon-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  background: none;
+  border: none;
+  border-radius: 6px;
+  color: #3fb950;
+  cursor: pointer;
+  transition: all 0.15s;
+  flex-shrink: 0;
+}
+
+.tdp-assign-icon-btn:hover {
+  background: rgba(63, 185, 80, 0.15);
+  color: #3fb950;
 }
 
 /* Worker Assignment Modal */
@@ -1191,6 +1248,21 @@
 .worker-status-label.status-error {
   background: rgba(248, 81, 73, 0.15);
   color: #f85149;
+}
+
+.worker-status-label.status-waiting {
+  background: rgba(210, 153, 34, 0.15);
+  color: #d29922;
+}
+
+.worker-status-label.status-disconnected {
+  background: var(--surface);
+  color: var(--text-muted);
+}
+
+.worker-status-label.status-connecting {
+  background: rgba(88, 166, 255, 0.15);
+  color: #58a6ff;
 }
 
 .worker-current {

@@ -2,8 +2,9 @@
   display: block;
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  padding: 16px;
+  border-left: 3px solid var(--border);
+  border-radius: var(--radius);
+  padding: 12px 14px;
   text-decoration: none;
   color: inherit;
   transition: border-color 0.15s, background 0.15s;
@@ -15,31 +16,45 @@
   text-decoration: none;
 }
 
+/* Left border colors based on activity */
+.project-card.border-blocked { border-left-color: var(--red); }
+.project-card.border-working { border-left-color: #58a6ff; }
+.project-card.border-active { border-left-color: var(--green); }
+
 .pc-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 8px;
+  margin-bottom: 4px;
 }
 
 .pc-name {
-  font-size: 15px;
+  font-size: 14px;
   font-weight: 600;
   color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .pc-header-actions {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.project-card:hover .pc-header-actions {
+  opacity: 1;
 }
 
 .pc-edit-btn {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 24px;
-  height: 24px;
+  width: 22px;
+  height: 22px;
   padding: 0;
   border: none;
   background: transparent;
@@ -50,12 +65,12 @@
 }
 
 .pc-edit-btn:hover {
-  background: var(--surface-hover);
+  background: var(--surface-raised);
   color: var(--text-primary);
 }
 
 .pc-desc {
-  font-size: 13px;
+  font-size: 12px;
   color: var(--text-secondary);
   margin-bottom: 10px;
   display: -webkit-box;
@@ -63,94 +78,86 @@
   line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
+  line-height: 1.4;
 }
 
-.pc-progress {
-  margin-bottom: 10px;
-}
-
-/* Stats section */
-.pc-stats {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  margin-bottom: 12px;
-  padding: 10px;
-  background: var(--surface-hover);
-  border-radius: var(--radius);
-}
-
-.pc-stat-group {
+/* Progress bar row */
+.pc-progress-row {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
+  margin-bottom: 8px;
 }
 
-.pc-stat-label {
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--text-muted);
-  text-transform: uppercase;
-  min-width: 55px;
+.pc-progress-bar {
+  flex: 1;
+  height: 4px;
+  background: var(--border);
+  border-radius: 2px;
+  overflow: hidden;
 }
 
-.pc-stat-items {
+.pc-progress-fill {
+  height: 100%;
+  background: var(--green);
+  border-radius: 2px;
+  transition: width 0.3s ease;
+}
+
+.pc-progress-count {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  min-width: 32px;
+  text-align: right;
+}
+
+/* Compact stats row */
+.pc-stats-row {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: 10px;
+  margin-bottom: 8px;
 }
 
-.pc-stat-item {
+.pc-stat {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
   font-size: 11px;
-  padding: 2px 6px;
-  border-radius: 4px;
-  background: var(--surface);
   color: var(--text-secondary);
 }
 
-.pc-stat-item.in-progress {
-  background: rgba(59, 130, 246, 0.15);
-  color: #3b82f6;
+.pc-stat-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--text-muted);
 }
 
-.pc-stat-item.blocked {
-  background: rgba(239, 68, 68, 0.15);
-  color: #ef4444;
-}
+.pc-stat.active .pc-stat-dot { background: var(--green); }
+.pc-stat.blocked .pc-stat-dot { background: var(--red); }
+.pc-stat.working .pc-stat-dot { background: #58a6ff; }
 
-.pc-stat-item.todo {
-  background: rgba(156, 163, 175, 0.15);
-  color: var(--text-muted);
-}
+.pc-stat.active { color: var(--green); }
+.pc-stat.blocked { color: var(--red); }
+.pc-stat.working { color: #58a6ff; }
 
-.pc-stat-item.done {
-  background: rgba(34, 197, 94, 0.15);
-  color: #22c55e;
-}
-
-.pc-stat-item.working {
-  background: rgba(59, 130, 246, 0.15);
-  color: #3b82f6;
-}
-
-.pc-stat-item.waiting {
-  background: rgba(234, 179, 8, 0.15);
-  color: #eab308;
-}
-
-.pc-stat-item.idle {
-  background: rgba(156, 163, 175, 0.15);
-  color: var(--text-muted);
-}
-
+/* Footer */
 .pc-footer {
   display: flex;
   align-items: center;
   justify-content: space-between;
   font-size: 11px;
   color: var(--text-muted);
+  padding-top: 6px;
+  border-top: 1px solid var(--border-subtle);
 }
 
 .pc-created {
   color: var(--text-muted);
+}
+
+.pc-date {
+  color: var(--text-secondary);
 }

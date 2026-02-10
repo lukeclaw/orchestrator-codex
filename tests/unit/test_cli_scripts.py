@@ -15,6 +15,9 @@ from orchestrator.brain.cli_scripts import (
     generate_brain_scripts,
     BRAIN_CONTEXT_SCRIPT,
     BRAIN_SCRIPT_HEADER,
+    BRAIN_WORKERS_SCRIPT,
+    BRAIN_TASKS_SCRIPT,
+    BRAIN_NOTIFICATIONS_SCRIPT,
 )
 from orchestrator.worker.cli_scripts import (
     generate_worker_scripts,
@@ -38,6 +41,7 @@ class TestBrainCliScripts:
                 "orch-tasks",
                 "orch-ctx",
                 "orch-send",
+                "orch-notifications",
             ]
             
             for script_name in expected_scripts:
@@ -64,6 +68,34 @@ class TestBrainCliScripts:
     def test_brain_context_script_uses_json_encode_for_content(self):
         """Verify content is properly JSON-encoded using json_encode."""
         assert 'escaped_content=$(json_encode "$content")' in BRAIN_CONTEXT_SCRIPT
+
+    def test_brain_tasks_script_has_delete_command(self):
+        """Verify orch-tasks has delete command."""
+        assert "delete <id>" in BRAIN_TASKS_SCRIPT
+        assert "cmd_delete()" in BRAIN_TASKS_SCRIPT
+        assert 'curl -s -X DELETE "$API_BASE/api/tasks/$id"' in BRAIN_TASKS_SCRIPT
+        assert "delete) shift; cmd_delete" in BRAIN_TASKS_SCRIPT
+
+    def test_brain_workers_script_has_stop_command(self):
+        """Verify orch-workers has stop command."""
+        assert "stop <id>" in BRAIN_WORKERS_SCRIPT
+        assert "cmd_stop()" in BRAIN_WORKERS_SCRIPT
+        assert 'curl -s -X POST "$API_BASE/api/sessions/$id/stop"' in BRAIN_WORKERS_SCRIPT
+        assert "stop) shift; cmd_stop" in BRAIN_WORKERS_SCRIPT
+
+    def test_brain_workers_script_has_reconnect_command(self):
+        """Verify orch-workers has reconnect command."""
+        assert "reconnect <id>" in BRAIN_WORKERS_SCRIPT
+        assert "cmd_reconnect()" in BRAIN_WORKERS_SCRIPT
+        assert 'curl -s -X POST "$API_BASE/api/sessions/$id/reconnect"' in BRAIN_WORKERS_SCRIPT
+        assert "reconnect) shift; cmd_reconnect" in BRAIN_WORKERS_SCRIPT
+
+    def test_brain_notifications_script_has_delete_command(self):
+        """Verify orch-notifications has delete command."""
+        assert "delete <id>" in BRAIN_NOTIFICATIONS_SCRIPT
+        assert "cmd_delete()" in BRAIN_NOTIFICATIONS_SCRIPT
+        assert 'curl -s -X DELETE "$API_BASE/api/notifications/$id"' in BRAIN_NOTIFICATIONS_SCRIPT
+        assert "delete) shift; cmd_delete" in BRAIN_NOTIFICATIONS_SCRIPT
 
 
 class TestWorkerCliScripts:

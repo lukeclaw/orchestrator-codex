@@ -61,6 +61,8 @@ show_help() {{
     echo "  show <id>                     Show worker details"
     echo "  create [options]              Create a new worker"
     echo "  delete <id>                   Delete a worker"
+    echo "  stop <id>                     Stop worker: Escape, /clear, unassign task, set idle"
+    echo "  reconnect <id>                Reconnect a disconnected worker"
     echo ""
     echo "Create Options:"
     echo "  --name NAME                   Worker name (required)"
@@ -141,12 +143,32 @@ cmd_delete() {{
     curl -s -X DELETE "$API_BASE/api/sessions/$id" | pp
 }}
 
+cmd_stop() {{
+    local id="$1"
+    if [[ -z "$id" ]]; then
+        echo "Error: Worker ID required" >&2
+        exit 1
+    fi
+    curl -s -X POST "$API_BASE/api/sessions/$id/stop" | pp
+}}
+
+cmd_reconnect() {{
+    local id="$1"
+    if [[ -z "$id" ]]; then
+        echo "Error: Worker ID required" >&2
+        exit 1
+    fi
+    curl -s -X POST "$API_BASE/api/sessions/$id/reconnect" | pp
+}}
+
 case "$1" in
     list) shift; cmd_list "$@" ;;
     rdevs) shift; cmd_rdevs "$@" ;;
     show) shift; cmd_show "$@" ;;
     create) shift; cmd_create "$@" ;;
     delete) shift; cmd_delete "$@" ;;
+    stop) shift; cmd_stop "$@" ;;
+    reconnect) shift; cmd_reconnect "$@" ;;
     -h|--help|"") show_help ;;
     *) echo "Unknown command: $1" >&2; show_help; exit 1 ;;
 esac
@@ -283,6 +305,7 @@ show_help() {{
     echo "  show <id>                             Show task details"
     echo "  create [options]                      Create a new task"
     echo "  update <id> [options]                 Update a task"
+    echo "  delete <id>                           Delete a task"
     echo "  assign <task-id> <worker-id>          Assign task to worker"
     echo "  unassign <task-id>                    Unassign task from worker"
     echo ""
@@ -500,11 +523,21 @@ cmd_unassign() {{
         -d '{{"assigned_session_id": null}}' | pp
 }}
 
+cmd_delete() {{
+    local id="$1"
+    if [[ -z "$id" ]]; then
+        echo "Error: Task ID required" >&2
+        exit 1
+    fi
+    curl -s -X DELETE "$API_BASE/api/tasks/$id" | pp
+}}
+
 case "$1" in
     list) shift; cmd_list "$@" ;;
     show) shift; cmd_show "$@" ;;
     create) shift; cmd_create "$@" ;;
     update) shift; cmd_update "$@" ;;
+    delete) shift; cmd_delete "$@" ;;
     assign) shift; cmd_assign "$@" ;;
     unassign) shift; cmd_unassign "$@" ;;
     -h|--help|"") show_help ;;
@@ -777,6 +810,7 @@ show_help() {{
     echo "  list [--all] [--task-id ID]   List notifications"
     echo "  dismiss <id>                  Dismiss a notification"
     echo "  dismiss-all                   Dismiss all notifications"
+    echo "  delete <id>                   Permanently delete a notification"
     echo "  create [options]              Create a notification"
     echo ""
     echo "List Options:"
@@ -851,9 +885,9 @@ cmd_create() {{
         exit 1
     fi
     
-    local json="{{\\"message\\": \\"$message\\", \\"notification_type\\": \\"$type\\""
-    [[ -n "$task_id" ]] && json="$json, \\"task_id\\": \\"$task_id\\""
-    [[ -n "$link" ]] && json="$json, \\"link_url\\": \\"$link\\""
+    local json="{{\"message\": \"$message\", \"notification_type\": \"$type\""
+    [[ -n "$task_id" ]] && json="$json, \"task_id\": \"$task_id\""
+    [[ -n "$link" ]] && json="$json, \"link_url\": \"$link\""
     json="$json}}"
     
     curl -s -X POST "$API_BASE/api/notifications" \\
@@ -861,10 +895,20 @@ cmd_create() {{
         -d "$json" | pp
 }}
 
+cmd_delete() {{
+    local id="$1"
+    if [[ -z "$id" ]]; then
+        echo "Error: Notification ID required" >&2
+        exit 1
+    fi
+    curl -s -X DELETE "$API_BASE/api/notifications/$id" | pp
+}}
+
 case "$1" in
     list) shift; cmd_list "$@" ;;
     dismiss) shift; cmd_dismiss "$@" ;;
     dismiss-all) shift; cmd_dismiss_all "$@" ;;
+    delete) shift; cmd_delete "$@" ;;
     create) shift; cmd_create "$@" ;;
     -h|--help|"") show_help ;;
     *) echo "Unknown command: $1" >&2; show_help; exit 1 ;;

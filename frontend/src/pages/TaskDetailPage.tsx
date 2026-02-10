@@ -702,8 +702,7 @@ export default function TaskDetailPage() {
                 <label>Assigned</label>
                 <div className="tdp-worker-field">
                   {assignedWorker ? (
-                    <Link to={`/workers/${assignedWorker.id}`} className="tdp-worker-link">
-                      <span className={`worker-status-dot status-${assignedWorker.status}`} />
+                    <Link to={`/workers/${assignedWorker.id}`} className={`tdp-worker-link status-${assignedWorker.status}`}>
                       {assignedWorker.name}
                     </Link>
                   ) : (
@@ -711,11 +710,16 @@ export default function TaskDetailPage() {
                   )}
                   {isEditable && (
                     <button 
-                      className="tdp-assign-btn" 
+                      className="tdp-assign-icon-btn" 
                       onClick={() => setShowAssignModal(true)}
                       title={assignedWorker ? 'Reassign worker' : 'Assign worker'}
                     >
-                      {assignedWorker ? 'Reassign' : 'Assign'}
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+                        <circle cx="9" cy="7" r="4"/>
+                        <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
+                        <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+                      </svg>
                     </button>
                   )}
                 </div>
@@ -747,7 +751,14 @@ export default function TaskDetailPage() {
                           <span className="worker-name">Unassign</span>
                         </button>
                       )}
-                      {sessions.filter(s => s.session_type === 'worker').map(s => (
+                      {sessions.filter(s => {
+                        if (s.session_type !== 'worker') return false
+                        // Allow current task's assigned worker
+                        if (s.id === assignedSession) return true
+                        // Exclude workers assigned to other tasks
+                        const assignedToOther = tasks.some(t => t.id !== task?.id && t.assigned_session_id === s.id)
+                        return !assignedToOther
+                      }).map(s => (
                         <button
                           key={s.id}
                           className={`tdp-worker-option ${s.id === assignedSession ? 'selected' : ''}`}

@@ -984,7 +984,7 @@ case "$EVENT" in
     SessionStart)
         STATUS="idle"
         ;;
-    UserPromptSubmit)
+    UserPromptSubmit|PreToolUse)
         STATUS="working"
         ;;
     Stop|Notification)
@@ -1029,6 +1029,17 @@ exit 0
                 }
             ],
             "UserPromptSubmit": [
+                {
+                    "matcher": "",
+                    "hooks": [
+                        {
+                            "type": "command",
+                            "command": hook_script_path
+                        }
+                    ]
+                }
+            ],
+            "PreToolUse": [
                 {
                     "matcher": "",
                     "hooks": [

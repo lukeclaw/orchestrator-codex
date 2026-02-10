@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import type { Project } from '../../api/types'
 import Modal from '../common/Modal'
 import ConfirmPopover from '../common/ConfirmPopover'
@@ -18,14 +18,23 @@ export default function ProjectEditModal({ project, onClose, onUpdate, onDelete 
   const [targetDate, setTargetDate] = useState('')
   const [error, setError] = useState('')
   const [submitting, setSubmitting] = useState(false)
+  
+  // Track which project ID we've initialized form with to avoid re-syncing on data refresh
+  const initializedProjectId = useRef<string | null>(null)
 
   useEffect(() => {
-    if (project) {
+    // Only sync form fields when opening modal with a NEW project (different ID)
+    // This prevents background data refresh from overwriting unsaved edits
+    if (project && project.id !== initializedProjectId.current) {
       setName(project.name)
       setDescription(project.description || '')
       setStatus(project.status)
       setTargetDate(project.target_date || '')
       setError('')
+      initializedProjectId.current = project.id
+    } else if (!project) {
+      // Reset tracking when modal closes
+      initializedProjectId.current = null
     }
   }, [project])
 

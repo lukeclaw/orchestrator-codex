@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import Modal from '../common/Modal'
 import ConfirmPopover from '../common/ConfirmPopover'
 import Markdown from '../common/Markdown'
@@ -32,25 +32,40 @@ export default function ContextModal({ context, projectId, isNew, onClose, onSav
   const [saving, setSaving] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [viewMode, setViewMode] = useState<'edit' | 'preview'>('edit')
+  
+  // Track which context ID we've initialized form with to avoid re-syncing on data refresh
+  const initializedContextId = useRef<string | null>(null)
+  // Track if we've initialized for "new" mode
+  const initializedAsNew = useRef(false)
 
   // If projectId is provided, scope is locked to project
   const scopeLocked = !!projectId
 
   useEffect(() => {
-    if (context) {
+    // Only sync form fields when opening modal with a NEW context (different ID)
+    // This prevents background data refresh from overwriting unsaved edits
+    if (context && context.id !== initializedContextId.current) {
       setTitle(context.title)
       setDescription(context.description || '')
       setContent(context.content || '')
       setCategory(context.category || '')
       setScope(context.scope as 'global' | 'project' | 'brain')
       setViewMode('preview')
-    } else if (isNew) {
+      initializedContextId.current = context.id
+      initializedAsNew.current = false
+    } else if (isNew && !initializedAsNew.current) {
       setTitle('')
       setDescription('')
       setContent('')
       setCategory('')
       setScope(projectId ? 'project' : 'global')
       setViewMode('edit')
+      initializedContextId.current = null
+      initializedAsNew.current = true
+    } else if (!context && !isNew) {
+      // Reset tracking when modal closes
+      initializedContextId.current = null
+      initializedAsNew.current = false
     }
   }, [context, isNew, projectId])
 

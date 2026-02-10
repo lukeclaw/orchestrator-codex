@@ -19,6 +19,10 @@ export interface ProjectStats {
     done: number
     blocked: number
   }
+  subtasks: {
+    total: number
+    done: number
+  }
   workers: {
     total: number
     working: number
@@ -37,6 +41,7 @@ export interface Project {
   status: string
   target_date: string | null
   created_at: string
+  updated_at?: string
   stats?: ProjectStats
 }
 

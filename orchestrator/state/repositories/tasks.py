@@ -22,6 +22,7 @@ def list_tasks(
     status: str | None = None,
     assigned_session_id: str | None = None,
     parent_task_id: str | None = ...,
+    has_parent: bool | None = None,
 ) -> list[Task]:
     clauses = []
     params = []
@@ -40,6 +41,11 @@ def list_tasks(
         else:
             clauses.append("parent_task_id = ?")
             params.append(parent_task_id)
+    if has_parent is not None:
+        if has_parent:
+            clauses.append("parent_task_id IS NOT NULL")
+        else:
+            clauses.append("parent_task_id IS NULL")
 
     where = f" WHERE {' AND '.join(clauses)}" if clauses else ""
     rows = conn.execute(

@@ -95,6 +95,7 @@ orch-tasks show <id>                        # Show task details
 orch-tasks create --project-id <id> --title "Add OAuth callback" --priority high
 orch-tasks update <id> --status done
 orch-tasks update <id> --notes "Found root cause in auth module"
+orch-tasks delete <id>                      # Delete a task (cascades to subtasks)
 orch-tasks assign <task-id> <worker-id>     # Assign task to worker
 orch-tasks unassign <task-id>               # Unassign task
 
@@ -137,7 +138,9 @@ orch-workers show <id>                      # Show worker details
 orch-workers create --name api-worker       # Create a local worker
 orch-workers create --name ui-worker --host localhost --work-dir /path/to/repo
 orch-workers create --name rdev-worker --host subs-mt/sleepy-franklin  # Create rdev worker
-orch-workers delete <id>                    # Delete a worker
+orch-workers delete <id>                    # Delete a worker (full cleanup)
+orch-workers stop <id>                      # Stop worker: Escape, /clear, unassign task, set idle
+orch-workers reconnect <id>                 # Reconnect a disconnected worker
 ```
 
 **Before creating a new worker, check `orch-workers list` for existing idle workers you can reuse.**
@@ -187,8 +190,9 @@ orch-send <worker-id> "Your instructions here"
 orch-notifications list                     # List active notifications
 orch-notifications list --all               # Include dismissed
 orch-notifications list --task-id <id>      # For a specific task
-orch-notifications dismiss <id>
+orch-notifications dismiss <id>             # Mark as dismissed (still visible with --all)
 orch-notifications dismiss-all
+orch-notifications delete <id>              # Permanently delete a notification
 orch-notifications create --message "Review needed on PR #123" --task-id <id> --type pr_comment
 ```
 
@@ -217,7 +221,7 @@ The orchestrator server runs at `http://127.0.0.1:8093`. Use curl only when CLI 
 2. **You review** — check subtasks, verify PRs merged, confirm deliverable met
 3. **Mark task done** — `orch-tasks update <id> --status done`
 4. **Unassign worker** — `orch-tasks unassign <task-id>`
-5. **Stop worker** (if no more work) — `orch-workers delete <id>`
+5. **Stop worker** (if no more work) — `orch-workers stop <id>` (keeps worker idle) or `orch-workers delete <id>` (full cleanup)
 
 Don't mark a task done until you've verified the deliverable. Check the PR links, confirm merges, review the work.
 

@@ -548,7 +548,9 @@ def stop_session(session_id: str, db=Depends(get_db)):
     from orchestrator.state.repositories import tasks as tasks_repo
     assigned_tasks = tasks_repo.list_tasks(db, assigned_session_id=session_id)
     for task in assigned_tasks:
-        tasks_repo.update_task(db, task.id, assigned_session_id=None, status="todo")
+        # Only reset status to todo if task is not already done
+        new_status = None if task.status == "done" else "todo"
+        tasks_repo.update_task(db, task.id, assigned_session_id=None, status=new_status)
 
     repo.update_session(db, session_id, status="idle")
     return {"ok": True, "message": f"Session {s.name} stopped and cleared"}

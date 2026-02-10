@@ -11,32 +11,7 @@
   color: var(--accent);
 }
 
-/* Active Projects */
+/* Active Projects section */
 .dashboard-projects {
   margin-bottom: 16px;
-}
-
-.dp-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 10px;
-}
-
-.dp-header h2 {
-  font-size: 15px;
-  font-weight: 600;
-}
-
-.dp-scroll {
-  display: flex;
-  gap: 14px;
-  overflow-x: auto;
-  padding-bottom: 4px;
-}
-
-.dp-scroll .project-card {
-  min-width: 280px;
-  max-width: 340px;
-  flex-shrink: 0;
 }

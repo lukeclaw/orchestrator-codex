@@ -90,7 +90,9 @@
 .bp-header-right {
   display: flex;
   align-items: center;
+  align-self: center;
   gap: 6px;
+  flex-shrink: 0;
 }
 
 .bp-collapse-btn {

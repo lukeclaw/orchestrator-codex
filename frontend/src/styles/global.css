@@ -139,12 +139,14 @@ select:focus {
 .btn {
   display: inline-flex;
   align-items: center;
+  align-self: center;
   gap: 6px;
   padding: 5px 14px;
   font-size: 13px;
   font-weight: 500;
   border-radius: var(--radius);
   border: 1px solid transparent;
+  cursor: pointer;
   transition: background 0.15s, border-color 0.15s;
 }
 
@@ -263,6 +265,7 @@ select:focus {
 /* Toggle group */
 .toggle-group {
   display: flex;
+  align-self: center;
   gap: 0;
   border: 1px solid var(--border);
   border-radius: var(--radius);

@@ -148,19 +148,23 @@ Workers talk to the orchestrator via **scoped CLI tools** that are auto-generate
 |--------|---------|--------------|
 | **connecting** | Worker created, Claude Code not started yet | Session creation in orchestrator |
 | **idle** | Claude Code started, ready for task assignment | `SessionStart` hook |
-| **working** | Actively processing (task assigned or user input) | `UserPromptSubmit` hook, task assignment |
+| **working** | Actively processing (task assigned or user input) | `UserPromptSubmit` hook, `PreToolUse` hook, task assignment |
 | **waiting** | Claude finished responding, awaiting review/input | `Stop` hook (Claude stops), `Notification` hook |
 | **paused** | User manually paused the worker | Manual user action |
 | **error** | Worker encountered an error | Error detection |
-| **disconnected** | Worker session lost | Heartbeat failure |
+| **disconnected** | Worker session lost | Heartbeat failure, `SessionEnd` hook |
 
 **Status Management via Claude Code Hooks:**
 
 Worker status is managed automatically via Claude Code hooks defined in `.claude/settings.json`:
-- `SessionStart` → sets status to `idle`
-- `UserPromptSubmit` → sets status to `working`
-- `Stop` → sets status to `waiting`
-- `Notification` → sets status to `waiting` (when Claude needs user input)
+- `SessionStart` → sets status to `idle` (ready for task assignment)
+- `UserPromptSubmit` → sets status to `working` (user/orchestrator sent a message)
+- `PreToolUse` → sets status to `working` (Claude is actively using tools)
+- `Stop` → sets status to `waiting` (Claude finished responding)
+- `Notification` → sets status to `waiting` (Claude needs user input)
+- `SessionEnd` → sets status to `disconnected` (Claude Code exited)
+
+The `PreToolUse` hook is critical for reliable status tracking — it fires every time Claude uses a tool (read, write, bash, etc.), ensuring the worker is marked as "working" even if `SessionStart` fires unexpectedly during reconnection.
 
 This removes the need for workers to manually call `orch-worker update --status`.
 
@@ -509,3 +513,4 @@ notifications  (id, task_id, session_id, message, notification_type, link_url, c
 | 2.3 | 2026-02-09 | Added detailed worker status states and Claude Code hooks-based automatic status management |
 | 2.4 | 2026-02-08 | Removed PR tracking (not useful). Added context scopes (global/brain/project), description field, instruction category. Task priority changed from numeric to H/M/L. Human-readable task keys (UTI-1). |
 | 2.5 | 2026-02-09 | Added Section 3.8 (Notification System): non-blocking notifications for workers/brain to surface information requiring user attention without stopping progress. Includes `orch-notify` CLI, API endpoints, and UI requirements. |
+| 2.6 | 2026-02-09 | Added `PreToolUse` hook for reliable "working" status tracking. Added `SessionEnd` hook for "disconnected" status. |
