@@ -245,3 +245,19 @@ class ProjectWorker:
     project_id: str
     session_id: str
     assigned_at: str = ""
+
+
+@dataclass
+class Notification:
+    id: str
+    message: str
+    task_id: str | None = None
+    session_id: str | None = None
+    notification_type: str = "info"  # info, pr_comment, warning
+    link_url: str | None = None
+    created_at: str = ""
+    dismissed: bool = False
+    dismissed_at: str | None = None
+
+    def __post_init__(self):
+        self.dismissed = bool(self.dismissed)

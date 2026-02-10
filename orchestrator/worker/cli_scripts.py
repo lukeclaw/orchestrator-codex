@@ -56,7 +56,24 @@ load_task_info() {{
         source "$CACHE_FILE"
     else
         # Fetch tasks assigned to this session
-        local tasks_json=$(curl -s "$API_BASE/api/tasks?assigned_session_id=$SESSION_ID")
+        local http_code
+        local tasks_json
+        tasks_json=$(curl -s -w "\n%{{http_code}}" --connect-timeout 5 "$API_BASE/api/tasks?assigned_session_id=$SESSION_ID")
+        http_code=$(echo "$tasks_json" | tail -n1)
+        tasks_json=$(echo "$tasks_json" | sed '$d')
+        
+        # Check for connection errors (curl returns 000 for connection failures)
+        if [[ "$http_code" == "000" || -z "$http_code" ]]; then
+            echo "Error: Connection failed - cannot reach orchestrator API at $API_BASE" >&2
+            return 1
+        fi
+        
+        # Check for HTTP errors
+        if [[ "$http_code" != "200" ]]; then
+            echo "Error: API request failed with HTTP $http_code" >&2
+            return 1
+        fi
+        
         TASK_ID=$(echo "$tasks_json" | jq -r '.[0].id // empty')
         
         if [[ -z "$TASK_ID" || "$TASK_ID" == "null" ]]; then
@@ -531,6 +548,96 @@ esac
 '''
 
 # Context script needs project_id from task - uses same caching mechanism
+ORCH_NOTIFY_SCRIPT = SCRIPT_HEADER + '''
+show_help() {{
+    echo "Usage: orch-notify <message> [options]"
+    echo ""
+    echo "Create a non-blocking notification for the user."
+    echo ""
+    echo "Options:"
+    echo "  --type TYPE             Notification type (info|pr_comment|warning), default: info"
+    echo "  --link URL              Optional external link (e.g., PR URL)"
+    echo ""
+    echo "Examples:"
+    echo "  orch-notify \\"PR merged, but reviewer asked about error handling\\""
+    echo "  orch-notify \\"Found potential issue in config\\" --type warning"
+    echo "  orch-notify \\"PR #123 merged with comments\\" --type pr_comment --link \\"https://github.com/...\\""
+    echo ""
+    echo "Guidelines:"
+    echo "  - Use sparingly for valuable information that doesn't block your work"
+    echo "  - Good: PR merged but reviewer left a question, found issue but proceeded safely"
+    echo "  - Bad: Routine progress updates, status changes (use orch-task update instead)"
+}}
+
+# Main logic
+if [[ $# -eq 0 || "$1" == "-h" || "$1" == "--help" ]]; then
+    show_help
+    exit 0
+fi
+
+# Parse arguments
+MESSAGE=""
+NOTIFY_TYPE="info"
+LINK_URL=""
+
+# First positional argument is the message
+MESSAGE="$1"
+shift
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --type)
+            NOTIFY_TYPE="$2"
+            shift 2
+            ;;
+        --link)
+            LINK_URL="$2"
+            shift 2
+            ;;
+        *)
+            echo "Unknown option: $1" >&2
+            show_help
+            exit 1
+            ;;
+    esac
+done
+
+if [[ -z "$MESSAGE" ]]; then
+    echo "Error: Message is required" >&2
+    show_help
+    exit 1
+fi
+
+# Load task info to get task_id (notification will be linked to current task)
+load_task_info "$FORCE_REFRESH"
+# Note: We don't exit on failure - notification can be created without task_id
+
+# Build JSON payload
+escaped_message=$(json_encode "$MESSAGE")
+json="{{\\"message\\": \\"$escaped_message\\", \\"session_id\\": \\"$SESSION_ID\\", \\"notification_type\\": \\"$NOTIFY_TYPE\\""
+
+if [[ -n "$TASK_ID" && "$TASK_ID" != "null" ]]; then
+    json="$json, \\"task_id\\": \\"$TASK_ID\\""
+fi
+
+if [[ -n "$LINK_URL" ]]; then
+    json="$json, \\"link_url\\": \\"$LINK_URL\\""
+fi
+
+json="$json}}"
+
+# Create notification
+result=$(curl -s -X POST "$API_BASE/api/notifications" \\
+    -H 'Content-Type: application/json' \\
+    -d "$json")
+
+echo "$result" | jq .
+
+# Confirm to user
+echo ""
+echo "Notification created. User will see this in the dashboard."
+'''
+
 ORCH_CONTEXT_SCRIPT = SCRIPT_HEADER + '''
 show_help() {{
     echo "Usage: orch-context <command> [options]"
@@ -639,6 +746,19 @@ case "$1" in
 esac
 '''
 
+# Single source of truth for worker CLI scripts
+# Any code that needs to list/copy worker scripts should use this
+WORKER_SCRIPTS = {
+    "orch-task": (ORCH_TASK_SCRIPT, "Manage the assigned task"),
+    "orch-subtask": (ORCH_SUBTASK_SCRIPT, "Manage subtasks under the assigned task"),
+    "orch-worker": (ORCH_WORKER_SCRIPT, "Manage worker session status"),
+    "orch-context": (ORCH_CONTEXT_SCRIPT, "Read project and global context"),
+    "orch-notify": (ORCH_NOTIFY_SCRIPT, "Create non-blocking notification for user"),
+}
+
+# Export just the script names for code that only needs to iterate over names
+WORKER_SCRIPT_NAMES = list(WORKER_SCRIPTS.keys())
+
 
 def generate_worker_scripts(
     worker_dir: str,
@@ -663,15 +783,7 @@ def generate_worker_scripts(
     bin_dir = os.path.join(worker_dir, "bin")
     os.makedirs(bin_dir, exist_ok=True)
     
-    # Scripts with their descriptions (for header comment)
-    scripts = {
-        "orch-task": (ORCH_TASK_SCRIPT, "Manage the assigned task"),
-        "orch-subtask": (ORCH_SUBTASK_SCRIPT, "Manage subtasks under the assigned task"),
-        "orch-worker": (ORCH_WORKER_SCRIPT, "Manage worker session status"),
-        "orch-context": (ORCH_CONTEXT_SCRIPT, "Read project and global context"),
-    }
-    
-    for script_name, (template, description) in scripts.items():
+    for script_name, (template, description) in WORKER_SCRIPTS.items():
         script_path = os.path.join(bin_dir, script_name)
         
         format_vars = {

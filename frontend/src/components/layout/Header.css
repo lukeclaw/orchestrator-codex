@@ -57,3 +57,36 @@
   font-size: 11px;
   color: var(--text-muted);
 }
+
+.header-notifications {
+  position: relative;
+  background: none;
+  border: none;
+  font-size: 18px;
+  cursor: pointer;
+  padding: 4px 8px;
+  margin-right: 12px;
+  border-radius: 4px;
+  transition: background 0.2s;
+}
+
+.header-notifications:hover {
+  background: var(--surface);
+}
+
+.notification-badge {
+  position: absolute;
+  top: 0;
+  right: 0;
+  background: var(--red);
+  color: white;
+  font-size: 10px;
+  font-weight: 600;
+  min-width: 16px;
+  height: 16px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 4px;
+}

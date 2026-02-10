@@ -1,4 +1,6 @@
+import { useState, useEffect } from 'react'
 import { useApp } from '../../context/AppContext'
+import { api } from '../../api/client'
 import SidebarItem from './SidebarItem'
 import {
   IconDashboard,
@@ -10,6 +12,7 @@ import {
   IconChevronLeft,
   IconChevronRight,
   IconLogo,
+  IconBell,
 } from '../common/Icons'
 import './Sidebar.css'
 
@@ -20,10 +23,25 @@ interface Props {
 
 export default function Sidebar({ collapsed, onToggle }: Props) {
   const { workers } = useApp()
+  const [notificationCount, setNotificationCount] = useState(0)
 
   const activeSessions = workers.filter(
     s => s.status === 'working' || s.status === 'idle'
   ).length
+
+  useEffect(() => {
+    async function fetchCount() {
+      try {
+        const data = await api<{ count: number }>('/api/notifications/count')
+        setNotificationCount(data.count)
+      } catch {
+        // Ignore errors
+      }
+    }
+    fetchCount()
+    const interval = setInterval(fetchCount, 15000) // Refresh every 15s
+    return () => clearInterval(interval)
+  }, [])
 
   return (
     <aside className={`sidebar ${collapsed ? 'collapsed' : ''}`}>
@@ -51,6 +69,7 @@ export default function Sidebar({ collapsed, onToggle }: Props) {
         <SidebarItem to="/tasks" icon={<IconTasks size={18} />} label="Tasks" collapsed={collapsed} shortcut="T" />
         <SidebarItem to="/workers" icon={<IconSessions size={18} />} label="Workers" badge={activeSessions} collapsed={collapsed} shortcut="W" />
         <SidebarItem to="/context" icon={<IconContext size={18} />} label="Context" collapsed={collapsed} shortcut="K" />
+        <SidebarItem to="/notifications" icon={<IconBell size={18} />} label="Notifications" badge={notificationCount} badgeVariant="warning" collapsed={collapsed} shortcut="N" />
       </nav>
 
       <div className="sidebar-footer">

@@ -43,8 +43,8 @@ PROJECT          = A high-level initiative with a goal (e.g., "Migrate auth to O
   TASK           = A unit of work assignable to one worker (e.g., "UTI-1: Add OAuth callback")
     SUBTASK      = Smaller units of work within a task (e.g., "UTI-1-1: Write tests")
     WORKER       = A Claude Code session (terminal) that executes tasks
-  DECISION       = A question requiring human input to proceed
   CONTEXT        = Persistent knowledge with scoped visibility (global, brain-only, project)
+  NOTIFICATION   = Non-blocking information surfaced by workers for user attention
 ```
 
 Hierarchy: `Project → Tasks → Subtasks → Workers`
@@ -62,8 +62,7 @@ A web UI at `localhost:8093` showing:
 - **All workers**: which is working, waiting, idle, or dead
 - **All tasks**: kanban board (TODO / IN PROGRESS / DONE / BLOCKED)
 - **All tasks**: with human-readable keys (e.g., UTI-1, UTI-1-1 for subtasks)
-- **Decision queue**: pending items that need my input, sorted by urgency
-- **Activity feed**: chronological log of what happened across all workers
+- **Notifications**: non-blocking items surfaced by workers that need user attention
 
 ### 3.2 Terminal Management
 
@@ -99,12 +98,9 @@ Context items store persistent knowledge with **scoped visibility**:
 - Context survives worker crashes, `/compact`, and restarts
 - Zero context lives in my head — it's all in the system
 
-### 3.5 Decision Queue & Auto-Approval
+### 3.5 Auto-Approval
 
-- Workers surface decisions via API when they need human input
-- Dashboard shows pending decisions with context and urgency
 - **Auto-approval rules**: trivial prompts (continue, permission) handled automatically
-- I only see decisions that actually require judgment
 - Goal: N workers running, I check in periodically instead of babysitting
 
 ### 3.6 Worker-to-Orchestrator Communication
@@ -121,6 +117,7 @@ Workers talk to the orchestrator via **scoped CLI tools** that are auto-generate
 | `orch-worker update --status STATUS` | Update worker status (working, idle, waiting) |
 | `orch-context show --scope project\|global` | Read project or global context |
 | `orch-context tasks` | List all project tasks |
+| `orch-notify "message" [--type TYPE] [--link URL]` | Create non-blocking notification for user |
 
 **Key design decisions:**
 
@@ -212,7 +209,79 @@ Each worker has two distinct directory concepts:
 - **Clean tmp folders**: Worker deletion cleans up both local and remote (rdev) `/tmp/orchestrator/workers/{name}/` directories
 - **Remote cleanup for rdev**: Before killing tmux window, send `rm -rf` command to clean up remote worker directory
 
-### 3.8 Orchestration Engine
+### 3.8 Notification System
+
+Notifications allow workers and brain to surface **non-blocking information** that requires user attention but doesn't stop progress.
+
+**Key Principle:** Notifications are for valuable information only. Workers should NOT overuse this — users don't have unlimited time. Use notifications when:
+- A PR was merged but reviewer left questions worth addressing
+- Something unexpected happened but the worker moved on
+- Information the user should know but doesn't need to act on immediately
+
+**What Notifications Are NOT:**
+- Status updates (use task/subtask updates)
+- Routine progress
+
+**Notification Model:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `id` | string | Unique identifier |
+| `task_id` | string? | Optional link to related task |
+| `session_id` | string? | Optional link to worker that created it |
+| `message` | string | The notification content |
+| `notification_type` | string | Category: `pr_comment`, `info`, `warning` |
+| `link_url` | string? | Optional external link (e.g., PR URL) |
+| `created_at` | datetime | When created |
+| `dismissed` | bool | Whether user has dismissed it |
+| `dismissed_at` | datetime? | When dismissed |
+
+**UI Requirements:**
+
+1. **Centralized Notifications Page**: List all notifications, filter by dismissed/active, click to navigate
+2. **Task Badge**: Tasks with active notifications show a badge indicator
+3. **Task Notification Panel**: Task detail page shows associated notifications with dismiss button
+4. **Navigation**: Each notification with `task_id` has a "Go to Task" button
+5. **Dashboard Indicator**: Header shows count of active notifications
+
+**CLI Command:**
+
+```bash
+orch-notify "PR #123 merged, but reviewer @john asked about error handling" \
+  --type pr_comment \
+  --link "https://github.com/..."
+```
+
+- Task and session are inferred from the worker's context
+- `--type` defaults to `info`
+- `--link` is optional
+
+**API Endpoints:**
+
+| Endpoint | Method | Purpose |
+|----------|--------|---------|
+| `/api/notifications` | GET | List notifications (filter: `dismissed`, `task_id`, `session_id`) |
+| `/api/notifications` | POST | Create notification (workers/brain) |
+| `/api/notifications/:id` | GET | Get single notification |
+| `/api/notifications/:id/dismiss` | POST | Dismiss a notification |
+| `/api/notifications/dismiss-all` | POST | Dismiss all (or filtered set) |
+
+**Access:**
+- **Workers**: Can create notifications for their assigned task
+- **Brain**: Can create, view, and dismiss notifications
+- **Dashboard**: Can view and dismiss notifications
+
+**Prompt Updates:**
+
+Workers receive guidance:
+> Use `orch-notify` sparingly for information the user should know but doesn't block your work. Examples:
+> - PR merged but reviewer left a question
+> - Found a potential issue but proceeded with the safer approach
+> - Completed task but noticed something worth mentioning
+>
+> Do NOT use for: routine progress, status changes, or anything that needs a response before continuing.
+
+### 3.9 Orchestration Engine
 
 The backend runs a continuous orchestration loop:
 
@@ -221,7 +290,7 @@ Terminal Monitor (polls every 2-5s)
     → Output Parser (regex state detection: working/idle/waiting/error)
     → Event Bus (publishes session.state_changed, session.output, etc.)
     → Orchestrator (subscribes, dispatches actions):
-        ├─ waiting → Auto-Approve Engine (check rules → send keystroke or create Decision)
+        ├─ waiting → Auto-Approve Engine (check rules → send keystroke)
         ├─ idle    → Scheduler (match idle worker to next ready task → send context)
         └─ recovery signal → Recovery Pipeline:
               ├─ Snapshot (capture current project/task/progress state)
@@ -232,9 +301,9 @@ Terminal Monitor (polls every 2-5s)
 
 **Output Parser**: Regex-based detection of session state. Checks patterns in priority order: `waiting` (permission prompts, continue prompts) → `error` → `working` → `idle`. The `waiting` state is the key detection for Pain Point 1.4.
 
-**Auto-Approve Engine**: Configurable rules stored in the config table (e.g., `auto_approve.tool_calls`, `auto_approve.continue_work`). When a session enters `waiting` state, checks recent output against enabled rules. If matched, sends the configured keystroke via tmux `send-keys`. If no rule matches, creates a Decision for human review.
+**Auto-Approve Engine**: Configurable rules stored in the config table (e.g., `auto_approve.tool_calls`, `auto_approve.continue_work`). When a session enters `waiting` state, checks recent output against enabled rules. If matched, sends the configured keystroke via tmux `send-keys`.
 
-**Recovery Pipeline**: Detects `/compact`, restart, or crash events. Creates a state snapshot (task, project, recent activities), then sends a re-brief message to the session with current context. The worker can resume without manual intervention.
+**Recovery Pipeline**: Detects `/compact`, restart, or crash events. Creates a state snapshot (task, project, progress state), then sends a re-brief message to the session with current context. The worker can resume without manual intervention.
 
 **Scheduler**: When a worker becomes `idle`, checks for unassigned `ready` tasks using `get_next_assignments()`. Assigns the task, composes a context message (project + task + dependencies), and sends it to the worker.
 
@@ -249,7 +318,7 @@ Terminal Monitor (polls every 2-5s)
 | Backend | Python, FastAPI, SQLite (WAL mode), tmux |
 | Frontend | React, TypeScript, Vite, xterm.js |
 | Communication | REST API, WebSocket, tmux send-keys |
-| LLM | Anthropic API (for chat, planning, decision assistance) |
+| LLM | Anthropic API (for chat, planning) |
 
 ### 4.2 High-Level Diagram
 
@@ -268,8 +337,8 @@ Terminal Monitor (polls every 2-5s)
 │  │ sessions│ │ tmux ops  │ │ SQLite │ │ Anthropic │  │
 │  │ tasks   │ │ SSH       │ │        │ │ API       │  │
 │  │ projects│ │ capture   │ │        │ │           │  │
-│  │ PRs     │ │ send-keys │ │        │ │           │  │
-│  │decisions│ │ resize    │ │        │ │           │  │
+│  │ notifs  │ │ send-keys │ │        │ │           │  │
+│  │         │ │ resize    │ │        │ │           │  │
 │  └─────────┘ └──────────┘ └────────┘ └───────────┘  │
 └──────────────────────────────────────────────────────┘
           │                        ▲
@@ -298,18 +367,11 @@ Terminal Monitor (polls every 2-5s)
 - `GET/POST /api/tasks` — list (with filters) / create
 - `GET/PATCH/DELETE /api/tasks/:id` — get / update / remove
 
-**Decision queue**
-- `GET /api/decisions` — list pending
-- `POST /api/decisions` — create (worker requests decision)
-- `POST /api/decisions/:id/respond` — respond
-- `POST /api/decisions/:id/dismiss` — dismiss
-
-**Worker reporting** (called by Claude Code sessions)
-- `POST /api/report` — report event (progress, PR, error, completion)
-- `GET /api/guidance` — check for pending instructions
-
-**Activity log**
-- `GET /api/activities` — list events with filters
+**Notifications**
+- `GET /api/notifications` — list notifications
+- `POST /api/notifications` — create notification
+- `POST /api/notifications/:id/dismiss` — dismiss
+- `POST /api/notifications/dismiss-all` — dismiss all
 
 **Chat**
 - `POST /api/chat` — send message to orchestrator LLM brain
@@ -323,8 +385,7 @@ sessions       (id, name, host, work_dir, status, tmux_window, last_activity, se
 projects       (id, name, description, status, task_prefix, created_at)
 tasks          (id, project_id, title, description, status, priority, assigned_session_id, parent_task_id, task_index)
 context_items  (id, scope, project_id, title, description, content, category, source, metadata)
-decisions      (id, session_id, task_id, question, context, urgency, status, response)
-activities     (id, session_id, project_id, type, summary, details, created_at)
+notifications  (id, task_id, session_id, message, notification_type, link_url, created_at, dismissed, dismissed_at)
 ```
 
 **Settings**
@@ -339,8 +400,7 @@ activities     (id, session_id, project_id, type, summary, details, created_at)
 | Terminal streaming | Working | xterm.js via WebSocket, send-keys, resize |
 | Project/task CRUD | Working | Full REST API + UI |
 | Task indexing | Working | Human-readable keys (UTI-1, UTI-1-1), project prefixes |
-| Decision queue | Working | Create, respond, dismiss — UI + API |
-| Activity feed | Working | Chronological log of all events |
+| Notification system | Planned | Non-blocking notifications from workers |
 | Terminal monitor | Working | Polls tmux, detects state via regex |
 | Waiting detection | Working | Detects Claude Code permission/continue prompts |
 | Auto-approve engine | Working | Configurable rules, sends keystrokes automatically |
@@ -360,7 +420,7 @@ activities     (id, session_id, project_id, type, summary, details, created_at)
 1. Start orchestrator: `orchestrator` (opens dashboard at localhost:8093)
 2. Dashboard shows existing sessions, any orphaned from yesterday
 3. Create new sessions or adopt existing tmux windows
-4. Review overnight activity: PRs created, decisions pending
+4. Review overnight notifications and task progress
 
 ### 5.2 Assign Work
 
@@ -374,17 +434,9 @@ activities     (id, session_id, project_id, type, summary, details, created_at)
 
 1. Dashboard shows live status of all workers
 2. Click any session to see terminal output, task progress, PRs
-3. Decision queue shows items needing attention
-4. Activity feed shows chronological events
+3. Notifications show non-blocking items needing attention
 
-### 5.4 Handle Decisions
-
-1. Worker hits a decision point, reports via API
-2. Decision appears in dashboard queue with context
-3. I respond (or auto-approval rules handle trivial ones)
-4. Response is routed back to the worker
-
-### 5.5 Worker Recovery
+### 5.4 Worker Recovery
 
 1. Worker crashes or compacts context
 2. Orchestrator detects via heartbeat / tmux monitoring
@@ -426,7 +478,7 @@ activities     (id, session_id, project_id, type, summary, details, created_at)
 - **Cross-session communication**: orchestrator relays information between workers
 - **Execution replay**: step through project history for debugging and learning
 - **Cost tracking**: attribute API costs by project, task, and worker
-- **Decision pattern learning**: analyze history to auto-approve repeated decision types
+- **Auto-approve pattern learning**: analyze history to auto-approve repeated prompt types
 
 ---
 
@@ -438,7 +490,7 @@ activities     (id, session_id, project_id, type, summary, details, created_at)
 | **MP** | Multiproduct — LinkedIn's term for a repository/service |
 | **Worker** | A Claude Code session (terminal) that executes tasks |
 | **Session** | Synonymous with Worker in the orchestrator context |
-| **Decision** | A question from a worker requiring human input |
+| **Notification** | Non-blocking information surfaced by workers for user attention |
 | **Re-brief** | Re-sending current task context to a session after context loss |
 | **MCP** | Model Context Protocol — structured communication for Claude Code |
 | **Skill** | Custom Claude Code slash command (e.g., `/orchestrator`) |
@@ -456,3 +508,4 @@ activities     (id, session_id, project_id, type, summary, details, created_at)
 | 2.2 | 2026-02-08 | Added Section 3.6 (Worker CLI tools: orch-task, orch-subtask, orch-worker, orch-context), Section 3.7 (Lifecycle Management: cleanup, cascading deletes, worker reuse) |
 | 2.3 | 2026-02-09 | Added detailed worker status states and Claude Code hooks-based automatic status management |
 | 2.4 | 2026-02-08 | Removed PR tracking (not useful). Added context scopes (global/brain/project), description field, instruction category. Task priority changed from numeric to H/M/L. Human-readable task keys (UTI-1). |
+| 2.5 | 2026-02-09 | Added Section 3.8 (Notification System): non-blocking notifications for workers/brain to surface information requiring user attention without stopping progress. Includes `orch-notify` CLI, API endpoints, and UI requirements. |

@@ -723,6 +723,111 @@ curl -s -X POST "$API_BASE/api/sessions/$worker_id/send" \\
     -d "{{\\"message\\": \\"$message\\"}}" | pp
 '''
 
+# ============================================================================
+# orch-notifications: Manage notifications
+# ============================================================================
+BRAIN_NOTIFICATIONS_SCRIPT = BRAIN_SCRIPT_HEADER + '''
+show_help() {{
+    echo "Usage: orch-notifications <command> [options]"
+    echo ""
+    echo "Commands:"
+    echo "  list [--all] [--task-id ID]   List notifications"
+    echo "  dismiss <id>                  Dismiss a notification"
+    echo "  dismiss-all                   Dismiss all notifications"
+    echo "  create [options]              Create a notification"
+    echo ""
+    echo "List Options:"
+    echo "  --all                         Include dismissed notifications"
+    echo "  --task-id ID                  Filter by task ID"
+    echo ""
+    echo "Create Options:"
+    echo "  --message MSG                 Notification message (required)"
+    echo "  --task-id ID                  Link to task"
+    echo "  --type TYPE                   Type: info|pr_comment|warning (default: info)"
+    echo "  --link URL                    External link"
+    echo ""
+    echo "Examples:"
+    echo "  orch-notifications list"
+    echo "  orch-notifications list --all"
+    echo "  orch-notifications list --task-id abc123"
+    echo "  orch-notifications dismiss xyz789"
+    echo "  orch-notifications dismiss-all"
+    echo "  orch-notifications create --message \\"Review needed\\" --task-id abc123 --type pr_comment"
+}}
+
+cmd_list() {{
+    local all="" task_id=""
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --all) all="true"; shift ;;
+            --task-id) task_id="$2"; shift 2 ;;
+            *) echo "Unknown option: $1" >&2; exit 1 ;;
+        esac
+    done
+    
+    local url="$API_BASE/api/notifications"
+    local sep="?"
+    if [[ -z "$all" ]]; then
+        url="$url${{sep}}dismissed=false"
+        sep="&"
+    fi
+    [[ -n "$task_id" ]] && url="$url${{sep}}task_id=$task_id"
+    
+    curl -s "$url" | pp
+}}
+
+cmd_dismiss() {{
+    local id="$1"
+    if [[ -z "$id" ]]; then
+        echo "Error: Notification ID required" >&2
+        exit 1
+    fi
+    curl -s -X POST "$API_BASE/api/notifications/$id/dismiss" | pp
+}}
+
+cmd_dismiss_all() {{
+    curl -s -X POST "$API_BASE/api/notifications/dismiss-all" \\
+        -H 'Content-Type: application/json' \\
+        -d '{{}}' | pp
+}}
+
+cmd_create() {{
+    local message="" task_id="" type="info" link=""
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --message) message="$2"; shift 2 ;;
+            --task-id) task_id="$2"; shift 2 ;;
+            --type) type="$2"; shift 2 ;;
+            --link) link="$2"; shift 2 ;;
+            *) echo "Unknown option: $1" >&2; exit 1 ;;
+        esac
+    done
+    
+    if [[ -z "$message" ]]; then
+        echo "Error: --message is required" >&2
+        exit 1
+    fi
+    
+    local json="{{\\"message\\": \\"$message\\", \\"notification_type\\": \\"$type\\""
+    [[ -n "$task_id" ]] && json="$json, \\"task_id\\": \\"$task_id\\""
+    [[ -n "$link" ]] && json="$json, \\"link_url\\": \\"$link\\""
+    json="$json}}"
+    
+    curl -s -X POST "$API_BASE/api/notifications" \\
+        -H 'Content-Type: application/json' \\
+        -d "$json" | pp
+}}
+
+case "$1" in
+    list) shift; cmd_list "$@" ;;
+    dismiss) shift; cmd_dismiss "$@" ;;
+    dismiss-all) shift; cmd_dismiss_all "$@" ;;
+    create) shift; cmd_create "$@" ;;
+    -h|--help|"") show_help ;;
+    *) echo "Unknown command: $1" >&2; show_help; exit 1 ;;
+esac
+'''
+
 
 def generate_brain_scripts(
     brain_dir: str,
@@ -746,6 +851,7 @@ def generate_brain_scripts(
         "orch-tasks": (BRAIN_TASKS_SCRIPT, "Manage tasks"),
         "orch-ctx": (BRAIN_CONTEXT_SCRIPT, "Manage context items"),
         "orch-send": (BRAIN_SEND_SCRIPT, "Send messages to workers"),
+        "orch-notifications": (BRAIN_NOTIFICATIONS_SCRIPT, "Manage notifications"),
     }
     
     for script_name, (template, description) in scripts.items():

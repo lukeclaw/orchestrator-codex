@@ -82,3 +82,15 @@ export interface ContextItem {
   created_at: string
   updated_at: string
 }
+
+export interface Notification {
+  id: string
+  task_id: string | null
+  session_id: string | null
+  message: string
+  notification_type: 'info' | 'pr_comment' | 'warning'
+  link_url: string | null
+  created_at: string
+  dismissed: boolean
+  dismissed_at: string | null
+}

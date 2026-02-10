@@ -620,12 +620,40 @@ def reconnect_session(session_id: str, request: Request, db=Depends(get_db)):
 
 
 def _check_tunnel_alive(tmux_sess: str, tunnel_win: str) -> bool:
-    """Check if the tunnel window has an active SSH connection."""
+    """Check if the tunnel window has an active SSH tunnel running.
+    
+    Sends a test command to check if the SSH process is still alive.
+    A dead tunnel will show error messages or no response.
+    """
     try:
-        output = capture_output(tmux_sess, tunnel_win, lines=5)
-        # If we can capture output and it doesn't show "Connection closed", it's likely alive
-        return output and "Connection closed" not in output and "Connection refused" not in output
-    except Exception:
+        # First check if window exists and has content
+        output = capture_output(tmux_sess, tunnel_win, lines=10)
+        if not output:
+            logger.info("Tunnel check: no output from window")
+            return False
+        
+        # Check for common SSH failure indicators
+        error_indicators = [
+            "Connection closed",
+            "Connection refused", 
+            "Connection timed out",
+            "Connection reset",
+            "broken pipe",
+            "Host key verification failed",
+            "Permission denied",
+        ]
+        output_lower = output.lower()
+        for indicator in error_indicators:
+            if indicator.lower() in output_lower:
+                logger.info("Tunnel check: found error indicator '%s'", indicator)
+                return False
+        
+        # If the window shows ssh command running (no shell prompt), tunnel is likely alive
+        # A dead tunnel would typically show an error or return to shell prompt
+        logger.info("Tunnel check: appears alive")
+        return True
+    except Exception as e:
+        logger.warning("Tunnel check failed: %s", e)
         return False
 
 
@@ -705,8 +733,9 @@ def _build_system_prompt(session_id: str) -> str | None:
     """Build the system prompt from template, same as new worker setup."""
     import shlex
     
-    source_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-    template_path = os.path.join(source_root, "prompts", "worker_claude_template.md")
+    # Path: sessions.py -> routes -> api -> orchestrator -> orchestrator (project root)
+    project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+    template_path = os.path.join(project_root, "prompts", "worker_claude_template.md")
     
     if not os.path.exists(template_path):
         logger.warning("Worker template not found at %s", template_path)
@@ -731,16 +760,20 @@ def _reconnect_rdev_worker(conn, session, tmux_sess: str, tmux_win: str, api_por
     
     # 1. Check/restore tunnel
     tunnel_alive = False
+    logger.info("Reconnect %s: checking tunnel (tunnel_pane=%s)", session.name, session.tunnel_pane)
     if session.tunnel_pane:
         if ":" in session.tunnel_pane:
             t_sess, t_win = session.tunnel_pane.split(":", 1)
         else:
             t_sess, t_win = tmux_sess, session.tunnel_pane
         tunnel_alive = _check_tunnel_alive(t_sess, t_win)
-        logger.info("Tunnel for %s alive: %s", session.name, tunnel_alive)
+        logger.info("Reconnect %s: tunnel alive=%s", session.name, tunnel_alive)
+    else:
+        logger.info("Reconnect %s: no tunnel_pane stored, will create new tunnel", session.name)
     
     if not tunnel_alive:
-        logger.info("Re-establishing tunnel for %s", session.name)
+        logger.info("Reconnect %s: re-establishing tunnel", session.name)
+        # Kill old tunnel window if it exists
         if session.tunnel_pane:
             try:
                 if ":" in session.tunnel_pane:
@@ -748,14 +781,19 @@ def _reconnect_rdev_worker(conn, session, tmux_sess: str, tmux_win: str, api_por
                 else:
                     t_sess, t_win = tmux_sess, session.tunnel_pane
                 kill_window(t_sess, t_win)
-            except Exception:
-                pass
+                logger.info("Reconnect %s: killed old tunnel window %s", session.name, session.tunnel_pane)
+            except Exception as e:
+                logger.info("Reconnect %s: failed to kill old tunnel window: %s", session.name, e)
         
+        # Create new tunnel
         from orchestrator.terminal.manager import create_window
+        logger.info("Reconnect %s: creating tunnel window %s", session.name, tunnel_name)
         create_window(tmux_sess, tunnel_name)
+        logger.info("Reconnect %s: setting up SSH tunnel to %s", session.name, session.host)
         ssh.setup_rdev_tunnel(tmux_sess, tunnel_name, session.host, api_port, api_port)
         time.sleep(3)
         repo.update_session(conn, session.id, tunnel_pane=f"{tmux_sess}:{tunnel_name}")
+        logger.info("Reconnect %s: tunnel created and saved", session.name)
     
     # 2. Check/restore SSH connection
     ssh_alive = _check_ssh_alive(tmux_sess, tmux_win, session.host)
@@ -837,8 +875,9 @@ def _check_claude_process_local(session_id: str) -> tuple[bool, str]:
     
     try:
         # Run ps | grep directly on local machine
+        # Just check for the unique session ID in any claude process
         result = subprocess.run(
-            ["bash", "-c", f"ps aux | grep -v grep | grep 'session-id {session_id}'"],
+            ["bash", "-c", f"ps aux | grep claude | grep -v grep | grep '{session_id}'"],
             capture_output=True,
             text=True,
             timeout=5
@@ -882,7 +921,7 @@ def _check_claude_process_rdev(host: str, session_id: str) -> tuple[bool, str]:
             return True, f"SSH check inconclusive: {stderr}"
         
         # Check if our session ID is in the process list
-        if f"session-id {session_id}" in result.stdout:
+        if session_id in result.stdout and "claude" in result.stdout.lower():
             return True, "Claude process found via SSH"
         else:
             return False, "Claude process not found via SSH"

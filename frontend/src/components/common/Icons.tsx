@@ -200,6 +200,33 @@ export function IconStop(props: IconProps) {
   )
 }
 
+export function IconBell(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
+      <path d="M13.73 21a2 2 0 0 1-3.46 0" />
+    </Icon>
+  )
+}
+
+export function IconCheck(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <polyline points="20 6 9 17 4 12" />
+    </Icon>
+  )
+}
+
+export function IconExternalLink(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+      <polyline points="15 3 21 3 21 9" />
+      <line x1="10" y1="14" x2="21" y2="3" />
+    </Icon>
+  )
+}
+
 export function IconLogo({ size = 24 }: { size?: number }) {
   return (
     <svg

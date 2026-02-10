@@ -101,6 +101,35 @@ orch-subtask update --id SUBTASK_UUID --add-link "https://github.com/org/repo/pu
 orch-subtask update --id SUBTASK_UUID --status done --add-link "https://github.com/org/repo/pull/123" --add-link-tag "PR"
 ```
 
+### Notifications (`orch-notify`)
+
+Use notifications to inform the user about **non-blocking but valuable information**. The user will see these in the dashboard and can dismiss them when addressed.
+
+**When to use notifications:**
+- PR was merged but a reviewer left a question worth addressing later
+- Found something unexpected but proceeded safely
+- Information the user should know but doesn't need to act on immediately
+
+**When NOT to use notifications:**
+- Routine status updates (use `orch-task update --status` instead)
+- When you're blocked (just explain the issue — orchestrator will notice)
+- Progress reports (use task notes or subtask updates)
+
+```bash
+# Basic notification
+orch-notify "PR merged, but reviewer asked about error handling approach"
+
+# With type (info, pr_comment, warning)
+orch-notify "Found potential memory issue in cache module" --type warning
+
+# With external link
+orch-notify "PR #123 merged, reviewer had a question about auth flow" \
+  --type pr_comment \
+  --link "https://github.com/org/repo/pull/123#discussion_r123456"
+```
+
+**Use sparingly.** Notifications are for valuable information only — the user doesn't have unlimited time to review them.
+
 ### Project Context (`orch-context`)
 
 Read project context before starting work. Use a **2-step lookup** to save context window:

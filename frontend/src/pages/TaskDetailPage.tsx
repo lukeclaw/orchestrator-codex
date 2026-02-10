@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { useParams, Link, useNavigate } from 'react-router-dom'
 import { useApp } from '../context/AppContext'
 import { api } from '../api/client'
-import type { Task, TaskLink } from '../api/types'
+import type { Task, TaskLink, Notification } from '../api/types'
 import { IconArrowLeft } from '../components/common/Icons'
 import ConfirmPopover from '../components/common/ConfirmPopover'
 import TagDropdown from '../components/common/TagDropdown'
@@ -55,6 +55,9 @@ export default function TaskDetailPage() {
   const [showAddSubtask, setShowAddSubtask] = useState(false)
   const [newSubtaskTitle, setNewSubtaskTitle] = useState('')
   const [creatingSubtask, setCreatingSubtask] = useState(false)
+  const [notifications, setNotifications] = useState<Notification[]>([])
+  const [notificationsExpanded, setNotificationsExpanded] = useState(true)
+  const [showAssignModal, setShowAssignModal] = useState(false)
 
   // Reset all editing states when navigating to a different task
   useEffect(() => {
@@ -67,6 +70,7 @@ export default function TaskDetailPage() {
     setNewSubtaskTitle('')
     setNotesExpanded(true)
     setSubtasksExpanded(true)
+    setShowAssignModal(false)
   }, [id])
 
   useEffect(() => {
@@ -82,6 +86,11 @@ export default function TaskDetailPage() {
       api<Task[]>(`/api/tasks?parent_task_id=${task.id}&include_subtask_stats=false`)
         .then(setSubtasks)
         .catch(() => setSubtasks([]))
+      
+      // Fetch notifications for this task
+      api<Notification[]>(`/api/notifications?task_id=${task.id}&dismissed=false`)
+        .then(setNotifications)
+        .catch(() => setNotifications([]))
     }
   }, [task])
 
@@ -248,6 +257,28 @@ export default function TaskDetailPage() {
       }
     } finally {
       setDeleting(false)
+    }
+  }
+
+  const handleDismissNotification = async (notificationId: string) => {
+    try {
+      await api(`/api/notifications/${notificationId}/dismiss`, { method: 'POST' })
+      setNotifications(prev => prev.filter(n => n.id !== notificationId))
+    } catch (err) {
+      console.error('Failed to dismiss notification:', err)
+    }
+  }
+
+  const formatNotificationTime = (dateStr: string) => {
+    const d = new Date(dateStr)
+    return d.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+  }
+
+  const getNotificationTypeIcon = (type: string) => {
+    switch (type) {
+      case 'pr_comment': return '💬'
+      case 'warning': return '⚠️'
+      default: return 'ℹ️'
     }
   }
 
@@ -595,6 +626,45 @@ export default function TaskDetailPage() {
             )}
           </div>
 
+          {/* Notifications Card */}
+          {notifications.length > 0 && (
+            <div className="tdp-card tdp-notifications-card">
+              <div className="tdp-card-header">
+                <h3 className="clickable" onClick={() => setNotificationsExpanded(!notificationsExpanded)}>
+                  <span className={`expand-icon ${notificationsExpanded ? 'expanded' : ''}`}>▶</span>
+                  Notifications
+                  <span className="count notification-count">({notifications.length})</span>
+                </h3>
+              </div>
+              {notificationsExpanded && (
+                <div className="tdp-notifications-list">
+                  {notifications.map(n => (
+                    <div key={n.id} className={`tdp-notification-item ${n.notification_type}`}>
+                      <span className="notification-icon">{getNotificationTypeIcon(n.notification_type)}</span>
+                      <div className="notification-content">
+                        <div className="notification-header">
+                          <span className={`notification-type ${n.notification_type}`}>{n.notification_type}</span>
+                          <span className="notification-time">{formatNotificationTime(n.created_at)}</span>
+                        </div>
+                        <p className="notification-message">{n.message}</p>
+                        <div className="notification-actions">
+                          {n.link_url && (
+                            <a href={n.link_url} target="_blank" rel="noopener noreferrer" className="btn btn-link btn-sm">
+                              Open Link ↗
+                            </a>
+                          )}
+                          <button className="btn btn-secondary btn-sm" onClick={() => handleDismissNotification(n.id)}>
+                            Dismiss
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
         </main>
 
         {/* Sidebar */}
@@ -629,12 +699,73 @@ export default function TaskDetailPage() {
             {!isSubtask && (
               <div className="sidebar-field">
                 <label>Assigned</label>
-                <select value={assignedSession} onChange={e => handleAssignChange(e.target.value)} disabled={!isEditable}>
-                  <option value="">Unassigned</option>
-                  {sessions.filter(s => s.session_type === 'worker').map(s => (
-                    <option key={s.id} value={s.id}>{s.name}</option>
-                  ))}
-                </select>
+                <div className="tdp-worker-field">
+                  {assignedWorker ? (
+                    <Link to={`/workers/${assignedWorker.id}`} className="tdp-worker-link">
+                      <span className={`worker-status-dot status-${assignedWorker.status}`} />
+                      {assignedWorker.name}
+                    </Link>
+                  ) : (
+                    <span className="sidebar-empty">Unassigned</span>
+                  )}
+                  {isEditable && (
+                    <button 
+                      className="tdp-assign-btn" 
+                      onClick={() => setShowAssignModal(true)}
+                      title={assignedWorker ? 'Reassign worker' : 'Assign worker'}
+                    >
+                      {assignedWorker ? 'Reassign' : 'Assign'}
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Worker Assignment Modal */}
+            {showAssignModal && (
+              <div className="tdp-modal-overlay" onClick={() => setShowAssignModal(false)}>
+                <div className="tdp-modal" onClick={e => e.stopPropagation()}>
+                  <div className="tdp-modal-header">
+                    <h3>{assignedWorker ? 'Reassign Worker' : 'Assign Worker'}</h3>
+                    <button className="tdp-modal-close" onClick={() => setShowAssignModal(false)}>×</button>
+                  </div>
+                  <div className="tdp-modal-hint">
+                    ⚡ After assignment, the worker will immediately start working on this task.
+                  </div>
+                  <div className="tdp-modal-body">
+                    <div className="tdp-worker-list">
+                      {assignedSession && (
+                        <button
+                          className="tdp-worker-option unassign"
+                          onClick={async () => {
+                            await handleAssignChange('')
+                            setShowAssignModal(false)
+                          }}
+                        >
+                          <span className="worker-status-dot" />
+                          <span className="worker-name">Unassign</span>
+                        </button>
+                      )}
+                      {sessions.filter(s => s.session_type === 'worker').map(s => (
+                        <button
+                          key={s.id}
+                          className={`tdp-worker-option ${s.id === assignedSession ? 'selected' : ''}`}
+                          onClick={async () => {
+                            if (s.id !== assignedSession) {
+                              await handleAssignChange(s.id)
+                            }
+                            setShowAssignModal(false)
+                          }}
+                        >
+                          <span className={`worker-status-dot status-${s.status}`} />
+                          <span className="worker-name">{s.name}</span>
+                          <span className={`worker-status-label status-${s.status}`}>{s.status}</span>
+                          {s.id === assignedSession && <span className="worker-current">Current</span>}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
               </div>
             )}
 

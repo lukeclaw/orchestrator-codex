@@ -12,7 +12,7 @@ from orchestrator.state.models import Session
 from orchestrator.state.repositories import sessions as sessions_repo
 from orchestrator.terminal import manager as tmux
 from orchestrator.terminal import ssh
-from orchestrator.worker.cli_scripts import generate_worker_scripts, generate_hooks_settings, get_path_export_command
+from orchestrator.worker.cli_scripts import generate_worker_scripts, generate_hooks_settings, get_path_export_command, WORKER_SCRIPT_NAMES
 
 logger = logging.getLogger(__name__)
 
@@ -168,8 +168,8 @@ def setup_rdev_worker(
         tmux.send_keys(tmux_session, name, f"mkdir -p {remote_tmp_dir}/bin", enter=True)
         time.sleep(0.5)
         
-        # Copy each script file to remote
-        for script_name in ["orch-task", "orch-subtask", "orch-worker", "orch-context"]:
+        # Copy each script file to remote (use WORKER_SCRIPT_NAMES for single source of truth)
+        for script_name in WORKER_SCRIPT_NAMES:
             local_path = os.path.join(bin_dir, script_name)
             if os.path.exists(local_path):
                 with open(local_path) as f:

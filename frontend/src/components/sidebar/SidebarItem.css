@@ -84,3 +84,12 @@
   border-radius: 50%;
   background: var(--accent);
 }
+
+.sidebar-badge.warning {
+  background: rgba(245, 158, 11, 0.15);
+  color: #f59e0b;
+}
+
+.sidebar-badge-dot.warning {
+  background: #f59e0b;
+}

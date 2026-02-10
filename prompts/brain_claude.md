@@ -103,6 +103,32 @@ orch-ctx delete <id>
 orch-send <worker-id> "Your instructions here"
 ```
 
+### orch-notifications — Manage notifications
+
+Notifications are non-blocking information surfaced by workers that needs user attention. Workers create these when they have valuable info but aren't blocked (e.g., PR merged but reviewer had a question).
+
+```bash
+# List active (non-dismissed) notifications
+orch-notifications list
+
+# List all notifications including dismissed
+orch-notifications list --all
+
+# List notifications for a specific task
+orch-notifications list --task-id <id>
+
+# Dismiss a notification
+orch-notifications dismiss <id>
+
+# Dismiss all notifications
+orch-notifications dismiss-all
+
+# Create a notification (usually done by workers, but brain can too)
+orch-notifications create --message "Review needed on PR #123" --task-id <id> --type pr_comment
+```
+
+When monitoring workers, check notifications periodically — they may contain important follow-ups that workers flagged but didn't block on.
+
 ## Direct tmux Access
 
 For advanced operations, you can interact with workers directly:

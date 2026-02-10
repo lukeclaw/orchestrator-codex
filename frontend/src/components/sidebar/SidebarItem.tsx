@@ -7,11 +7,12 @@ interface Props {
   icon: ReactNode
   label: string
   badge?: number
+  badgeVariant?: 'default' | 'warning'
   collapsed: boolean
   shortcut?: string
 }
 
-export default function SidebarItem({ to, icon, label, badge, collapsed, shortcut }: Props) {
+export default function SidebarItem({ to, icon, label, badge, badgeVariant = 'default', collapsed, shortcut }: Props) {
   const tooltip = collapsed
     ? `${label}${shortcut ? ` (G ${shortcut})` : ''}`
     : shortcut ? `G ${shortcut}` : undefined
@@ -28,10 +29,10 @@ export default function SidebarItem({ to, icon, label, badge, collapsed, shortcu
       <span className="sidebar-icon">{icon}</span>
       {!collapsed && <span className="sidebar-label">{label}</span>}
       {!collapsed && badge !== undefined && badge > 0 && (
-        <span className="sidebar-badge">{badge}</span>
+        <span className={`sidebar-badge ${badgeVariant}`}>{badge}</span>
       )}
       {collapsed && badge !== undefined && badge > 0 && (
-        <span className="sidebar-badge-dot" />
+        <span className={`sidebar-badge-dot ${badgeVariant}`} />
       )}
     </NavLink>
   )
