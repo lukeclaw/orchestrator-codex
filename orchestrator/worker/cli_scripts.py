@@ -1020,8 +1020,17 @@ exit 0
     # Make executable
     os.chmod(hook_script_path, os.stat(hook_script_path).st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
     
-    # Create settings.json with hooks configuration
+    # Create settings.json with hooks configuration and worker-optimized defaults
+    # These settings optimize workers for orchestrator use (brain monitoring, etc.)
     settings = {
+        # Disable features that clutter terminal output or confuse brain
+        "env": {
+            "CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION": "false"  # Auto-populated suggestions confuse brain
+        },
+        "spinnerTipsEnabled": False,           # Disable tips during spinner
+        "terminalProgressBarEnabled": False,   # Cleaner terminal for capture
+        "prefersReducedMotion": True,          # Less visual noise
+        "autoUpdatesChannel": "stable",        # Don't auto-update during work
         "hooks": {
             "SessionStart": [
                 {

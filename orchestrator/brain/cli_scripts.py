@@ -67,13 +67,16 @@ show_help() {{
     echo "Usage: orch-workers <command> [options]"
     echo ""
     echo "Commands:"
-    echo "  list                          List all workers"
+    echo "  list [options]                List all workers"
     echo "  rdevs [--refresh]             List available rdev instances"
     echo "  show <id>                     Show worker details"
     echo "  create [options]              Create a new worker"
     echo "  delete <id>                   Delete a worker"
     echo "  stop <id>                     Stop worker: Escape, /clear, unassign task, set idle"
     echo "  reconnect <id>                Reconnect a disconnected worker"
+    echo ""
+    echo "List Options:"
+    echo "  --status STATUS               Filter by status (idle, working, waiting, error, etc.)"
     echo ""
     echo "Create Options:"
     echo "  --name NAME                   Worker name (required)"
@@ -83,6 +86,7 @@ show_help() {{
     echo ""
     echo "Examples:"
     echo "  orch-workers list"
+    echo "  orch-workers list --status waiting"
     echo "  orch-workers rdevs                # List available rdev VMs"
     echo "  orch-workers rdevs --refresh     # Force refresh rdev list"
     echo "  orch-workers show abc123"
@@ -93,7 +97,18 @@ show_help() {{
 }}
 
 cmd_list() {{
-    curl -s "$API_BASE/api/sessions?session_type=worker" | pp
+    local status=""
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --status) status="$2"; shift 2 ;;
+            *) echo "Unknown option: $1" >&2; exit 1 ;;
+        esac
+    done
+    
+    local url="$API_BASE/api/sessions?session_type=worker"
+    [[ -n "$status" ]] && url="$url&status=$status"
+    
+    curl -s "$url" | pp
 }}
 
 cmd_rdevs() {{
@@ -201,10 +216,14 @@ show_help() {{
     echo "Usage: orch-projects <command> [options]"
     echo ""
     echo "Commands:"
-    echo "  list                          List all projects"
+    echo "  list [options]                List all projects"
     echo "  show <id>                     Show project details"
     echo "  create [options]              Create a new project"
     echo "  update <id> [options]         Update a project"
+    echo ""
+    echo "List Options:"
+    echo "  --status STATUS               Filter by status (active|completed|archived)"
+    echo "  --no-stats                    Exclude task/worker stats from output"
     echo ""
     echo "Create/Update Options:"
     echo "  --name NAME                   Project name (required for create)"
@@ -214,12 +233,25 @@ show_help() {{
     echo ""
     echo "Examples:"
     echo "  orch-projects list"
+    echo "  orch-projects list --status active"
     echo "  orch-projects create --name \\"Auth Migration\\" --description \\"Migrate to OAuth 2.0\\""
     echo "  orch-projects update abc123 --status completed"
 }}
 
 cmd_list() {{
-    curl -s "$API_BASE/api/projects" | pp
+    local status="" include_stats="true"
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --status) status="$2"; shift 2 ;;
+            --no-stats) include_stats="false"; shift ;;
+            *) echo "Unknown option: $1" >&2; exit 1 ;;
+        esac
+    done
+    
+    local url="$API_BASE/api/projects?include_stats=$include_stats"
+    [[ -n "$status" ]] && url="$url&status=$status"
+    
+    curl -s "$url" | pp
 }}
 
 cmd_show() {{
@@ -872,7 +904,7 @@ show_help() {{
     echo "Usage: orch-notifications <command> [options]"
     echo ""
     echo "Commands:"
-    echo "  list [--all] [--task-id ID]   List notifications"
+    echo "  list [options]                List notifications"
     echo "  dismiss <id>                  Dismiss a notification"
     echo "  dismiss-all                   Dismiss all notifications"
     echo "  delete <id>                   Permanently delete a notification"
@@ -881,10 +913,13 @@ show_help() {{
     echo "List Options:"
     echo "  --all                         Include dismissed notifications"
     echo "  --task-id ID                  Filter by task ID"
+    echo "  --session-id ID               Filter by session/worker ID"
+    echo "  --limit N                     Limit number of results"
     echo ""
     echo "Create Options:"
     echo "  --message MSG                 Notification message (required)"
     echo "  --task-id ID                  Link to task"
+    echo "  --session-id ID               Link to session/worker"
     echo "  --type TYPE                   Type: info|pr_comment|warning (default: info)"
     echo "  --link URL                    External link"
     echo ""
@@ -892,17 +927,20 @@ show_help() {{
     echo "  orch-notifications list"
     echo "  orch-notifications list --all"
     echo "  orch-notifications list --task-id abc123"
+    echo "  orch-notifications list --session-id worker123 --limit 10"
     echo "  orch-notifications dismiss xyz789"
     echo "  orch-notifications dismiss-all"
     echo "  orch-notifications create --message \\"Review needed\\" --task-id abc123 --type pr_comment"
 }}
 
 cmd_list() {{
-    local all="" task_id=""
+    local all="" task_id="" session_id="" limit=""
     while [[ $# -gt 0 ]]; do
         case "$1" in
             --all) all="true"; shift ;;
             --task-id) task_id="$2"; shift 2 ;;
+            --session-id) session_id="$2"; shift 2 ;;
+            --limit) limit="$2"; shift 2 ;;
             *) echo "Unknown option: $1" >&2; exit 1 ;;
         esac
     done
@@ -913,7 +951,9 @@ cmd_list() {{
         url="$url${{sep}}dismissed=false"
         sep="&"
     fi
-    [[ -n "$task_id" ]] && url="$url${{sep}}task_id=$task_id"
+    [[ -n "$task_id" ]] && url="$url${{sep}}task_id=$task_id" && sep="&"
+    [[ -n "$session_id" ]] && url="$url${{sep}}session_id=$session_id" && sep="&"
+    [[ -n "$limit" ]] && url="$url${{sep}}limit=$limit"
     
     curl -s "$url" | pp
 }}
@@ -934,11 +974,12 @@ cmd_dismiss_all() {{
 }}
 
 cmd_create() {{
-    local message="" task_id="" type="info" link=""
+    local message="" task_id="" session_id="" type="info" link=""
     while [[ $# -gt 0 ]]; do
         case "$1" in
             --message) message="$2"; shift 2 ;;
             --task-id) task_id="$2"; shift 2 ;;
+            --session-id) session_id="$2"; shift 2 ;;
             --type) type="$2"; shift 2 ;;
             --link) link="$2"; shift 2 ;;
             *) echo "Unknown option: $1" >&2; exit 1 ;;
@@ -953,6 +994,7 @@ cmd_create() {{
     local escaped_message=$(json_encode "$message")
     local json="{{\"message\": \"$escaped_message\", \"notification_type\": \"$type\""
     [[ -n "$task_id" ]] && json="$json, \"task_id\": \"$task_id\""
+    [[ -n "$session_id" ]] && json="$json, \"session_id\": \"$session_id\""
     if [[ -n "$link" ]]; then
         local escaped_link=$(json_encode "$link")
         json="$json, \"link_url\": \"$escaped_link\""

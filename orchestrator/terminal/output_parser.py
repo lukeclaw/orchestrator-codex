@@ -18,7 +18,6 @@ class EventType(Enum):
     BUILD_SUCCESS = "build_success"
     BUILD_FAILURE = "build_failure"
     ERROR = "error"
-    COMPACT = "compact"
 
 
 @dataclass
@@ -74,12 +73,6 @@ ERROR_PATTERNS = [
     re.compile(r"ENOENT|EPERM|EACCES"),
 ]
 
-# Context compaction (Claude Code specific)
-COMPACT_PATTERNS = [
-    re.compile(r"/compact", re.IGNORECASE),
-    re.compile(r"Context.*compacted", re.IGNORECASE),
-    re.compile(r"conversation.*summarized", re.IGNORECASE),
-]
 
 
 
@@ -134,17 +127,6 @@ def parse_output(output: str) -> list[OutputEvent]:
         if match:
             events.append(OutputEvent(
                 event_type=EventType.BUILD_FAILURE,
-                data={"match": match.group(0)},
-                raw_match=match.group(0),
-            ))
-            break
-
-    # Check for compaction
-    for pattern in COMPACT_PATTERNS:
-        match = pattern.search(output)
-        if match:
-            events.append(OutputEvent(
-                event_type=EventType.COMPACT,
                 data={"match": match.group(0)},
                 raw_match=match.group(0),
             ))

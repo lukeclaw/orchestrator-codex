@@ -22,7 +22,6 @@ def seed_config(conn):
         ("approval_policy.send_message", True, "Require approval before sending messages to sessions", "approval"),
         ("approval_policy.assign_task", True, "Require approval before assigning tasks", "approval"),
         ("approval_policy.create_task", False, "Require approval before creating tasks", "approval"),
-        ("approval_policy.rebrief_session", True, "Require approval before re-briefing sessions", "approval"),
         ("approval_policy.alert_user", False, "Require approval before alerting user", "approval"),
 
         # Context selection weights
@@ -53,35 +52,11 @@ def seed_prompt_templates(conn):
     """Seed default LLM prompt templates."""
     # Remove legacy unused templates (direct SQL since no delete function)
     conn.execute(
-        "DELETE FROM prompt_templates WHERE name IN (?, ?, ?)",
-        ("system_prompt", "status_query", "task_planning"),
+        "DELETE FROM prompt_templates WHERE name IN (?, ?, ?, ?)",
+        ("system_prompt", "status_query", "task_planning", "rebrief"),
     )
     conn.commit()
-
-    # Only keep rebrief template (used by recovery/rebrief.py)
-    templates = [
-        (
-            "rebrief",
-            """You previously lost context (due to /compact or restart). Here is your current assignment:
-
-## Session: ${session_name}
-## Current Task: ${task_summary}
-
-## Files You Were Working On:
-${file_paths}
-
-## Last Known State:
-${last_known_state}
-
-Please acknowledge this context and continue your work. If you need any clarification, ask and wait for guidance.""",
-            "Template for re-briefing sessions after context loss",
-        ),
-    ]
-
-    for name, template, description in templates:
-        existing = templates_repo.get_prompt_template(conn, name)
-        if existing is None:
-            templates_repo.create_prompt_template(conn, name, template, description)
+    # No prompt templates currently needed - all prompts are stored in files
 
 
 def seed_skill_templates(conn):

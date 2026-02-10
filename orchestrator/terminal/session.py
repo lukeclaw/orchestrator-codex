@@ -112,6 +112,89 @@ def send_to_session(
     return tmux.send_keys(tmux_session, name, "", enter=True)
 
 
+def _get_screen_session_name(session_id: str) -> str:
+    """Get the screen session name for a worker session."""
+    return f"claude-{session_id}"
+
+
+def _wait_for_command_completion(tmux_session: str, window_name: str, timeout: int = 60) -> bool:
+    """Wait for a command to complete by checking for shell prompt return.
+    
+    Uses a marker command to detect when the previous command has finished.
+    Returns True if command completed within timeout, False otherwise.
+    """
+    import random
+    marker = f"__CMD_DONE_{random.randint(10000, 99999)}__"
+    
+    # Send echo marker - this will only execute after previous command completes
+    tmux.send_keys(tmux_session, window_name, f"echo {marker}", enter=True)
+    
+    # Poll for marker in output
+    start_time = time.time()
+    while time.time() - start_time < timeout:
+        time.sleep(2)
+        output = tmux.capture_output(tmux_session, window_name, lines=10)
+        if marker in output:
+            return True
+    
+    logger.warning("Command did not complete within %d seconds", timeout)
+    return False
+
+
+def _install_screen_if_needed(tmux_session: str, window_name: str) -> bool:
+    """Install screen on rdev if not already installed.
+    
+    Returns True if screen is available (already installed or successfully installed).
+    """
+    import random
+    marker = f"__SCREEN_CHK_{random.randint(10000, 99999)}__"
+    
+    # Check if screen is installed using marker-based detection
+    tmux.send_keys(tmux_session, window_name, f"which screen && echo {marker}_YES || echo {marker}_NO", enter=True)
+    time.sleep(2)
+    output = tmux.capture_output(tmux_session, window_name, lines=10)
+    
+    if f"{marker}_YES" in output:
+        logger.info("Screen already installed")
+        return True
+    
+    if f"{marker}_NO" not in output:
+        # Command didn't complete yet, wait more
+        time.sleep(3)
+        output = tmux.capture_output(tmux_session, window_name, lines=10)
+    
+    if f"{marker}_YES" in output:
+        logger.info("Screen already installed")
+        return True
+    
+    # Install screen and wait for completion
+    logger.info("Installing screen...")
+    tmux.send_keys(tmux_session, window_name, "sudo yum install screen -y", enter=True)
+    
+    # Wait for installation to complete (poll for up to 60 seconds)
+    if not _wait_for_command_completion(tmux_session, window_name, timeout=60):
+        logger.warning("Screen installation may not have completed")
+    
+    # Verify installation with marker
+    verify_marker = f"__SCREEN_VFY_{random.randint(10000, 99999)}__"
+    tmux.send_keys(tmux_session, window_name, f"which screen && echo {verify_marker}_OK || echo {verify_marker}_FAIL", enter=True)
+    time.sleep(2)
+    output = tmux.capture_output(tmux_session, window_name, lines=10)
+    
+    if f"{verify_marker}_OK" in output:
+        logger.info("Screen installed successfully")
+        return True
+    
+    logger.warning("Failed to install screen")
+    return False
+
+
+def _kill_orphaned_screen(tmux_session: str, window_name: str, screen_name: str):
+    """Kill any orphaned screen session with the given name."""
+    tmux.send_keys(tmux_session, window_name, f"screen -X -S {screen_name} quit 2>/dev/null", enter=True)
+    time.sleep(0.5)
+
+
 def setup_rdev_worker(
     conn: sqlite3.Connection,
     session_id: str,
@@ -124,7 +207,7 @@ def setup_rdev_worker(
     work_dir: str | None = None,
     tmp_dir: str | None = None,
 ) -> dict:
-    """Set up a full rdev worker: tunnel, SSH, Claude, prompt.
+    """Set up a full rdev worker: tunnel, SSH, screen, Claude, prompt.
 
     Returns {"ok": True, "tunnel_window": ...} on success,
     or {"ok": False, "error": "..."} on failure.
@@ -132,10 +215,14 @@ def setup_rdev_worker(
     Args:
         work_dir: Where Claude Code runs (user's codebase). If None, uses rdev home.
         tmp_dir: Local tmp directory for generating scripts/configs before copying to remote.
+    
+    Claude Code runs inside a GNU Screen session to survive SSH disconnections.
+    Screen session name: claude-{session_id}
     """
     tunnel_name = f"{name}-tunnel"
     remote_tmp_dir = f"/tmp/orchestrator/workers/{name}"
     local_tmp_dir = tmp_dir or f"/tmp/orchestrator/workers/{name}"
+    screen_name = _get_screen_session_name(session_id)
 
     try:
         # 1. Create tunnel window and start reverse SSH tunnel
@@ -160,9 +247,22 @@ def setup_rdev_worker(
             enter=True)
         time.sleep(1)
         logger.info("Updated Claude and configured PATH for %s", name)
+        
+        # 3c. Install screen if needed
+        if not _install_screen_if_needed(tmux_session, name):
+            logger.warning("Screen not available, falling back to direct execution")
+            # Continue without screen - less resilient but still functional
+        
+        # 3d. Kill any orphaned screen session from previous runs
+        _kill_orphaned_screen(tmux_session, name, screen_name)
+        
+        # 4. Enter screen session early - all remaining commands run inside screen
+        # This protects the entire setup process from SSH disconnections
+        tmux.send_keys(tmux_session, name, f"screen -S {screen_name}", enter=True)
+        time.sleep(1)  # Wait for screen to start
+        logger.info("Entered screen session '%s' for worker %s", screen_name, name)
 
-        # 4. Generate CLI scripts (task_id fetched dynamically by scripts)
-        # Generate CLI scripts locally first
+        # 5. Generate CLI scripts locally, then copy to remote (inside screen)
         os.makedirs(local_tmp_dir, exist_ok=True)
         bin_dir = generate_worker_scripts(
             worker_dir=local_tmp_dir,
@@ -172,18 +272,15 @@ def setup_rdev_worker(
         )
         logger.info("Generated CLI scripts in %s", bin_dir)
         
-        # Copy scripts to remote via SSH
         # Create remote directory and copy scripts
         tmux.send_keys(tmux_session, name, f"mkdir -p {remote_tmp_dir}/bin", enter=True)
         time.sleep(0.5)
         
-        # Copy each script file to remote (use WORKER_SCRIPT_NAMES for single source of truth)
         for script_name in WORKER_SCRIPT_NAMES:
             local_path = os.path.join(bin_dir, script_name)
             if os.path.exists(local_path):
                 with open(local_path) as f:
                     script_content = f.read()
-                # Use heredoc to write script content
                 tmux.send_keys(tmux_session, name, 
                     f"cat > {remote_tmp_dir}/bin/{script_name} << 'ORCHEOF'\n{script_content}\nORCHEOF", 
                     enter=True)
@@ -197,8 +294,7 @@ def setup_rdev_worker(
         time.sleep(0.5)
         logger.info("Copied CLI scripts to remote and updated PATH")
         
-        # 4b. Generate and copy hooks settings for automatic status updates
-        # Generate locally in configs/ subdirectory
+        # 6. Generate and copy hooks settings (inside screen)
         local_configs_dir = os.path.join(local_tmp_dir, "configs")
         os.makedirs(local_configs_dir, exist_ok=True)
         claude_dir = generate_hooks_settings(
@@ -208,11 +304,9 @@ def setup_rdev_worker(
         )
         logger.info("Generated hooks settings in %s", claude_dir)
         
-        # Create remote configs directory and copy hooks
         tmux.send_keys(tmux_session, name, f"mkdir -p {remote_tmp_dir}/configs/hooks", enter=True)
         time.sleep(0.3)
         
-        # Copy hook script
         hook_script_path = os.path.join(claude_dir, "hooks", "update-status.sh")
         if os.path.exists(hook_script_path):
             with open(hook_script_path) as f:
@@ -224,7 +318,6 @@ def setup_rdev_worker(
             tmux.send_keys(tmux_session, name, f"chmod +x {remote_tmp_dir}/configs/hooks/update-status.sh", enter=True)
             time.sleep(0.2)
         
-        # Copy settings.json
         settings_path = os.path.join(claude_dir, "settings.json")
         if os.path.exists(settings_path):
             with open(settings_path) as f:
@@ -236,19 +329,19 @@ def setup_rdev_worker(
         
         logger.info("Copied hooks settings to remote")
 
-        # 5. cd to work_dir if specified, then launch Claude with --settings
+        # 7. cd to work_dir if specified (inside screen)
         if work_dir:
             tmux.send_keys(tmux_session, name, f"cd {work_dir}", enter=True)
             time.sleep(0.3)
         
+        # 8. Launch Claude (inside screen)
         template_path = os.path.join(_SOURCE_ROOT, "prompts", "worker_claude_template.md")
         settings_file = f"{remote_tmp_dir}/configs/settings.json"
         
-        # Build claude command with --settings for hooks and --session-id for health check
         claude_args = [
             f"--settings {settings_file}",
             "--dangerously-skip-permissions",
-            f"--session-id {session_id}",  # Used by health check to find this process
+            f"--session-id {session_id}",
         ]
         
         if os.path.exists(template_path):
@@ -259,13 +352,13 @@ def setup_rdev_worker(
                 rendered = rendered.replace("TASK_ID", task_id)
             if project_id:
                 rendered = rendered.replace("PROJECT_ID", project_id)
-            
-            # Use shlex.quote for safe shell escaping
             quoted_prompt = shlex.quote(rendered)
             claude_args.append(f"--append-system-prompt {quoted_prompt}")
         
-        tmux.send_keys(tmux_session, name, f"claude {' '.join(claude_args)}")
-        logger.info("Launched Claude Code for rdev worker %s (work_dir=%s)", name, work_dir)
+        claude_cmd = f"claude {' '.join(claude_args)}"
+        tmux.send_keys(tmux_session, name, claude_cmd, enter=True)
+        logger.info("Launched Claude Code in screen session '%s' for rdev worker %s (work_dir=%s)", 
+                    screen_name, name, work_dir)
 
         return {"ok": True, "tunnel_window": tunnel_name}
 

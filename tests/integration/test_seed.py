@@ -34,18 +34,16 @@ def test_seed_populates_config(db):
     assert cfg.parsed_value == 5
 
 
-def test_seed_populates_prompt_templates(db):
+def test_seed_cleans_legacy_prompt_templates(db):
+    """Verify that legacy prompt templates are removed by seed."""
     seed_all(db)
     templates = list_prompt_templates(db)
-    assert len(templates) >= 4
+    # All legacy templates should be deleted
+    assert len(templates) == 0
 
-    system = get_prompt_template(db, "system_prompt")
-    assert system is not None
-    assert "Claude Orchestrator brain" in system.template
-
-    rebrief = get_prompt_template(db, "rebrief")
-    assert rebrief is not None
-    assert "${session_name}" in rebrief.template
+    # These should not exist (removed)
+    assert get_prompt_template(db, "system_prompt") is None
+    assert get_prompt_template(db, "rebrief") is None
 
 
 def test_seed_populates_skill_template(db):
@@ -71,7 +69,7 @@ def test_seed_idempotent(db):
 def test_seed_config_categories(db):
     seed_all(db)
     approval = list_config(db, category="approval")
-    assert len(approval) >= 4
+    assert len(approval) >= 3  # send_message, assign_task, create_task, alert_user (rebrief_session removed)
     context = list_config(db, category="context")
     assert len(context) >= 6
     monitoring = list_config(db, category="monitoring")

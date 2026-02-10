@@ -8,9 +8,6 @@ import sqlite3
 from pathlib import Path
 
 from orchestrator.core.events import Event, subscribe
-from orchestrator.recovery.detector import needs_recovery, get_recovery_reason
-from orchestrator.recovery.rebrief import rebrief_session
-from orchestrator.recovery.snapshot import create_snapshot
 from orchestrator.state.db import ConnectionFactory
 from orchestrator.state.repositories import sessions as sessions_repo
 from orchestrator.state.repositories import tasks as tasks_repo
@@ -60,12 +57,6 @@ class Orchestrator:
         if not session_name:
             return
 
-        # Recovery: compact or restart detected
-        if needs_recovery(event):
-            reason = get_recovery_reason(event)
-            logger.warning("Recovery needed for %s: %s", session_name, reason)
-            self._execute_recovery(session_name, reason)
-
         # Auto-approve: session is waiting for input
         if event.type == "session.state_changed":
             new_state = event.data.get("new_state")
@@ -73,27 +64,6 @@ class Orchestrator:
                 self._handle_waiting(session_name)
             elif new_state == "idle":
                 self._handle_idle(session_name)
-
-    def _execute_recovery(self, session_name: str, reason: str):
-        """Execute recovery: snapshot + re-brief."""
-        conn = self._get_write_conn()
-        try:
-            session = sessions_repo.get_session_by_name(conn, session_name)
-            if not session:
-                return
-
-            # Snapshot current state before re-brief
-            create_snapshot(conn, session.id)
-
-            # Send re-brief
-            success = rebrief_session(conn, session_name, self.tmux_session)
-            if success:
-                logger.info("Recovery re-brief sent to %s", session_name)
-        except Exception:
-            logger.exception("Recovery failed for %s", session_name)
-        finally:
-            if self._conn_factory and conn is not self.conn:
-                conn.close()
 
     def _handle_waiting(self, session_name: str):
         """Handle a session that's waiting for input — check auto-approve rules."""

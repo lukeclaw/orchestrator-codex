@@ -61,14 +61,14 @@ async def lifespan(app: FastAPI):
         app.state.state_manager = state_manager
         await state_manager.start()
 
-    # Start the orchestrator engine (monitor, events, recovery)
+    # Start the orchestrator engine (monitor, events)
     orch = Orchestrator(conn, config, db_path=db_path)
     app.state.orchestrator = orch
     await orch.start()
 
     yield
 
-    # Shutdown: stop monitor, state manager, save snapshots
+    # Shutdown: stop monitor, state manager
     logger.info("Orchestrator API shutting down")
     await orch.stop()
     if state_manager:

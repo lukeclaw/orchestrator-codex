@@ -152,7 +152,55 @@ Workers talk to the orchestrator via **scoped CLI tools** that are auto-generate
 | **waiting** | Claude finished responding, awaiting review/input | `Stop` hook (Claude stops), `Notification` hook |
 | **paused** | User manually paused the worker | Manual user action |
 | **error** | Worker encountered an error | Error detection |
-| **disconnected** | Worker session lost | Heartbeat failure, `SessionEnd` hook |
+| **screen_detached** | SSH lost but Claude still running in screen (rdev only) | SSH disconnect + screen session alive |
+| **disconnected** | Worker session lost | Heartbeat failure, `SessionEnd` hook, screen session dead |
+
+#### 3.7.1 Screen-Based Session Management (rdev workers)
+
+Rdev workers run Claude Code inside a GNU Screen session to survive SSH disconnections:
+
+```
+SSH → bash shell → screen -S claude-{session_id} → claude --args
+```
+
+**Benefits:**
+- **Resilience**: Claude survives network hiccups, laptop sleep, VPN reconnects
+- **Faster recovery**: Just reattach to screen, no need to restart Claude or reload context
+- **Work continuity**: Tasks continue even when orchestrator temporarily loses connection
+- **Reduced token waste**: No re-briefing needed after reconnect
+
+**Setup Flow:**
+1. SSH into rdev VM
+2. Install screen if needed: `sudo yum install screen -y`
+3. Create screen session: `screen -S claude-{session_id}`
+4. Launch Claude inside screen: `claude --args`
+
+**Reconnect Flow:**
+1. Re-establish SSH connection (or use existing if alive)
+2. Check if screen session exists: `screen -ls | grep claude-{session_id}`
+3. If screen exists with Claude running: `screen -r claude-{session_id}` → status = previous state
+4. If screen exists but Claude dead: restart Claude in existing screen
+5. If no screen: full restart (create screen, launch Claude)
+
+**Health Check (rdev workers):**
+| SSH Alive | Screen Exists | Claude Running | Status | Action |
+|-----------|---------------|----------------|--------|--------|
+| ✅ | ✅ | ✅ | working/waiting | None |
+| ❌ | ✅ | ✅ | screen_detached | Reconnect SSH, reattach |
+| ✅ | ✅ | ❌ | error | Restart Claude in screen |
+| ✅ | ❌ | ❌ | disconnected | Full restart |
+| ❌ | ❓ | ❓ | connecting | Check via fresh SSH |
+
+**Cleanup on Delete:**
+- Kill screen session: `screen -X -S claude-{session_id} quit`
+- Remove remote tmp directory
+- Kill SSH tunnel
+
+**Edge Cases:**
+- **Screen not installed**: Auto-install with `sudo yum install screen -y`
+- **Screen name collision**: Use unique name `claude-{session_id}`
+- **Orphaned screen from previous run**: Kill before creating new session
+- **Multiple reconnect attempts**: Check attachment state before `screen -r`
 
 **Status Management via Claude Code Hooks:**
 
@@ -514,3 +562,4 @@ notifications  (id, task_id, session_id, message, notification_type, link_url, c
 | 2.4 | 2026-02-08 | Removed PR tracking (not useful). Added context scopes (global/brain/project), description field, instruction category. Task priority changed from numeric to H/M/L. Human-readable task keys (UTI-1). |
 | 2.5 | 2026-02-09 | Added Section 3.8 (Notification System): non-blocking notifications for workers/brain to surface information requiring user attention without stopping progress. Includes `orch-notify` CLI, API endpoints, and UI requirements. |
 | 2.6 | 2026-02-09 | Added `PreToolUse` hook for reliable "working" status tracking. Added `SessionEnd` hook for "disconnected" status. |
+| 2.7 | 2026-02-10 | Added Section 3.7.1 (Screen-Based Session Management): rdev workers now run Claude inside GNU Screen to survive SSH disconnections. Added `screen_detached` status. Documented setup flow, reconnect flow, health check matrix, and edge cases. |

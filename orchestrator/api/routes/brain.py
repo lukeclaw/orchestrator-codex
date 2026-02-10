@@ -89,6 +89,19 @@ def start_brain(db=Depends(get_db)):
     if os.path.exists(claude_md_src):
         shutil.copy2(claude_md_src, os.path.join(brain_dir, "CLAUDE.md"))
 
+    # Deploy pre-built skills to .claude/commands/
+    skills_src = os.path.join(source_root, "prompts", "skills")
+    skills_dest = os.path.join(brain_dir, ".claude", "commands")
+    if os.path.isdir(skills_src):
+        os.makedirs(skills_dest, exist_ok=True)
+        for skill_file in os.listdir(skills_src):
+            if skill_file.endswith(".md"):
+                shutil.copy2(
+                    os.path.join(skills_src, skill_file),
+                    os.path.join(skills_dest, skill_file),
+                )
+        logger.info("Deployed %d skills to %s", len(os.listdir(skills_dest)), skills_dest)
+
     # Deploy brain CLI scripts
     bin_dir = generate_brain_scripts(brain_dir)
     path_export = get_brain_path_export(bin_dir)

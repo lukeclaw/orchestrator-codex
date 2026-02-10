@@ -61,11 +61,6 @@ ValueError: bad"""
         events = parse_output(output)
         assert any(e.event_type == EventType.ERROR for e in events)
 
-    def test_detect_compact(self):
-        output = "Context has been compacted successfully."
-        events = parse_output(output)
-        assert any(e.event_type == EventType.COMPACT for e in events)
-
     def test_no_events_from_normal_output(self):
         output = "Hello, I'm working on the task.\nLet me check the files."
         events = parse_output(output)

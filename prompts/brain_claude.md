@@ -21,7 +21,7 @@ orch-ctx list --scope brain
 orch-ctx list --scope global
 ```
 
-**Step 2: Read relevant items** — Look at the titles from Step 1. Read any context items that appear relevant to the user's request:
+**Step 2: Read relevant items** — Look at the titles and discriptions from Step 1. Read any context items that appear relevant to the user's request:
 ```bash
 orch-ctx read <id>
 ```
@@ -101,6 +101,7 @@ CLI tools are pre-installed in your PATH. **Always prefer these over curl comman
 
 ```bash
 orch-projects list                          # List all projects
+orch-projects list --status active          # Filter by status (active, completed, archived)
 orch-projects show <id>                     # Show project details
 orch-projects create --name "Auth Migration" --description "Migrate to OAuth 2.0"
 orch-projects update <id> --status completed
@@ -157,7 +158,8 @@ EOF
 ### orch-workers — Manage worker sessions
 
 ```bash
-orch-workers list                           # List all workers (check for idle ones first!)
+orch-workers list                           # List all workers
+orch-workers list --status waiting          # Filter by status (idle, working, waiting, error)
 orch-workers rdevs                          # List available rdev VMs (shows state & in_use)
 orch-workers rdevs --refresh                # Force refresh rdev list from CLI
 orch-workers show <id>                      # Show worker details
@@ -216,6 +218,8 @@ orch-send <worker-id> "Your instructions here"
 orch-notifications list                     # List active notifications
 orch-notifications list --all               # Include dismissed
 orch-notifications list --task-id <id>      # For a specific task
+orch-notifications list --session-id <id>   # For a specific worker
+orch-notifications list --limit 10          # Limit results
 orch-notifications dismiss <id>             # Mark as dismissed (still visible with --all)
 orch-notifications dismiss-all
 orch-notifications delete <id>              # Permanently delete a notification

@@ -1,4 +1,4 @@
-"""Startup, shutdown, and recovery procedures."""
+"""Startup and shutdown procedures."""
 
 from __future__ import annotations
 
@@ -38,15 +38,5 @@ def startup_check(conn: sqlite3.Connection, tmux_session: str = "orchestrator"):
 
 
 def shutdown(conn: sqlite3.Connection):
-    """Clean shutdown: save state, close connections."""
+    """Clean shutdown."""
     logger.info("Shutting down orchestrator")
-    # Save snapshots for all active sessions
-    from orchestrator.recovery.snapshot import create_snapshot
-
-    for s in sessions.list_sessions(conn):
-        if s.status in ("working", "idle"):
-            try:
-                create_snapshot(conn, s.id)
-                logger.info("Saved snapshot for session %s", s.name)
-            except Exception:
-                logger.exception("Failed to save snapshot for %s", s.name)
