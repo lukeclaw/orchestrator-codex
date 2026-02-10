@@ -125,7 +125,7 @@ show_help() {{
     echo "  update [options]              Update task"
     echo ""
     echo "Update Options:"
-    echo "  --status STATUS               Update status (in_progress|done|blocked)"
+    echo "  --status STATUS               Update status (in_progress|blocked) - workers cannot set done"
     echo "  --notes NOTES                 Update notes (findings, progress, observations)"
     echo "  --notes-stdin                 Read notes from stdin (for multi-line content)"
     echo ""
@@ -136,7 +136,7 @@ show_help() {{
     echo "  orch-task show"
     echo "  orch-task show --refresh"
     echo "  orch-task update --status in_progress"
-    echo "  orch-task update --status done"
+    echo "  orch-task update --status blocked"
     echo "  orch-task update --notes \\"Found issue in auth module\\""
 }}
 
@@ -177,6 +177,12 @@ cmd_update() {{
     
     if [[ -z "$status" && -z "$notes" ]]; then
         echo "Error: --status or --notes is required" >&2
+        exit 1
+    fi
+    
+    # Workers cannot mark their own task as done - only the orchestrator brain can
+    if [[ "$status" == "done" ]]; then
+        echo "Error: Workers cannot mark tasks as done. Signal completion in your response and the orchestrator brain will review and mark done." >&2
         exit 1
     fi
     

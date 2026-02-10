@@ -28,9 +28,6 @@ orch-task show
 # Mark task as in_progress when starting work
 orch-task update --status in_progress
 
-# Mark task as done when complete
-orch-task update --status done
-
 # Mark task as blocked if you can't proceed
 orch-task update --status blocked
 
@@ -55,24 +52,33 @@ EOF
 
 When your task is complex, break it into subtasks to track progress.
 
-**CRITICAL: Always attach links when creating subtasks.** The orchestrator and reviewers need direct links to verify your work:
-- **PR-related subtasks** — MUST include the PR URL (e.g., addressing review comments, fixing CI, updating PR)
-- **Documentation subtasks** — MUST include the doc URL
+**CRITICAL: One PR = One Subtask.** Each subtask should represent a distinct deliverable with its own PR or artifact:
+- **DO**: Create separate subtasks for separate PRs (e.g., "API changes" → PR #1, "Frontend changes" → PR #2)
+- **DON'T**: Create multiple subtasks that all point to the same PR (e.g., "Create PR", "Address review", "Merge PR" — this is one subtask, not three)
+
+**Subtask = distinct piece of work**, not a phase of the same work. If all your work goes into one PR, that's one subtask.
+
+**Subtask descriptions should be concise deliverables** — state what "done" looks like, not implementation details:
+- **Good**: "PR merged: Add rate limiting to /api/users endpoint"
+- **Bad**: "First I'll analyze the codebase, then implement rate limiting using Redis, then write tests..."
+
+The description is used to verify completion. Keep it short and verifiable.
+
+**Always attach links when creating subtasks:**
 - **Code changes** — Include the PR URL once created
+- **Documentation subtasks** — Include the doc URL
 - **Any external reference** — Include the relevant URL
 
 ```bash
 # List all subtasks under your task
 orch-subtask list
 
-# Create subtasks with description AND links (always include both)
-orch-subtask create --title "Address PR review comments" \
-  --description "Fix linting issues and add missing tests per reviewer feedback" \
-  --links "https://github.com/org/repo/pull/123"
+# Create subtasks with CONCISE deliverable descriptions
+orch-subtask create --title "Add rate limiting to API" \
+  --description "PR merged: Rate limiting (100 req/min) on /api/users endpoint"
 
 orch-subtask create --title "Update API documentation" \
-  --description "Add examples for new endpoints and update authentication section" \
-  --links "https://docs.example.com/api"
+  --description "Docs updated: Rate limiting section with examples added"
 
 # Update subtask status (use the UUID from list output)
 orch-subtask update --id SUBTASK_UUID --status done
@@ -172,18 +178,19 @@ Simply explain what you're stuck on in your response, and the brain will check o
 3. **Read relevant context** — `orch-context read ITEM_ID` for items relevant to your task (especially any with category "instruction")
 4. **Follow instructions** — Context items with category "instruction" contain **mandatory steps** you must follow
 5. **Update task status** — `orch-task update --status in_progress`
-6. **Break into subtasks** — If complex, use `orch-subtask create` to track progress
+6. **Break into subtasks** — If complex, use `orch-subtask create` with concise deliverable descriptions
 7. **Do the work** — Implement each subtask, marking them done with `orch-subtask update --id UUID --status done`
 8. **Add links** — Use `--add-link` to attach relevant PRs or docs to subtasks
-9. **Mark complete** — `orch-task update --status done` (worker status updates automatically)
+9. **Signal completion** — When all subtasks are done, state "Task complete" in your response. The orchestrator brain will review your work and mark the task as done.
 
 ## Guidelines
 
 - **Follow all "instruction" context items** — These are mandatory and must be executed as specified
 - Focus on the assigned task — don't go beyond the scope
-- Update task status promptly (`in_progress` → `done`) — worker status updates automatically
-- Use subtasks for anything with more than 2-3 steps
-- **ALWAYS attach links to subtasks** — PRs, docs, and references are REQUIRED for review
+- **You cannot mark your own task as done** — signal completion, and the orchestrator brain will review and confirm
+- Use subtasks for distinct deliverables (one PR = one subtask), not for phases of the same work
+- **Subtask descriptions = concise deliverables** — state what "done" looks like, not how you'll do it
+- **ALWAYS attach links to subtasks** — each subtask needs its own PR or artifact URL
 - Read project context before making architectural decisions
 - Write clean, tested code that follows the project's existing conventions
 - Commit your work when the task is complete

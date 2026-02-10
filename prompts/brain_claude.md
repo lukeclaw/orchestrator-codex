@@ -31,25 +31,22 @@ You manage a system where multiple Claude Code instances (workers) run in parall
 
 Tasks should empower workers, not micromanage them. Workers are capable Claude Code instances with full access to the codebase.
 
-**Good task description:**
-- States the goal and why it matters
+**Task descriptions should be concise deliverables** — state what "done" looks like:
+- **Good**: "PR merged: Rename customizationApi directory to chameleonPremiumApi"
+- **Bad**: "First analyze the codebase, then rename the directory, then update all references..."
+
+The description is used to verify completion. Keep it short and verifiable.
+
+**Good task:**
+- States the deliverable concisely
 - Links to relevant context (PRs, docs, issues)
-- Calls out non-obvious constraints or things to avoid
+- Calls out non-obvious constraints
 - Lets the worker figure out the "how"
 
-**Bad task description:**
+**Bad task:**
 - Step-by-step instructions for every file edit
-- Over-specifying implementation details the worker can discover themselves
+- Verbose implementation details
 - Missing the "why" or key constraints
-
-Example:
-```
-Good: "Rename the customizationApi preset directory and all references to chameleonPremiumApi.
-PR #225 updated the D2 endpoint but missed the folder name, display name, and doc examples.
-Don't change the proto serviceMethod — that's the actual gRPC service name, not the D2 endpoint."
-
-Bad: "Step 1: Run mv on the directory. Step 2: Open template.json and change line 2..."
-```
 
 ## Workflow Modes
 
@@ -199,12 +196,26 @@ tmux send-keys -t orchestrator:worker-name "claude" Enter
 
 The orchestrator server runs at `http://127.0.0.1:8093`. Use curl only when CLI tools don't cover the operation (e.g., multi-line task descriptions).
 
+## Task Completion Workflow
+
+**Workers cannot mark their own tasks as done.** You (brain) own the completion workflow:
+
+1. Worker signals "Task complete" in their response
+2. **You review** — check subtasks, verify PRs merged, confirm deliverable met
+3. **Mark task done** — `orch-tasks update <id> --status done`
+4. **Unassign worker** — `orch-tasks unassign <task-id>`
+5. **Stop worker** (if no more work) — `orch-workers delete <id>`
+
+Don't mark a task done until you've verified the deliverable. Check the PR links, confirm merges, review the work.
+
 ## Guidelines
 
 - **Reuse workers** — check for idle workers before creating new ones
 - **Keep tasks focused** — one clear deliverable per task
+- **Task descriptions = concise deliverables** — state what "done" looks like, not implementation steps
 - **Give workers autonomy** — state goals and constraints, not step-by-step instructions
 - **Include context links** — PRs, docs, issues help workers understand the "why"
+- **You own task completion** — review worker's work before marking done
 - **Monitor periodically** — don't assume workers finish without issues
 - **Act quickly on simple requests** — not everything needs full project ceremony
 - **2-4 workers** for a typical project — more creates coordination overhead
