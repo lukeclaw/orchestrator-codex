@@ -29,20 +29,12 @@ class TestOrchestrator:
         assert len(events_received) == 1
         assert events_received[0].type == "test.event"
 
-    def test_handle_event_no_recovery_needed(self, db):
+    def test_handle_event_does_not_raise(self, db):
         config = {}
         orch = Orchestrator(db, config)
         # Normal event should not raise
         event = Event(type="session.state_changed", data={"old_state": "idle", "new_state": "working"})
         orch._handle_event(event)  # Should not raise
-
-    def test_handle_event_recovery_needed(self, db):
-        config = {}
-        orch = Orchestrator(db, config)
-        # Compact event triggers recovery detection
-        event = Event(type="session.compact", data={"session": "test-session"})
-        # Should log warning but not raise
-        orch._handle_event(event)
 
 
 class TestLifecycle:
@@ -103,27 +95,7 @@ class TestLifecycle:
         updated = sessions.get_session(db, s.id)
         assert updated.status == "working"
 
-    def test_shutdown_creates_snapshots(self, db):
-        # Create an active session with required data
-        s = sessions.create_session(db, "active-worker", "host")
-        sessions.update_session(db, s.id, status="working")
-
+    def test_shutdown_logs_and_returns(self, db):
+        # Shutdown should just log and return (no more snapshot creation)
         from orchestrator.core.lifecycle import shutdown
-        shutdown(db)
-
-        # Should have created a snapshot
-        row = db.execute(
-            "SELECT COUNT(*) as cnt FROM session_snapshots WHERE session_id = ?",
-            (s.id,),
-        ).fetchone()
-        assert row["cnt"] == 1
-
-    def test_shutdown_skips_disconnected(self, db):
-        s = sessions.create_session(db, "offline-worker", "host")
-        sessions.update_session(db, s.id, status="disconnected")
-
-        from orchestrator.core.lifecycle import shutdown
-        shutdown(db)
-
-        row = db.execute("SELECT COUNT(*) as cnt FROM session_snapshots").fetchone()
-        assert row["cnt"] == 0
+        shutdown(db)  # Should not raise

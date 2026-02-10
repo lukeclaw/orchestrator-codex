@@ -1,4 +1,8 @@
-"""Integration tests for tmux control module — atomic capture functions."""
+"""Integration tests for tmux control module — atomic capture functions.
+
+These tests use synchronous wrappers to avoid pytest-asyncio event loop
+conflicts when running alongside E2E tests with session-scoped fixtures.
+"""
 
 import asyncio
 import time
@@ -13,6 +17,28 @@ from orchestrator.terminal.control import (
 
 TEST_SESSION = "orch-test-control"
 TEST_WINDOW = "test-win"
+
+
+def _run(coro):
+    """Run coroutine in a separate thread to avoid event loop conflicts.
+    
+    When running alongside E2E tests with session-scoped playwright fixtures,
+    there may already be a running event loop. Using a thread ensures isolation.
+    """
+    import concurrent.futures
+    
+    def run_in_thread():
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        try:
+            return loop.run_until_complete(coro)
+        finally:
+            loop.close()
+            asyncio.set_event_loop(None)
+    
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+        future = executor.submit(run_in_thread)
+        return future.result(timeout=30)
 
 
 @pytest.fixture(autouse=True)
@@ -38,7 +64,7 @@ class TestAtomicCapture:
         """Atomic capture should return content and cursor position."""
         session, window = tmux_window
         
-        content, cursor_x, cursor_y = asyncio.run(
+        content, cursor_x, cursor_y = _run(
             capture_pane_with_cursor_atomic_async(session, window)
         )
         
@@ -58,7 +84,7 @@ class TestAtomicCapture:
         tmux.send_keys(session, window, "echo ATOMIC_TEST_123", enter=False)
         time.sleep(0.1)
         
-        content, cursor_x, cursor_y = asyncio.run(
+        content, cursor_x, cursor_y = _run(
             capture_pane_with_cursor_atomic_async(session, window)
         )
         
@@ -77,7 +103,7 @@ class TestAtomicCapture:
         # Capture multiple times
         results = []
         for _ in range(3):
-            content, cursor_x, cursor_y = asyncio.run(
+            content, cursor_x, cursor_y = _run(
                 capture_pane_with_cursor_atomic_async(session, window)
             )
             results.append((content, cursor_x, cursor_y))
@@ -95,7 +121,7 @@ class TestHistoryCapture:
         """History capture should return content and metadata."""
         session, window = tmux_window
         
-        content, cursor_x, cursor_y, total_lines = asyncio.run(
+        content, cursor_x, cursor_y, total_lines = _run(
             capture_pane_with_history_async(session, window)
         )
         
@@ -116,7 +142,7 @@ class TestHistoryCapture:
         
         time.sleep(0.3)
         
-        content, _, _, total_lines = asyncio.run(
+        content, _, _, total_lines = _run(
             capture_pane_with_history_async(session, window, scrollback_lines=100)
         )
         
@@ -129,7 +155,7 @@ class TestHistoryCapture:
         session, window = tmux_window
         
         # Small scrollback should still work
-        content, cursor_x, cursor_y, total_lines = asyncio.run(
+        content, cursor_x, cursor_y, total_lines = _run(
             capture_pane_with_history_async(session, window, scrollback_lines=10)
         )
         
@@ -143,7 +169,7 @@ class TestNonexistentTarget:
 
     def test_atomic_capture_nonexistent(self):
         """Atomic capture should return empty on nonexistent target."""
-        content, cursor_x, cursor_y = asyncio.run(
+        content, cursor_x, cursor_y = _run(
             capture_pane_with_cursor_atomic_async("nonexistent", "window")
         )
         
@@ -154,7 +180,7 @@ class TestNonexistentTarget:
 
     def test_history_capture_nonexistent(self):
         """History capture should return empty on nonexistent target."""
-        content, cursor_x, cursor_y, total_lines = asyncio.run(
+        content, cursor_x, cursor_y, total_lines = _run(
             capture_pane_with_history_async("nonexistent", "window")
         )
         

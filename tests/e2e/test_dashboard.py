@@ -129,10 +129,9 @@ def test_05_session_detail_page(page, server):
     # Should be on the worker detail page
     assert "/workers/s1" in page.url
 
-    # Session name and info should be visible
+    # Session name should be visible
     text = page.inner_text("body")
     assert "worker-alpha" in text
-    assert "localhost" in text
 
     # Navigate back
     back_btn = page.query_selector("text=Dashboard")

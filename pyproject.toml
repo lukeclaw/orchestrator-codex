@@ -8,16 +8,13 @@ dependencies = [
     # CLI & Display
     "click>=8.0",
     "rich>=13.0",
-
     # Web Server & API
     "fastapi>=0.115.0",
     "uvicorn[standard]>=0.34.0",
     "jinja2>=3.1.0",
-
     # LLM & HTTP
     "anthropic>=0.42.0",
     "httpx>=0.27.0",
-
     # Config & Data
     "pyyaml>=6.0",
     "python-dateutil",

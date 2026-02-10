@@ -156,7 +156,7 @@ def page(browser_instance, server):
     pg.wait_for_load_state("networkidle")
     # Wait for React hydration — stats bar is one of the first things rendered
     pg.wait_for_selector("[data-testid='stats-bar']", timeout=10000)
-    pg.wait_for_timeout(1500)
+    pg.wait_for_timeout(500)  # Reduced from 1500ms for faster tests
 
     yield pg
 

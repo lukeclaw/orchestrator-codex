@@ -222,10 +222,11 @@ class TestBrain:
 
     def test_brain_start_fresh(self, client):
         """Start brain when no brain session exists yet."""
-        with patch("orchestrator.api.routes.brain.tmux") as mock_tmux:
-            mock_tmux.ensure_window.return_value = "orchestrator:brain"
-            mock_tmux.send_keys.return_value = True
-            resp = client.post("/api/brain/start")
+        with patch("orchestrator.api.routes.brain.time.sleep"):  # Speed up test
+            with patch("orchestrator.api.routes.brain.tmux") as mock_tmux:
+                mock_tmux.ensure_window.return_value = "orchestrator:brain"
+                mock_tmux.send_keys.return_value = True
+                resp = client.post("/api/brain/start")
         assert resp.status_code == 200
         data = resp.json()
         assert data["ok"] is True
@@ -239,42 +240,45 @@ class TestBrain:
 
     def test_brain_start_already_running(self, client):
         """Starting brain when already running returns early with existing info."""
-        with patch("orchestrator.api.routes.brain.tmux") as mock_tmux:
-            mock_tmux.ensure_window.return_value = "orchestrator:brain"
-            mock_tmux.send_keys.return_value = True
-            client.post("/api/brain/start")
-            resp = client.post("/api/brain/start")
+        with patch("orchestrator.api.routes.brain.time.sleep"):  # Speed up test
+            with patch("orchestrator.api.routes.brain.tmux") as mock_tmux:
+                mock_tmux.ensure_window.return_value = "orchestrator:brain"
+                mock_tmux.send_keys.return_value = True
+                client.post("/api/brain/start")
+                resp = client.post("/api/brain/start")
         assert resp.status_code == 200
         assert resp.json()["message"] == "Brain already running"
 
     def test_brain_start_after_stopped(self, client):
         """Restarting brain after stop reuses the existing session record."""
-        with patch("orchestrator.api.routes.brain.tmux") as mock_tmux:
-            mock_tmux.ensure_window.return_value = "orchestrator:brain"
-            mock_tmux.send_keys.return_value = True
-            first = client.post("/api/brain/start")
-        first_id = first.json()["session_id"]
+        with patch("orchestrator.api.routes.brain.time.sleep"):  # Speed up test
+            with patch("orchestrator.api.routes.brain.tmux") as mock_tmux:
+                mock_tmux.ensure_window.return_value = "orchestrator:brain"
+                mock_tmux.send_keys.return_value = True
+                first = client.post("/api/brain/start")
+            first_id = first.json()["session_id"]
 
-        with patch("orchestrator.api.routes.brain.tmux") as mock_tmux:
-            mock_tmux.send_keys.return_value = True
-            client.post("/api/brain/stop")
+            with patch("orchestrator.api.routes.brain.tmux") as mock_tmux:
+                mock_tmux.send_keys.return_value = True
+                client.post("/api/brain/stop")
 
-        with patch("orchestrator.api.routes.brain.tmux") as mock_tmux:
-            mock_tmux.ensure_window.return_value = "orchestrator:brain"
-            mock_tmux.send_keys.return_value = True
-            second = client.post("/api/brain/start")
+            with patch("orchestrator.api.routes.brain.tmux") as mock_tmux:
+                mock_tmux.ensure_window.return_value = "orchestrator:brain"
+                mock_tmux.send_keys.return_value = True
+                second = client.post("/api/brain/start")
         assert second.json()["session_id"] == first_id
         assert second.json()["status"] == "working"
 
     def test_brain_stop(self, client):
-        with patch("orchestrator.api.routes.brain.tmux") as mock_tmux:
-            mock_tmux.ensure_window.return_value = "orchestrator:brain"
-            mock_tmux.send_keys.return_value = True
-            client.post("/api/brain/start")
+        with patch("orchestrator.api.routes.brain.time.sleep"):  # Speed up test
+            with patch("orchestrator.api.routes.brain.tmux") as mock_tmux:
+                mock_tmux.ensure_window.return_value = "orchestrator:brain"
+                mock_tmux.send_keys.return_value = True
+                client.post("/api/brain/start")
 
-        with patch("orchestrator.api.routes.brain.tmux") as mock_tmux:
-            mock_tmux.send_keys.return_value = True
-            resp = client.post("/api/brain/stop")
+            with patch("orchestrator.api.routes.brain.tmux") as mock_tmux:
+                mock_tmux.send_keys.return_value = True
+                resp = client.post("/api/brain/stop")
         assert resp.status_code == 200
         assert resp.json()["ok"] is True
 
@@ -298,10 +302,11 @@ class TestBrain:
 
     def test_brain_session_appears_in_sessions_list(self, client):
         """Brain session should appear in GET /api/sessions with all fields."""
-        with patch("orchestrator.api.routes.brain.tmux") as mock_tmux:
-            mock_tmux.ensure_window.return_value = "orchestrator:brain"
-            mock_tmux.send_keys.return_value = True
-            client.post("/api/brain/start")
+        with patch("orchestrator.api.routes.brain.time.sleep"):  # Speed up test
+            with patch("orchestrator.api.routes.brain.tmux") as mock_tmux:
+                mock_tmux.ensure_window.return_value = "orchestrator:brain"
+                mock_tmux.send_keys.return_value = True
+                client.post("/api/brain/start")
 
         resp = client.get("/api/sessions")
         assert resp.status_code == 200
