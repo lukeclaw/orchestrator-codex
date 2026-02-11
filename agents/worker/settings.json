@@ -1,0 +1,17 @@
+{
+  "env": {
+    "CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION": "false"
+  },
+  "spinnerTipsEnabled": false,
+  "terminalProgressBarEnabled": false,
+  "prefersReducedMotion": true,
+  "autoUpdatesChannel": "stable",
+  "hooks": {
+    "SessionStart": [{"matcher": "", "hooks": [{"type": "command", "command": "{{HOOK_SCRIPT_PATH}}"}]}],
+    "UserPromptSubmit": [{"matcher": "", "hooks": [{"type": "command", "command": "{{HOOK_SCRIPT_PATH}}"}]}],
+    "PreToolUse": [{"matcher": "", "hooks": [{"type": "command", "command": "{{HOOK_SCRIPT_PATH}}"}]}],
+    "Stop": [{"matcher": "", "hooks": [{"type": "command", "command": "{{HOOK_SCRIPT_PATH}}"}]}],
+    "Notification": [{"matcher": "", "hooks": [{"type": "command", "command": "{{HOOK_SCRIPT_PATH}}"}]}],
+    "SessionEnd": [{"matcher": "", "hooks": [{"type": "command", "command": "{{HOOK_SCRIPT_PATH}}"}]}]
+  }
+}

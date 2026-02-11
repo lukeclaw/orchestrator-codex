@@ -310,67 +310,31 @@ def generate_worker_hooks(
     hooks_dir = os.path.join(worker_dir, "hooks")
     os.makedirs(hooks_dir, exist_ok=True)
     
+    # Copy hook script template and substitute placeholders
+    src_hook_path = os.path.join(_AGENTS_DIR, "worker", "hooks", "update-status.sh")
     hook_script_path = os.path.join(hooks_dir, "update-status.sh")
-    hook_script = f'''#!/bin/bash
-# Hook script to update worker status in orchestrator
-# Generated for session: {session_id}
-
-SESSION_ID="{session_id}"
-API_BASE="{api_base}"
-
-INPUT=$(cat)
-EVENT=$(echo "$INPUT" | jq -r '.hook_event_name // empty')
-
-case "$EVENT" in
-    SessionStart)
-        STATUS="idle"
-        ;;
-    UserPromptSubmit|PreToolUse)
-        STATUS="working"
-        ;;
-    Stop|Notification)
-        STATUS="waiting"
-        ;;
-    SessionEnd)
-        STATUS="disconnected"
-        ;;
-    *)
-        exit 0
-        ;;
-esac
-
-curl -s -X PATCH "$API_BASE/api/sessions/$SESSION_ID" \\
-    -H 'Content-Type: application/json' \\
-    -d "{{\\"status\\": \\"$STATUS\\"}}" > /dev/null 2>&1
-
-exit 0
-'''
+    
+    with open(src_hook_path) as f:
+        hook_content = f.read()
+    
+    hook_content = hook_content.replace("{{SESSION_ID}}", session_id)
+    hook_content = hook_content.replace("{{API_BASE}}", api_base)
     
     with open(hook_script_path, "w") as f:
-        f.write(hook_script)
+        f.write(hook_content)
     os.chmod(hook_script_path, os.stat(hook_script_path).st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
     
-    settings = {
-        "env": {
-            "CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION": "false"
-        },
-        "spinnerTipsEnabled": False,
-        "terminalProgressBarEnabled": False,
-        "prefersReducedMotion": True,
-        "autoUpdatesChannel": "stable",
-        "hooks": {
-            "SessionStart": [{"matcher": "", "hooks": [{"type": "command", "command": hook_script_path}]}],
-            "UserPromptSubmit": [{"matcher": "", "hooks": [{"type": "command", "command": hook_script_path}]}],
-            "PreToolUse": [{"matcher": "", "hooks": [{"type": "command", "command": hook_script_path}]}],
-            "Stop": [{"matcher": "", "hooks": [{"type": "command", "command": hook_script_path}]}],
-            "Notification": [{"matcher": "", "hooks": [{"type": "command", "command": hook_script_path}]}],
-            "SessionEnd": [{"matcher": "", "hooks": [{"type": "command", "command": hook_script_path}]}],
-        }
-    }
+    # Copy settings.json template and substitute placeholders
+    src_settings_path = os.path.join(_AGENTS_DIR, "worker", "settings.json")
+    dst_settings_path = os.path.join(worker_dir, "settings.json")
     
-    settings_path = os.path.join(worker_dir, "settings.json")
-    with open(settings_path, "w") as f:
-        json.dump(settings, f, indent=2)
+    with open(src_settings_path) as f:
+        settings_content = f.read()
+    
+    settings_content = settings_content.replace("{{HOOK_SCRIPT_PATH}}", hook_script_path)
+    
+    with open(dst_settings_path, "w") as f:
+        f.write(settings_content)
     
     return worker_dir
 

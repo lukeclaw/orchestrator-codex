@@ -808,6 +808,8 @@ def health_check_all_sessions(db=Depends(get_db)):
     for s in sessions:
         if s.status == "disconnected":
             continue  # Skip already disconnected workers
+        if s.status == "connecting":
+            continue  # Skip workers currently connecting (setup in progress)
             
         if not s.tmux_window:
             continue

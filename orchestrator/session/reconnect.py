@@ -60,6 +60,26 @@ def _launch_claude_in_screen(tmux_sess: str, tmux_win: str, session, tmp_dir: st
     logger.info("Reconnect %s: SUCCESS - launched Claude in screen session", session.name)
 
 
+def _ensure_local_configs_exist(tmp_dir: str, session_id: str, api_base: str = "http://127.0.0.1:8093"):
+    """Regenerate local configs from templates.
+    
+    Always regenerates to ensure configs match current templates, even if files exist.
+    This handles both missing files (orchestrator restart) and stale files (template updates).
+    """
+    from orchestrator.agents.deploy import generate_worker_hooks, deploy_worker_scripts
+    
+    configs_dir = os.path.join(tmp_dir, "configs")
+    os.makedirs(configs_dir, exist_ok=True)
+    
+    # Always regenerate configs from templates
+    logger.info("Regenerating local configs at %s from templates", configs_dir)
+    generate_worker_hooks(configs_dir, session_id, api_base)
+    
+    # Always regenerate bin scripts from templates
+    logger.info("Regenerating local bin scripts at %s", tmp_dir)
+    deploy_worker_scripts(tmp_dir, session_id, api_base)
+
+
 def _copy_configs_to_remote(tmux_sess: str, tmux_win: str, tmp_dir: str, remote_tmp_dir: str, session_name: str):
     """Copy settings.json, hooks, and bin scripts to remote host.
     
@@ -507,6 +527,10 @@ def reconnect_rdev_worker(conn, session, tmux_sess: str, tmux_win: str, api_port
     logger.info("Reconnect %s: evaluating path - screen_exists=%s, claude_running=%s", 
                 session.name, screen_exists, claude_running)
     
+    # Ensure local configs exist (regenerate from templates if orchestrator restarted)
+    api_base = f"http://127.0.0.1:{api_port}"
+    _ensure_local_configs_exist(tmp_dir, session.id, api_base)
+    
     # Always ensure remote configs exist (may have been cleared even if screen is running)
     logger.info("Reconnect %s: ensuring remote configs exist", session.name)
     _copy_configs_to_remote(tmux_sess, tmux_win, tmp_dir, remote_tmp_dir, session.name)
@@ -625,6 +649,10 @@ def reconnect_local_worker(session, tmux_sess: str, tmux_win: str, api_port: int
     
     Uses same claude command as new workers (--session-id auto-resumes existing sessions).
     """
+    # Ensure local configs exist (regenerate from templates if orchestrator restarted)
+    api_base = f"http://127.0.0.1:{api_port}"
+    _ensure_local_configs_exist(tmp_dir, session.id, api_base)
+    
     path_export = get_path_export_command(os.path.join(tmp_dir, "bin"))
     send_keys(tmux_sess, tmux_win, path_export, enter=True)
     time.sleep(0.3)
