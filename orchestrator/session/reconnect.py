@@ -127,6 +127,60 @@ def _copy_configs_to_remote(tmux_sess: str, tmux_win: str, tmp_dir: str, remote_
         logger.warning("Reconnect %s: local settings.json not found at %s", session_name, settings_path)
 
 
+def reconnect_tunnel_only(conn, session, tmux_sess: str, api_port: int, repo) -> bool:
+    """Reconnect just the SSH tunnel without touching the main worker window.
+    
+    Use this when SSH/screen/Claude are all running fine but the tunnel died.
+    This avoids typing commands into Claude.
+    
+    Args:
+        conn: Database connection
+        session: Session object
+        tmux_sess: tmux session name
+        api_port: API port for tunnel
+        repo: Sessions repository
+        
+    Returns:
+        True if tunnel was successfully reconnected, False otherwise
+    """
+    from orchestrator.terminal import ssh
+    from orchestrator.terminal.manager import create_window
+    
+    tunnel_name = f"{session.name}-tunnel"
+    
+    logger.info("Reconnect tunnel only for %s", session.name)
+    
+    # Clean up old tunnel window if it exists
+    if session.tunnel_pane:
+        try:
+            if ":" in session.tunnel_pane:
+                t_sess, t_win = session.tunnel_pane.split(":", 1)
+            else:
+                t_sess, t_win = tmux_sess, session.tunnel_pane
+            kill_window(t_sess, t_win)
+            logger.info("Killed old tunnel window %s", session.tunnel_pane)
+        except Exception as e:
+            logger.debug("Failed to kill old tunnel window: %s", e)
+    
+    # Create new tunnel
+    try:
+        create_window(tmux_sess, tunnel_name)
+        ssh.setup_rdev_tunnel(tmux_sess, tunnel_name, session.host, api_port, api_port)
+        time.sleep(3)
+        
+        # Verify tunnel is alive
+        if check_tunnel_alive(tmux_sess, tunnel_name):
+            repo.update_session(conn, session.id, tunnel_pane=f"{tmux_sess}:{tunnel_name}")
+            logger.info("Tunnel reconnected successfully for %s", session.name)
+            return True
+        else:
+            logger.warning("Tunnel reconnect failed verification for %s", session.name)
+            return False
+    except Exception as e:
+        logger.error("Failed to reconnect tunnel for %s: %s", session.name, e)
+        return False
+
+
 def parse_hostname_from_output(output: str, start_marker: str, end_marker: str) -> str | None:
     """Extract hostname from captured terminal output between markers.
     
@@ -334,20 +388,43 @@ def reconnect_rdev_worker(conn, session, tmux_sess: str, tmux_win: str, api_port
     screen_name = get_screen_session_name(session.id)
     
     # =========================================================================
-    # STEP 1: Check/restore tunnel
+    # STEP 0: Check if only tunnel needs fixing (SSH/screen/Claude all running)
     # =========================================================================
-    tunnel_alive = False
-    logger.info("Reconnect %s: Step 1 - checking tunnel (tunnel_pane=%s)", session.name, session.tunnel_pane)
+    # Use subprocess SSH check to verify remote state WITHOUT typing into the terminal
+    # This prevents accidentally typing commands into Claude
+    from orchestrator.session.health import check_screen_and_claude_rdev, check_worker_ssh_alive
     
+    tunnel_alive = False
     if session.tunnel_pane:
         if ":" in session.tunnel_pane:
             t_sess, t_win = session.tunnel_pane.split(":", 1)
         else:
             t_sess, t_win = tmux_sess, session.tunnel_pane
         tunnel_alive = check_tunnel_alive(t_sess, t_win)
-        logger.info("Reconnect %s: tunnel alive=%s", session.name, tunnel_alive)
-    else:
-        logger.info("Reconnect %s: no tunnel_pane stored, will create new tunnel", session.name)
+    
+    if not tunnel_alive:
+        # Check if SSH/screen/Claude are all running via subprocess (doesn't touch terminal)
+        screen_status, _ = check_screen_and_claude_rdev(session.host, session.id)
+        ssh_process_alive = check_worker_ssh_alive(tmux_sess, tmux_win, session.host)
+        
+        logger.info("Reconnect %s: tunnel_alive=%s, screen_status=%s, ssh_process_alive=%s",
+                    session.name, tunnel_alive, screen_status, ssh_process_alive)
+        
+        if screen_status == "alive" and ssh_process_alive:
+            # SSH/screen/Claude all fine - ONLY fix the tunnel, don't touch main window
+            logger.info("Reconnect %s: SSH/screen/Claude all running, only tunnel needs fixing", session.name)
+            if reconnect_tunnel_only(conn, session, tmux_sess, api_port, repo):
+                # Tunnel fixed, update status and return
+                repo.update_session(conn, session.id, status="waiting")
+                logger.info("Reconnect %s: SUCCESS - tunnel reconnected, worker fully operational", session.name)
+                return
+            else:
+                logger.warning("Reconnect %s: tunnel-only reconnect failed, continuing with full reconnect", session.name)
+    
+    # =========================================================================
+    # STEP 1: Check/restore tunnel (full reconnect path)
+    # =========================================================================
+    logger.info("Reconnect %s: Step 1 - checking tunnel (tunnel_pane=%s)", session.name, session.tunnel_pane)
     
     if not tunnel_alive:
         logger.info("Reconnect %s: re-establishing tunnel", session.name)

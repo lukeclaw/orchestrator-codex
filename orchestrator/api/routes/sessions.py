@@ -696,19 +696,39 @@ def health_check_session(session_id: str, db=Depends(get_db)):
         if screen_status == "alive":
             # Screen and Claude both running
             if not tunnel_alive:
-                # Claude running but tunnel dead - needs reconnect to restore API connectivity
-                reason = f"{reason}, but tunnel is dead (API calls won't work)"
-                if s.status not in ("screen_detached", "connecting"):
-                    repo.update_session(db, session_id, status="screen_detached")
-                    logger.info("Health check: %s has Claude running but tunnel dead, marked screen_detached", s.name)
-                return {
-                    "alive": False,
-                    "status": "screen_detached",
-                    "reason": reason,
-                    "screen_status": screen_status,
-                    "tunnel_alive": False,
-                    "needs_reconnect": True,
-                }
+                # Claude running but tunnel dead - auto-reconnect tunnel without touching main window
+                logger.info("Health check: %s has Claude running but tunnel dead, auto-reconnecting tunnel", s.name)
+                from orchestrator.session.reconnect import reconnect_tunnel_only
+                
+                api_port = 8093  # TODO: get from config
+                tunnel_reconnected = reconnect_tunnel_only(db, s, tmux_sess, api_port, repo)
+                
+                if tunnel_reconnected:
+                    logger.info("Health check: %s tunnel auto-reconnected successfully", s.name)
+                    # Update status back to waiting if it was in error state
+                    if s.status in ("screen_detached", "error", "disconnected"):
+                        repo.update_session(db, session_id, status="waiting")
+                    return {
+                        "alive": True,
+                        "status": "waiting",
+                        "reason": f"{reason}, tunnel was dead but auto-reconnected",
+                        "screen_status": screen_status,
+                        "tunnel_alive": True,
+                        "tunnel_reconnected": True,
+                    }
+                else:
+                    # Tunnel reconnect failed - mark as needing manual reconnect
+                    reason = f"{reason}, but tunnel is dead and auto-reconnect failed"
+                    if s.status not in ("screen_detached", "connecting"):
+                        repo.update_session(db, session_id, status="screen_detached")
+                    return {
+                        "alive": False,
+                        "status": "screen_detached",
+                        "reason": reason,
+                        "screen_status": screen_status,
+                        "tunnel_alive": False,
+                        "needs_reconnect": True,
+                    }
             # All good - screen, Claude, and tunnel alive
             # If status was screen_detached/error/disconnected, update to waiting (Claude is running)
             if s.status in ("screen_detached", "error", "disconnected"):

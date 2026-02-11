@@ -204,8 +204,8 @@ export default function SessionDetailPage() {
         </div>
       </div>
 
-      {/* Screen copy mode hint for rdev sessions */}
-      {isRdev && (
+      {/* Screen copy mode hint for rdev sessions - only show when Claude is running fine */}
+      {isRdev && ['idle', 'working', 'waiting', 'paused'].includes(session.status) && (
         <div className="sd-rdev-hint">
           <span className="sd-rdev-hint-icon">💡</span>
           <span>To view history: <kbd>Ctrl-A</kbd> + <kbd>[</kbd> to enter copy mode, <kbd>PageUp</kbd>/<kbd>PageDown</kbd> to scroll, <kbd>Esc</kbd> to exit</span>

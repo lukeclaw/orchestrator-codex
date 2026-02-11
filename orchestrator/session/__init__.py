@@ -26,6 +26,7 @@ from orchestrator.session.reconnect import (
     detach_from_screen,
     build_system_prompt,
     check_screen_exists_via_tmux,
+    reconnect_tunnel_only,
     reconnect_rdev_worker,
     reconnect_local_worker,
 )
@@ -53,6 +54,7 @@ __all__ = [
     "detach_from_screen",
     "build_system_prompt",
     "check_screen_exists_via_tmux",
+    "reconnect_tunnel_only",
     "reconnect_rdev_worker",
     "reconnect_local_worker",
 ]
