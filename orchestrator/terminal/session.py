@@ -12,7 +12,7 @@ from orchestrator.state.models import Session
 from orchestrator.state.repositories import sessions as sessions_repo
 from orchestrator.terminal import manager as tmux
 from orchestrator.terminal import ssh
-from orchestrator.worker.cli_scripts import generate_worker_scripts, generate_hooks_settings, get_path_export_command, WORKER_SCRIPT_NAMES
+from orchestrator.agents import deploy_worker_scripts, generate_worker_hooks, get_path_export_command, WORKER_SCRIPT_NAMES
 
 logger = logging.getLogger(__name__)
 
@@ -262,19 +262,30 @@ def setup_rdev_worker(
         time.sleep(1)  # Wait for screen to start
         logger.info("Entered screen session '%s' for worker %s", screen_name, name)
 
-        # 5. Generate CLI scripts locally, then copy to remote (inside screen)
+        # 5. Deploy CLI scripts locally, then copy to remote (inside screen)
         os.makedirs(local_tmp_dir, exist_ok=True)
-        bin_dir = generate_worker_scripts(
+        bin_dir = deploy_worker_scripts(
             worker_dir=local_tmp_dir,
-            worker_name=name,
             session_id=session_id,
             api_base=f"http://127.0.0.1:{api_port}",
         )
-        logger.info("Generated CLI scripts in %s", bin_dir)
+        logger.info("Deployed CLI scripts in %s", bin_dir)
         
         # Create remote directory and copy scripts
         tmux.send_keys(tmux_session, name, f"mkdir -p {remote_tmp_dir}/bin", enter=True)
         time.sleep(0.5)
+        
+        # Copy lib.sh first (required by other scripts)
+        lib_path = os.path.join(bin_dir, "lib.sh")
+        if os.path.exists(lib_path):
+            with open(lib_path) as f:
+                lib_content = f.read()
+            tmux.send_keys(tmux_session, name, 
+                f"cat > {remote_tmp_dir}/bin/lib.sh << 'ORCHEOF'\n{lib_content}\nORCHEOF", 
+                enter=True)
+            time.sleep(0.3)
+            tmux.send_keys(tmux_session, name, f"chmod +x {remote_tmp_dir}/bin/lib.sh", enter=True)
+            time.sleep(0.2)
         
         for script_name in WORKER_SCRIPT_NAMES:
             local_path = os.path.join(bin_dir, script_name)
@@ -297,7 +308,7 @@ def setup_rdev_worker(
         # 6. Generate and copy hooks settings (inside screen)
         local_configs_dir = os.path.join(local_tmp_dir, "configs")
         os.makedirs(local_configs_dir, exist_ok=True)
-        claude_dir = generate_hooks_settings(
+        claude_dir = generate_worker_hooks(
             worker_dir=local_configs_dir,
             session_id=session_id,
             api_base=f"http://127.0.0.1:{api_port}",

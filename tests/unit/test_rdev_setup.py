@@ -11,8 +11,8 @@ class TestSetupRdevWorker:
     @patch("orchestrator.terminal.session.time.sleep")  # Mock sleep to speed up tests
     @patch("orchestrator.terminal.session.tmux")
     @patch("orchestrator.terminal.session.ssh")
-    @patch("orchestrator.terminal.session.generate_worker_scripts")
-    @patch("orchestrator.terminal.session.generate_hooks_settings")
+    @patch("orchestrator.terminal.session.deploy_worker_scripts")
+    @patch("orchestrator.terminal.session.generate_worker_hooks")
     @patch("builtins.open", mock_open(read_data="Worker template SESSION_ID"))
     @patch("orchestrator.terminal.session.os.path.exists", return_value=True)
     @patch("orchestrator.terminal.session.os.makedirs")

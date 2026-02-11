@@ -13,7 +13,8 @@ from orchestrator.api.deps import get_db
 from orchestrator.state.repositories import sessions as sessions_repo
 from orchestrator.terminal import manager as tmux
 from orchestrator.terminal.session import send_to_session
-from orchestrator.brain.cli_scripts import generate_brain_scripts, get_brain_path_export, generate_brain_hooks
+from orchestrator.agents import deploy_brain_scripts, get_path_export_command, generate_brain_hooks
+from orchestrator.agents.deploy import get_brain_prompt, get_brain_skills_dir
 
 logger = logging.getLogger(__name__)
 
@@ -82,17 +83,16 @@ def start_brain(db=Depends(get_db)):
     brain_dir = "/tmp/orchestrator/brain"
     os.makedirs(brain_dir, exist_ok=True)
 
-    # Copy CLAUDE.md from the source tree into the working directory
-    import shutil
-    source_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
-    claude_md_src = os.path.join(source_root, "prompts", "brain_claude.md")
-    if os.path.exists(claude_md_src):
-        shutil.copy2(claude_md_src, os.path.join(brain_dir, "CLAUDE.md"))
+    # Copy brain prompt as CLAUDE.md into the working directory
+    brain_prompt = get_brain_prompt()
+    if brain_prompt:
+        with open(os.path.join(brain_dir, "CLAUDE.md"), "w") as f:
+            f.write(brain_prompt)
 
     # Deploy pre-built skills to .claude/commands/
-    skills_src = os.path.join(source_root, "prompts", "skills")
+    skills_src = get_brain_skills_dir()
     skills_dest = os.path.join(brain_dir, ".claude", "commands")
-    if os.path.isdir(skills_src):
+    if skills_src and os.path.isdir(skills_src):
         os.makedirs(skills_dest, exist_ok=True)
         for skill_file in os.listdir(skills_src):
             if skill_file.endswith(".md"):
@@ -103,8 +103,8 @@ def start_brain(db=Depends(get_db)):
         logger.info("Deployed %d skills to %s", len(os.listdir(skills_dest)), skills_dest)
 
     # Deploy brain CLI scripts
-    bin_dir = generate_brain_scripts(brain_dir)
-    path_export = get_brain_path_export(bin_dir)
+    bin_dir = deploy_brain_scripts(brain_dir)
+    path_export = get_path_export_command(bin_dir)
 
     # Generate brain hooks (injects dashboard focus context into prompts)
     settings_path = generate_brain_hooks(brain_dir)

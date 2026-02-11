@@ -240,6 +240,12 @@ select:focus {
   border: 1px solid rgba(249,115,22,0.3);
 }
 
+.status-badge.screen_detached {
+  background: rgba(249,115,22,0.12);
+  color: #f97316;
+  border: 1px solid rgba(249,115,22,0.3);
+}
+
 .status-badge.connecting {
   background: rgba(88,166,255,0.12);
   color: var(--accent);

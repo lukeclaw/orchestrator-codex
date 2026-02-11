@@ -39,6 +39,7 @@
 .worker-card.error { border-left-color: var(--red); }
 .worker-card.disconnected { border-left-color: #6e7681; }
 .worker-card.connecting { border-left-color: var(--accent); }
+.worker-card.screen_detached { border-left-color: var(--orange, #f97316); }
 
 /* Header */
 .wc-header {
@@ -115,8 +116,10 @@
   opacity: 1;
 }
 
-/* Always show reconnect button for disconnected workers */
-.worker-card.disconnected .wc-actions {
+/* Always show reconnect button for workers needing reconnection */
+.worker-card.disconnected .wc-actions,
+.worker-card.screen_detached .wc-actions,
+.worker-card.error .wc-actions {
   opacity: 1;
 }
 

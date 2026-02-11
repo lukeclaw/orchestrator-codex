@@ -123,6 +123,7 @@ export default function WorkersPage() {
             <option value="working">Working</option>
             <option value="waiting">Waiting</option>
             <option value="error">Error</option>
+            <option value="screen_detached">Screen Detached</option>
             <option value="disconnected">Disconnected</option>
           </select>
           <button

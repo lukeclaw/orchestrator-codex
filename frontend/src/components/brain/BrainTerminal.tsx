@@ -30,7 +30,7 @@ export default function BrainTerminal({
     <div className="brain-terminal">
       {isRunning && brainStatus.session_id ? (
         <div className="brain-terminal-area">
-          <TerminalView sessionId={brainStatus.session_id} onUserInput={onUserInput} />
+          <TerminalView key={brainStatus.session_id} sessionId={brainStatus.session_id} onUserInput={onUserInput} />
         </div>
       ) : (
         <div className="brain-empty">

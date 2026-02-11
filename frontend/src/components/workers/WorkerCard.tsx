@@ -174,8 +174,8 @@ export default function WorkerCard({
           <span className={`status-badge ${session.status}`}>{session.status}</span>
         </div>
         <div className="wc-actions">
-          {session.status === 'disconnected' ? (
-            /* Reconnect button for disconnected workers */
+          {(session.status === 'disconnected' || session.status === 'screen_detached' || session.status === 'error') ? (
+            /* Reconnect button for disconnected/screen_detached/error workers */
             <button
               className="wc-action-btn reconnect"
               onClick={handleReconnect}

@@ -2,6 +2,7 @@
 
 import logging
 import os
+import random
 import re
 import shutil
 import subprocess
@@ -22,7 +23,7 @@ from orchestrator.terminal.manager import (
     send_keys,
 )
 from orchestrator.terminal.ssh import is_rdev_host
-from orchestrator.worker.cli_scripts import generate_worker_scripts, generate_hooks_settings, get_path_export_command
+from orchestrator.agents import deploy_worker_scripts, generate_worker_hooks, get_path_export_command, get_worker_prompt
 
 logger = logging.getLogger(__name__)
 
@@ -258,38 +259,29 @@ def create_session(body: SessionCreate, request: Request, db=Depends(get_db)):
 
     else:
         # Local worker — launch claude with worker instructions via --append-system-prompt
-        # Load worker prompt template
-        source_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
-        template_src = os.path.join(source_root, "prompts", "worker_claude_template.md")
-        worker_prompt = None
         config = getattr(request.app.state, "config", {})
         api_port = config.get("server", {}).get("port", 8093)
         
-        # Generate CLI scripts in tmp_dir/bin/
-        bin_dir = generate_worker_scripts(
+        # Deploy CLI scripts in tmp_dir/bin/
+        bin_dir = deploy_worker_scripts(
             worker_dir=tmp_dir,
-            worker_name=sanitized_name,
             session_id=s.id,
             api_base=f"http://127.0.0.1:{api_port}",
         )
-        logger.info("Generated CLI scripts for local worker %s in %s", sanitized_name, bin_dir)
+        logger.info("Deployed CLI scripts for local worker %s in %s", sanitized_name, bin_dir)
         
         # Generate Claude Code hooks in tmp_dir/configs/
         configs_dir = os.path.join(tmp_dir, "configs")
         os.makedirs(configs_dir, exist_ok=True)
-        settings_path = generate_hooks_settings(
+        generate_worker_hooks(
             worker_dir=configs_dir,
             session_id=s.id,
             api_base=f"http://127.0.0.1:{api_port}",
         )
-        logger.info("Generated hooks settings for local worker %s in %s", sanitized_name, settings_path)
+        logger.info("Generated hooks settings for local worker %s", sanitized_name)
         
-        if os.path.exists(template_src):
-            try:
-                with open(template_src) as f:
-                    worker_prompt = f.read().replace("SESSION_ID", s.id)
-            except Exception:
-                logger.warning("Could not read worker prompt for %s", sanitized_name, exc_info=True)
+        # Load worker prompt
+        worker_prompt = get_worker_prompt(s.id)
 
         # cd to working directory, export PATH, and launch claude with --settings
         if tmux_window:
@@ -640,15 +632,18 @@ def reconnect_session(session_id: str, request: Request, db=Depends(get_db)):
 def _check_tunnel_alive(tmux_sess: str, tunnel_win: str) -> bool:
     """Check if the tunnel window has an active SSH tunnel running.
     
-    Sends a test command to check if the SSH process is still alive.
-    A dead tunnel will show error messages or no response.
+    A dead tunnel will show error messages OR return to shell prompt.
+    An alive tunnel shows no output (SSH is blocking, waiting for connection).
     """
     try:
-        # First check if window exists and has content
+        # Capture tunnel window output
         output = capture_output(tmux_sess, tunnel_win, lines=10)
         if not output:
-            logger.info("Tunnel check: no output from window")
+            logger.info("Tunnel check: no output from window - assuming dead")
             return False
+        
+        output_lower = output.lower()
+        logger.debug("Tunnel check output: %s", output[:200])
         
         # Check for common SSH failure indicators
         error_indicators = [
@@ -659,16 +654,37 @@ def _check_tunnel_alive(tmux_sess: str, tunnel_win: str) -> bool:
             "broken pipe",
             "Host key verification failed",
             "Permission denied",
+            "Could not resolve hostname",
+            "Network is unreachable",
         ]
-        output_lower = output.lower()
         for indicator in error_indicators:
             if indicator.lower() in output_lower:
                 logger.info("Tunnel check: found error indicator '%s'", indicator)
                 return False
         
-        # If the window shows ssh command running (no shell prompt), tunnel is likely alive
-        # A dead tunnel would typically show an error or return to shell prompt
-        logger.info("Tunnel check: appears alive")
+        # Check for shell prompt - indicates tunnel command has exited
+        # Common prompts: $, %, >, bash-x.x$, [user@host]$
+        lines = output.strip().split('\n')
+        last_line = lines[-1].strip() if lines else ""
+        
+        # Shell prompt patterns (tunnel exited, back to shell)
+        shell_prompt_indicators = ['$ ', '% ', '> ', 'bash-', '# ']
+        for prompt in shell_prompt_indicators:
+            if last_line.endswith(prompt.strip()) or prompt in last_line:
+                # Check if it's just a shell prompt (tunnel exited)
+                # vs ssh command still running (which wouldn't show prompt)
+                if not ('ssh' in output_lower and '-L' in output):
+                    logger.info("Tunnel check: shell prompt detected, tunnel likely dead: '%s'", last_line)
+                    return False
+        
+        # If output contains active SSH tunnel command and no errors, likely alive
+        if 'ssh' in output_lower and ('-L' in output or '-R' in output):
+            logger.info("Tunnel check: SSH tunnel command visible, appears alive")
+            return True
+        
+        # Fallback: if we can't determine, check if there's any recent activity
+        # A hanging SSH tunnel shows minimal output
+        logger.info("Tunnel check: uncertain status, assuming alive (output: %s)", last_line[:50])
         return True
     except Exception as e:
         logger.warning("Tunnel check failed: %s", e)
@@ -763,18 +779,12 @@ def _build_system_prompt(session_id: str) -> str | None:
     """Build the system prompt from template, same as new worker setup."""
     import shlex
     
-    # Path: sessions.py -> routes -> api -> orchestrator -> orchestrator (project root)
-    project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
-    template_path = os.path.join(project_root, "prompts", "worker_claude_template.md")
-    
-    if not os.path.exists(template_path):
-        logger.warning("Worker template not found at %s", template_path)
+    prompt = get_worker_prompt(session_id)
+    if prompt is None:
+        logger.warning("Worker prompt template not found")
         return None
     
-    with open(template_path) as f:
-        template = f.read()
-    
-    return shlex.quote(template.replace("SESSION_ID", session_id))
+    return shlex.quote(prompt)
 
 
 def _check_screen_exists_via_tmux(tmux_sess: str, tmux_win: str, screen_name: str, session_id: str) -> tuple[bool, bool]:
@@ -844,7 +854,6 @@ def _reconnect_rdev_worker(conn, session, tmux_sess: str, tmux_win: str, api_por
        - If no screen: create new screen and launch Claude
     """
     from orchestrator.terminal import ssh
-    from orchestrator.worker.cli_scripts import get_path_export_command
     
     tunnel_name = f"{session.name}-tunnel"
     remote_tmp_dir = f"/tmp/orchestrator/workers/{session.name}"
@@ -887,11 +896,48 @@ def _reconnect_rdev_worker(conn, session, tmux_sess: str, tmux_win: str, api_por
         repo.update_session(conn, session.id, tunnel_pane=f"{tmux_sess}:{tunnel_name}")
         logger.info("Reconnect %s: tunnel created and saved", session.name)
     
-    # 2. Check/restore SSH connection
-    ssh_alive = _check_ssh_alive(tmux_sess, tmux_win, session.host)
-    logger.info("SSH for %s alive: %s", session.name, ssh_alive)
+    # 2. Check screen/claude status via subprocess SSH first (don't use send_keys - Claude might be running!)
+    # This avoids typing commands into Claude if it's still running inside screen
+    screen_status, reason = _check_screen_and_claude_rdev(session.host, session.id)
+    logger.info("Reconnect %s: screen status via subprocess SSH: %s (%s)", session.name, screen_status, reason)
     
-    if not ssh_alive:
+    if screen_status == "alive":
+        # Screen exists with Claude running - just need to reattach!
+        # But first, check if we're already inside screen (send Ctrl-A d to detach if so)
+        logger.info("Reconnect %s: screen session '%s' found with Claude running, preparing to reattach", 
+                    session.name, screen_name)
+        
+        # Send Ctrl-A d to detach from any screen session we might be in
+        # This is safe even if we're not in screen (just does nothing)
+        send_keys(tmux_sess, tmux_win, "C-a d", enter=False)
+        time.sleep(0.5)
+        
+        # Now reattach to the screen session
+        sync_marker = f"__SYNC_BEFORE_REATTACH_{random.randint(10000, 99999)}__"
+        send_keys(tmux_sess, tmux_win, f"echo {sync_marker}", enter=True)
+        time.sleep(1)
+        
+        send_keys(tmux_sess, tmux_win, f"screen -r {screen_name}", enter=True)
+        repo.update_session(conn, session.id, status="waiting")
+        logger.info("Reconnect %s: reattached to screen session - Claude still running!", session.name)
+        return
+    
+    # Screen doesn't exist or Claude not running - need to re-establish SSH and restart
+    # First, make sure we're not inside a broken screen session
+    send_keys(tmux_sess, tmux_win, "C-a d", enter=False)  # Detach if in screen
+    time.sleep(0.5)
+    
+    # Check if we need to re-establish SSH (try a simple command)
+    try:
+        test_result = subprocess.run(
+            ["ssh", "-o", "ConnectTimeout=5", "-o", "BatchMode=yes", session.host, "echo SSH_OK"],
+            capture_output=True, text=True, timeout=10
+        )
+        ssh_ok = "SSH_OK" in test_result.stdout
+    except Exception:
+        ssh_ok = False
+    
+    if not ssh_ok:
         logger.info("Re-establishing SSH for %s", session.name)
         ssh.rdev_connect(tmux_sess, tmux_win, session.host)
         # Wait for shell prompt with longer timeout (SSH can take a while)
@@ -906,13 +952,27 @@ def _reconnect_rdev_worker(conn, session, tmux_sess: str, tmux_win: str, api_por
     if not _install_screen_if_needed(tmux_sess, tmux_win):
         logger.warning("Reconnect %s: screen not available", session.name)
     
-    # 4. Check screen session status
+    # 4. Now we can safely check screen status via tmux (we're at bash prompt, not inside Claude)
     screen_exists, claude_running = _check_screen_exists_via_tmux(tmux_sess, tmux_win, screen_name, session.id)
     
     if screen_exists and claude_running:
         # Best case: screen session exists with Claude running - just reattach!
         logger.info("Reconnect %s: screen session '%s' found with Claude running, reattaching", 
                     session.name, screen_name)
+        
+        # IMPORTANT: Wait and sync before reattaching to avoid race condition
+        # Previous commands (SSH check, screen check) may still be buffered/processing
+        # If we screen -r too fast, those commands get typed into Claude
+        sync_marker = f"__SYNC_BEFORE_REATTACH_{random.randint(10000, 99999)}__"
+        send_keys(tmux_sess, tmux_win, f"echo {sync_marker}", enter=True)
+        time.sleep(1)
+        
+        # Verify sync marker appeared (confirms previous commands completed)
+        sync_output = capture_output(tmux_sess, tmux_win, lines=10)
+        if sync_marker not in sync_output:
+            logger.warning("Reconnect %s: sync marker not found, waiting longer", session.name)
+            time.sleep(2)
+        
         send_keys(tmux_sess, tmux_win, f"screen -r {screen_name}", enter=True)
         repo.update_session(conn, session.id, status="waiting")
         logger.info("Reconnect %s: reattached to screen session - Claude still running!", session.name)
@@ -966,7 +1026,6 @@ def _reconnect_local_worker(session, tmux_sess: str, tmux_win: str, api_port: in
     Uses same claude command as new workers (--session-id auto-resumes existing sessions).
     """
     import shlex
-    from orchestrator.worker.cli_scripts import get_path_export_command
     
     # 1. Export PATH and cd to work_dir
     path_export = get_path_export_command(os.path.join(tmp_dir, "bin"))
@@ -1029,42 +1088,21 @@ def _get_screen_session_name(session_id: str) -> str:
 def _check_screen_and_claude_rdev(host: str, session_id: str, tmux_sess: str = None, tmux_win: str = None) -> tuple[str, str]:
     """Check screen session and Claude process status on rdev host.
     
-    If tmux_sess and tmux_win are provided, first checks if the worker's tmux SSH
-    is alive. This is important because a fresh SSH can connect even when the
-    worker's SSH connection is broken.
+    Uses subprocess SSH (fresh connection) to check status. Does NOT use tmux send-keys
+    because that would type commands into Claude if it's running.
+    
+    The tmux_sess and tmux_win parameters are kept for API compatibility but not used.
     
     Returns (status: str, reason: str) where status is one of:
-    - "alive": Screen exists and Claude is running AND tmux SSH is connected
+    - "alive": Screen exists and Claude is running
     - "screen_only": Screen exists but Claude not running
-    - "screen_detached": SSH connection lost but screen may still be running
-    - "dead": No screen session or SSH connection failed definitively
+    - "screen_detached": SSH connection failed but screen may still be running
+    - "dead": No screen session found
     """
-    import subprocess
-    
     screen_name = _get_screen_session_name(session_id)
     
-    # If we have tmux info, first check if the worker's SSH is alive
-    # This catches the case where the tmux SSH is broken but a fresh SSH would work
-    if tmux_sess and tmux_win:
-        tmux_ssh_alive = _check_ssh_alive(tmux_sess, tmux_win, host)
-        if not tmux_ssh_alive:
-            # Worker's SSH is broken - we need to check if screen is still running via fresh SSH
-            # This is "screen_detached" state - we can reconnect to restore it
-            try:
-                check_cmd = f"screen -ls 2>/dev/null | grep -q '{screen_name}' && echo 'SCREEN_EXISTS' || echo 'NO_SCREEN'"
-                result = subprocess.run(
-                    ["ssh", "-o", "ConnectTimeout=5", "-o", "BatchMode=yes", host, check_cmd],
-                    capture_output=True, text=True, timeout=10
-                )
-                if "SCREEN_EXISTS" in result.stdout:
-                    return "screen_detached", "Worker SSH disconnected but screen session still exists on remote"
-                else:
-                    return "dead", "Worker SSH disconnected and no screen session found"
-            except Exception:
-                # Can't even SSH to check - assume screen might still be running
-                return "screen_detached", "Worker SSH disconnected, cannot verify screen status"
-    
-    # Check via fresh SSH (for cases without tmux info, or when tmux SSH is alive)
+    # Always check via subprocess SSH - never use send-keys to worker window
+    # because Claude might be running there and would receive the commands as input
     try:
         check_cmd = f"screen -ls 2>/dev/null | grep -q '{screen_name}' && echo 'SCREEN_EXISTS' || echo 'NO_SCREEN'; ps aux | grep -v grep | grep '{session_id}' | grep -i claude && echo 'CLAUDE_RUNNING' || echo 'NO_CLAUDE'"
         
@@ -1150,29 +1188,76 @@ def health_check_session(session_id: str, db=Depends(get_db)):
 
     # Check if rdev or local worker
     if is_rdev_host(s.host):
-        # Use detailed screen check for rdev workers - pass tmux info to check worker SSH
+        # Use detailed screen check for rdev workers
         screen_status, reason = _check_screen_and_claude_rdev(s.host, session_id, tmux_sess, tmux_win)
         
+        # Also check tunnel status for rdev workers
+        tunnel_alive = False
+        if s.tunnel_pane:
+            if ":" in s.tunnel_pane:
+                t_sess, t_win = s.tunnel_pane.split(":", 1)
+            else:
+                t_sess, t_win = tmux_sess, s.tunnel_pane
+            tunnel_alive = _check_tunnel_alive(t_sess, t_win)
+        
         if screen_status == "alive":
-            # Screen and Claude both running - all good
-            return {"alive": True, "status": s.status, "reason": reason, "screen_status": screen_status}
+            # Screen and Claude both running
+            if not tunnel_alive:
+                # Claude running but tunnel dead - needs reconnect to restore API connectivity
+                reason = f"{reason}, but tunnel is dead (API calls won't work)"
+                if s.status not in ("screen_detached", "connecting"):
+                    repo.update_session(db, session_id, status="screen_detached")
+                    logger.info("Health check: %s has Claude running but tunnel dead, marked screen_detached", s.name)
+                return {
+                    "alive": False,
+                    "status": "screen_detached",
+                    "reason": reason,
+                    "screen_status": screen_status,
+                    "tunnel_alive": False,
+                    "needs_reconnect": True,
+                }
+            # All good - screen, Claude, and tunnel alive
+            # If status was screen_detached/error/disconnected, update to waiting (Claude is running)
+            if s.status in ("screen_detached", "error", "disconnected"):
+                repo.update_session(db, session_id, status="waiting")
+                logger.info("Health check: %s recovered from %s to waiting", s.name, s.status)
+                return {"alive": True, "status": "waiting", "reason": reason, "screen_status": screen_status, "tunnel_alive": True}
+            return {"alive": True, "status": s.status, "reason": reason, "screen_status": screen_status, "tunnel_alive": True}
         elif screen_status == "screen_detached":
-            # SSH failed but screen might still be running
+            # SSH failed but screen might still be running - this needs reconnect to resume work
             if s.status not in ("screen_detached", "connecting"):
                 repo.update_session(db, session_id, status="screen_detached")
                 logger.info("Health check: %s marked as screen_detached (%s)", s.name, reason)
-            return {"alive": True, "status": "screen_detached", "reason": reason, "screen_status": screen_status}
+            return {
+                "alive": False,  # Not usable without reconnect
+                "status": "screen_detached", 
+                "reason": reason, 
+                "screen_status": screen_status,
+                "needs_reconnect": True,  # Signal that reconnect can restore this worker
+            }
         elif screen_status == "screen_only":
-            # Screen exists but Claude crashed
+            # Screen exists but Claude crashed - can restart Claude in screen
             if s.status != "error":
                 repo.update_session(db, session_id, status="error")
                 logger.info("Health check: %s marked as error - Claude crashed in screen (%s)", s.name, reason)
-            return {"alive": False, "status": "error", "reason": reason, "screen_status": screen_status}
+            return {
+                "alive": False, 
+                "status": "error", 
+                "reason": reason, 
+                "screen_status": screen_status,
+                "needs_reconnect": True,  # Can restart Claude in existing screen
+            }
         else:  # dead
             if s.status != "disconnected":
                 repo.update_session(db, session_id, status="disconnected")
                 logger.info("Health check: %s marked as disconnected (%s)", s.name, reason)
-            return {"alive": False, "status": "disconnected", "reason": reason, "screen_status": screen_status}
+            return {
+                "alive": False, 
+                "status": "disconnected", 
+                "reason": reason, 
+                "screen_status": screen_status,
+                "needs_reconnect": True,  # Full restart needed
+            }
     else:
         alive, reason = _check_claude_process_local(session_id)
         
@@ -1180,7 +1265,7 @@ def health_check_session(session_id: str, db=Depends(get_db)):
             if s.status != "disconnected":
                 repo.update_session(db, session_id, status="disconnected")
                 logger.info("Health check: %s marked as disconnected (%s)", s.name, reason)
-            return {"alive": False, "status": "disconnected", "reason": reason}
+            return {"alive": False, "status": "disconnected", "reason": reason, "needs_reconnect": True}
         
         return {"alive": True, "status": s.status, "reason": reason}
 

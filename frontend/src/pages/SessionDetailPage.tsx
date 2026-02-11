@@ -141,7 +141,8 @@ export default function SessionDetailPage() {
           )}
 
           {/* Control buttons - icon only */}
-          {session.status === 'disconnected' ? (
+          {(session.status === 'disconnected' || session.status === 'screen_detached' || session.status === 'error') ? (
+            /* Reconnect button for disconnected/screen_detached/error workers */
             <button
               className="sd-control-btn reconnect"
               onClick={handleReconnect}

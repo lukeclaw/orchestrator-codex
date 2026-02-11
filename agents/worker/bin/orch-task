@@ -1,0 +1,141 @@
+#!/bin/bash
+# orch-task: Manage the assigned task
+source "$(dirname "$0")/lib.sh"
+
+show_help() {
+    echo "Usage: orch-task <command> [options]"
+    echo ""
+    echo "Commands:"
+    echo "  show [--refresh]              Show task details"
+    echo "  update [options]              Update task"
+    echo ""
+    echo "Update Options:"
+    echo "  --status STATUS               Update status (in_progress|blocked) - workers cannot set done"
+    echo "  --notes NOTES                 Update notes (findings, progress, observations)"
+    echo "  --notes-stdin                 Read notes from stdin (for multi-line content)"
+    echo "  --add-link URL                Add a link to the task"
+    echo "  --add-link-tag TAG            Tag for the link (e.g., PR, DOC, ISSUE)"
+    echo "  --clear-links                 Remove all links (can combine with --add-link to replace)"
+    echo ""
+    echo "Options:"
+    echo "  --refresh                     Force refresh task info from API"
+    echo ""
+    echo "Examples:"
+    echo "  orch-task show"
+    echo "  orch-task show --refresh"
+    echo "  orch-task update --status in_progress"
+    echo "  orch-task update --status blocked"
+    echo "  orch-task update --notes \"Found issue in auth module\""
+    echo "  orch-task update --add-link \"https://github.com/org/repo/pull/123\" --add-link-tag PR"
+    echo "  orch-task update --clear-links                              # Remove all links"
+    echo "  orch-task update --clear-links --add-link \"https://new.url\" # Replace links"
+}
+
+cmd_show() {
+    load_task_info "$FORCE_REFRESH" || exit 1
+    curl -s "$API_BASE/api/tasks/$TASK_ID" | jq .
+}
+
+cmd_update() {
+    load_task_info "$FORCE_REFRESH" || exit 1
+    
+    local status="" notes="" notes_stdin="" add_link="" add_link_tag="" clear_links=""
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --status)
+                status="$2"
+                shift 2
+                ;;
+            --notes)
+                notes="$2"
+                shift 2
+                ;;
+            --notes-stdin)
+                notes_stdin="1"
+                shift
+                ;;
+            --add-link)
+                add_link="$2"
+                shift 2
+                ;;
+            --add-link-tag)
+                add_link_tag="$2"
+                shift 2
+                ;;
+            --clear-links)
+                clear_links="1"
+                shift
+                ;;
+            *)
+                echo "Unknown option: $1" >&2
+                exit 1
+                ;;
+        esac
+    done
+    
+    if [[ -n "$notes_stdin" ]]; then
+        notes=$(cat)
+    fi
+    
+    if [[ -z "$status" && -z "$notes" && -z "$add_link" && -z "$clear_links" ]]; then
+        echo "Error: --status, --notes, --add-link, or --clear-links is required" >&2
+        exit 1
+    fi
+    
+    if [[ "$status" == "done" ]]; then
+        echo "Error: Workers cannot mark tasks as done. Signal completion in your response and the orchestrator brain will review and mark done." >&2
+        exit 1
+    fi
+    
+    local json="{"
+    local first=true
+    if [[ -n "$status" ]]; then
+        json="$json\"status\": \"$status\""; first=false
+    fi
+    if [[ -n "$notes" ]]; then
+        local escaped_notes=$(json_encode "$notes")
+        [[ "$first" != true ]] && json="$json, "
+        json="$json\"notes\": \"$escaped_notes\""; first=false
+    fi
+    if [[ -n "$clear_links" || -n "$add_link" ]]; then
+        local updated_links="[]"
+        if [[ -z "$clear_links" && -n "$add_link" ]]; then
+            updated_links=$(curl -s "$API_BASE/api/tasks/$TASK_ID" | jq -c '.links // []')
+        fi
+        if [[ -n "$add_link" ]]; then
+            local escaped_link=$(json_encode "$add_link")
+            local new_link="{\"url\": \"$escaped_link\"}"
+            if [[ -n "$add_link_tag" ]]; then
+                local escaped_tag=$(json_encode "$add_link_tag")
+                new_link="{\"url\": \"$escaped_link\", \"tag\": \"$escaped_tag\"}"
+            fi
+            updated_links=$(echo "$updated_links" | jq -c ". + [$new_link]")
+        fi
+        [[ "$first" != true ]] && json="$json, "
+        json="$json\"links\": $updated_links"; first=false
+    fi
+    json="$json}"
+    
+    curl -s -X PATCH "$API_BASE/api/tasks/$TASK_ID" \
+        -H 'Content-Type: application/json' \
+        -d "$json" | jq .
+}
+
+case "$1" in
+    show)
+        shift
+        cmd_show "$@"
+        ;;
+    update)
+        shift
+        cmd_update "$@"
+        ;;
+    -h|--help|"")
+        show_help
+        ;;
+    *)
+        echo "Unknown command: $1" >&2
+        show_help
+        exit 1
+        ;;
+esac

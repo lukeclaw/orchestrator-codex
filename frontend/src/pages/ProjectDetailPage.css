@@ -178,6 +178,7 @@
 .status-indicator.error { background: var(--red); }
 .status-indicator.disconnected { background: var(--text-muted); }
 .status-indicator.connecting { background: var(--accent); }
+.status-indicator.screen_detached { background: var(--orange, #f97316); }
 
 /* Context section */
 .pd-context-form {

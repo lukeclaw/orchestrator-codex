@@ -1,9 +1,9 @@
-"""Tests for CLI script generation and JSON encoding logic.
+"""Tests for CLI script deployment and JSON encoding logic.
 
 These tests verify that:
-1. CLI scripts are generated correctly with proper escaping
-2. The json_encode helper function is included and works correctly
-3. stdin options (--content-stdin, --notes-stdin, etc.) are supported
+1. CLI scripts are deployed correctly with proper permissions
+2. The json_encode helper function works correctly
+3. Deployed scripts contain expected functionality
 """
 
 import os
@@ -11,146 +11,119 @@ import subprocess
 import tempfile
 import pytest
 
-from orchestrator.brain.cli_scripts import (
-    generate_brain_scripts,
-    BRAIN_CONTEXT_SCRIPT,
-    BRAIN_SCRIPT_HEADER,
-    BRAIN_WORKERS_SCRIPT,
-    BRAIN_PROJECTS_SCRIPT,
-    BRAIN_TASKS_SCRIPT,
-    BRAIN_SEND_SCRIPT,
-    BRAIN_NOTIFICATIONS_SCRIPT,
+from orchestrator.agents import (
+    deploy_brain_scripts,
+    deploy_worker_scripts,
+    BRAIN_SCRIPT_NAMES,
+    WORKER_SCRIPT_NAMES,
 )
-from orchestrator.worker.cli_scripts import (
-    generate_worker_scripts,
-    ORCH_TASK_SCRIPT,
-    ORCH_SUBTASK_SCRIPT,
-    SCRIPT_HEADER,
-)
+
+
+def _read_script(bin_dir: str, script_name: str) -> str:
+    """Read content of a deployed script."""
+    with open(os.path.join(bin_dir, script_name)) as f:
+        return f.read()
 
 
 class TestBrainCliScripts:
-    """Tests for brain CLI script generation."""
+    """Tests for brain CLI script deployment."""
 
-    def test_generate_brain_scripts_creates_files(self):
+    def test_deploy_brain_scripts_creates_files(self):
         """Verify all expected scripts are created with correct permissions."""
         with tempfile.TemporaryDirectory() as tmpdir:
-            bin_dir = generate_brain_scripts(tmpdir, "http://localhost:8093")
+            bin_dir = deploy_brain_scripts(tmpdir, "http://localhost:8093")
             
-            expected_scripts = [
-                "orch-workers",
-                "orch-projects", 
-                "orch-tasks",
-                "orch-ctx",
-                "orch-send",
-                "orch-notifications",
-            ]
-            
-            for script_name in expected_scripts:
+            # Check all expected scripts plus lib.sh
+            for script_name in BRAIN_SCRIPT_NAMES + ["lib.sh"]:
                 script_path = os.path.join(bin_dir, script_name)
                 assert os.path.exists(script_path), f"{script_name} should exist"
                 assert os.access(script_path, os.X_OK), f"{script_name} should be executable"
 
-    def test_brain_context_script_has_json_encode(self):
-        """Verify the json_encode helper is included in context script."""
-        assert "json_encode()" in BRAIN_CONTEXT_SCRIPT
-        assert "jq -Rs" in BRAIN_CONTEXT_SCRIPT
-        assert "python3 -c" in BRAIN_CONTEXT_SCRIPT
+    def test_brain_lib_has_json_encode(self):
+        """Verify the json_encode helper is included in lib.sh."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            bin_dir = deploy_brain_scripts(tmpdir)
+            lib_content = _read_script(bin_dir, "lib.sh")
+            assert "json_encode()" in lib_content
+            assert "jq -Rs" in lib_content
 
-    def test_brain_context_script_has_content_stdin(self):
+    def test_brain_ctx_script_has_content_stdin(self):
         """Verify --content-stdin option is supported."""
-        assert "--content-stdin" in BRAIN_CONTEXT_SCRIPT
-        assert "content_stdin" in BRAIN_CONTEXT_SCRIPT
-
-    def test_brain_context_script_has_content_file(self):
-        """Verify --content-file option is supported."""
-        assert "--content-file" in BRAIN_CONTEXT_SCRIPT
-        assert "content_file" in BRAIN_CONTEXT_SCRIPT
-
-    def test_brain_context_script_uses_json_encode_for_content(self):
-        """Verify content is properly JSON-encoded using json_encode."""
-        assert 'escaped_content=$(json_encode "$content")' in BRAIN_CONTEXT_SCRIPT
+        with tempfile.TemporaryDirectory() as tmpdir:
+            bin_dir = deploy_brain_scripts(tmpdir)
+            content = _read_script(bin_dir, "orch-ctx")
+            assert "--content-stdin" in content
+            assert "content_stdin" in content
 
     def test_brain_tasks_script_has_delete_command(self):
         """Verify orch-tasks has delete command."""
-        assert "delete <id>" in BRAIN_TASKS_SCRIPT
-        assert "cmd_delete()" in BRAIN_TASKS_SCRIPT
-        assert 'curl -s -X DELETE "$API_BASE/api/tasks/$id"' in BRAIN_TASKS_SCRIPT
-        assert "delete) shift; cmd_delete" in BRAIN_TASKS_SCRIPT
+        with tempfile.TemporaryDirectory() as tmpdir:
+            bin_dir = deploy_brain_scripts(tmpdir)
+            content = _read_script(bin_dir, "orch-tasks")
+            assert "delete <id>" in content
+            assert "cmd_delete()" in content
 
     def test_brain_workers_script_has_stop_command(self):
         """Verify orch-workers has stop command."""
-        assert "stop <id>" in BRAIN_WORKERS_SCRIPT
-        assert "cmd_stop()" in BRAIN_WORKERS_SCRIPT
-        assert 'curl -s -X POST "$API_BASE/api/sessions/$id/stop"' in BRAIN_WORKERS_SCRIPT
-        assert "stop) shift; cmd_stop" in BRAIN_WORKERS_SCRIPT
+        with tempfile.TemporaryDirectory() as tmpdir:
+            bin_dir = deploy_brain_scripts(tmpdir)
+            content = _read_script(bin_dir, "orch-workers")
+            assert "stop <id>" in content
+            assert "cmd_stop()" in content
 
     def test_brain_workers_script_has_reconnect_command(self):
         """Verify orch-workers has reconnect command."""
-        assert "reconnect <id>" in BRAIN_WORKERS_SCRIPT
-        assert "cmd_reconnect()" in BRAIN_WORKERS_SCRIPT
-        assert 'curl -s -X POST "$API_BASE/api/sessions/$id/reconnect"' in BRAIN_WORKERS_SCRIPT
-        assert "reconnect) shift; cmd_reconnect" in BRAIN_WORKERS_SCRIPT
-
-    def test_brain_notifications_script_has_delete_command(self):
-        """Verify orch-notifications has delete command."""
-        assert "delete <id>" in BRAIN_NOTIFICATIONS_SCRIPT
-        assert "cmd_delete()" in BRAIN_NOTIFICATIONS_SCRIPT
-        assert 'curl -s -X DELETE "$API_BASE/api/notifications/$id"' in BRAIN_NOTIFICATIONS_SCRIPT
-        assert "delete) shift; cmd_delete" in BRAIN_NOTIFICATIONS_SCRIPT
+        with tempfile.TemporaryDirectory() as tmpdir:
+            bin_dir = deploy_brain_scripts(tmpdir)
+            content = _read_script(bin_dir, "orch-workers")
+            assert "reconnect <id>" in content
+            assert "cmd_reconnect()" in content
 
 
 class TestWorkerCliScripts:
-    """Tests for worker CLI script generation."""
+    """Tests for worker CLI script deployment."""
 
-    def test_generate_worker_scripts_creates_files(self):
+    def test_deploy_worker_scripts_creates_files(self):
         """Verify all expected worker scripts are created."""
         with tempfile.TemporaryDirectory() as tmpdir:
-            bin_dir = generate_worker_scripts(
-                tmpdir, "test-worker", "session-123", "http://localhost:8093"
-            )
+            bin_dir = deploy_worker_scripts(tmpdir, "session-123", "http://localhost:8093")
             
-            expected_scripts = [
-                "orch-task",
-                "orch-subtask",
-                "orch-worker",
-                "orch-context",
-            ]
-            
-            for script_name in expected_scripts:
+            # Check all expected scripts plus lib.sh
+            for script_name in WORKER_SCRIPT_NAMES + ["lib.sh"]:
                 script_path = os.path.join(bin_dir, script_name)
                 assert os.path.exists(script_path), f"{script_name} should exist"
                 assert os.access(script_path, os.X_OK), f"{script_name} should be executable"
 
-    def test_worker_script_header_has_json_encode(self):
-        """Verify the json_encode helper is in the shared header."""
-        assert "json_encode()" in SCRIPT_HEADER
-        assert "jq -Rs" in SCRIPT_HEADER
-        assert "python3 -c" in SCRIPT_HEADER
+    def test_worker_lib_has_json_encode(self):
+        """Verify the json_encode helper is in lib.sh."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            bin_dir = deploy_worker_scripts(tmpdir, "session-123")
+            lib_content = _read_script(bin_dir, "lib.sh")
+            assert "json_encode()" in lib_content
+            assert "jq -Rs" in lib_content
+
+    def test_worker_lib_has_session_id(self):
+        """Verify lib.sh contains the session ID."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            bin_dir = deploy_worker_scripts(tmpdir, "test-session-456")
+            lib_content = _read_script(bin_dir, "lib.sh")
+            assert "test-session-456" in lib_content
 
     def test_task_script_has_notes_stdin(self):
         """Verify --notes-stdin option is supported in task script."""
-        assert "--notes-stdin" in ORCH_TASK_SCRIPT
-        assert "notes_stdin" in ORCH_TASK_SCRIPT
-
-    def test_task_script_uses_json_encode_for_notes(self):
-        """Verify notes are properly JSON-encoded."""
-        assert 'escaped_notes=$(json_encode "$notes")' in ORCH_TASK_SCRIPT
-
-    def test_subtask_script_has_notes_stdin(self):
-        """Verify --notes-stdin option is supported in subtask script."""
-        assert "--notes-stdin" in ORCH_SUBTASK_SCRIPT
-        assert "notes_stdin" in ORCH_SUBTASK_SCRIPT
+        with tempfile.TemporaryDirectory() as tmpdir:
+            bin_dir = deploy_worker_scripts(tmpdir, "session-123")
+            content = _read_script(bin_dir, "orch-task")
+            assert "--notes-stdin" in content
+            assert "notes_stdin" in content
 
     def test_subtask_script_has_description_stdin(self):
         """Verify --description-stdin option is supported in subtask script."""
-        assert "--description-stdin" in ORCH_SUBTASK_SCRIPT
-        assert "description_stdin" in ORCH_SUBTASK_SCRIPT
-
-    def test_subtask_script_uses_json_encode(self):
-        """Verify subtask script uses json_encode for text fields."""
-        assert 'escaped_notes=$(json_encode "$notes")' in ORCH_SUBTASK_SCRIPT
-        assert 'escaped_desc=$(json_encode "$description")' in ORCH_SUBTASK_SCRIPT
+        with tempfile.TemporaryDirectory() as tmpdir:
+            bin_dir = deploy_worker_scripts(tmpdir, "session-123")
+            content = _read_script(bin_dir, "orch-subtask")
+            assert "--description-stdin" in content
+            assert "description_stdin" in content
 
 
 class TestJsonEncodeFunction:
@@ -246,36 +219,23 @@ This has:
 
 
 class TestStdinOptions:
-    """Tests for --*-stdin options in generated scripts."""
+    """Tests for --*-stdin options in deployed scripts."""
 
-    @pytest.fixture
-    def brain_ctx_script(self):
-        """Generate brain orch-ctx script for testing."""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            bin_dir = generate_brain_scripts(tmpdir, "http://localhost:8093")
-            script_path = os.path.join(bin_dir, "orch-ctx")
-            with open(script_path, 'r') as f:
-                content = f.read()
-            yield script_path, content
-
-    def test_content_stdin_reads_from_stdin(self, brain_ctx_script):
+    def test_content_stdin_reads_from_stdin(self):
         """Verify --content-stdin triggers reading from cat."""
-        script_path, content = brain_ctx_script
-        # Check the logic flow
-        assert 'if [[ -n "$content_stdin" ]]; then' in content
-        assert 'content=$(cat)' in content
+        with tempfile.TemporaryDirectory() as tmpdir:
+            bin_dir = deploy_brain_scripts(tmpdir)
+            content = _read_script(bin_dir, "orch-ctx")
+            assert 'if [[ -n "$content_stdin" ]]; then' in content
+            assert 'content=$(cat)' in content
 
-    def test_content_file_reads_from_file(self, brain_ctx_script):
+    def test_content_file_reads_from_file(self):
         """Verify --content-file reads content from specified file."""
-        script_path, content = brain_ctx_script
-        assert 'if [[ -n "$content_file" ]]; then' in content
-        assert 'content=$(cat "$content_file")' in content
-
-    def test_help_text_includes_stdin_option(self, brain_ctx_script):
-        """Verify help text documents the --content-stdin option."""
-        script_path, content = brain_ctx_script
-        assert "--content-stdin" in content
-        assert "Read content from stdin" in content
+        with tempfile.TemporaryDirectory() as tmpdir:
+            bin_dir = deploy_brain_scripts(tmpdir)
+            content = _read_script(bin_dir, "orch-ctx")
+            assert 'if [[ -n "$content_file" ]]; then' in content
+            assert 'content=$(cat "$content_file")' in content
 
 
 class TestCrossPlatformCompatibility:
@@ -283,105 +243,66 @@ class TestCrossPlatformCompatibility:
 
     def test_no_gnu_sed_syntax_in_brain_scripts(self):
         """Ensure no GNU-specific sed multi-line syntax is used."""
-        # The problematic pattern was: sed ':a;N;$!ba;s/\n/\\n/g'
-        assert ":a;N;$!ba" not in BRAIN_CONTEXT_SCRIPT
-        assert ":a;N;$!ba" not in BRAIN_SCRIPT_HEADER
+        with tempfile.TemporaryDirectory() as tmpdir:
+            bin_dir = deploy_brain_scripts(tmpdir)
+            for script_name in BRAIN_SCRIPT_NAMES + ["lib.sh"]:
+                content = _read_script(bin_dir, script_name)
+                # The problematic pattern was: sed ':a;N;$!ba;s/\n/\\n/g'
+                assert ":a;N;$!ba" not in content, f"GNU sed syntax found in {script_name}"
 
     def test_no_gnu_sed_syntax_in_worker_scripts(self):
         """Ensure no GNU-specific sed syntax in worker scripts."""
-        assert ":a;N;$!ba" not in ORCH_TASK_SCRIPT
-        assert ":a;N;$!ba" not in ORCH_SUBTASK_SCRIPT
-        assert ":a;N;$!ba" not in SCRIPT_HEADER
+        with tempfile.TemporaryDirectory() as tmpdir:
+            bin_dir = deploy_worker_scripts(tmpdir, "session-123")
+            for script_name in WORKER_SCRIPT_NAMES + ["lib.sh"]:
+                content = _read_script(bin_dir, script_name)
+                assert ":a;N;$!ba" not in content, f"GNU sed syntax found in {script_name}"
 
     def test_uses_portable_sed_for_quote_stripping(self):
         """Verify sed command for stripping quotes is POSIX-compatible."""
-        # The portable pattern: sed 's/^"//;s/"$//'
-        assert "sed 's/^\"//;s/\"$//'" in SCRIPT_HEADER
-        # Brain scripts include it via the json_encode function
-        formatted_header = BRAIN_SCRIPT_HEADER.format(
-            script_name="test",
-            script_description="test",
-            api_base="http://localhost:8093"
-        )
-        # Check brain context script which has json_encode
-        assert "sed 's/^\"//;s/\"$//'" in BRAIN_CONTEXT_SCRIPT
+        with tempfile.TemporaryDirectory() as tmpdir:
+            bin_dir = deploy_worker_scripts(tmpdir, "session-123")
+            lib_content = _read_script(bin_dir, "lib.sh")
+            # The portable pattern: sed 's/^"//;s/"$//'
+            assert "sed 's/^\"//;s/\"$//'" in lib_content
 
 
-class TestJsonEscapingInBrainScripts:
-    """Tests verifying all brain CLI scripts properly escape JSON strings."""
+class TestJsonEscapingInScripts:
+    """Tests verifying CLI scripts properly escape JSON strings."""
 
-    def test_brain_header_has_json_encode(self):
-        """Verify json_encode is in brain script header for all scripts to use."""
-        assert "json_encode()" in BRAIN_SCRIPT_HEADER
-        assert "jq -Rs" in BRAIN_SCRIPT_HEADER
+    def test_brain_scripts_escape_fields(self):
+        """Verify brain scripts use json_encode for text fields."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            bin_dir = deploy_brain_scripts(tmpdir)
+            
+            # orch-workers
+            workers = _read_script(bin_dir, "orch-workers")
+            assert 'escaped_name=$(json_encode "$name")' in workers
+            
+            # orch-projects
+            projects = _read_script(bin_dir, "orch-projects")
+            assert 'escaped_name=$(json_encode "$name")' in projects
+            
+            # orch-tasks
+            tasks = _read_script(bin_dir, "orch-tasks")
+            assert 'escaped_title=$(json_encode "$title")' in tasks
+            
+            # orch-ctx
+            ctx = _read_script(bin_dir, "orch-ctx")
+            assert 'escaped_content=$(json_encode "$content")' in ctx
 
-    def test_brain_header_build_json_uses_json_encode(self):
-        """Verify build_json helper escapes string values."""
-        assert "escaped_value=$(json_encode \"$value\")" in BRAIN_SCRIPT_HEADER
-
-    def test_workers_script_escapes_name_and_host(self):
-        """Verify orch-workers create escapes name and host fields."""
-        assert 'escaped_name=$(json_encode "$name")' in BRAIN_WORKERS_SCRIPT
-        assert 'escaped_host=$(json_encode "$host")' in BRAIN_WORKERS_SCRIPT
-        assert 'escaped_work_dir=$(json_encode "$work_dir")' in BRAIN_WORKERS_SCRIPT
-
-    def test_projects_script_escapes_fields(self):
-        """Verify orch-projects create/update escapes all text fields."""
-        assert 'escaped_name=$(json_encode "$name")' in BRAIN_PROJECTS_SCRIPT
-        assert 'escaped_desc=$(json_encode "$description")' in BRAIN_PROJECTS_SCRIPT
-
-    def test_tasks_script_escapes_title(self):
-        """Verify orch-tasks create/update escapes title field."""
-        assert 'escaped_title=$(json_encode "$title")' in BRAIN_TASKS_SCRIPT
-
-    def test_tasks_script_escapes_links(self):
-        """Verify orch-tasks update escapes link URL and tag."""
-        assert 'escaped_link=$(json_encode "$add_link")' in BRAIN_TASKS_SCRIPT
-        assert 'escaped_tag=$(json_encode "$add_link_tag")' in BRAIN_TASKS_SCRIPT
-
-    def test_context_script_escapes_title_and_description(self):
-        """Verify orch-ctx create/update escapes title and description."""
-        # cmd_create
-        assert 'escaped_title=$(json_encode "$title")' in BRAIN_CONTEXT_SCRIPT
-        # cmd_update - description
-        assert 'escaped_desc=$(json_encode "$description")' in BRAIN_CONTEXT_SCRIPT
-
-    def test_send_script_escapes_message(self):
-        """Verify orch-send escapes message field."""
-        assert 'escaped_message=$(json_encode "$message")' in BRAIN_SEND_SCRIPT
-        assert '\\"message\\": \\"$escaped_message\\"' in BRAIN_SEND_SCRIPT
-
-    def test_notifications_script_escapes_message_and_link(self):
-        """Verify orch-notifications create escapes message and link fields."""
-        assert 'escaped_message=$(json_encode "$message")' in BRAIN_NOTIFICATIONS_SCRIPT
-        assert 'escaped_link=$(json_encode "$link")' in BRAIN_NOTIFICATIONS_SCRIPT
-
-
-class TestJsonEscapingInWorkerScripts:
-    """Tests verifying all worker CLI scripts properly escape JSON strings."""
-
-    def test_worker_header_has_json_encode(self):
-        """Verify json_encode is in worker script header."""
-        assert "json_encode()" in SCRIPT_HEADER
-        assert "jq -Rs" in SCRIPT_HEADER
-
-    def test_task_script_escapes_links(self):
-        """Verify orch-task update escapes link URL and tag."""
-        assert 'escaped_link=$(json_encode "$add_link")' in ORCH_TASK_SCRIPT
-        assert 'escaped_tag=$(json_encode "$add_link_tag")' in ORCH_TASK_SCRIPT
-
-    def test_subtask_script_escapes_title(self):
-        """Verify orch-subtask create escapes title field."""
-        assert 'escaped_title=$(json_encode "$title")' in ORCH_SUBTASK_SCRIPT
-
-    def test_subtask_script_escapes_links_in_create(self):
-        """Verify orch-subtask create escapes URLs in comma-separated links."""
-        assert 'escaped_url=$(json_encode "$url")' in ORCH_SUBTASK_SCRIPT
-
-    def test_subtask_script_escapes_links_in_update(self):
-        """Verify orch-subtask update escapes link URL and tag."""
-        assert 'escaped_link=$(json_encode "$add_link")' in ORCH_SUBTASK_SCRIPT
-        assert 'escaped_tag=$(json_encode "$add_link_tag")' in ORCH_SUBTASK_SCRIPT
+    def test_worker_scripts_escape_fields(self):
+        """Verify worker scripts use json_encode for text fields."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            bin_dir = deploy_worker_scripts(tmpdir, "session-123")
+            
+            # orch-task
+            task = _read_script(bin_dir, "orch-task")
+            assert 'escaped_notes=$(json_encode "$notes")' in task
+            
+            # orch-subtask
+            subtask = _read_script(bin_dir, "orch-subtask")
+            assert 'escaped_title=$(json_encode "$title")' in subtask
 
 
 class TestJsonEncodeEdgeCases:

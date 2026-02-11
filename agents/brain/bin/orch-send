@@ -1,0 +1,37 @@
+#!/bin/bash
+# orch-send: Send messages to workers
+source "$(dirname "$0")/lib.sh"
+
+show_help() {
+    echo "Usage: orch-send <worker-id> <message>"
+    echo ""
+    echo "Send a message to a worker's terminal."
+    echo ""
+    echo "Examples:"
+    echo "  orch-send abc123 \"Please focus on the API endpoint first\""
+}
+
+if [[ $# -lt 2 ]]; then
+    show_help
+    exit 1
+fi
+
+worker_id="$1"
+shift
+message="$*"
+
+# Get worker's tmux session info
+worker_info=$(curl -s "$API_BASE/api/sessions/$worker_id")
+tmux_session=$(echo "$worker_info" | jq -r '.name // empty')
+tmux_window=$(echo "$worker_info" | jq -r '.tmux_window // empty')
+
+if [[ -z "$tmux_session" ]]; then
+    echo "Error: Could not find worker $worker_id" >&2
+    exit 1
+fi
+
+# Send message via orchestrator API
+escaped_message=$(json_encode "$message")
+curl -s -X POST "$API_BASE/api/sessions/$worker_id/send" \
+    -H 'Content-Type: application/json' \
+    -d "{\"message\": \"$escaped_message\"}" | pp

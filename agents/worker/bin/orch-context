@@ -1,0 +1,106 @@
+#!/bin/bash
+# orch-context: Read project and global context
+source "$(dirname "$0")/lib.sh"
+
+show_help() {
+    echo "Usage: orch-context <command> [options]"
+    echo ""
+    echo "Commands:"
+    echo "  list --scope SCOPE        List context items with titles and descriptions (no full content)"
+    echo "  read ID [ID2 ...]         Read full content of specific context item(s)"
+    echo "  tasks                     List all project tasks"
+    echo ""
+    echo "Scopes:"
+    echo "  project                   Context for assigned project"
+    echo "  global                    Shared context across all projects"
+    echo ""
+    echo "Options:"
+    echo "  --refresh                 Force refresh task info from API"
+    echo ""
+    echo "Examples:"
+    echo "  orch-context list --scope project    # List project context (titles + descriptions)"
+    echo "  orch-context list --scope global     # List global context (titles + descriptions)"
+    echo "  orch-context read abc123             # Read full content of item abc123"
+    echo "  orch-context read abc123 def456      # Read multiple items"
+    echo "  orch-context tasks                   # List all project tasks"
+    echo ""
+    echo "Workflow: Use 'list' first to see available context, then 'read' to fetch full content"
+    echo "          of relevant items. This saves your context window."
+}
+
+cmd_list() {
+    local scope=""
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --scope)
+                scope="$2"
+                shift 2
+                ;;
+            *)
+                echo "Unknown option: $1" >&2
+                exit 1
+                ;;
+        esac
+    done
+    
+    if [[ -z "$scope" ]]; then
+        echo "Error: --scope is required (project|global)" >&2
+        exit 1
+    fi
+    
+    case "$scope" in
+        project)
+            load_task_info "$FORCE_REFRESH" || exit 1
+            curl -s "$API_BASE/api/context?project_id=$PROJECT_ID" | jq '.[] | {id: .id, title: .title, description: .description, category: .category}'
+            ;;
+        global)
+            curl -s "$API_BASE/api/context?scope=global" | jq '.[] | {id: .id, title: .title, description: .description, category: .category}'
+            ;;
+        *)
+            echo "Error: Invalid scope. Use 'project' or 'global'" >&2
+            exit 1
+            ;;
+    esac
+}
+
+cmd_read() {
+    if [[ $# -eq 0 ]]; then
+        echo "Error: At least one context item ID is required" >&2
+        echo "Usage: orch-context read ID [ID2 ...]" >&2
+        exit 1
+    fi
+    
+    for item_id in "$@"; do
+        echo "=== Context: $item_id ==="
+        curl -s "$API_BASE/api/context/$item_id" | jq .
+        echo ""
+    done
+}
+
+cmd_tasks() {
+    load_task_info "$FORCE_REFRESH" || exit 1
+    curl -s "$API_BASE/api/tasks?project_id=$PROJECT_ID" | jq .
+}
+
+case "$1" in
+    list)
+        shift
+        cmd_list "$@"
+        ;;
+    read)
+        shift
+        cmd_read "$@"
+        ;;
+    tasks)
+        shift
+        cmd_tasks "$@"
+        ;;
+    -h|--help|"")
+        show_help
+        ;;
+    *)
+        echo "Unknown command: $1" >&2
+        show_help
+        exit 1
+        ;;
+esac

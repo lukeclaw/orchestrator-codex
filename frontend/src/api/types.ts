@@ -5,7 +5,7 @@ export interface Session {
   work_dir: string | null
   tmux_window: string | null
   tunnel_pane: string | null
-  status: 'idle' | 'working' | 'waiting' | 'paused' | 'error' | 'disconnected' | 'connecting'
+  status: 'idle' | 'working' | 'waiting' | 'paused' | 'error' | 'disconnected' | 'connecting' | 'screen_detached'
   created_at: string
   last_activity: string | null
   session_type: 'worker' | 'brain' | 'system'

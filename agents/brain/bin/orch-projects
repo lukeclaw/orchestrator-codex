@@ -1,0 +1,148 @@
+#!/bin/bash
+# orch-projects: Manage projects
+source "$(dirname "$0")/lib.sh"
+
+show_help() {
+    echo "Usage: orch-projects <command> [options]"
+    echo ""
+    echo "Commands:"
+    echo "  list [options]                List all projects"
+    echo "  show <id>                     Show project details"
+    echo "  create [options]              Create a new project"
+    echo "  update <id> [options]         Update a project"
+    echo ""
+    echo "List Options:"
+    echo "  --status STATUS               Filter by status (active|completed|archived)"
+    echo "  --no-stats                    Exclude task/worker stats from output"
+    echo ""
+    echo "Create/Update Options:"
+    echo "  --name NAME                   Project name (required for create)"
+    echo "  --description DESC            Project description"
+    echo "  --status STATUS               Project status (active|completed|archived)"
+    echo "  --task-prefix PREFIX          Task key prefix (e.g., UTI)"
+    echo ""
+    echo "Examples:"
+    echo "  orch-projects list"
+    echo "  orch-projects list --status active"
+    echo "  orch-projects create --name \"Auth Migration\" --description \"Migrate to OAuth 2.0\""
+    echo "  orch-projects update abc123 --status completed"
+}
+
+cmd_list() {
+    local status="" include_stats="true"
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --status) status="$2"; shift 2 ;;
+            --no-stats) include_stats="false"; shift ;;
+            *) echo "Unknown option: $1" >&2; exit 1 ;;
+        esac
+    done
+    
+    local url="$API_BASE/api/projects?include_stats=$include_stats"
+    [[ -n "$status" ]] && url="$url&status=$status"
+    
+    curl -s "$url" | pp
+}
+
+cmd_show() {
+    local id="$1"
+    if [[ -z "$id" ]]; then
+        echo "Error: Project ID required" >&2
+        exit 1
+    fi
+    curl -s "$API_BASE/api/projects/$id" | pp
+}
+
+cmd_create() {
+    local name="" description="" status="" task_prefix=""
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --name) name="$2"; shift 2 ;;
+            --description) description="$2"; shift 2 ;;
+            --status) status="$2"; shift 2 ;;
+            --task-prefix) task_prefix="$2"; shift 2 ;;
+            *) echo "Unknown option: $1" >&2; exit 1 ;;
+        esac
+    done
+    
+    if [[ -z "$name" ]]; then
+        echo "Error: --name is required" >&2
+        exit 1
+    fi
+    
+    local escaped_name=$(json_encode "$name")
+    local json="{\"name\": \"$escaped_name\""
+    if [[ -n "$description" ]]; then
+        local escaped_desc=$(json_encode "$description")
+        json="$json, \"description\": \"$escaped_desc\""
+    fi
+    if [[ -n "$status" ]]; then
+        local escaped_status=$(json_encode "$status")
+        json="$json, \"status\": \"$escaped_status\""
+    fi
+    if [[ -n "$task_prefix" ]]; then
+        local escaped_prefix=$(json_encode "$task_prefix")
+        json="$json, \"task_prefix\": \"$escaped_prefix\""
+    fi
+    json="$json}"
+    
+    curl -s -X POST "$API_BASE/api/projects" \
+        -H 'Content-Type: application/json' \
+        -d "$json" | pp
+}
+
+cmd_update() {
+    local id="$1"
+    shift
+    if [[ -z "$id" ]]; then
+        echo "Error: Project ID required" >&2
+        exit 1
+    fi
+    
+    local name="" description="" status="" task_prefix=""
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --name) name="$2"; shift 2 ;;
+            --description) description="$2"; shift 2 ;;
+            --status) status="$2"; shift 2 ;;
+            --task-prefix) task_prefix="$2"; shift 2 ;;
+            *) echo "Unknown option: $1" >&2; exit 1 ;;
+        esac
+    done
+    
+    local json="{"
+    local first=true
+    if [[ -n "$name" ]]; then
+        local escaped_name=$(json_encode "$name")
+        json="$json\"name\": \"$escaped_name\""; first=false
+    fi
+    if [[ -n "$description" ]]; then
+        local escaped_desc=$(json_encode "$description")
+        [[ "$first" != true ]] && json="$json, "
+        json="$json\"description\": \"$escaped_desc\""; first=false
+    fi
+    if [[ -n "$status" ]]; then
+        local escaped_status=$(json_encode "$status")
+        [[ "$first" != true ]] && json="$json, "
+        json="$json\"status\": \"$escaped_status\""; first=false
+    fi
+    if [[ -n "$task_prefix" ]]; then
+        local escaped_prefix=$(json_encode "$task_prefix")
+        [[ "$first" != true ]] && json="$json, "
+        json="$json\"task_prefix\": \"$escaped_prefix\""
+    fi
+    json="$json}"
+    
+    curl -s -X PATCH "$API_BASE/api/projects/$id" \
+        -H 'Content-Type: application/json' \
+        -d "$json" | pp
+}
+
+case "$1" in
+    list) shift; cmd_list "$@" ;;
+    show) shift; cmd_show "$@" ;;
+    create) shift; cmd_create "$@" ;;
+    update) shift; cmd_update "$@" ;;
+    -h|--help|"") show_help ;;
+    *) echo "Unknown command: $1" >&2; show_help; exit 1 ;;
+esac

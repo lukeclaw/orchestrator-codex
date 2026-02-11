@@ -1,0 +1,84 @@
+#!/bin/bash
+# orch-notify: Create non-blocking notification for user
+source "$(dirname "$0")/lib.sh"
+
+show_help() {
+    echo "Usage: orch-notify <message> [options]"
+    echo ""
+    echo "Create a non-blocking notification for the user."
+    echo ""
+    echo "Options:"
+    echo "  --type TYPE             Notification type (info|pr_comment|warning), default: info"
+    echo "  --link URL              Optional external link (e.g., PR URL)"
+    echo ""
+    echo "Examples:"
+    echo "  orch-notify \"PR merged, but reviewer asked about error handling\""
+    echo "  orch-notify \"Found potential issue in config\" --type warning"
+    echo "  orch-notify \"PR #123 merged with comments\" --type pr_comment --link \"https://github.com/...\""
+    echo ""
+    echo "Guidelines:"
+    echo "  - Use sparingly for valuable information that doesn't block your work"
+    echo "  - Good: PR merged but reviewer left a question, found issue but proceeded safely"
+    echo "  - Bad: Routine progress updates, status changes (use orch-task update instead)"
+}
+
+if [[ $# -eq 0 || "$1" == "-h" || "$1" == "--help" ]]; then
+    show_help
+    exit 0
+fi
+
+MESSAGE=""
+NOTIFY_TYPE="info"
+LINK_URL=""
+
+MESSAGE="$1"
+shift
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --type)
+            NOTIFY_TYPE="$2"
+            shift 2
+            ;;
+        --link)
+            LINK_URL="$2"
+            shift 2
+            ;;
+        *)
+            echo "Unknown option: $1" >&2
+            show_help
+            exit 1
+            ;;
+    esac
+done
+
+if [[ -z "$MESSAGE" ]]; then
+    echo "Error: Message is required" >&2
+    show_help
+    exit 1
+fi
+
+load_task_info "$FORCE_REFRESH"
+# Note: We don't exit on failure - notification can be created without task_id
+
+escaped_message=$(json_encode "$MESSAGE")
+json="{\"message\": \"$escaped_message\", \"session_id\": \"$SESSION_ID\", \"notification_type\": \"$NOTIFY_TYPE\""
+
+if [[ -n "$TASK_ID" && "$TASK_ID" != "null" ]]; then
+    json="$json, \"task_id\": \"$TASK_ID\""
+fi
+
+if [[ -n "$LINK_URL" ]]; then
+    json="$json, \"link_url\": \"$LINK_URL\""
+fi
+
+json="$json}"
+
+result=$(curl -s -X POST "$API_BASE/api/notifications" \
+    -H 'Content-Type: application/json' \
+    -d "$json")
+
+echo "$result" | jq .
+
+echo ""
+echo "Notification created. User will see this in the dashboard."

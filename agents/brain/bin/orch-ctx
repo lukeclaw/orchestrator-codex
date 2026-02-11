@@ -1,0 +1,203 @@
+#!/bin/bash
+# orch-ctx: Manage context items
+source "$(dirname "$0")/lib.sh"
+
+show_help() {
+    echo "Usage: orch-ctx <command> [options]"
+    echo ""
+    echo "Commands:"
+    echo "  list [filters]                List context items (titles + descriptions)"
+    echo "  read <id> [id2 ...]           Read full content of context item(s)"
+    echo "  create [options]              Create a new context item"
+    echo "  update <id> [options]         Update a context item"
+    echo "  delete <id>                   Delete a context item"
+    echo ""
+    echo "List Filters:"
+    echo "  --scope SCOPE                 Filter by scope (global|brain|project)"
+    echo "  --project-id ID               Filter by project ID"
+    echo "  --category CAT                Filter by category"
+    echo "  --search TEXT                 Search in title/content"
+    echo ""
+    echo "Create/Update Options:"
+    echo "  --title TITLE                 Context title (required for create)"
+    echo "  --content CONTENT             Context content (required for create)"
+    echo "  --content-file FILE           Read content from file (safer for special chars)"
+    echo "  --content-stdin               Read content from stdin (best for LLM agents)"
+    echo "  --description DESC            Brief description"
+    echo "  --scope SCOPE                 Scope: global|brain|project (default: global)"
+    echo "  --project-id ID               Project ID (required if scope=project)"
+    echo "  --category CAT                Category: instruction|requirement|convention|reference|note"
+    echo ""
+    echo "Examples:"
+    echo "  orch-ctx list --scope global"
+    echo "  orch-ctx read abc123"
+    echo "  orch-ctx create --title \"Coding style\" --content \"Use 2-space indent\" --scope global"
+    echo "  orch-ctx create --title \"Strategy\" --content \"Worker-1 handles API\" --scope brain"
+}
+
+cmd_list() {
+    local scope="" project_id="" category="" search=""
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --scope) scope="$2"; shift 2 ;;
+            --project-id) project_id="$2"; shift 2 ;;
+            --category) category="$2"; shift 2 ;;
+            --search) search="$2"; shift 2 ;;
+            *) echo "Unknown option: $1" >&2; exit 1 ;;
+        esac
+    done
+    
+    local url="$API_BASE/api/context"
+    local sep="?"
+    [[ -n "$scope" ]] && url="$url${sep}scope=$scope" && sep="&"
+    [[ -n "$project_id" ]] && url="$url${sep}project_id=$project_id" && sep="&"
+    [[ -n "$category" ]] && url="$url${sep}category=$category" && sep="&"
+    [[ -n "$search" ]] && url="$url${sep}search=$search"
+    
+    curl -s "$url" | jq '.[] | {id: .id, title: .title, description: .description, category: .category, scope: .scope}'
+}
+
+cmd_read() {
+    if [[ $# -eq 0 ]]; then
+        echo "Error: At least one context item ID required" >&2
+        exit 1
+    fi
+    
+    for id in "$@"; do
+        echo "=== Context: $id ==="
+        curl -s "$API_BASE/api/context/$id" | pp
+        echo ""
+    done
+}
+
+cmd_create() {
+    local title="" content="" content_file="" content_stdin="" description="" scope="global" project_id="" category=""
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --title) title="$2"; shift 2 ;;
+            --content) content="$2"; shift 2 ;;
+            --content-file) content_file="$2"; shift 2 ;;
+            --content-stdin) content_stdin="1"; shift ;;
+            --description) description="$2"; shift 2 ;;
+            --scope) scope="$2"; shift 2 ;;
+            --project-id) project_id="$2"; shift 2 ;;
+            --category) category="$2"; shift 2 ;;
+            *) echo "Unknown option: $1" >&2; exit 1 ;;
+        esac
+    done
+    
+    if [[ -z "$title" ]]; then
+        echo "Error: --title is required" >&2
+        exit 1
+    fi
+    if [[ -n "$content_stdin" ]]; then
+        content=$(cat)
+    elif [[ -n "$content_file" ]]; then
+        if [[ ! -f "$content_file" ]]; then
+            echo "Error: Content file not found: $content_file" >&2
+            exit 1
+        fi
+        content=$(cat "$content_file")
+    fi
+    
+    if [[ -z "$content" ]]; then
+        echo "Error: --content, --content-file, or --content-stdin is required" >&2
+        exit 1
+    fi
+    if [[ "$scope" == "project" ]] && [[ -z "$project_id" ]]; then
+        echo "Error: --project-id is required when scope=project" >&2
+        exit 1
+    fi
+    
+    local escaped_content=$(json_encode "$content")
+    local escaped_title=$(json_encode "$title")
+    
+    local json="{\"title\": \"$escaped_title\", \"content\": \"$escaped_content\", \"scope\": \"$scope\", \"source\": \"brain\""
+    if [[ -n "$description" ]]; then
+        local escaped_desc=$(json_encode "$description")
+        json="$json, \"description\": \"$escaped_desc\""
+    fi
+    [[ -n "$project_id" ]] && json="$json, \"project_id\": \"$project_id\""
+    [[ -n "$category" ]] && json="$json, \"category\": \"$category\""
+    json="$json}"
+    
+    curl -s -X POST "$API_BASE/api/context" \
+        -H 'Content-Type: application/json' \
+        -d "$json" | pp
+}
+
+cmd_update() {
+    local id="$1"
+    shift
+    if [[ -z "$id" ]]; then
+        echo "Error: Context item ID required" >&2
+        exit 1
+    fi
+    
+    local title="" content="" content_file="" content_stdin="" description="" category=""
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --title) title="$2"; shift 2 ;;
+            --content) content="$2"; shift 2 ;;
+            --content-file) content_file="$2"; shift 2 ;;
+            --content-stdin) content_stdin="1"; shift ;;
+            --description) description="$2"; shift 2 ;;
+            --category) category="$2"; shift 2 ;;
+            *) echo "Unknown option: $1" >&2; exit 1 ;;
+        esac
+    done
+    
+    local json="{"
+    local first=true
+    if [[ -n "$title" ]]; then
+        local escaped_title=$(json_encode "$title")
+        json="$json\"title\": \"$escaped_title\""; first=false
+    fi
+    if [[ -n "$content_stdin" ]]; then
+        content=$(cat)
+    elif [[ -n "$content_file" ]]; then
+        if [[ ! -f "$content_file" ]]; then
+            echo "Error: Content file not found: $content_file" >&2
+            exit 1
+        fi
+        content=$(cat "$content_file")
+    fi
+    if [[ -n "$content" ]]; then
+        local escaped_content=$(json_encode "$content")
+        [[ "$first" != true ]] && json="$json, "
+        json="$json\"content\": \"$escaped_content\""; first=false
+    fi
+    if [[ -n "$description" ]]; then
+        local escaped_desc=$(json_encode "$description")
+        [[ "$first" != true ]] && json="$json, "
+        json="$json\"description\": \"$escaped_desc\""; first=false
+    fi
+    if [[ -n "$category" ]]; then
+        [[ "$first" != true ]] && json="$json, "
+        json="$json\"category\": \"$category\""
+    fi
+    json="$json}"
+    
+    curl -s -X PATCH "$API_BASE/api/context/$id" \
+        -H 'Content-Type: application/json' \
+        -d "$json" | pp
+}
+
+cmd_delete() {
+    local id="$1"
+    if [[ -z "$id" ]]; then
+        echo "Error: Context item ID required" >&2
+        exit 1
+    fi
+    curl -s -X DELETE "$API_BASE/api/context/$id" | pp
+}
+
+case "$1" in
+    list) shift; cmd_list "$@" ;;
+    read) shift; cmd_read "$@" ;;
+    create) shift; cmd_create "$@" ;;
+    update) shift; cmd_update "$@" ;;
+    delete) shift; cmd_delete "$@" ;;
+    -h|--help|"") show_help ;;
+    *) echo "Unknown command: $1" >&2; show_help; exit 1 ;;
+esac
