@@ -95,21 +95,109 @@ def get_session_output(
     return tmux.capture_output(tmux_session, name, lines=lines)
 
 
+def _verify_message_sent(
+    tmux_session: str,
+    window_name: str,
+    message: str,
+) -> bool:
+    """Check if a message was successfully submitted (no longer in input line).
+    
+    After pressing Enter, if the message was sent successfully:
+    - Claude Code will start processing (showing status/thinking)
+    - The input line will be cleared
+    
+    If the message is stuck:
+    - The terminal will still show the message text on the input line
+    
+    Returns True if the message appears to have been sent.
+    """
+    # Give Claude Code a moment to process the Enter
+    time.sleep(0.3)
+    
+    # Capture recent output
+    output = tmux.capture_output(tmux_session, window_name, lines=10)
+    
+    # Get the last few lines to check for stuck input
+    lines = output.strip().split('\n')
+    if not lines:
+        return True  # Empty output, assume sent
+    
+    # Check the last line - if it contains a substantial portion of the message,
+    # it's likely stuck in the input buffer
+    last_line = lines[-1].strip()
+    
+    # For long messages, check if the last line contains a significant chunk of the message
+    # (input line would show the end of the pasted message)
+    if len(message) > 50:
+        # Check if last portion of message is in the last line (message stuck in input)
+        message_tail = message[-100:] if len(message) > 100 else message
+        # Normalize whitespace for comparison
+        message_tail_normalized = ' '.join(message_tail.split())
+        last_line_normalized = ' '.join(last_line.split())
+        
+        if len(last_line_normalized) > 20 and message_tail_normalized[-50:] in last_line_normalized:
+            logger.debug("Message appears stuck in input - last line matches message tail")
+            return False
+    
+    # Also check if the cursor line appears to have unsubmitted content
+    # Claude Code shows ">" prompt when waiting for input
+    # If we see significant text after the prompt, message may be stuck
+    if last_line.startswith('>') and len(last_line) > 20:
+        # There's substantial text after the prompt - likely stuck
+        logger.debug("Message appears stuck - text after prompt: %s...", last_line[:50])
+        return False
+    
+    return True
+
+
 def send_to_session(
     name: str,
     message: str,
     tmux_session: str = "orchestrator",
+    max_enter_retries: int = 3,
+    retry_delay: float = 2.0,
 ) -> bool:
     """Send a message to a session's Claude Code instance.
     
     Uses literal mode to send text (avoiding tmux special key interpretation),
     then sends Enter separately to submit the message.
+    
+    For long messages, the Enter key might be pressed before text is fully pasted.
+    This function verifies the message was sent and retries Enter if needed.
+    
+    Args:
+        name: Session/window name
+        message: Message content to send
+        tmux_session: Tmux session name
+        max_enter_retries: Max attempts to press Enter if message appears stuck (default: 3)
+        retry_delay: Seconds between Enter retries (default: 2.0)
     """
     # Send message content in literal mode (no special key interpretation)
     if not tmux.send_keys_literal(tmux_session, name, message):
         return False
-    # Send Enter separately to submit
-    return tmux.send_keys(tmux_session, name, "", enter=True)
+    
+    # Send Enter and verify it was submitted
+    for attempt in range(max_enter_retries):
+        if not tmux.send_keys(tmux_session, name, "", enter=True):
+            return False
+        
+        # Verify the message was sent
+        if _verify_message_sent(tmux_session, name, message):
+            if attempt > 0:
+                logger.info("Message sent successfully after %d Enter retries", attempt + 1)
+            return True
+        
+        # Message appears stuck, wait and retry Enter
+        if attempt < max_enter_retries - 1:
+            logger.warning(
+                "Message may be stuck in input, retrying Enter (attempt %d/%d)",
+                attempt + 1, max_enter_retries
+            )
+            time.sleep(retry_delay)
+    
+    # All retries exhausted
+    logger.error("Failed to send message after %d Enter attempts", max_enter_retries)
+    return False
 
 
 def _get_screen_session_name(session_id: str) -> str:

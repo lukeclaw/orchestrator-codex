@@ -6,6 +6,15 @@
   "terminalProgressBarEnabled": false,
   "prefersReducedMotion": true,
   "autoUpdatesChannel": "stable",
+  "permissions": {
+    "allow": [
+      "Bash(orch-task *)",
+      "Bash(orch-subtask *)",
+      "Bash(orch-context *)",
+      "Bash(orch-notify *)",
+      "Bash(orch-worker *)"
+    ]
+  },
   "hooks": {
     "SessionStart": [{"matcher": "", "hooks": [{"type": "command", "command": "{{HOOK_SCRIPT_PATH}}"}]}],
     "UserPromptSubmit": [{"matcher": "", "hooks": [{"type": "command", "command": "{{HOOK_SCRIPT_PATH}}"}]}],

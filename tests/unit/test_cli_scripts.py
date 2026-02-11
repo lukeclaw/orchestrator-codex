@@ -14,6 +14,7 @@ import pytest
 from orchestrator.agents import (
     deploy_brain_scripts,
     deploy_worker_scripts,
+    generate_worker_hooks,
     BRAIN_SCRIPT_NAMES,
     WORKER_SCRIPT_NAMES,
 )
@@ -413,3 +414,99 @@ json_encode "$1"
         assert r'\n' in encoded
         assert r'\t' in encoded
         assert r'\\' in encoded
+
+
+class TestWorkerHooksGeneration:
+    """Tests for worker hooks and settings.json generation from templates."""
+
+    def test_generate_worker_hooks_creates_settings_json(self):
+        """Verify settings.json is created with correct content."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            configs_dir = os.path.join(tmpdir, "configs")
+            os.makedirs(configs_dir)
+            generate_worker_hooks(configs_dir, "test-session-123", "http://localhost:8093")
+            
+            settings_path = os.path.join(configs_dir, "settings.json")
+            assert os.path.exists(settings_path), "settings.json should exist"
+            
+            with open(settings_path) as f:
+                content = f.read()
+            
+            # Verify key settings from template
+            assert '"CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION": "false"' in content
+            assert '"spinnerTipsEnabled": false' in content
+            assert '"terminalProgressBarEnabled": false' in content
+
+    def test_generate_worker_hooks_creates_hook_script(self):
+        """Verify update-status.sh hook script is created."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            configs_dir = os.path.join(tmpdir, "configs")
+            os.makedirs(configs_dir)
+            generate_worker_hooks(configs_dir, "test-session-456", "http://localhost:9000")
+            
+            hook_path = os.path.join(configs_dir, "hooks", "update-status.sh")
+            assert os.path.exists(hook_path), "update-status.sh should exist"
+            assert os.access(hook_path, os.X_OK), "update-status.sh should be executable"
+
+    def test_generate_worker_hooks_substitutes_session_id(self):
+        """Verify session ID placeholder is substituted in hook script."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            configs_dir = os.path.join(tmpdir, "configs")
+            os.makedirs(configs_dir)
+            generate_worker_hooks(configs_dir, "my-unique-session-789", "http://localhost:8093")
+            
+            hook_path = os.path.join(configs_dir, "hooks", "update-status.sh")
+            with open(hook_path) as f:
+                content = f.read()
+            
+            assert "my-unique-session-789" in content
+            assert "{{SESSION_ID}}" not in content, "Placeholder should be substituted"
+
+    def test_generate_worker_hooks_substitutes_api_base(self):
+        """Verify API base placeholder is substituted in hook script."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            configs_dir = os.path.join(tmpdir, "configs")
+            os.makedirs(configs_dir)
+            generate_worker_hooks(configs_dir, "session-123", "http://custom-host:9999")
+            
+            hook_path = os.path.join(configs_dir, "hooks", "update-status.sh")
+            with open(hook_path) as f:
+                content = f.read()
+            
+            assert "http://custom-host:9999" in content
+            assert "{{API_BASE}}" not in content, "Placeholder should be substituted"
+
+    def test_generate_worker_hooks_substitutes_hook_path_in_settings(self):
+        """Verify hook script path is substituted in settings.json."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            configs_dir = os.path.join(tmpdir, "configs")
+            os.makedirs(configs_dir)
+            generate_worker_hooks(configs_dir, "session-123", "http://localhost:8093")
+            
+            settings_path = os.path.join(configs_dir, "settings.json")
+            with open(settings_path) as f:
+                content = f.read()
+            
+            # The hook path should be the actual path, not the placeholder
+            expected_hook_path = os.path.join(configs_dir, "hooks", "update-status.sh")
+            assert expected_hook_path in content
+            assert "{{HOOK_SCRIPT_PATH}}" not in content, "Placeholder should be substituted"
+
+    def test_generate_worker_hooks_overwrites_existing(self):
+        """Verify regeneration overwrites existing files."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            configs_dir = os.path.join(tmpdir, "configs")
+            os.makedirs(configs_dir)
+            
+            # First generation
+            generate_worker_hooks(configs_dir, "old-session", "http://localhost:8093")
+            
+            # Second generation with different session ID
+            generate_worker_hooks(configs_dir, "new-session", "http://localhost:8093")
+            
+            hook_path = os.path.join(configs_dir, "hooks", "update-status.sh")
+            with open(hook_path) as f:
+                content = f.read()
+            
+            assert "new-session" in content
+            assert "old-session" not in content, "Old session ID should be overwritten"

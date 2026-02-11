@@ -208,7 +208,7 @@ export default function SessionDetailPage() {
       {isRdev && ['idle', 'working', 'waiting', 'paused'].includes(session.status) && (
         <div className="sd-rdev-hint">
           <span className="sd-rdev-hint-icon">💡</span>
-          <span>To view history: <kbd>Ctrl-A</kbd> + <kbd>[</kbd> to enter copy mode, <kbd>PageUp</kbd>/<kbd>PageDown</kbd> to scroll, <kbd>Esc</kbd> to exit</span>
+          <span>Rdev claude code runs in screen. To view history: <kbd>Ctrl-A</kbd> + <kbd>[</kbd> to enter copy mode, <kbd>PageUp</kbd>/<kbd>PageDown</kbd> to scroll, <kbd>Esc</kbd> to exit</span>
         </div>
       )}
 

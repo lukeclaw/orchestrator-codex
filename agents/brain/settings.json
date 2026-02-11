@@ -1,0 +1,19 @@
+{
+  "env": {
+    "CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION": "false"
+  },
+  "spinnerTipsEnabled": false,
+  "terminalProgressBarEnabled": false,
+  "prefersReducedMotion": true,
+  "autoUpdatesChannel": "stable",
+  "permissions": {
+    "allow": [
+      "Bash(orch-tasks *)",
+      "Bash(orch-workers *)",
+      "Bash(orch-projects *)",
+      "Bash(orch-ctx *)",
+      "Bash(orch-notifications *)",
+      "Bash(orch-send *)"
+    ]
+  }
+}
