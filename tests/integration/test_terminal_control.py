@@ -2,6 +2,8 @@
 
 These tests use synchronous wrappers to avoid pytest-asyncio event loop
 conflicts when running alongside E2E tests with session-scoped fixtures.
+
+Uses worker-isolated session names from conftest.py for parallel execution.
 """
 
 import asyncio
@@ -15,7 +17,6 @@ from orchestrator.terminal.control import (
     capture_pane_with_history_async,
 )
 
-TEST_SESSION = "orch-test-control"
 TEST_WINDOW = "test-win"
 
 
@@ -41,20 +42,13 @@ def _run(coro):
         return future.result(timeout=30)
 
 
-@pytest.fixture(autouse=True)
-def cleanup_tmux():
-    """Ensure test session is cleaned up after each test."""
-    yield
-    tmux.kill_session(TEST_SESSION)
-
-
 @pytest.fixture
-def tmux_window():
-    """Create a test tmux session and window."""
-    tmux.create_session(TEST_SESSION)
-    tmux.create_window(TEST_SESSION, TEST_WINDOW)
+def tmux_window(tmux_control_session):
+    """Create a test tmux session and window using worker-isolated session name."""
+    tmux.create_session(tmux_control_session)
+    tmux.create_window(tmux_control_session, TEST_WINDOW)
     time.sleep(0.2)  # Let shell initialize
-    return (TEST_SESSION, TEST_WINDOW)
+    return (tmux_control_session, TEST_WINDOW)
 
 
 class TestAtomicCapture:

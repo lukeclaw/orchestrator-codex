@@ -1,10 +1,10 @@
 """Unit tests for SSH alive check hostname parsing."""
 import pytest
-from orchestrator.api.routes.sessions import _parse_hostname_from_output
+from orchestrator.session.reconnect import parse_hostname_from_output
 
 
 class TestParseHostnameFromOutput:
-    """Tests for _parse_hostname_from_output function."""
+    """Tests for parse_hostname_from_output function."""
 
     def test_rdev_hostname_with_command_in_output(self):
         """Test parsing when output includes the command line itself."""
@@ -15,7 +15,7 @@ rdev-aks-0b9d79eb-3adf-4339-9987-2ddc81bac2bb-pqvf4
 SSH_END_62624
 [yuqiu@sleepy-franklin subs-mt]$"""
         
-        result = _parse_hostname_from_output(output, "SSH_START_62624", "SSH_END_62624")
+        result = parse_hostname_from_output(output, "SSH_START_62624", "SSH_END_62624")
         assert result == "rdev-aks-0b9d79eb-3adf-4339-9987-2ddc81bac2bb-pqvf4"
 
     def test_local_hostname_with_command_in_output(self):
@@ -26,7 +26,7 @@ yuqiu-mn7215.linkedin.biz
 SSH_END_12345
 ➜  orchestrator git:(main) ✗"""
         
-        result = _parse_hostname_from_output(output, "SSH_START_12345", "SSH_END_12345")
+        result = parse_hostname_from_output(output, "SSH_START_12345", "SSH_END_12345")
         assert result == "yuqiu-mn7215.linkedin.biz"
 
     def test_clean_output_without_command(self):
@@ -35,7 +35,7 @@ SSH_END_12345
 rdev-test-hostname
 SSH_END_99999"""
         
-        result = _parse_hostname_from_output(output, "SSH_START_99999", "SSH_END_99999")
+        result = parse_hostname_from_output(output, "SSH_START_99999", "SSH_END_99999")
         assert result == "rdev-test-hostname"
 
     def test_missing_start_marker(self):
@@ -44,7 +44,7 @@ SSH_END_99999"""
 rdev-hostname
 SSH_END_12345"""
         
-        result = _parse_hostname_from_output(output, "SSH_START_12345", "SSH_END_12345")
+        result = parse_hostname_from_output(output, "SSH_START_12345", "SSH_END_12345")
         assert result is None
 
     def test_missing_end_marker(self):
@@ -53,7 +53,7 @@ SSH_END_12345"""
 rdev-hostname
 some other output"""
         
-        result = _parse_hostname_from_output(output, "SSH_START_12345", "SSH_END_12345")
+        result = parse_hostname_from_output(output, "SSH_START_12345", "SSH_END_12345")
         assert result is None
 
     def test_markers_in_wrong_order(self):
@@ -62,7 +62,7 @@ some other output"""
 rdev-hostname
 SSH_START_12345"""
         
-        result = _parse_hostname_from_output(output, "SSH_START_12345", "SSH_END_12345")
+        result = parse_hostname_from_output(output, "SSH_START_12345", "SSH_END_12345")
         assert result is None
 
     def test_empty_hostname_between_markers(self):
@@ -70,7 +70,7 @@ SSH_START_12345"""
         output = """SSH_START_12345
 SSH_END_12345"""
         
-        result = _parse_hostname_from_output(output, "SSH_START_12345", "SSH_END_12345")
+        result = parse_hostname_from_output(output, "SSH_START_12345", "SSH_END_12345")
         assert result is None
 
     def test_multiple_lines_between_markers(self):
@@ -80,7 +80,7 @@ rdev-primary-hostname
 some-other-line
 SSH_END_12345"""
         
-        result = _parse_hostname_from_output(output, "SSH_START_12345", "SSH_END_12345")
+        result = parse_hostname_from_output(output, "SSH_START_12345", "SSH_END_12345")
         assert result == "rdev-primary-hostname"
 
     def test_whitespace_around_hostname(self):
@@ -89,7 +89,7 @@ SSH_END_12345"""
    rdev-hostname-with-spaces   
 SSH_END_12345"""
         
-        result = _parse_hostname_from_output(output, "SSH_START_12345", "SSH_END_12345")
+        result = parse_hostname_from_output(output, "SSH_START_12345", "SSH_END_12345")
         assert result == "rdev-hostname-with-spaces"
 
     def test_marker_as_substring_ignored(self):
@@ -102,7 +102,7 @@ actual-hostname
 SSH_END_12345
 $"""
         
-        result = _parse_hostname_from_output(output, "SSH_START_12345", "SSH_END_12345")
+        result = parse_hostname_from_output(output, "SSH_START_12345", "SSH_END_12345")
         assert result == "actual-hostname"
 
 

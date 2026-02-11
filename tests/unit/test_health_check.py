@@ -7,8 +7,8 @@ from unittest.mock import patch, MagicMock
 class TestHealthCheckLogic:
     """Test the health check logic for rdev workers."""
 
-    @patch('orchestrator.api.routes.sessions._check_tunnel_alive')
-    @patch('orchestrator.api.routes.sessions._check_screen_and_claude_rdev')
+    @patch('orchestrator.api.routes.sessions.check_tunnel_alive')
+    @patch('orchestrator.api.routes.sessions.check_screen_and_claude_rdev')
     @patch('orchestrator.api.routes.sessions.repo')
     @patch('orchestrator.api.routes.sessions.is_rdev_host')
     def test_tunnel_dead_but_claude_alive_returns_needs_reconnect(
@@ -47,8 +47,8 @@ class TestHealthCheckLogic:
         assert result["tunnel_alive"] == False, f"Expected tunnel_alive=False, got {result}"
         assert "tunnel" in result["reason"].lower(), f"Reason should mention tunnel: {result['reason']}"
 
-    @patch('orchestrator.api.routes.sessions._check_tunnel_alive')
-    @patch('orchestrator.api.routes.sessions._check_screen_and_claude_rdev')
+    @patch('orchestrator.api.routes.sessions.check_tunnel_alive')
+    @patch('orchestrator.api.routes.sessions.check_screen_and_claude_rdev')
     @patch('orchestrator.api.routes.sessions.repo')
     @patch('orchestrator.api.routes.sessions.is_rdev_host')
     def test_tunnel_alive_and_claude_alive_returns_healthy(
@@ -85,8 +85,8 @@ class TestHealthCheckLogic:
         assert result["tunnel_alive"] == True, f"Expected tunnel_alive=True, got {result}"
         assert result.get("needs_reconnect") is None or result.get("needs_reconnect") == False
 
-    @patch('orchestrator.api.routes.sessions._check_tunnel_alive')
-    @patch('orchestrator.api.routes.sessions._check_screen_and_claude_rdev')
+    @patch('orchestrator.api.routes.sessions.check_tunnel_alive')
+    @patch('orchestrator.api.routes.sessions.check_screen_and_claude_rdev')
     @patch('orchestrator.api.routes.sessions.repo')
     @patch('orchestrator.api.routes.sessions.is_rdev_host')
     def test_recovery_from_screen_detached_when_all_healthy(
@@ -131,56 +131,56 @@ class TestHealthCheckLogic:
 class TestTunnelAliveCheck:
     """Test the _check_tunnel_alive function."""
 
-    @patch('orchestrator.api.routes.sessions.capture_output')
+    @patch('orchestrator.session.health.capture_output')
     def test_tunnel_dead_shows_shell_prompt(self, mock_capture):
         """When tunnel window shows shell prompt, tunnel is dead."""
-        from orchestrator.api.routes.sessions import _check_tunnel_alive
+        from orchestrator.session.health import check_tunnel_alive
         
         # Shell prompt indicates tunnel exited
         mock_capture.return_value = "yuqiu@macbook ~ % "
         
-        result = _check_tunnel_alive("orchestrator", "test-tunnel")
+        result = check_tunnel_alive("orchestrator", "test-tunnel")
         assert result == False, "Shell prompt should indicate dead tunnel"
 
-    @patch('orchestrator.api.routes.sessions.capture_output')
+    @patch('orchestrator.session.health.capture_output')
     def test_tunnel_dead_shows_connection_closed(self, mock_capture):
         """When tunnel shows connection closed error, tunnel is dead."""
-        from orchestrator.api.routes.sessions import _check_tunnel_alive
+        from orchestrator.session.health import check_tunnel_alive
         
         mock_capture.return_value = "Connection closed by remote host.\nyuqiu@macbook ~ % "
         
-        result = _check_tunnel_alive("orchestrator", "test-tunnel")
+        result = check_tunnel_alive("orchestrator", "test-tunnel")
         assert result == False, "Connection closed should indicate dead tunnel"
 
-    @patch('orchestrator.api.routes.sessions.capture_output')
+    @patch('orchestrator.session.health.capture_output')
     def test_tunnel_alive_shows_ssh_command(self, mock_capture):
         """When tunnel shows SSH command running, tunnel is alive."""
-        from orchestrator.api.routes.sessions import _check_tunnel_alive
+        from orchestrator.session.health import check_tunnel_alive
         
         # SSH tunnel command visible, no prompt
         mock_capture.return_value = "ssh -L 8093:localhost:8093 user@rdev-host"
         
-        result = _check_tunnel_alive("orchestrator", "test-tunnel")
+        result = check_tunnel_alive("orchestrator", "test-tunnel")
         assert result == True, "SSH command without prompt should indicate alive tunnel"
 
-    @patch('orchestrator.api.routes.sessions.capture_output')
+    @patch('orchestrator.session.health.capture_output')
     def test_tunnel_dead_no_output(self, mock_capture):
         """When tunnel window has no output, assume dead."""
-        from orchestrator.api.routes.sessions import _check_tunnel_alive
+        from orchestrator.session.health import check_tunnel_alive
         
         mock_capture.return_value = ""
         
-        result = _check_tunnel_alive("orchestrator", "test-tunnel")
+        result = check_tunnel_alive("orchestrator", "test-tunnel")
         assert result == False, "Empty output should indicate dead tunnel"
 
-    @patch('orchestrator.api.routes.sessions.capture_output')
+    @patch('orchestrator.session.health.capture_output')
     def test_tunnel_dead_dollar_prompt(self, mock_capture):
         """When tunnel shows $ prompt, tunnel is dead."""
-        from orchestrator.api.routes.sessions import _check_tunnel_alive
+        from orchestrator.session.health import check_tunnel_alive
         
         mock_capture.return_value = "some previous output\n$ "
         
-        result = _check_tunnel_alive("orchestrator", "test-tunnel")
+        result = check_tunnel_alive("orchestrator", "test-tunnel")
         assert result == False, "$ prompt should indicate dead tunnel"
 
 

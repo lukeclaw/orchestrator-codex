@@ -1,4 +1,10 @@
-"""E2E test fixtures: temp DB, uvicorn server, Playwright browser."""
+"""E2E test fixtures: temp DB, uvicorn server, Playwright browser.
+
+Supports parallel execution via pytest-xdist by isolating each worker:
+- Each worker gets its own database file
+- Each worker gets its own server on a unique port
+- Each worker gets its own browser instance
+"""
 
 from __future__ import annotations
 
@@ -15,20 +21,46 @@ import pytest
 PROJECT_ROOT = Path(__file__).parent.parent.parent
 
 # ---------------------------------------------------------------------------
+# Worker Isolation (for pytest-xdist parallel execution)
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture(scope="session")
+def worker_id(request):
+    """Get xdist worker ID for isolation, or 'master' if running sequentially."""
+    if hasattr(request.config, 'workerinput'):
+        return request.config.workerinput['workerid']
+    return 'master'
+
+
+@pytest.fixture(scope="session")
+def server_port(worker_id):
+    """Unique port per worker to avoid collisions in parallel runs."""
+    if worker_id == 'master':
+        return 8099
+    # gw0 -> 8100, gw1 -> 8101, etc.
+    worker_num = int(worker_id.replace('gw', ''))
+    return 8100 + worker_num
+
+
+# ---------------------------------------------------------------------------
 # Database
 # ---------------------------------------------------------------------------
 
 
 @pytest.fixture(scope="session")
-def e2e_db_path():
-    """Create a temporary SQLite DB with migrations + seed data for E2E tests."""
+def e2e_db_path(worker_id):
+    """Create a temporary SQLite DB with migrations + seed data for E2E tests.
+    
+    Each xdist worker gets its own isolated database.
+    """
     sys.path.insert(0, str(PROJECT_ROOT))
 
     from orchestrator.state.db import get_connection
     from orchestrator.state.migrations.runner import apply_migrations
     from scripts.seed_db import seed_all
 
-    fd, path = tempfile.mkstemp(suffix=".db")
+    fd, path = tempfile.mkstemp(suffix=f"_{worker_id}.db")
     os.close(fd)
 
     conn = get_connection(path)
@@ -67,11 +99,13 @@ def e2e_db_path():
 
 
 @pytest.fixture(scope="session")
-def server(e2e_db_path):
-    """Start a uvicorn subprocess and wait for it to be ready."""
+def server(e2e_db_path, server_port):
+    """Start a uvicorn subprocess and wait for it to be ready.
+    
+    Each xdist worker gets its own server on a unique port.
+    """
     import httpx
 
-    port = 8099
     env = {
         **os.environ,
         "ORCHESTRATOR_DB_PATH": e2e_db_path,
@@ -83,7 +117,7 @@ def server(e2e_db_path):
             sys.executable, "-m", "uvicorn",
             "orchestrator.api.app:create_app",
             "--factory",
-            "--port", str(port),
+            "--port", str(server_port),
             "--host", "127.0.0.1",
         ],
         env=env,
@@ -92,7 +126,7 @@ def server(e2e_db_path):
         stderr=subprocess.PIPE,
     )
 
-    base_url = f"http://127.0.0.1:{port}"
+    base_url = f"http://127.0.0.1:{server_port}"
 
     # Poll until ready
     for _ in range(40):
@@ -107,7 +141,7 @@ def server(e2e_db_path):
         proc.kill()
         stdout = proc.stdout.read().decode() if proc.stdout else ""
         stderr = proc.stderr.read().decode() if proc.stderr else ""
-        pytest.fail(f"Server did not start.\nstdout: {stdout}\nstderr: {stderr}")
+        pytest.fail(f"Server did not start on port {server_port}.\nstdout: {stdout}\nstderr: {stderr}")
 
     yield base_url
 
@@ -140,6 +174,14 @@ def browser_instance():
 
     browser.close()
     pw.stop()
+    
+    # Clean up screenshots after all tests complete
+    if SCREENSHOT_DIR.exists():
+        for f in SCREENSHOT_DIR.glob("*.png"):
+            try:
+                f.unlink()
+            except OSError:
+                pass
 
 
 @pytest.fixture()
