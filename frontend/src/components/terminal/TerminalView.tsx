@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, useCallback } from 'react'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import '@xterm/xterm/css/xterm.css'
@@ -6,15 +6,162 @@ import './TerminalView.css'
 
 interface Props {
   sessionId: string
+  sessionStatus?: string  // Session status from parent (e.g., 'connecting', 'working')
   onUserInput?: () => void
+  disableScrollback?: boolean  // Disable scrollback history (for rdev sessions with screen)
 }
 
-export default function TerminalView({ sessionId, onUserInput }: Props) {
+type ConnectionState = 'connected' | 'disconnected' | 'reconnecting'
+
+// Reconnection backoff: 1s, 2s, 5s, 10s, 10s (max 5 attempts)
+const RECONNECT_DELAYS = [1000, 2000, 5000, 10000, 10000]
+const MAX_RECONNECT_ATTEMPTS = 5
+
+export default function TerminalView({ sessionId, sessionStatus, onUserInput, disableScrollback }: Props) {
   const termRef = useRef<HTMLDivElement>(null)
   const terminalRef = useRef<Terminal | null>(null)
   const wsRef = useRef<WebSocket | null>(null)
   const fitAddonRef = useRef<FitAddon | null>(null)
+  const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const reconnectAttemptRef = useRef(0)
+  
   const [isFocused, setIsFocused] = useState(false)
+  const [connectionState, setConnectionState] = useState<ConnectionState>('disconnected')
+  const [reconnectCountdown, setReconnectCountdown] = useState<number | null>(null)
+  
+  // Terminal is locked when session is in 'connecting' state (background op in progress)
+  const isLocked = sessionStatus === 'connecting'
+  const canSendInput = connectionState === 'connected' && !isLocked
+
+  // Create WebSocket connection with reconnection support
+  const connectWebSocket = useCallback((terminal: Terminal) => {
+    const proto = location.protocol === 'https:' ? 'wss:' : 'ws:'
+    const ws = new WebSocket(`${proto}//${location.host}/ws/terminal/${sessionId}`)
+    wsRef.current = ws
+
+    // Track last content for smart diffing and scroll state
+    let lastContent = ''
+    let userScrolledUp = false
+
+    // Track when user scrolls up to pause live updates
+    const scrollDisposable = terminal.onScroll(() => {
+      const buffer = terminal.buffer.active
+      userScrolledUp = buffer.viewportY < buffer.baseY
+    })
+
+    ws.onopen = () => {
+      setConnectionState('connected')
+      setReconnectCountdown(null)
+      reconnectAttemptRef.current = 0
+      
+      // Send initial size after a brief delay so fit has completed
+      setTimeout(() => {
+        if (ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({
+            type: 'resize',
+            cols: terminal.cols,
+            rows: terminal.rows,
+          }))
+        }
+      }, 100)
+    }
+
+    ws.onerror = () => {
+      // Will trigger onclose
+    }
+
+    ws.onclose = () => {
+      scrollDisposable.dispose()
+      
+      // Don't reconnect if component is unmounting or max attempts reached
+      if (reconnectAttemptRef.current >= MAX_RECONNECT_ATTEMPTS) {
+        setConnectionState('disconnected')
+        setReconnectCountdown(null)
+        return
+      }
+
+      setConnectionState('reconnecting')
+      
+      // Calculate delay with backoff
+      const delay = RECONNECT_DELAYS[Math.min(reconnectAttemptRef.current, RECONNECT_DELAYS.length - 1)]
+      const delaySeconds = Math.ceil(delay / 1000)
+      setReconnectCountdown(delaySeconds)
+      
+      // Countdown timer
+      let countdown = delaySeconds
+      const countdownInterval = setInterval(() => {
+        countdown--
+        if (countdown > 0) {
+          setReconnectCountdown(countdown)
+        } else {
+          clearInterval(countdownInterval)
+        }
+      }, 1000)
+
+      reconnectTimerRef.current = setTimeout(() => {
+        clearInterval(countdownInterval)
+        reconnectAttemptRef.current++
+        connectWebSocket(terminal)
+      }, delay)
+    }
+
+    ws.onmessage = (event) => {
+      try {
+        const msg = JSON.parse(event.data)
+        
+        if (msg.type === 'history') {
+          // Full history received (initial load or explicit request)
+          terminal.reset()
+          terminal.write(msg.data)
+          if (typeof msg.cursorX === 'number' && typeof msg.cursorY === 'number') {
+            terminal.write(`\x1b[${msg.cursorY + 1};${msg.cursorX + 1}H`)
+          }
+          terminal.scrollToBottom()
+          lastContent = msg.data
+          userScrolledUp = false
+        } else if (msg.type === 'output') {
+          if (userScrolledUp) return
+          
+          if (msg.data !== lastContent) {
+            const content = msg.data
+            const isAppend = lastContent.length > 0 && 
+                            content.startsWith(lastContent) &&
+                            content.length - lastContent.length < 100
+            
+            if (isAppend) {
+              const newPart = content.slice(lastContent.length)
+              terminal.write(newPart)
+            } else {
+              let trimmedContent = content
+              const lineCount = (content.match(/\n/g) || []).length + 1
+              if (lineCount > terminal.rows) {
+                let idx = 0
+                for (let i = 0; i < terminal.rows && idx < content.length; i++) {
+                  const next = content.indexOf('\n', idx)
+                  if (next === -1) break
+                  idx = next + 1
+                }
+                trimmedContent = content.slice(0, idx > 0 ? idx - 1 : content.length)
+              }
+              terminal.write('\x1b[H\x1b[J' + trimmedContent)
+            }
+            
+            if (typeof msg.cursorX === 'number' && typeof msg.cursorY === 'number') {
+              terminal.write(`\x1b[${msg.cursorY + 1};${msg.cursorX + 1}H`)
+            }
+            
+            lastContent = content
+          }
+        } else if (msg.type === 'error') {
+          terminal.write(`\r\n\x1b[31m${msg.message}\x1b[0m\r\n`)
+        }
+      } catch {
+        terminal.write(event.data)
+      }
+    }
+
+    return ws
+  }, [sessionId])
 
   useEffect(() => {
     if (!termRef.current) return
@@ -49,14 +196,13 @@ export default function TerminalView({ sessionId, onUserInput }: Props) {
       },
       cursorBlink: true,
       allowProposedApi: true,
-      scrollback: 1000,  // Enable scrollback for history viewing
+      scrollback: disableScrollback ? 0 : 1000,
     })
 
     const fitAddon = new FitAddon()
     terminal.loadAddon(fitAddon)
     terminal.open(termRef.current)
 
-    // Delay first fit to allow DOM layout
     requestAnimationFrame(() => {
       fitAddon.fit()
     })
@@ -65,107 +211,13 @@ export default function TerminalView({ sessionId, onUserInput }: Props) {
     fitAddonRef.current = fitAddon
 
     // Connect WebSocket
-    const proto = location.protocol === 'https:' ? 'wss:' : 'ws:'
-    const ws = new WebSocket(`${proto}//${location.host}/ws/terminal/${sessionId}`)
-    wsRef.current = ws
+    connectWebSocket(terminal)
 
-    ws.onopen = () => {
-      // Send initial size after a brief delay so fit has completed
-      setTimeout(() => {
-        ws.send(JSON.stringify({
-          type: 'resize',
-          cols: terminal.cols,
-          rows: terminal.rows,
-        }))
-      }, 100)
-    }
-
-    ws.onerror = () => ws.close()
-
-    // Track last content for smart diffing and scroll state
-    let lastContent = ''
-    let userScrolledUp = false
-
-    // Track when user scrolls up to pause live updates
-    terminal.onScroll(() => {
-      const buffer = terminal.buffer.active
-      userScrolledUp = buffer.viewportY < buffer.baseY
-    })
-
-    ws.onmessage = (event) => {
-      try {
-        const msg = JSON.parse(event.data)
-        
-        if (msg.type === 'history') {
-          // Full history received (initial load or explicit request)
-          // Reset terminal and write all content including scrollback
-          terminal.reset()
-          terminal.write(msg.data)
-          // Position cursor
-          if (typeof msg.cursorX === 'number' && typeof msg.cursorY === 'number') {
-            terminal.write(`\x1b[${msg.cursorY + 1};${msg.cursorX + 1}H`)
-          }
-          terminal.scrollToBottom()
-          lastContent = msg.data
-          userScrolledUp = false
-        } else if (msg.type === 'output') {
-          // Skip live updates if user is viewing history
-          if (userScrolledUp) return
-          
-          // Only update if content actually changed
-          if (msg.data !== lastContent) {
-            const content = msg.data
-            
-            // Check if this is a simple append (most common case for typing)
-            const isAppend = lastContent.length > 0 && 
-                            content.startsWith(lastContent) &&
-                            content.length - lastContent.length < 100
-            
-            if (isAppend) {
-              // Incremental update - just write the new part
-              const newPart = content.slice(lastContent.length)
-              terminal.write(newPart)
-            } else {
-              // Full redraw needed (scrollback change, resize, etc.)
-              // Trim content to terminal rows only if needed
-              let trimmedContent = content
-              const lineCount = (content.match(/\n/g) || []).length + 1
-              if (lineCount > terminal.rows) {
-                let idx = 0
-                for (let i = 0; i < terminal.rows && idx < content.length; i++) {
-                  const next = content.indexOf('\n', idx)
-                  if (next === -1) break
-                  idx = next + 1
-                }
-                trimmedContent = content.slice(0, idx > 0 ? idx - 1 : content.length)
-              }
-              terminal.write('\x1b[H\x1b[J' + trimmedContent)
-            }
-            
-            // Position cursor
-            if (typeof msg.cursorX === 'number' && typeof msg.cursorY === 'number') {
-              terminal.write(`\x1b[${msg.cursorY + 1};${msg.cursorX + 1}H`)
-            }
-            
-            lastContent = content
-          }
-        } else if (msg.type === 'error') {
-          terminal.write(`\r\n\x1b[31m${msg.message}\x1b[0m\r\n`)
-        }
-      } catch {
-        terminal.write(event.data)
-      }
-    }
-
-    // Send keystrokes - also resume live updates if user was scrolled up
-    terminal.onData(data => {
-      if (ws.readyState === WebSocket.OPEN) {
+    // Send keystrokes - block if disconnected or locked
+    const inputDisposable = terminal.onData(data => {
+      const ws = wsRef.current
+      if (ws?.readyState === WebSocket.OPEN) {
         ws.send(JSON.stringify({ type: 'input', data }))
-        // Resume live updates when user types
-        if (userScrolledUp) {
-          userScrolledUp = false
-          terminal.scrollToBottom()
-        }
       }
       onUserInput?.()
     })
@@ -182,11 +234,11 @@ export default function TerminalView({ sessionId, onUserInput }: Props) {
     // Handle resize
     let resizeTimeout: ReturnType<typeof setTimeout>
     const observer = new ResizeObserver(() => {
-      // Debounce resize to avoid flooding
       clearTimeout(resizeTimeout)
       resizeTimeout = setTimeout(() => {
         fitAddon.fit()
-        if (ws.readyState === WebSocket.OPEN) {
+        const ws = wsRef.current
+        if (ws?.readyState === WebSocket.OPEN) {
           ws.send(JSON.stringify({
             type: 'resize',
             cols: terminal.cols,
@@ -198,20 +250,67 @@ export default function TerminalView({ sessionId, onUserInput }: Props) {
     observer.observe(termRef.current)
 
     return () => {
+      // Clear reconnect timer on unmount
+      if (reconnectTimerRef.current) {
+        clearTimeout(reconnectTimerRef.current)
+      }
+      reconnectAttemptRef.current = MAX_RECONNECT_ATTEMPTS // Prevent reconnect on unmount
+      
       clearTimeout(resizeTimeout)
       observer.disconnect()
+      inputDisposable.dispose()
       if (textarea) {
         textarea.removeEventListener('focus', handleFocus)
         textarea.removeEventListener('blur', handleBlur)
       }
-      ws.close()
+      wsRef.current?.close()
       terminal.dispose()
     }
-  }, [sessionId])
+  }, [sessionId, connectWebSocket])
+
+  // Manual retry handler
+  const handleRetry = useCallback(() => {
+    if (terminalRef.current) {
+      reconnectAttemptRef.current = 0
+      setConnectionState('reconnecting')
+      connectWebSocket(terminalRef.current)
+    }
+  }, [connectWebSocket])
+
+  // Determine overlay state
+  const showOverlay = connectionState !== 'connected' || isLocked
+  const overlayMessage = isLocked
+    ? 'Setting up connection...'
+    : connectionState === 'reconnecting'
+    ? `Reconnecting${reconnectCountdown ? ` in ${reconnectCountdown}s` : '...'}`
+    : connectionState === 'disconnected'
+    ? 'Connection lost'
+    : null
+
+  // Build CSS classes
+  const containerClasses = [
+    'terminal-container',
+    isFocused && 'terminal-focused',
+    isLocked && 'terminal-locked',
+    connectionState === 'disconnected' && 'terminal-disconnected',
+    connectionState === 'reconnecting' && 'terminal-reconnecting',
+  ].filter(Boolean).join(' ')
 
   return (
-    <div className={`terminal-container${isFocused ? ' terminal-focused' : ''}`}>
+    <div className={containerClasses}>
       <div className="terminal-view" ref={termRef} data-testid="terminal-view" />
+      {showOverlay && (
+        <div className="terminal-overlay">
+          <div className="terminal-overlay-content">
+            <span className="terminal-overlay-message">{overlayMessage}</span>
+            {connectionState === 'disconnected' && (
+              <button className="terminal-retry-btn" onClick={handleRetry}>
+                Retry
+              </button>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   )
 }

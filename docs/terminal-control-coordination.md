@@ -213,14 +213,14 @@ interface TerminalControlState {
 |------|-------------------|
 | Lock state | Session `status` field (`connecting` = locked) |
 | Connection state | WebSocket `readyState` |
-| User activity | Frontend-only `lastUserInput` timestamp |
+| User activity | **Backend tracks** `last_input_time` per session in `ws_terminal.py` |
 
-One small addition for Feature 1:
-```
-GET /api/sessions/{id}/user-active?since=3
-Response: { active: boolean }
-```
-Backend checks if WebSocket received input in last N seconds.
+**User Activity Flow**:
+1. User types → WebSocket receives `{ type: 'input' }` → backend updates `last_input_time`
+2. Before background connection ops → check `time.now() - last_input_time < 30s`
+3. If user active → **wait** (only for connection checks, not screen syncs)
+
+No frontend API call needed - backend already receives all input.
 
 ---
 
@@ -359,7 +359,8 @@ No new WebSocket message types needed. Frontend polls session status which alrea
 | Decision | Choice | Rationale |
 |----------|--------|-----------|
 | **Input during lock** | **Discard** | No queue complexity, user sees blocked state |
-| **Activity threshold** | **3 seconds** | Short enough to feel responsive |
+| **Activity threshold** | **30 seconds** | Wait for user to finish typing before connection checks |
+| **Activity blocks** | **Connection checks only** | Screen syncs (output polling) continue normally |
 | **Max reconnect attempts** | **5 attempts** | ~30s total, then show retry button |
 | **Lock timeout** | **60 seconds** | Auto-release, no heartbeat needed |
 | **Manual unlock** | **No** | Lock auto-releases, keeps UI simple |

@@ -9,11 +9,88 @@
   border-radius: 6px;
   border: 2px solid transparent;
   transition: border-color 0.15s ease;
+  position: relative;
 }
 
 .terminal-container.terminal-focused {
   border-color: rgba(88, 166, 255, 0.5);
   box-shadow: 0 0 0 1px rgba(88, 166, 255, 0.15);
+}
+
+/* Locked state - background operation in progress */
+.terminal-container.terminal-locked {
+  border-color: rgba(210, 153, 34, 0.6);
+  animation: border-pulse-locked 1.5s ease-in-out infinite;
+}
+
+@keyframes border-pulse-locked {
+  0%, 100% { border-color: rgba(210, 153, 34, 0.4); }
+  50% { border-color: rgba(210, 153, 34, 0.8); }
+}
+
+/* Disconnected state */
+.terminal-container.terminal-disconnected {
+  border-color: rgba(255, 123, 114, 0.6);
+}
+
+/* Reconnecting state */
+.terminal-container.terminal-reconnecting {
+  border-color: rgba(210, 153, 34, 0.6);
+  animation: border-pulse-reconnecting 1s ease-in-out infinite;
+}
+
+@keyframes border-pulse-reconnecting {
+  0%, 100% { border-color: rgba(210, 153, 34, 0.3); }
+  50% { border-color: rgba(210, 153, 34, 0.7); }
+}
+
+/* Overlay for disconnected/locked states */
+.terminal-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(13, 17, 23, 0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10;
+  border-radius: 4px;
+}
+
+.terminal-overlay-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 16px 24px;
+  background: rgba(22, 27, 34, 0.95);
+  border-radius: 8px;
+  border: 1px solid rgba(48, 54, 61, 0.8);
+}
+
+.terminal-overlay-message {
+  color: #e6edf3;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.terminal-retry-btn {
+  padding: 6px 16px;
+  font-size: 12px;
+  font-weight: 500;
+  color: #e6edf3;
+  background: rgba(88, 166, 255, 0.15);
+  border: 1px solid rgba(88, 166, 255, 0.4);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.terminal-retry-btn:hover {
+  background: rgba(88, 166, 255, 0.25);
+  border-color: rgba(88, 166, 255, 0.6);
 }
 
 .terminal-toolbar {

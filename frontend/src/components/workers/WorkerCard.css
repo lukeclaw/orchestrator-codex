@@ -33,11 +33,11 @@
 
 /* Status border colors */
 .worker-card.working { border-left-color: #58a6ff; }
-.worker-card.idle { border-left-color: #6e7681; }
+.worker-card.idle { border-left-color: var(--green); }
 .worker-card.waiting { border-left-color: var(--yellow); }
 .worker-card.paused { border-left-color: var(--orange, #f97316); }
 .worker-card.error { border-left-color: var(--red); }
-.worker-card.disconnected { border-left-color: #6e7681; }
+.worker-card.disconnected { border-left-color: var(--red); }
 .worker-card.connecting { border-left-color: var(--accent); }
 .worker-card.screen_detached { border-left-color: var(--orange, #f97316); }
 

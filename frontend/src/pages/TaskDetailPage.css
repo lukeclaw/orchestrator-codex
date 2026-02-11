@@ -1008,8 +1008,9 @@
 
 /* Subtle status color hints for worker link */
 .tdp-worker-link.status-idle {
-  background: var(--surface);
-  color: var(--text-secondary);
+  background: rgba(63, 185, 80, 0.08);
+  color: #3fb950;
+  border-color: rgba(63, 185, 80, 0.25);
 }
 
 .tdp-worker-link.status-working {
@@ -1037,9 +1038,9 @@
 }
 
 .tdp-worker-link.status-disconnected {
-  background: var(--surface);
-  color: var(--text-muted);
-  border-color: var(--border);
+  background: rgba(248, 81, 73, 0.08);
+  color: #f85149;
+  border-color: rgba(248, 81, 73, 0.25);
 }
 
 .tdp-worker-link.status-connecting {
@@ -1057,7 +1058,7 @@
 }
 
 .worker-status-dot.status-idle {
-  background: var(--text-muted);
+  background: #3fb950;
 }
 
 .worker-status-dot.status-working {
@@ -1077,7 +1078,7 @@
 }
 
 .worker-status-dot.status-disconnected {
-  background: var(--text-muted);
+  background: #f85149;
 }
 
 .worker-status-dot.status-connecting {
@@ -1231,8 +1232,8 @@
 }
 
 .worker-status-label.status-idle {
-  background: var(--surface);
-  color: var(--text-muted);
+  background: rgba(63, 185, 80, 0.15);
+  color: #3fb950;
 }
 
 .worker-status-label.status-working {
@@ -1256,8 +1257,8 @@
 }
 
 .worker-status-label.status-disconnected {
-  background: var(--surface);
-  color: var(--text-muted);
+  background: rgba(248, 81, 73, 0.15);
+  color: #f85149;
 }
 
 .worker-status-label.status-connecting {

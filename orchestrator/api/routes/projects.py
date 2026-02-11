@@ -44,6 +44,7 @@ def _get_project_stats(db, project_id: str) -> dict:
         "working": len([w for w in workers if w["status"] == "working"]),
         "idle": len([w for w in workers if w["status"] == "idle"]),
         "waiting": len([w for w in workers if w["status"] == "waiting"]),
+        "details": workers,  # Include individual worker details
     }
     
     # Context stats

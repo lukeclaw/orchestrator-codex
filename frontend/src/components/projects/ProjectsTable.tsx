@@ -3,12 +3,11 @@ import { Link } from 'react-router-dom'
 import type { Project } from '../../api/types'
 import './ProjectsTable.css'
 
-type SortKey = 'name' | 'tasks' | 'subtasks' | 'progress' | 'status' | 'created' | 'updated'
+type SortKey = 'name' | 'tasks' | 'subtasks' | 'progress' | 'workers' | 'status' | 'created' | 'updated'
 type SortDir = 'asc' | 'desc'
 
 interface Props {
   projects: Project[]
-  onEdit?: (project: Project) => void
 }
 
 function formatDate(dateStr: string): string {
@@ -44,13 +43,14 @@ function getProjectSortValue(p: Project, key: SortKey): string | number {
       if (p.status === 'paused') return 1
       return 0
     }
+    case 'workers': return p.stats?.workers?.total ?? 0
     case 'created': return new Date(p.created_at).getTime()
     case 'updated': return new Date(p.updated_at || p.created_at).getTime()
     default: return 0
   }
 }
 
-export default function ProjectsTable({ projects, onEdit }: Props) {
+export default function ProjectsTable({ projects }: Props) {
   const [sortKey, setSortKey] = useState<SortKey>('updated')
   const [sortDir, setSortDir] = useState<SortDir>('desc')
 
@@ -85,12 +85,6 @@ export default function ProjectsTable({ projects, onEdit }: Props) {
     )
   }
 
-  function handleEditClick(e: React.MouseEvent, project: Project) {
-    e.preventDefault()
-    e.stopPropagation()
-    onEdit?.(project)
-  }
-
   if (projects.length === 0) {
     return <p className="empty-state">No projects to display.</p>
   }
@@ -103,10 +97,10 @@ export default function ProjectsTable({ projects, onEdit }: Props) {
           <SortHeader k="tasks" className="center">Tasks</SortHeader>
           <SortHeader k="subtasks" className="center">Subtasks</SortHeader>
           <SortHeader k="progress">Progress</SortHeader>
+          <SortHeader k="workers">Workers</SortHeader>
           <SortHeader k="status">Status</SortHeader>
           <SortHeader k="created">Created</SortHeader>
           <SortHeader k="updated">Updated</SortHeader>
-          {onEdit && <th className="pt-th actions"></th>}
         </tr>
       </thead>
       <tbody>
@@ -114,6 +108,7 @@ export default function ProjectsTable({ projects, onEdit }: Props) {
           const stats = p.stats
           const taskStats = stats?.tasks
           const subtaskStats = stats?.subtasks
+          const workerDetails = stats?.workers?.details ?? []
           const tasksDone = taskStats?.done ?? 0
           const tasksTotal = taskStats?.total ?? 0
           const subtasksDone = subtaskStats?.done ?? 0
@@ -141,6 +136,19 @@ export default function ProjectsTable({ projects, onEdit }: Props) {
                   <span className="pt-progress-count">{doneItems}/{totalItems}</span>
                 </div>
               </td>
+              <td className="pt-td workers">
+                <div className="pt-worker-tags">
+                  {workerDetails.length === 0 ? (
+                    <span className="pt-no-workers">—</span>
+                  ) : (
+                    workerDetails.map(w => (
+                      <span key={w.id} className={`pt-worker-tag ${w.status}`} title={`${w.name} (${w.status})`}>
+                        {w.name}
+                      </span>
+                    ))
+                  )}
+                </div>
+              </td>
               <td className={`pt-td status ${p.status}`}>{p.status}</td>
               <td className="pt-td date" title={new Date(p.created_at).toLocaleString()}>
                 {formatDate(p.created_at)}
@@ -148,21 +156,6 @@ export default function ProjectsTable({ projects, onEdit }: Props) {
               <td className="pt-td date" title={new Date(p.updated_at || p.created_at).toLocaleString()}>
                 {formatDate(p.updated_at || p.created_at)}
               </td>
-              {onEdit && (
-                <td className="pt-td actions">
-                  <button
-                    type="button"
-                    className="pt-edit-btn"
-                    onClick={(e) => handleEditClick(e, p)}
-                    title="Edit project"
-                  >
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
-                      <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
-                    </svg>
-                  </button>
-                </td>
-              )}
             </tr>
           )
         })}

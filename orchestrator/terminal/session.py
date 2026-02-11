@@ -117,28 +117,18 @@ def _get_screen_session_name(session_id: str) -> str:
     return f"claude-{session_id}"
 
 
-def _wait_for_command_completion(tmux_session: str, window_name: str, timeout: int = 60) -> bool:
+def _wait_for_command_completion(tmux_session: str, window_name: str, timeout: int = 60, poll_interval: float = 2.0) -> bool:
     """Wait for a command to complete by checking for shell prompt return.
     
-    Uses a marker command to detect when the previous command has finished.
+    Uses the markers module for safe marker-based detection.
     Returns True if command completed within timeout, False otherwise.
     """
-    import random
-    marker = f"__CMD_DONE_{random.randint(10000, 99999)}__"
-    
-    # Send echo marker - this will only execute after previous command completes
-    tmux.send_keys(tmux_session, window_name, f"echo {marker}", enter=True)
-    
-    # Poll for marker in output
-    start_time = time.time()
-    while time.time() - start_time < timeout:
-        time.sleep(2)
-        output = tmux.capture_output(tmux_session, window_name, lines=10)
-        if marker in output:
-            return True
-    
-    logger.warning("Command did not complete within %d seconds", timeout)
-    return False
+    from orchestrator.terminal.markers import wait_for_completion
+    return wait_for_completion(
+        tmux.send_keys, tmux.capture_output,
+        tmux_session, window_name,
+        timeout=timeout, poll_interval=poll_interval
+    )
 
 
 def _install_screen_if_needed(tmux_session: str, window_name: str) -> bool:
@@ -146,46 +136,50 @@ def _install_screen_if_needed(tmux_session: str, window_name: str) -> bool:
     
     Returns True if screen is available (already installed or successfully installed).
     """
-    import random
-    marker = f"__SCREEN_CHK_{random.randint(10000, 99999)}__"
+    from orchestrator.terminal.markers import check_yes_no, wait_for_completion
     
-    # Check if screen is installed using marker-based detection
-    tmux.send_keys(tmux_session, window_name, f"which screen && echo {marker}_YES || echo {marker}_NO", enter=True)
-    time.sleep(2)
-    output = tmux.capture_output(tmux_session, window_name, lines=10)
+    # Check if screen is installed
+    result = check_yes_no(
+        tmux.send_keys, tmux.capture_output,
+        tmux_session, window_name,
+        check_command="which screen",
+        prefix="SCREEN_CHK"
+    )
     
-    if f"{marker}_YES" in output:
+    if result is True:
         logger.info("Screen already installed")
         return True
     
-    if f"{marker}_NO" not in output:
-        # Command didn't complete yet, wait more
-        time.sleep(3)
-        output = tmux.capture_output(tmux_session, window_name, lines=10)
+    if result is False:
+        logger.info("Screen not found, installing...")
+    else:
+        logger.warning("Could not determine screen status, attempting install")
     
-    if f"{marker}_YES" in output:
-        logger.info("Screen already installed")
-        return True
-    
-    # Install screen and wait for completion
-    logger.info("Installing screen...")
+    # Install screen
     tmux.send_keys(tmux_session, window_name, "sudo yum install screen -y", enter=True)
     
     # Wait for installation to complete (poll for up to 60 seconds)
-    if not _wait_for_command_completion(tmux_session, window_name, timeout=60):
+    if not wait_for_completion(
+        tmux.send_keys, tmux.capture_output,
+        tmux_session, window_name,
+        timeout=60
+    ):
         logger.warning("Screen installation may not have completed")
     
-    # Verify installation with marker
-    verify_marker = f"__SCREEN_VFY_{random.randint(10000, 99999)}__"
-    tmux.send_keys(tmux_session, window_name, f"which screen && echo {verify_marker}_OK || echo {verify_marker}_FAIL", enter=True)
-    time.sleep(2)
-    output = tmux.capture_output(tmux_session, window_name, lines=10)
+    # Verify installation
+    verify_result = check_yes_no(
+        tmux.send_keys, tmux.capture_output,
+        tmux_session, window_name,
+        check_command="which screen",
+        prefix="SCREEN_VFY"
+    )
+    logger.debug("Screen verify result: %r", verify_result)
     
-    if f"{verify_marker}_OK" in output:
+    if verify_result is True:
         logger.info("Screen installed successfully")
         return True
     
-    logger.warning("Failed to install screen")
+    logger.warning("Failed to install screen (verify result: %r)", verify_result)
     return False
 
 

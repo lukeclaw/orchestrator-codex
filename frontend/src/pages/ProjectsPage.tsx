@@ -86,7 +86,7 @@ export default function ProjectsPage() {
         </p>
       ) : viewMode === 'table' ? (
         <div className="panel">
-          <ProjectsTable projects={filtered} onEdit={setEditingProject} />
+          <ProjectsTable projects={filtered} />
         </div>
       ) : (
         <div className="projects-grid">

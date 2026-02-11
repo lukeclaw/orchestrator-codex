@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import time
 
 from fastapi import WebSocket, WebSocketDisconnect
 
@@ -25,6 +26,35 @@ logger = logging.getLogger(__name__)
 
 # Tmux session name used by the orchestrator
 TMUX_SESSION = "orchestrator"
+
+# Track last user input time per session (for user activity detection)
+# Key: session_id, Value: timestamp (time.time())
+_session_last_input: dict[str, float] = {}
+
+# How long to wait for user activity before background connection ops (seconds)
+USER_ACTIVITY_TIMEOUT = 30
+
+
+def record_user_input(session_id: str) -> None:
+    """Record that user sent input to a session."""
+    _session_last_input[session_id] = time.time()
+
+
+def is_user_active(session_id: str, timeout: float = USER_ACTIVITY_TIMEOUT) -> bool:
+    """Check if user has been active in a session within the timeout window.
+    
+    Used by background operations (reconnect, health-check) to avoid
+    interfering with user typing. Screen syncs should NOT use this.
+    """
+    last_input = _session_last_input.get(session_id)
+    if last_input is None:
+        return False
+    return (time.time() - last_input) < timeout
+
+
+def clear_user_activity(session_id: str) -> None:
+    """Clear activity tracking for a session (on disconnect/delete)."""
+    _session_last_input.pop(session_id, None)
 
 
 def _get_conn(websocket: WebSocket):
@@ -136,6 +166,8 @@ async def terminal_websocket(websocket: WebSocket, session_id: str):
                 continue
 
             if msg.get("type") == "input":
+                # Track user activity for background operation coordination
+                record_user_input(session_id)
                 # Fire-and-forget input - let the fast polling loop handle the response
                 # This removes ~25ms subprocess latency from the input path
                 asyncio.create_task(send_keys_async(tmux_sess, tmux_win, msg.get("data", "")))
@@ -184,6 +216,7 @@ async def terminal_websocket(websocket: WebSocket, session_id: str):
     finally:
         poll_active = False
         poll_task.cancel()
+        clear_user_activity(session_id)
         try:
             await poll_task
         except asyncio.CancelledError:

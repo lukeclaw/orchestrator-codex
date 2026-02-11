@@ -17,6 +17,7 @@ export default function SessionDetailPage() {
   const { sessions, tasks: allTasks, refresh } = useApp()
   const session = sessions.find(s => s.id === id) || null
   const tasks = allTasks.filter(t => t.assigned_session_id === id)
+  const isRdev = session?.host?.includes('/') ?? false
   
   // Local state for page-specific data
   const [error, setError] = useState('')
@@ -203,9 +204,17 @@ export default function SessionDetailPage() {
         </div>
       </div>
 
+      {/* Screen copy mode hint for rdev sessions */}
+      {isRdev && (
+        <div className="sd-rdev-hint">
+          <span className="sd-rdev-hint-icon">💡</span>
+          <span>To view history: <kbd>Ctrl-A</kbd> + <kbd>[</kbd> to enter copy mode, <kbd>PageUp</kbd>/<kbd>PageDown</kbd> to scroll, <kbd>Esc</kbd> to exit</span>
+        </div>
+      )}
+
       {/* Terminal fills the rest */}
       <div className="sd-terminal-area">
-        <TerminalView sessionId={session.id} />
+        <TerminalView sessionId={session.id} sessionStatus={session.status} disableScrollback={isRdev} />
       </div>
     </div>
   )

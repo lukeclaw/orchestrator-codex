@@ -36,6 +36,7 @@ from orchestrator.session import (
     reconnect_rdev_worker,
     reconnect_local_worker,
 )
+from orchestrator.api.ws_terminal import is_user_active
 
 logger = logging.getLogger(__name__)
 
@@ -581,6 +582,9 @@ def reconnect_session(session_id: str, request: Request, db=Depends(get_db)):
     - Re-establish SSH/tunnel, create new screen, launch Claude
     
     For local workers: just relaunch Claude with -r flag.
+    
+    Reconnect is always a manual action triggered by user clicking a button,
+    so it should never be skipped due to user activity.
     """
     s = repo.get_session(db, session_id)
     if s is None:
@@ -631,12 +635,14 @@ def reconnect_session(session_id: str, request: Request, db=Depends(get_db)):
 
     else:
         # Local worker — just relaunch claude
+        repo.update_session(db, session_id, status="connecting")
         try:
             reconnect_local_worker(s, tmux_sess, tmux_win, api_port, tmp_dir)
             repo.update_session(db, session_id, status="waiting")
             return {"ok": True, "message": f"Session {s.name} reconnected"}
         except Exception as e:
             logger.exception("Local reconnect failed for %s", s.name)
+            repo.update_session(db, session_id, status="disconnected")
             return {"ok": False, "error": str(e)}
 
 
@@ -651,6 +657,9 @@ def health_check_session(session_id: str, db=Depends(get_db)):
     
     For local workers:
     - Uses ps | grep to check Claude process
+    
+    Status checks don't lock user input - they just check status without sending commands
+    to the worker terminal.
     
     Updates status accordingly.
     
@@ -774,7 +783,7 @@ def health_check_all_sessions(db=Depends(get_db)):
     """
     sessions = repo.list_sessions(db, session_type="worker")
     
-    results = {"checked": 0, "disconnected": [], "screen_detached": [], "error": [], "alive": []}
+    results = {"checked": 0, "disconnected": [], "screen_detached": [], "error": [], "alive": [], "skipped_active": []}
     
     for s in sessions:
         if s.status == "disconnected":

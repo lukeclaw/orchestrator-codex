@@ -11,6 +11,12 @@ export interface Session {
   session_type: 'worker' | 'brain' | 'system'
 }
 
+export interface WorkerDetail {
+  id: string
+  name: string
+  status: string
+}
+
 export interface ProjectStats {
   tasks: {
     total: number
@@ -28,6 +34,7 @@ export interface ProjectStats {
     working: number
     idle: number
     waiting: number
+    details?: WorkerDetail[]
   }
   context: {
     total: number

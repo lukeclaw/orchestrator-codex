@@ -17,6 +17,50 @@ def get_screen_session_name(session_id: str) -> str:
     return f"claude-{session_id}"
 
 
+def check_worker_ssh_alive(tmux_sess: str, tmux_win: str, host: str) -> bool:
+    """Check if the worker SSH session is still connected to rdev.
+    
+    This verifies the SSH connection by checking for a running `rdev ssh` process
+    that contains the host name and --non-tmux flag. This is more reliable than
+    checking tmux window content which may have stale output in scrollback.
+    
+    Args:
+        tmux_sess: tmux session name (unused, kept for API compatibility)
+        tmux_win: tmux window name (unused, kept for API compatibility)
+        host: The rdev host (e.g., "subs-mt/sleepy-franklin")
+        
+    Returns:
+        True if rdev SSH process is running, False otherwise
+    """
+    try:
+        # Extract rdev VM name from host (e.g., "subs-mt/sleepy-franklin" -> "sleepy-franklin")
+        rdev_vm_name = host.split('/')[-1] if '/' in host else host
+        
+        # Check for a process with "rdev", the host name, and "--non-tmux" all in command line
+        # This is the actual `rdev ssh <host> --non-tmux` process
+        result = subprocess.run(
+            ["bash", "-c", f"ps aux | grep -E 'rdev.*{rdev_vm_name}.*--non-tmux' | grep -v grep"],
+            capture_output=True,
+            text=True,
+            timeout=5
+        )
+        
+        if result.returncode == 0 and result.stdout.strip():
+            logger.info("Worker SSH check: found rdev process for %s", rdev_vm_name)
+            logger.debug("Worker SSH check process: %s", result.stdout.strip()[:200])
+            return True
+        
+        logger.info("Worker SSH check: no rdev process found for %s", rdev_vm_name)
+        return False
+        
+    except subprocess.TimeoutExpired:
+        logger.warning("Worker SSH check: timeout checking for rdev process")
+        return False
+    except Exception as e:
+        logger.warning("Worker SSH check error for %s: %s", host, e)
+        return False
+
+
 def check_tunnel_alive(tmux_sess: str, tunnel_win: str) -> bool:
     """Check if the tunnel window has an active SSH tunnel running.
     
@@ -125,29 +169,40 @@ def check_screen_and_claude_rdev(
     Uses subprocess SSH (fresh connection) to check status. Does NOT use tmux send-keys
     because that would type commands into Claude if it's running.
     
-    The tmux_sess and tmux_win parameters are kept for API compatibility but not used.
+    Also checks the worker tmux window to verify the SSH connection is actually alive.
     
     Args:
         host: rdev host (e.g., "user/rdev-vm")
         session_id: Session ID to check for
-        tmux_sess: (unused) tmux session name
-        tmux_win: (unused) tmux window name
+        tmux_sess: tmux session name (used for SSH alive check)
+        tmux_win: tmux window name (used for SSH alive check)
         
     Returns:
         (status: str, reason: str) where status is one of:
-        - "alive": Screen exists and Claude is running
+        - "alive": Screen exists and Claude is running AND SSH connection alive
         - "screen_only": Screen exists but Claude not running
         - "screen_detached": SSH connection failed but screen may still be running
-        - "dead": No screen session found
+        - "dead": No screen session found OR SSH connection dead
     """
     screen_name = get_screen_session_name(session_id)
     
-    # Always check via subprocess SSH - never use send-keys to worker window
-    # because Claude might be running there and would receive the commands as input
+    # First check if the worker SSH session is still connected by checking tmux window content
+    # This catches the case where the user's SSH session has died but
+    # the remote screen/Claude might still be running
+    if tmux_sess and tmux_win:
+        ssh_alive = check_worker_ssh_alive(tmux_sess, tmux_win, host)
+        if not ssh_alive:
+            logger.info("Health check: Worker SSH appears disconnected for %s - marking as dead", host)
+            return "dead", f"Worker SSH session appears disconnected (not on rdev host '{host}')"
+    
+    # Check remote screen/Claude status via subprocess SSH
+    # (separate from worker tmux window to avoid interfering with Claude)
     try:
+        # Note: Check for 'claude -r' or 'claude --' to avoid matching screen session names
+        # which contain 'claude-<session_id>'. The actual Claude CLI is invoked with flags.
         check_cmd = (
             f"screen -ls 2>/dev/null | grep -q '{screen_name}' && echo 'SCREEN_EXISTS' || echo 'NO_SCREEN'; "
-            f"ps aux | grep -v grep | grep '{session_id}' | grep -i claude && echo 'CLAUDE_RUNNING' || echo 'NO_CLAUDE'"
+            f"ps aux | grep -v grep | grep -E 'claude (-r|--|--settings)' | grep -q '{session_id}' && echo 'CLAUDE_RUNNING' || echo 'NO_CLAUDE'"
         )
         
         result = subprocess.run(
@@ -164,15 +219,27 @@ def check_screen_and_claude_rdev(
             return "screen_detached", f"SSH connection failed - screen may still be running: {result.stderr.strip()}"
         
         output = result.stdout
+        stderr = result.stderr
         screen_exists = "SCREEN_EXISTS" in output
         claude_running = "CLAUDE_RUNNING" in output
+        
+        # Debug logging to diagnose false negatives
+        logger.debug(
+            "SSH health check for %s (screen=%s): returncode=%d, screen_exists=%s, claude_running=%s, stdout=%r, stderr=%r",
+            host, screen_name, result.returncode, screen_exists, claude_running, output[:200], stderr[:100]
+        )
         
         if screen_exists and claude_running:
             return "alive", "Screen session exists and Claude is running"
         elif screen_exists and not claude_running:
             return "screen_only", "Screen session exists but Claude not running"
         else:
-            return "dead", "No screen session found"
+            # Log at warning level when marking as dead - helps diagnose false negatives
+            logger.warning(
+                "SSH health check marking %s as DEAD: screen_name=%s, stdout=%r, stderr=%r",
+                host, screen_name, output, stderr
+            )
+            return "dead", f"No screen session found (looked for '{screen_name}')"
             
     except subprocess.TimeoutExpired:
         return "screen_detached", "SSH connection timed out - screen may still be running"

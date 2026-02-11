@@ -8,7 +8,8 @@ from orchestrator.terminal.session import setup_rdev_worker
 
 class TestSetupRdevWorker:
     @patch("random.randint", return_value=12345)  # Predictable markers
-    @patch("orchestrator.terminal.session.time.sleep")  # Mock sleep to speed up tests
+    @patch("orchestrator.terminal.markers.time.sleep")  # Mock markers module sleep
+    @patch("orchestrator.terminal.session.time.sleep")  # Mock session module sleep
     @patch("orchestrator.terminal.session.tmux")
     @patch("orchestrator.terminal.session.ssh")
     @patch("orchestrator.terminal.session.deploy_worker_scripts")
@@ -16,13 +17,17 @@ class TestSetupRdevWorker:
     @patch("builtins.open", mock_open(read_data="Worker template SESSION_ID"))
     @patch("orchestrator.terminal.session.os.path.exists", return_value=True)
     @patch("orchestrator.terminal.session.os.makedirs")
-    def test_successful_setup(self, _makedirs, _exists, mock_hooks, mock_scripts, mock_ssh, mock_tmux, _sleep, _randint, db):
+    def test_successful_setup(self, _makedirs, _exists, mock_hooks, mock_scripts, mock_ssh, mock_tmux, _sleep_session, _sleep_markers, _randint, db):
         seed_all(db)
         mock_ssh.wait_for_prompt.return_value = True
         mock_tmux.create_window.return_value = "orchestrator:w1-tunnel"
         mock_tmux.send_keys.return_value = True
-        # Return markers that _install_screen_if_needed expects (with predictable random=12345)
-        mock_tmux.capture_output.return_value = "__SCREEN_CHK_12345___YES"
+        # Return markers for both _install_screen_if_needed (SCREEN_CHK) and wait_for_completion (WAIT)
+        # With predictable random=12345, all markers use this ID
+        mock_tmux.capture_output.return_value = (
+            "__SCREEN_CHK_START_12345__\nYES\n__SCREEN_CHK_END_12345__\n"
+            "__WAIT_START_12345__\nDONE\n__WAIT_END_12345__"
+        )
         mock_ssh.setup_rdev_tunnel.return_value = True
         mock_ssh.rdev_connect.return_value = True
         mock_scripts.return_value = "/tmp/orchestrator/workers/w1/bin"
