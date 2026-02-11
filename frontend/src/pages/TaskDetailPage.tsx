@@ -303,9 +303,18 @@ export default function TaskDetailPage() {
           <IconArrowLeft size={16} />
         </button>
         <nav className="tdp-breadcrumb">
-          <Link to="/tasks">Tasks</Link>
-          <span>/</span>
-          {parentTask && <><Link to={`/tasks/${parentTask.id}`}>{parentTask.task_key}</Link><span>/</span></>}
+          {project ? (
+            <Link to={`/projects/${project.id}`}>{project.name}</Link>
+          ) : (
+            <span>No Project</span>
+          )}
+          <span className="breadcrumb-sep">&gt;</span>
+          {parentTask && (
+            <>
+              <Link to={`/tasks/${parentTask.id}`}>{parentTask.task_key}</Link>
+              <span className="breadcrumb-sep">&gt;</span>
+            </>
+          )}
           <span className="current">{task.task_key}</span>
         </nav>
       </div>

@@ -56,6 +56,11 @@
   font-weight: 500;
 }
 
+.tdp-breadcrumb .breadcrumb-sep {
+  color: var(--text-muted);
+  font-weight: 400;
+}
+
 /* Layout */
 .tdp-layout {
   display: grid;
