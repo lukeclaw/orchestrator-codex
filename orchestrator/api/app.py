@@ -47,13 +47,6 @@ async def lifespan(app: FastAPI):
     except Exception:
         logger.exception("Startup check failed (non-fatal)")
 
-    # Seed default auto-approve rules
-    try:
-        from orchestrator.automation.auto_approve import seed_auto_approve_defaults
-        seed_auto_approve_defaults(conn)
-    except Exception:
-        logger.exception("Failed to seed auto-approve defaults (non-fatal)")
-
     # Start the StateManager (handles event-driven DB writes)
     state_manager = None
     if db_path:
@@ -142,10 +135,8 @@ def create_app(
     from orchestrator.api.routes import (
         brain,
         context,
-        health,
         notifications,
         projects,
-        reporting,
         sessions,
         settings,
         tasks,
@@ -154,10 +145,8 @@ def create_app(
     app.include_router(sessions.router, prefix="/api", tags=["sessions"])
     app.include_router(projects.router, prefix="/api", tags=["projects"])
     app.include_router(tasks.router, prefix="/api", tags=["tasks"])
-    app.include_router(reporting.router, prefix="/api", tags=["reporting"])
     app.include_router(context.router, prefix="/api", tags=["context"])
     app.include_router(notifications.router, prefix="/api", tags=["notifications"])
-    app.include_router(health.router, prefix="/api", tags=["health"])
     app.include_router(settings.router, prefix="/api", tags=["settings"])
     app.include_router(brain.router, prefix="/api", tags=["brain"])
 

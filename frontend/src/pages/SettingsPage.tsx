@@ -2,34 +2,7 @@ import { useState, useEffect } from 'react'
 import { useSettings } from '../hooks/useSettings'
 import './SettingsPage.css'
 
-const TABS = ['General', 'Auto-Approve'] as const
-type Tab = typeof TABS[number]
-
-const AUTO_APPROVE_RULES = [
-  {
-    key: 'auto_approve.tool_calls',
-    label: 'Tool Calls',
-    hint: 'Auto-approve Claude Code tool calls (Read, Write, Bash, etc.)',
-  },
-  {
-    key: 'auto_approve.continue_work',
-    label: 'Continue Prompts',
-    hint: 'Auto-approve "continue?" and "shall I proceed?" prompts',
-  },
-  {
-    key: 'auto_approve.completed_check',
-    label: 'Completion Checks',
-    hint: 'Auto-approve "Has this been completed?" prompts',
-  },
-  {
-    key: 'auto_approve.yes_no_prompts',
-    label: 'Generic Y/N',
-    hint: 'Auto-approve generic (y/n) prompts',
-  },
-]
-
 export default function SettingsPage() {
-  const [tab, setTab] = useState<Tab>('General')
   const { settings, loading, saving, save, getValue } = useSettings()
 
   // Local state for general settings
@@ -46,22 +19,11 @@ export default function SettingsPage() {
     }
   }, [settings, getValue])
 
-  const handleSaveGeneral = () => {
+  const handleSave = () => {
     save({
       'general.polling_interval': pollingInterval,
       'general.max_sessions': maxSessions,
     })
-  }
-
-  const handleToggleRule = (key: string) => {
-    const current = getValue(key)
-    const enabled = current === true || current === 'true'
-    save({ [key]: !enabled })
-  }
-
-  const isRuleEnabled = (key: string): boolean => {
-    const v = getValue(key)
-    return v === true || v === 'true'
   }
 
   return (
@@ -70,23 +32,11 @@ export default function SettingsPage() {
         <h1>Settings</h1>
       </div>
 
-      <div className="tabs">
-        {TABS.map(t => (
-          <button
-            key={t}
-            className={`tab ${tab === t ? 'active' : ''}`}
-            onClick={() => setTab(t)}
-          >
-            {t}
-          </button>
-        ))}
-      </div>
-
       <div className="settings-content panel">
         <div className="panel-body">
           {loading && <p className="settings-hint">Loading settings...</p>}
 
-          {!loading && tab === 'General' && (
+          {!loading && (
             <div className="settings-section">
               <h3>General Configuration</h3>
               <div className="form-group">
@@ -113,38 +63,11 @@ export default function SettingsPage() {
               </div>
               <button
                 className="btn btn-primary"
-                onClick={handleSaveGeneral}
+                onClick={handleSave}
                 disabled={saving}
               >
                 {saving ? 'Saving...' : 'Save'}
               </button>
-            </div>
-          )}
-
-          {!loading && tab === 'Auto-Approve' && (
-            <div className="settings-section">
-              <h3>Auto-Approve Rules</h3>
-              <p className="settings-hint">
-                When enabled, the orchestrator automatically responds to matching
-                prompts so workers don't block waiting for you.
-              </p>
-              <div className="approval-rules">
-                {AUTO_APPROVE_RULES.map(rule => (
-                  <div key={rule.key} className="approval-rule">
-                    <div className="rule-info">
-                      <span className="rule-label">{rule.label}</span>
-                      <span className="rule-hint">{rule.hint}</span>
-                    </div>
-                    <button
-                      className={`toggle ${isRuleEnabled(rule.key) ? 'on' : 'off'}`}
-                      onClick={() => handleToggleRule(rule.key)}
-                      disabled={saving}
-                    >
-                      {isRuleEnabled(rule.key) ? 'ON' : 'OFF'}
-                    </button>
-                  </div>
-                ))}
-              </div>
             </div>
           )}
         </div>

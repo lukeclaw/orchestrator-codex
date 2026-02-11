@@ -19,17 +19,6 @@ def client():
         yield c
 
 
-# --- Health ---
-
-class TestHealth:
-    def test_health_check(self, client):
-        resp = client.get("/api/health")
-        assert resp.status_code == 200
-        data = resp.json()
-        assert data["status"] == "ok"
-        assert data["sessions"]["total"] == 0
-
-
 # --- Sessions ---
 
 class TestSessions:
@@ -188,27 +177,6 @@ class TestTasks:
         assert resp.status_code == 200
 
 
-# --- Reporting ---
-
-class TestReporting:
-    def test_report_event(self, client):
-        with patch("orchestrator.api.routes.sessions.ensure_window", return_value="orchestrator:rep-worker"):
-            client.post("/api/sessions", json={"name": "rep-worker", "host": "h"})
-        resp = client.post("/api/report", json={
-            "session": "rep-worker", "event": "task_progress",
-            "data": {"task": "Feature X", "progress": 50}
-        })
-        assert resp.status_code == 200
-        assert resp.json()["ok"] is True
-
-    def test_get_guidance(self, client):
-        with patch("orchestrator.api.routes.sessions.ensure_window", return_value="orchestrator:guide-worker"):
-            client.post("/api/sessions", json={"name": "guide-worker", "host": "h"})
-        resp = client.get("/api/guidance?session=guide-worker")
-        assert resp.status_code == 200
-        assert resp.json()["session"] == "guide-worker"
-
-
 # --- Brain ---
 
 class TestBrain:
@@ -341,11 +309,6 @@ class TestDashboard:
 
     def test_api_routes_not_caught_by_catchall(self, client):
         """API endpoints should return JSON, not the SPA HTML."""
-        resp = client.get("/api/health")
-        assert resp.status_code == 200
-        data = resp.json()
-        assert data["status"] == "ok"
-
         resp = client.get("/api/brain/status")
         assert resp.status_code == 200
         data = resp.json()
