@@ -46,18 +46,20 @@ class TestSessionCreate:
         mock_ensure_window.assert_called_once()
         mock_repo.create_session.assert_called_once()
 
+    @patch('orchestrator.api.routes.sessions.deploy_worker_scripts')
     @patch('orchestrator.api.routes.sessions.threading')
     @patch('orchestrator.api.routes.sessions.ensure_window')
     @patch('orchestrator.api.routes.sessions.repo')
     @patch('orchestrator.api.routes.sessions.is_rdev_host')
     def test_create_local_session_tmux_failure_graceful(
-        self, mock_is_rdev, mock_repo, mock_ensure_window, mock_threading, db
+        self, mock_is_rdev, mock_repo, mock_ensure_window, mock_threading, mock_deploy, db
     ):
         """If tmux window creation fails, session should still be created."""
         from orchestrator.api.routes.sessions import create_session, SessionCreate
         
         mock_is_rdev.return_value = False
         mock_ensure_window.side_effect = Exception("tmux error")
+        mock_deploy.return_value = "/tmp/mock/bin"
         
         mock_session = MagicMock()
         mock_session.id = "test-session-id"
@@ -71,7 +73,8 @@ class TestSessionCreate:
         mock_request = MagicMock()
         mock_request.app.state.config = {"tmux_session_name": "orchestrator", "api_port": 8093}
         
-        result = create_session(body, mock_request, db=db)
+        with patch('orchestrator.api.routes.sessions.send_keys'):
+            result = create_session(body, mock_request, db=db)
         
         # Session should still be created even if tmux fails
         assert result is not None
