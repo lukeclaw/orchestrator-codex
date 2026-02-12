@@ -7,39 +7,47 @@ interface Props {
   onEdit?: (project: Project) => void
 }
 
-function formatRelativeTime(dateStr: string): string {
-  const date = new Date(dateStr)
-  const now = new Date()
-  const diffMs = now.getTime() - date.getTime()
-  const diffMins = Math.floor(diffMs / 60000)
-  const diffHours = Math.floor(diffMs / 3600000)
-  const diffDays = Math.floor(diffMs / 86400000)
+function timeAgo(dateStr: string): string {
+  const diffMs = Date.now() - new Date(dateStr).getTime()
+  const mins = Math.floor(diffMs / 60000)
+  if (mins < 1) return 'just now'
+  if (mins < 60) return `${mins}m ago`
+  const hrs = Math.floor(diffMs / 3600000)
+  if (hrs < 24) return `${hrs}h ago`
+  const days = Math.floor(diffMs / 86400000)
+  if (days < 7) return `${days}d ago`
+  return new Date(dateStr).toLocaleDateString()
+}
 
-  if (diffMins < 1) return 'just now'
-  if (diffMins < 60) return `${diffMins}m ago`
-  if (diffHours < 24) return `${diffHours}h ago`
-  if (diffDays < 7) return `${diffDays}d ago`
-  return date.toLocaleDateString()
+/** Segmented bar: done (green) | active (blue) | blocked (red) | todo (empty) */
+function SegmentedBar({ done, active, blocked, total }: { done: number; active: number; blocked: number; total: number }) {
+  if (total === 0) return <div className="pc-bar"><div className="pc-bar-empty" /></div>
+  const donePct = (done / total) * 100
+  const activePct = (active / total) * 100
+  const blockedPct = (blocked / total) * 100
+  return (
+    <div className="pc-bar" title={`${done} done · ${active} active · ${blocked} blocked · ${total - done - active - blocked} todo`}>
+      {donePct > 0 && <div className="pc-seg done" style={{ width: `${donePct}%` }} />}
+      {activePct > 0 && <div className="pc-seg active" style={{ width: `${activePct}%` }} />}
+      {blockedPct > 0 && <div className="pc-seg blocked" style={{ width: `${blockedPct}%` }} />}
+    </div>
+  )
 }
 
 export default function ProjectCard({ project, onEdit }: Props) {
   const stats = project.stats
   const taskStats = stats?.tasks
+  const subtaskStats = stats?.subtasks
   const workerStats = stats?.workers
 
-  const done = taskStats?.done ?? 0
-  const total = taskStats?.total ?? 0
   const inProgress = taskStats?.in_progress ?? 0
+  const tasksDone = taskStats?.done ?? 0
   const blocked = taskStats?.blocked ?? 0
-  const working = workerStats?.working ?? 0
+  const tasksTotal = taskStats?.total ?? 0
+  const subtasksTotal = subtaskStats?.total ?? 0
+  const subtasksDone = subtaskStats?.done ?? 0
 
-  // Determine border color based on activity
-  const getBorderClass = () => {
-    if (blocked > 0) return 'border-blocked'
-    if (working > 0) return 'border-working'
-    if (inProgress > 0) return 'border-active'
-    return ''
-  }
+  const workerDetails = workerStats?.details ?? []
 
   function handleEditClick(e: React.MouseEvent) {
     e.preventDefault()
@@ -47,71 +55,63 @@ export default function ProjectCard({ project, onEdit }: Props) {
     onEdit?.(project)
   }
 
-  // Build compact stats items
-  const statItems: { label: string; className: string }[] = []
-  if (taskStats) {
-    if (taskStats.in_progress > 0) statItems.push({ label: `${taskStats.in_progress} active`, className: 'active' })
-    if (taskStats.blocked > 0) statItems.push({ label: `${taskStats.blocked} blocked`, className: 'blocked' })
-  }
-  if (workerStats && workerStats.working > 0) {
-    statItems.push({ label: `${workerStats.working} working`, className: 'working' })
-  }
-
   return (
-    <Link to={`/projects/${project.id}`} className={`project-card ${getBorderClass()}`}>
+    <Link to={`/projects/${project.id}`} className="project-card">
+      {/* Header */}
       <div className="pc-header">
-        <span className="pc-name">{project.name}</span>
-        <div className="pc-header-actions">
-          {onEdit && (
-            <button
-              type="button"
-              className="pc-edit-btn"
-              onClick={handleEditClick}
-              title="Edit project"
-            >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
-                <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
-              </svg>
-            </button>
-          )}
+        <div className="pc-header-left">
+          <span className="pc-name">{project.name}</span>
+          <span className={`pc-status-pill ${project.status}`}>{project.status}</span>
         </div>
+        {onEdit && (
+          <button type="button" className="pc-edit-btn" onClick={handleEditClick} title="Edit project">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+              <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+            </svg>
+          </button>
+        )}
       </div>
-      
+
       {project.description && (
         <p className="pc-desc">{project.description}</p>
       )}
-      
-      {/* Progress bar with inline count */}
-      <div className="pc-progress-row">
-        <div className="pc-progress-bar">
-          <div 
-            className="pc-progress-fill" 
-            style={{ width: total > 0 ? `${(done / total) * 100}%` : '0%' }}
-          />
+
+      {/* Progress — tasks and subtasks side by side */}
+      <div className="pc-progress-grid">
+        <div className="pc-progress-col">
+          <div className="pc-progress-header">
+            <span className="pc-progress-title">Tasks</span>
+            <span className="pc-progress-nums">{tasksDone}/{tasksTotal}</span>
+          </div>
+          <SegmentedBar done={tasksDone} active={inProgress} blocked={blocked} total={tasksTotal} />
         </div>
-        <span className="pc-progress-count">{done}/{total}</span>
+        <div className="pc-progress-col">
+          <div className="pc-progress-header">
+            <span className="pc-progress-title">Subtasks</span>
+            <span className="pc-progress-nums">{subtasksDone}/{subtasksTotal}</span>
+          </div>
+          <div className="pc-bar">
+            <div className="pc-seg done" style={{ width: subtasksTotal > 0 ? `${(subtasksDone / subtasksTotal) * 100}%` : '0%' }} />
+          </div>
+        </div>
       </div>
 
-      {/* Compact stats row */}
-      {statItems.length > 0 && (
-        <div className="pc-stats-row">
-          {statItems.map((item, i) => (
-            <span key={i} className={`pc-stat ${item.className}`}>
-              <span className="pc-stat-dot" />
-              {item.label}
-            </span>
-          ))}
-        </div>
-      )}
-
+      {/* Footer: workers + timestamp in one line */}
       <div className="pc-footer">
-        <span className="pc-created" title={`Created ${new Date(project.created_at).toLocaleString()}`}>
-          {formatRelativeTime(project.created_at)}
-        </span>
-        {project.target_date && (
-          <span className="pc-date">Due {new Date(project.target_date).toLocaleDateString()}</span>
-        )}
+        <div className="pc-footer-workers">
+          {workerDetails.length > 0 ? (
+            workerDetails.map(w => (
+              <span key={w.id} className={`pc-worker ${w.status}`} title={`${w.name} (${w.status})`}>
+                <span className="pc-worker-dot" />
+                {w.name}
+              </span>
+            ))
+          ) : (
+            <span className="pc-no-workers">No workers</span>
+          )}
+        </div>
+        <span className="pc-time">{timeAgo(project.updated_at || project.created_at)}</span>
       </div>
     </Link>
   )

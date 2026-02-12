@@ -66,7 +66,7 @@
   cursor: pointer;
 }
 
-/* Table */
+/* Table wrapper */
 .tasks-table-wrapper {
   overflow-x: auto;
   background: var(--surface);
@@ -74,83 +74,52 @@
   border-radius: var(--radius);
 }
 
-.tasks-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 13px;
-}
-
-.tasks-table th {
-  text-align: left;
-  padding: 12px 14px;
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--text-secondary);
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  border-bottom: 1px solid var(--border);
-  white-space: nowrap;
-  background: var(--surface);
-}
-
-.tasks-table td {
-  padding: 12px 14px;
-  border-bottom: 1px solid var(--border-subtle);
-  color: var(--text-primary);
-}
-
-.task-row {
-  transition: background 0.1s;
-}
-
-.task-row:hover {
-  background: var(--surface-hover);
-}
-
-.task-key {
+/* Task-specific column styles (uses shared pt-* classes from ProjectsTable.css) */
+.tasks-page .task-key {
   font-weight: 600;
   white-space: nowrap;
 }
 
-.task-key a {
+.tasks-page .task-key a {
   color: var(--accent);
   text-decoration: none;
 }
 
-.task-key a:hover {
+.tasks-page .task-key a:hover {
   text-decoration: underline;
 }
 
-.task-title {
+.tasks-page .task-title {
   font-weight: 500;
   max-width: 300px;
 }
 
-.task-title a {
+.tasks-page .task-title a {
   color: var(--text-primary);
   text-decoration: none;
 }
 
-.task-title a:hover {
+.tasks-page .task-title a:hover {
   color: var(--accent);
 }
 
-.task-project .project-link {
+.tasks-page .task-project .project-link {
   color: var(--text-secondary);
   text-decoration: none;
   font-size: 12px;
 }
 
-.task-project .project-link:hover {
+.tasks-page .task-project .project-link:hover {
   color: var(--accent);
   text-decoration: underline;
 }
 
-.task-subtasks {
+.tasks-page .subtasks {
+  text-align: center;
   color: var(--text-secondary);
 }
 
-.task-assigned .worker-badge {
+.tasks-page .task-assigned .worker-badge {
   display: inline-block;
   padding: 2px 8px;
   background: rgba(88, 166, 255, 0.15);
@@ -158,10 +127,9 @@
   border-radius: 4px;
   font-size: 11px;
   font-weight: 500;
-}
-
-.task-time {
-  color: var(--text-muted);
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
@@ -174,3 +142,22 @@
   font-weight: 600;
   white-space: nowrap;
 }
+
+.status-badge.status-todo       { background: rgba(72, 79, 88, 0.3); color: var(--text-secondary); }
+.status-badge.status-in_progress { background: rgba(88, 166, 255, 0.15); color: #58a6ff; }
+.status-badge.status-done        { background: rgba(63, 185, 80, 0.15); color: #3fb950; }
+.status-badge.status-blocked     { background: rgba(248, 81, 73, 0.15); color: #f85149; }
+
+/* Priority badges */
+.priority-badge {
+  display: inline-block;
+  padding: 3px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.priority-badge.priority-H { background: rgba(248, 81, 73, 0.15); color: #f85149; }
+.priority-badge.priority-M { background: rgba(210, 153, 34, 0.15); color: #d29922; }
+.priority-badge.priority-L { background: rgba(72, 79, 88, 0.3); color: var(--text-secondary); }

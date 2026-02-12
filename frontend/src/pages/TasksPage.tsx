@@ -1,26 +1,39 @@
-import { useState, useEffect, useMemo } from 'react'
-import { Link, useSearchParams } from 'react-router-dom'
+import { useState, useMemo } from 'react'
+import { Link, useSearchParams, useNavigate } from 'react-router-dom'
 import { useApp } from '../context/AppContext'
-import { api } from '../api/client'
-import type { Task, Project } from '../api/types'
+import type { Task } from '../api/types'
 import { timeAgo } from '../components/common/TimeAgo'
-import FilterBar from '../components/common/FilterBar'
 import './TasksPage.css'
 
-const STATUS_OPTIONS = ['all', 'todo', 'in_progress', 'done', 'blocked']
-const PRIORITY_OPTIONS = ['all', 'H', 'M', 'L']
+type SortKey = 'key' | 'title' | 'project' | 'status' | 'priority' | 'subtasks' | 'assigned' | 'updated'
+type SortDir = 'asc' | 'desc'
+
+const STATUS_ORDER: Record<string, number> = { blocked: 3, in_progress: 2, todo: 1, done: 0 }
+const PRIORITY_ORDER: Record<string, number> = { H: 3, M: 2, L: 1 }
+
+function formatStatus(status: string) {
+  switch (status) {
+    case 'todo': return 'To Do'
+    case 'in_progress': return 'In Progress'
+    case 'done': return 'Done'
+    case 'blocked': return 'Blocked'
+    default: return status
+  }
+}
 
 export default function TasksPage() {
-  const { tasks, projects, sessions, refresh } = useApp()
+  const { tasks, projects, sessions } = useApp()
+  const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
-  
+  const [sortKey, setSortKey] = useState<SortKey>('updated')
+  const [sortDir, setSortDir] = useState<SortDir>('desc')
+
   // Filters from URL params
   const statusFilter = searchParams.get('status') || 'all'
   const priorityFilter = searchParams.get('priority') || 'all'
   const projectFilter = searchParams.get('project') || 'all'
   const searchQuery = searchParams.get('q') || ''
 
-  // Update URL params
   const updateFilter = (key: string, value: string) => {
     const newParams = new URLSearchParams(searchParams)
     if (value === 'all' || value === '') {
@@ -31,10 +44,32 @@ export default function TasksPage() {
     setSearchParams(newParams)
   }
 
-  // Filter tasks (only parent tasks, not subtasks)
+  // Lookup helpers
+  const projectMap = useMemo(() => new Map(projects.map(p => [p.id, p])), [projects])
+  const sessionMap = useMemo(() => new Map(sessions.map(s => [s.id, s])), [sessions])
+
+  const getProjectName = (id: string) => projectMap.get(id)?.name || 'Unknown'
+  const getWorkerName = (id: string | null) => id ? sessionMap.get(id)?.name || null : null
+
+  // Sort value extractor
+  function getSortValue(t: Task, key: SortKey): string | number {
+    switch (key) {
+      case 'key': return t.task_key || ''
+      case 'title': return t.title.toLowerCase()
+      case 'project': return getProjectName(t.project_id).toLowerCase()
+      case 'status': return STATUS_ORDER[t.status] ?? 0
+      case 'priority': return PRIORITY_ORDER[t.priority] ?? 0
+      case 'subtasks': return t.subtask_stats?.total ?? 0
+      case 'assigned': return getWorkerName(t.assigned_session_id) || ''
+      case 'updated': return new Date(t.updated_at || t.created_at).getTime()
+      default: return 0
+    }
+  }
+
+  // Filter + sort
   const filteredTasks = useMemo(() => {
-    return tasks
-      .filter(t => !t.parent_task_id) // Only parent tasks
+    const filtered = tasks
+      .filter(t => !t.parent_task_id)
       .filter(t => statusFilter === 'all' || t.status === statusFilter)
       .filter(t => priorityFilter === 'all' || t.priority === priorityFilter)
       .filter(t => projectFilter === 'all' || t.project_id === projectFilter)
@@ -47,30 +82,35 @@ export default function TasksPage() {
           t.description?.toLowerCase().includes(q)
         )
       })
-      .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
-  }, [tasks, statusFilter, priorityFilter, projectFilter, searchQuery])
 
-  // Get project name helper
-  const getProjectName = (projectId: string) => {
-    const project = projects.find(p => p.id === projectId)
-    return project?.name || 'Unknown'
-  }
+    return [...filtered].sort((a, b) => {
+      const aVal = getSortValue(a, sortKey)
+      const bVal = getSortValue(b, sortKey)
+      const cmp = aVal < bVal ? -1 : aVal > bVal ? 1 : 0
+      return sortDir === 'asc' ? cmp : -cmp
+    })
+  }, [tasks, statusFilter, priorityFilter, projectFilter, searchQuery, sortKey, sortDir])
 
-  // Get worker name helper
-  const getWorkerName = (sessionId: string | null) => {
-    if (!sessionId) return null
-    const session = sessions.find(s => s.id === sessionId)
-    return session?.name || null
-  }
-
-  const formatStatus = (status: string) => {
-    switch (status) {
-      case 'todo': return 'To Do'
-      case 'in_progress': return 'In Progress'
-      case 'done': return 'Done'
-      case 'blocked': return 'Blocked'
-      default: return status
+  function handleSort(key: SortKey) {
+    if (sortKey === key) {
+      setSortDir(d => d === 'asc' ? 'desc' : 'asc')
+    } else {
+      setSortKey(key)
+      setSortDir(key === 'title' || key === 'key' ? 'asc' : 'desc')
     }
+  }
+
+  function SortHeader({ k, children, className }: { k: SortKey; children: React.ReactNode; className?: string }) {
+    const active = sortKey === k
+    return (
+      <th
+        className={`pt-th sortable ${active ? 'active' : ''} ${className || ''}`}
+        onClick={() => handleSort(k)}
+      >
+        {children}
+        {active && <span className="sort-arrow">{sortDir === 'asc' ? '↑' : '↓'}</span>}
+      </th>
+    )
   }
 
   return (
@@ -94,7 +134,7 @@ export default function TasksPage() {
           value={searchQuery}
           onChange={e => updateFilter('q', e.target.value)}
         />
-        
+
         <select
           className="filter-select"
           value={projectFilter}
@@ -112,9 +152,10 @@ export default function TasksPage() {
           onChange={e => updateFilter('status', e.target.value)}
         >
           <option value="all">All Statuses</option>
-          {STATUS_OPTIONS.filter(s => s !== 'all').map(s => (
-            <option key={s} value={s}>{formatStatus(s)}</option>
-          ))}
+          <option value="todo">To Do</option>
+          <option value="in_progress">In Progress</option>
+          <option value="done">Done</option>
+          <option value="blocked">Blocked</option>
         </select>
 
         <select
@@ -149,17 +190,17 @@ export default function TasksPage() {
         </div>
       ) : (
         <div className="tasks-table-wrapper">
-          <table className="tasks-table">
+          <table className="pt-table">
             <thead>
               <tr>
-                <th>Key</th>
-                <th>Title</th>
-                <th>Project</th>
-                <th>Status</th>
-                <th>Priority</th>
-                <th>Subtasks</th>
-                <th>Assigned</th>
-                <th>Created</th>
+                <SortHeader k="key">Key</SortHeader>
+                <SortHeader k="title">Title</SortHeader>
+                <SortHeader k="project">Project</SortHeader>
+                <SortHeader k="status">Status</SortHeader>
+                <SortHeader k="priority">Priority</SortHeader>
+                <SortHeader k="subtasks" className="center">Subtasks</SortHeader>
+                <SortHeader k="assigned">Assigned</SortHeader>
+                <SortHeader k="updated">Updated</SortHeader>
               </tr>
             </thead>
             <tbody>
@@ -167,41 +208,55 @@ export default function TasksPage() {
                 const stats = task.subtask_stats
                 const workerName = getWorkerName(task.assigned_session_id)
                 return (
-                  <tr key={task.id} className="task-row">
-                    <td className="task-key">
-                      <Link to={`/tasks/${task.id}`}>{task.task_key || '—'}</Link>
+                  <tr
+                    key={task.id}
+                    className="pt-row"
+                    onClick={() => navigate(`/tasks/${task.id}`)}
+                  >
+                    <td className="pt-td task-key">
+                      <Link to={`/tasks/${task.id}`} onClick={e => e.stopPropagation()}>
+                        {task.task_key || '—'}
+                      </Link>
                     </td>
-                    <td className="task-title">
-                      <Link to={`/tasks/${task.id}`}>{task.title}</Link>
+                    <td className="pt-td task-title">
+                      <Link to={`/tasks/${task.id}`} onClick={e => e.stopPropagation()}>
+                        {task.title}
+                      </Link>
                     </td>
-                    <td className="task-project">
-                      <Link to={`/projects/${task.project_id}`} className="project-link">
+                    <td className="pt-td task-project">
+                      <Link
+                        to={`/projects/${task.project_id}`}
+                        className="project-link"
+                        onClick={e => e.stopPropagation()}
+                      >
                         {getProjectName(task.project_id)}
                       </Link>
                     </td>
-                    <td>
+                    <td className="pt-td">
                       <span className={`status-badge status-${task.status}`}>
                         {formatStatus(task.status)}
                       </span>
                     </td>
-                    <td>
+                    <td className="pt-td">
                       <span className={`priority-badge priority-${task.priority}`}>
-                        {task.priority === 'H' ? 'High' : task.priority === 'M' ? 'Medium' : 'Low'}
+                        {task.priority === 'H' ? 'High' : task.priority === 'M' ? 'Med' : 'Low'}
                       </span>
                     </td>
-                    <td className="task-subtasks">
+                    <td className="pt-td subtasks">
                       {stats && stats.total > 0 ? (
                         <span title={`${stats.done}/${stats.total} done`}>
                           {stats.done}/{stats.total}
                         </span>
                       ) : '—'}
                     </td>
-                    <td className="task-assigned">
+                    <td className="pt-td task-assigned">
                       {workerName ? (
                         <span className="worker-badge">{workerName}</span>
                       ) : '—'}
                     </td>
-                    <td className="task-time">{timeAgo(task.created_at)}</td>
+                    <td className="pt-td date">
+                      {timeAgo(task.updated_at || task.created_at)}
+                    </td>
                   </tr>
                 )
               })}
