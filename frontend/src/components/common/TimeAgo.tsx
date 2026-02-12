@@ -1,5 +1,5 @@
 /** Parse a date string, treating timezone-naive strings as UTC */
-function parseDate(dateStr: string): Date {
+export function parseDate(dateStr: string): Date {
   let s = dateStr.replace(' ', 'T')
   // If no timezone info, assume UTC
   if (!s.endsWith('Z') && !s.includes('+') && !/T\d{2}:\d{2}:\d{2}[+-]/.test(s)) {

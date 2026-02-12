@@ -1,22 +1,11 @@
 import { Link } from 'react-router-dom'
 import type { Project } from '../../api/types'
+import { timeAgo } from '../common/TimeAgo'
 import './ProjectCard.css'
 
 interface Props {
   project: Project
   onEdit?: (project: Project) => void
-}
-
-function timeAgo(dateStr: string): string {
-  const diffMs = Date.now() - new Date(dateStr).getTime()
-  const mins = Math.floor(diffMs / 60000)
-  if (mins < 1) return 'just now'
-  if (mins < 60) return `${mins}m ago`
-  const hrs = Math.floor(diffMs / 3600000)
-  if (hrs < 24) return `${hrs}h ago`
-  const days = Math.floor(diffMs / 86400000)
-  if (days < 7) return `${days}d ago`
-  return new Date(dateStr).toLocaleDateString()
 }
 
 /** Segmented bar: done (green) | active (blue) | blocked (red) | todo (empty) */

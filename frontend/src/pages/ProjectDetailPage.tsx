@@ -10,6 +10,7 @@ import ContextModal from '../components/context/ContextModal'
 import ProjectEditModal from '../components/projects/ProjectEditModal'
 import WorkerCard from '../components/workers/WorkerCard'
 import { IconArrowLeft } from '../components/common/Icons'
+import { parseDate } from '../components/common/TimeAgo'
 import './ProjectDetailPage.css'
 
 export default function ProjectDetailPage() {
@@ -212,7 +213,7 @@ export default function ProjectDetailPage() {
                 <div className="pd-context-header">
                   {c.category && <span className="cp-category-tag">{c.category}</span>}
                   <strong>{c.title}</strong>
-                  <span className="pd-context-time">{c.updated_at ? new Date(c.updated_at).toLocaleDateString() : ''}</span>
+                  <span className="pd-context-time">{c.updated_at ? parseDate(c.updated_at).toLocaleDateString() : ''}</span>
                 </div>
                 <p className="pd-context-preview">{c.description || (c.content?.slice(0, 150) || '') + ((c.content?.length || 0) > 150 ? '...' : '')}</p>
               </div>

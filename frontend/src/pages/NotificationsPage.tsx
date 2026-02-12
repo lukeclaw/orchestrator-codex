@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { api } from '../api/client'
 import type { Notification } from '../api/types'
 import { IconBell, IconCheck, IconExternalLink, IconTrash } from '../components/common/Icons'
+import { parseDate } from '../components/common/TimeAgo'
 import './NotificationsPage.css'
 
 export default function NotificationsPage() {
@@ -32,7 +33,7 @@ export default function NotificationsPage() {
       
       // For active tab, filter to past 7 days only
       const filtered = filter === 'active'
-        ? data.filter(n => new Date(n.created_at) >= sevenDaysAgo)
+        ? data.filter(n => parseDate(n.created_at) >= sevenDaysAgo)
         : data
       
       setNotifications(filtered)
@@ -84,9 +85,8 @@ export default function NotificationsPage() {
   }
 
   const formatTime = (dateStr: string) => {
-    const d = new Date(dateStr)
-    const now = new Date()
-    const diffMs = now.getTime() - d.getTime()
+    const d = parseDate(dateStr)
+    const diffMs = Date.now() - d.getTime()
     const diffMins = Math.floor(diffMs / 60000)
     const diffHours = Math.floor(diffMs / 3600000)
     const diffDays = Math.floor(diffMs / 86400000)

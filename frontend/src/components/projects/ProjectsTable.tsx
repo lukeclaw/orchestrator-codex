@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react'
 import { Link } from 'react-router-dom'
 import type { Project } from '../../api/types'
+import { timeAgo, parseDate } from '../common/TimeAgo'
 import './ProjectsTable.css'
 
 type SortKey = 'name' | 'tasks' | 'subtasks' | 'progress' | 'workers' | 'status' | 'created' | 'updated'
@@ -44,8 +45,8 @@ function getProjectSortValue(p: Project, key: SortKey): string | number {
       return 0
     }
     case 'workers': return p.stats?.workers?.total ?? 0
-    case 'created': return new Date(p.created_at).getTime()
-    case 'updated': return new Date(p.updated_at || p.created_at).getTime()
+    case 'created': return parseDate(p.created_at).getTime()
+    case 'updated': return parseDate(p.updated_at || p.created_at).getTime()
     default: return 0
   }
 }
@@ -150,10 +151,10 @@ export default function ProjectsTable({ projects }: Props) {
                 </div>
               </td>
               <td className={`pt-td status ${p.status}`}>{p.status}</td>
-              <td className="pt-td date" title={new Date(p.created_at).toLocaleString()}>
+              <td className="pt-td date" title={parseDate(p.created_at).toLocaleString()}>
                 {formatDate(p.created_at)}
               </td>
-              <td className="pt-td date" title={new Date(p.updated_at || p.created_at).toLocaleString()}>
+              <td className="pt-td date" title={parseDate(p.updated_at || p.created_at).toLocaleString()}>
                 {formatDate(p.updated_at || p.created_at)}
               </td>
             </tr>

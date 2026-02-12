@@ -4,7 +4,7 @@ import { useApp } from '../context/AppContext'
 import { api } from '../api/client'
 import type { Task, TaskLink, Notification } from '../api/types'
 import { IconArrowLeft, IconPause, IconPlay, IconStop, IconRefresh } from '../components/common/Icons'
-import { timeAgo } from '../components/common/TimeAgo'
+import { timeAgo, parseDate } from '../components/common/TimeAgo'
 import ConfirmPopover from '../components/common/ConfirmPopover'
 import TagDropdown from '../components/common/TagDropdown'
 import Markdown from '../components/common/Markdown'
@@ -930,12 +930,12 @@ export default function TaskDetailPage() {
 
             <div className="sidebar-field">
               <label>Created</label>
-              <span className="sidebar-date">{new Date(task.created_at).toLocaleString()}</span>
+              <span className="sidebar-date">{parseDate(task.created_at).toLocaleString()}</span>
             </div>
 
             <div className="sidebar-field">
               <label>Updated</label>
-              <span className="sidebar-date">{new Date(task.updated_at).toLocaleString()}</span>
+              <span className="sidebar-date">{parseDate(task.updated_at).toLocaleString()}</span>
             </div>
 
             {isEditable && (

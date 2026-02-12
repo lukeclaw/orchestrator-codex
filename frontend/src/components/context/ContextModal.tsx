@@ -3,6 +3,7 @@ import Modal from '../common/Modal'
 import ConfirmPopover from '../common/ConfirmPopover'
 import Markdown from '../common/Markdown'
 import type { ContextItem } from '../../api/types'
+import { parseDate } from '../common/TimeAgo'
 import './ContextModal.css'
 
 interface Props {
@@ -196,9 +197,9 @@ export default function ContextModal({ context, projectId, isNew, onClose, onSav
 
         {context && (
           <div className="cm-meta">
-            <span>Created: {new Date(context.created_at).toLocaleDateString()}</span>
+            <span>Created: {parseDate(context.created_at).toLocaleDateString()}</span>
             {context.updated_at && (
-              <span>Updated: {new Date(context.updated_at).toLocaleDateString()}</span>
+              <span>Updated: {parseDate(context.updated_at).toLocaleDateString()}</span>
             )}
             {context.source && <span>Source: {context.source}</span>}
           </div>

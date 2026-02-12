@@ -3,7 +3,7 @@ import { Link, useSearchParams, useNavigate } from 'react-router-dom'
 import { useApp } from '../context/AppContext'
 import { api } from '../api/client'
 import type { Task } from '../api/types'
-import { timeAgo } from '../components/common/TimeAgo'
+import { timeAgo, parseDate } from '../components/common/TimeAgo'
 import TaskForm from '../components/tasks/TaskForm'
 import './TasksPage.css'
 
@@ -64,7 +64,7 @@ export default function TasksPage() {
       case 'priority': return PRIORITY_ORDER[t.priority] ?? 0
       case 'subtasks': return t.subtask_stats?.total ?? 0
       case 'assigned': return getWorker(t.assigned_session_id)?.name || ''
-      case 'updated': return new Date(t.updated_at || t.created_at).getTime()
+      case 'updated': return parseDate(t.updated_at || t.created_at).getTime()
       default: return 0
     }
   }

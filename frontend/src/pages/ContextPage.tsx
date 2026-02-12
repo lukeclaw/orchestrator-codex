@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useMemo } from 'react'
 import { useApp } from '../context/AppContext'
 import { useContextItems } from '../hooks/useContextItems'
 import type { ContextItem } from '../api/types'
-import { timeAgo } from '../components/common/TimeAgo'
+import { timeAgo, parseDate } from '../components/common/TimeAgo'
 import ContextModal from '../components/context/ContextModal'
 import './ContextPage.css'
 
@@ -49,7 +49,7 @@ export default function ContextPage() {
       case 'scope': return SCOPE_ORDER[item.scope] ?? 0
       case 'category': return item.category || ''
       case 'project': return getProjectName(item.project_id)?.toLowerCase() || ''
-      case 'updated': return new Date(item.updated_at || item.created_at).getTime()
+      case 'updated': return parseDate(item.updated_at || item.created_at).getTime()
       default: return 0
     }
   }
