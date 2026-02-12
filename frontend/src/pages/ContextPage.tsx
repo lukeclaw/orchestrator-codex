@@ -1,11 +1,16 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import { useApp } from '../context/AppContext'
 import { useContextItems } from '../hooks/useContextItems'
 import type { ContextItem } from '../api/types'
+import { timeAgo } from '../components/common/TimeAgo'
 import ContextModal from '../components/context/ContextModal'
 import './ContextPage.css'
 
+type SortKey = 'title' | 'scope' | 'category' | 'project' | 'updated'
+type SortDir = 'asc' | 'desc'
+
 const CATEGORIES = ['instruction', 'requirement', 'convention', 'reference', 'note']
+const SCOPE_ORDER: Record<string, number> = { global: 2, brain: 1, project: 0 }
 
 export default function ContextPage() {
   const { projects } = useApp()
@@ -16,6 +21,8 @@ export default function ContextPage() {
   const [debouncedSearch, setDebouncedSearch] = useState('')
   const [selectedContext, setSelectedContext] = useState<ContextItem | null>(null)
   const [showNewContext, setShowNewContext] = useState(false)
+  const [sortKey, setSortKey] = useState<SortKey>('updated')
+  const [sortDir, setSortDir] = useState<SortDir>('desc')
   const searchTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
 
   const { items, loading, fetch, getItem, create, update, remove } = useContextItems({
@@ -33,20 +40,52 @@ export default function ContextPage() {
     return () => clearTimeout(searchTimer.current)
   }, [searchText])
 
-  function formatDate(dateStr: string) {
-    if (!dateStr) return ''
-    const d = new Date(dateStr)
-    return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+  const projectMap = useMemo(() => new Map(projects.map(p => [p.id, p])), [projects])
+  const getProjectName = (id: string | null) => id ? projectMap.get(id)?.name || id.slice(0, 8) : null
+
+  function getSortValue(item: ContextItem, key: SortKey): string | number {
+    switch (key) {
+      case 'title': return item.title.toLowerCase()
+      case 'scope': return SCOPE_ORDER[item.scope] ?? 0
+      case 'category': return item.category || ''
+      case 'project': return getProjectName(item.project_id)?.toLowerCase() || ''
+      case 'updated': return new Date(item.updated_at || item.created_at).getTime()
+      default: return 0
+    }
   }
 
-  function getProjectName(projectId: string | null) {
-    if (!projectId) return null
-    const p = projects.find(x => x.id === projectId)
-    return p?.name || projectId.slice(0, 8)
+  const sortedItems = useMemo(() => {
+    return [...items].sort((a, b) => {
+      const aVal = getSortValue(a, sortKey)
+      const bVal = getSortValue(b, sortKey)
+      const cmp = aVal < bVal ? -1 : aVal > bVal ? 1 : 0
+      return sortDir === 'asc' ? cmp : -cmp
+    })
+  }, [items, sortKey, sortDir])
+
+  function handleSort(key: SortKey) {
+    if (sortKey === key) {
+      setSortDir(d => d === 'asc' ? 'desc' : 'asc')
+    } else {
+      setSortKey(key)
+      setSortDir(key === 'title' ? 'asc' : 'desc')
+    }
+  }
+
+  function SortHeader({ k, children, className }: { k: SortKey; children: React.ReactNode; className?: string }) {
+    const active = sortKey === k
+    return (
+      <th
+        className={`pt-th sortable ${active ? 'active' : ''} ${className || ''}`}
+        onClick={() => handleSort(k)}
+      >
+        {children}
+        {active && <span className="sort-arrow">{sortDir === 'asc' ? '↑' : '↓'}</span>}
+      </th>
+    )
   }
 
   async function handleItemClick(item: ContextItem) {
-    // Fetch full content if not already loaded
     if (!item.content) {
       const fullItem = await getItem(item.id)
       setSelectedContext(fullItem)
@@ -68,19 +107,24 @@ export default function ContextPage() {
     await remove(id)
   }
 
+  const hasFilters = scopeFilter || categoryFilter || projectFilter || searchText
+
   return (
     <div className="context-page">
-      <div className="cp-header">
+      <div className="page-header">
         <h1>Context</h1>
-        <button className="btn btn-primary btn-sm" onClick={() => setShowNewContext(true)}>
-          + Add Context
-        </button>
+        <div className="page-header-actions">
+          <span className="ctx-count">{sortedItems.length} items</span>
+          <button className="btn btn-primary btn-sm" onClick={() => setShowNewContext(true)}>
+            + Add Context
+          </button>
+        </div>
       </div>
 
-      {/* Search + Filters */}
-      <div className="cp-filters">
+      {/* Filters */}
+      <div className="ctx-filters">
         <input
-          className="cp-search"
+          className="search-input"
           type="text"
           placeholder="Search context..."
           value={searchText}
@@ -90,7 +134,7 @@ export default function ContextPage() {
         <select className="filter-select" value={scopeFilter} onChange={e => setScopeFilter(e.target.value)}>
           <option value="">All Scopes</option>
           <option value="global">Global</option>
-          <option value="brain">Brain only</option>
+          <option value="brain">Brain</option>
           <option value="project">Project</option>
         </select>
         <select className="filter-select" value={categoryFilter} onChange={e => setCategoryFilter(e.target.value)}>
@@ -107,37 +151,70 @@ export default function ContextPage() {
             ))}
           </select>
         )}
+        {hasFilters && (
+          <button
+            className="btn btn-sm btn-secondary"
+            onClick={() => { setScopeFilter(''); setCategoryFilter(''); setProjectFilter(''); setSearchText('') }}
+          >
+            Clear Filters
+          </button>
+        )}
       </div>
 
-      {/* Items list */}
+      {/* Table */}
       {loading ? (
         <p className="empty-state">Loading...</p>
-      ) : items.length === 0 ? (
+      ) : sortedItems.length === 0 ? (
         <p className="empty-state">No context items found.</p>
       ) : (
-        <div className="cp-list" data-testid="context-list">
-          {items.map(item => (
-            <div
-              key={item.id}
-              className="cp-item clickable"
-              onClick={() => handleItemClick(item)}
-              data-testid="context-card"
-            >
-              <div className="cp-item-header">
-                <span className={`cp-scope-badge ${item.scope}`}>
-                  {item.scope === 'global' ? 'Global' : item.scope === 'brain' ? 'Brain' : getProjectName(item.project_id) || 'Project'}
-                </span>
-                {item.category && <span className="cp-category-tag">{item.category}</span>}
-                <strong className="cp-item-title">{item.title}</strong>
-                <span className="cp-item-time">{formatDate(item.updated_at)}</span>
-              </div>
-              {(item.description || item.content) && (
-                <p className="cp-item-desc">
-                  {item.description || (item.content?.slice(0, 150) || '') + ((item.content?.length || 0) > 150 ? '...' : '')}
-                </p>
-              )}
-            </div>
-          ))}
+        <div className="ctx-table-wrapper">
+          <table className="pt-table">
+            <thead>
+              <tr>
+                <SortHeader k="title">Title</SortHeader>
+                <SortHeader k="scope">Scope</SortHeader>
+                <SortHeader k="category">Category</SortHeader>
+                <SortHeader k="project">Project</SortHeader>
+                <SortHeader k="updated">Updated</SortHeader>
+              </tr>
+            </thead>
+            <tbody>
+              {sortedItems.map(item => {
+                const projName = getProjectName(item.project_id)
+                return (
+                  <tr
+                    key={item.id}
+                    className="pt-row"
+                    onClick={() => handleItemClick(item)}
+                    data-testid="context-card"
+                  >
+                    <td className="pt-td ctx-title-cell">
+                      <span className="ctx-title">{item.title}</span>
+                      {item.description && (
+                        <span className="ctx-desc">{item.description}</span>
+                      )}
+                    </td>
+                    <td className="pt-td">
+                      <span className={`ctx-scope-badge ${item.scope}`}>
+                        {item.scope === 'global' ? 'Global' : item.scope === 'brain' ? 'Brain' : 'Project'}
+                      </span>
+                    </td>
+                    <td className="pt-td">
+                      {item.category ? (
+                        <span className="ctx-category-tag">{item.category}</span>
+                      ) : '—'}
+                    </td>
+                    <td className="pt-td ctx-project">
+                      {projName || '—'}
+                    </td>
+                    <td className="pt-td date">
+                      {timeAgo(item.updated_at || item.created_at)}
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
         </div>
       )}
 
