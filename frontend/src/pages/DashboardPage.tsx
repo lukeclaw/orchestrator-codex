@@ -31,16 +31,13 @@ export default function DashboardPage() {
       {/* Active Projects */}
       <section className="dashboard-projects panel">
         <div className="panel-header">
-          <h2>Active Projects</h2>
-          <div className="panel-header-actions">
-            <Link to="/projects" className="btn btn-secondary btn-sm">View All</Link>
-            <button
-              className="btn btn-primary btn-sm"
-              onClick={() => setShowAddProject(true)}
-            >
-              + New Project
-            </button>
-          </div>
+          <Link to="/projects" className="panel-header-link"><h2>Active Projects</h2></Link>
+          <button
+            className="btn btn-primary btn-sm"
+            onClick={() => setShowAddProject(true)}
+          >
+            + New Project
+          </button>
         </div>
         {activeProjects.length > 0 ? (
           <div className="dashboard-projects-scroll">
@@ -54,17 +51,14 @@ export default function DashboardPage() {
       {/* Workers */}
       <section className="panel" data-testid="sessions-panel">
         <div className="panel-header">
-          <h2>Workers</h2>
-          <div className="panel-header-actions">
-            <Link to="/workers" className="btn btn-secondary btn-sm">View All</Link>
-            <button
-              className="btn btn-primary btn-sm"
-              data-testid="add-session-btn"
-              onClick={() => setShowAddWorker(true)}
-            >
-              + Add Worker
-            </button>
-          </div>
+          <Link to="/workers" className="panel-header-link"><h2>Workers</h2></Link>
+          <button
+            className="btn btn-primary btn-sm"
+            data-testid="add-session-btn"
+            onClick={() => setShowAddWorker(true)}
+          >
+            + Add Worker
+          </button>
         </div>
         {loading ? (
           <p className="empty-state">Loading workers...</p>

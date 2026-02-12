@@ -11,11 +11,14 @@
   color: var(--accent);
 }
 
-/* Panel header actions — consistent "View All" + "Add" layout */
-.panel-header-actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
+/* Clickable section header */
+.panel-header-link {
+  text-decoration: none;
+  color: inherit;
+}
+
+.panel-header-link:hover h2 {
+  color: var(--accent);
 }
 
 /* Active Projects section */
