@@ -133,14 +133,6 @@ export default function SessionDetailPage() {
           </button>
         </div>
         <div className="sd-topbar-actions">
-          {/* Task link */}
-          {tasks.length > 0 && (
-            <Link to={`/tasks/${tasks[0].id}`} className="sd-task-link">
-              <span className="sd-task-label">Task:</span>
-              <span className="sd-task-title">{tasks[0].title}</span>
-            </Link>
-          )}
-
           {/* Control buttons - icon only */}
           {(session.status === 'disconnected' || session.status === 'screen_detached' || session.status === 'error') ? (
             /* Reconnect button for disconnected/screen_detached/error workers */
@@ -215,6 +207,24 @@ export default function SessionDetailPage() {
       {/* Terminal fills the rest */}
       <div className="sd-terminal-area">
         <TerminalView sessionId={session.id} sessionStatus={session.status} disableScrollback={isRdev} />
+      </div>
+
+      {/* Footer with task link */}
+      <div className="sd-footer">
+        <div className="sd-footer-left">
+          {tasks.length > 0 ? (
+            <Link
+              to={`/tasks/${tasks[0].id}`}
+              className="sd-task-badge"
+              title={tasks[0].title}
+            >
+              <span className="sd-task-key">{tasks[0].task_key}</span>
+              <span className="sd-task-title">{tasks[0].title}</span>
+            </Link>
+          ) : (
+            <span className="sd-task-empty">No task assigned</span>
+          )}
+        </div>
       </div>
     </div>
   )

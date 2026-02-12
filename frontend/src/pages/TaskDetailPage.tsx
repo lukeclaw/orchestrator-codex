@@ -124,6 +124,8 @@ export default function TaskDetailPage() {
   const isEditable = !isWorkerActive
   const isSubtask = !!task?.parent_task_id
   const parentTask = isSubtask ? tasks.find(t => t.id === task?.parent_task_id) : null
+  // For subtasks, get the parent task's assigned worker (read-only display)
+  const parentAssignedWorker = parentTask ? sessions.find(s => s.id === parentTask.assigned_session_id) : null
 
   const formatStatus = (s: string) => {
     switch (s) {
@@ -833,34 +835,46 @@ export default function TaskDetailPage() {
               />
             </div>
 
-            {!isSubtask && (
-              <div className="sidebar-field">
-                <label>Assigned</label>
-                <div className="tdp-worker-field">
-                  {assignedWorker ? (
-                    <Link to={`/workers/${assignedWorker.id}`} className={`tdp-worker-link status-${assignedWorker.status}`}>
-                      {assignedWorker.name}
+            <div className="sidebar-field">
+              <label>Assigned</label>
+              <div className="tdp-worker-field">
+                {isSubtask ? (
+                  // Subtasks show parent's worker (read-only)
+                  parentAssignedWorker ? (
+                    <Link to={`/workers/${parentAssignedWorker.id}`} className={`tdp-worker-link status-${parentAssignedWorker.status}`}>
+                      {parentAssignedWorker.name}
                     </Link>
                   ) : (
                     <span className="sidebar-empty">Unassigned</span>
-                  )}
-                  {isEditable && (
-                    <button 
-                      className="tdp-assign-icon-btn" 
-                      onClick={() => setShowAssignModal(true)}
-                      title={assignedWorker ? 'Reassign worker' : 'Assign worker'}
-                    >
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
-                        <circle cx="9" cy="7" r="4"/>
-                        <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
-                        <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
-                      </svg>
-                    </button>
-                  )}
-                </div>
+                  )
+                ) : (
+                  // Regular tasks show their own worker with edit button
+                  <>
+                    {assignedWorker ? (
+                      <Link to={`/workers/${assignedWorker.id}`} className={`tdp-worker-link status-${assignedWorker.status}`}>
+                        {assignedWorker.name}
+                      </Link>
+                    ) : (
+                      <span className="sidebar-empty">Unassigned</span>
+                    )}
+                    {isEditable && (
+                      <button 
+                        className="tdp-assign-icon-btn" 
+                        onClick={() => setShowAssignModal(true)}
+                        title={assignedWorker ? 'Reassign worker' : 'Assign worker'}
+                      >
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+                          <circle cx="9" cy="7" r="4"/>
+                          <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
+                          <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+                        </svg>
+                      </button>
+                    )}
+                  </>
+                )}
               </div>
-            )}
+            </div>
 
             {/* Worker Assignment Modal */}
             {showAssignModal && (

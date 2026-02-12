@@ -1,10 +1,10 @@
 .session-detail {
   display: flex;
   flex-direction: column;
-  flex: 1;
   min-height: 0;
-  height: 100%;
+  /* Expand to fill parent by counteracting app-main padding */
   margin: -20px -24px;
+  height: calc(100% + 40px);  /* Add back the 20px top + 20px bottom padding */
 }
 
 /* Top bar */
@@ -96,36 +96,6 @@
   gap: 8px;
 }
 
-/* Task link */
-.sd-task-link {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 4px 10px;
-  background: var(--surface-raised);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  text-decoration: none;
-  font-size: 12px;
-  transition: border-color 0.15s, background 0.15s;
-}
-
-.sd-task-link:hover {
-  border-color: var(--accent);
-  background: var(--surface-hover);
-}
-
-.sd-task-label {
-  color: var(--text-muted);
-}
-
-.sd-task-title {
-  color: var(--text-primary);
-  max-width: 200px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
 
 /* Control buttons - icon only */
 .sd-control-btn {
@@ -216,6 +186,70 @@
   flex: 1;
   min-height: 0;
   overflow: hidden;
+}
+
+/* Footer - matches WorkerCard footer style */
+.sd-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 16px;
+  font-size: 12px;
+  color: var(--text-muted);
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.sd-footer-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  flex: 1;
+}
+
+/* Task badge - prominent clickable link (matches WorkerCard) */
+.sd-task-badge {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 10px;
+  background: rgba(88, 166, 255, 0.12);
+  border-radius: 4px;
+  text-decoration: none;
+  max-width: 60%;
+  min-width: 0;
+  transition: background 0.15s;
+}
+
+.sd-task-badge:hover {
+  background: rgba(88, 166, 255, 0.22);
+}
+
+.sd-task-key {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--accent);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.sd-task-title {
+  font-size: 12px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.sd-task-empty {
+  font-size: 12px;
+  color: var(--text-muted);
+  font-style: italic;
 }
 
 
