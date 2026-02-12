@@ -1,0 +1,144 @@
+.wcc-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--text-muted);
+  border-radius: var(--radius);
+  cursor: pointer;
+  transition: border-color 0.15s, box-shadow 0.15s;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.wcc-card:hover {
+  border-color: var(--accent);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+
+/* Status border colors — matches WorkerCard */
+.wcc-card.working { border-left-color: #58a6ff; }
+.wcc-card.idle { border-left-color: var(--green); }
+.wcc-card.waiting { border-left-color: var(--yellow); }
+.wcc-card.paused { border-left-color: var(--orange, #f97316); }
+.wcc-card.error { border-left-color: var(--red); }
+.wcc-card.disconnected { border-left-color: var(--red); }
+.wcc-card.connecting { border-left-color: var(--accent); }
+.wcc-card.screen_detached { border-left-color: var(--orange, #f97316); }
+
+/* Header */
+.wcc-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--border);
+  height: 32px;
+  flex-shrink: 0;
+}
+
+.wcc-name {
+  font-weight: 600;
+  font-size: 12px;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+  flex: 1;
+}
+
+.wcc-type-tag {
+  font-size: 8px;
+  font-weight: 600;
+  text-transform: uppercase;
+  padding: 1px 4px;
+  border-radius: 3px;
+  letter-spacing: 0.5px;
+  flex-shrink: 0;
+}
+
+.wcc-type-tag.rdev {
+  background: rgba(139, 92, 246, 0.15);
+  color: #a78bfa;
+}
+
+/* Terminal preview — compact */
+.wcc-preview {
+  background: #0d1117;
+  padding: 6px 8px;
+  min-height: 100px;
+  max-height: 100px;
+  overflow: hidden;
+  flex: 1;
+}
+
+.wcc-preview pre {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  line-height: 1.35;
+  color: #c9d1d9;
+  white-space: pre;
+  overflow: hidden;
+}
+
+/* Footer */
+.wcc-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 4px 10px;
+  font-size: 10px;
+  color: var(--text-muted);
+  border-top: 1px solid var(--border);
+  height: 28px;
+  flex-shrink: 0;
+}
+
+/* Task badge */
+.wcc-task-badge {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 6px;
+  background: rgba(88, 166, 255, 0.12);
+  border-radius: 4px;
+  text-decoration: none;
+  max-width: 60%;
+  min-width: 0;
+  transition: background 0.15s;
+}
+
+.wcc-task-badge:hover {
+  background: rgba(88, 166, 255, 0.22);
+}
+
+.wcc-task-key {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 600;
+  color: var(--accent);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.wcc-task-title {
+  font-size: 10px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.wcc-no-task {
+  font-size: 10px;
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.wcc-activity {
+  white-space: nowrap;
+  flex-shrink: 0;
+}

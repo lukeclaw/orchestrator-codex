@@ -11,6 +11,13 @@
   color: var(--accent);
 }
 
+/* Panel header actions — consistent "View All" + "Add" layout */
+.panel-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 /* Active Projects section */
 .dashboard-projects {
   margin-bottom: 16px;
@@ -19,4 +26,18 @@
 .dashboard-projects-scroll {
   max-height: 300px;
   overflow-y: auto;
+}
+
+/* Dashboard worker grid — compact */
+.dashboard-worker-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 12px;
+  padding: 14px 18px;
+}
+
+@media (max-width: 500px) {
+  .dashboard-worker-grid {
+    grid-template-columns: 1fr;
+  }
 }
