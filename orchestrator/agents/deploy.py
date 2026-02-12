@@ -355,14 +355,14 @@ def generate_brain_hooks(
     brain_dir: str,
     api_base: str = "http://127.0.0.1:8093",
 ) -> str:
-    """Generate Claude Code hooks settings.json for the brain.
+    """Generate Claude Code hooks in .claude/settings.json for the brain.
     
     Args:
         brain_dir: Directory to generate hooks in
         api_base: API base URL
         
     Returns:
-        Path to the settings.json file
+        Path to the settings.json file (for --settings flag, though hooks are in .claude/)
     """
     hooks_dir = os.path.join(brain_dir, "hooks")
     os.makedirs(hooks_dir, exist_ok=True)
@@ -391,10 +391,22 @@ exit 0
         f.write(hook_script)
     os.chmod(hook_script_path, os.stat(hook_script_path).st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
     
-    settings = {
+    # Hooks must be in .claude/settings.json for Claude Code to load them
+    claude_dir = os.path.join(brain_dir, ".claude")
+    os.makedirs(claude_dir, exist_ok=True)
+    
+    hook_settings = {
         "hooks": {
             "UserPromptSubmit": [{"matcher": "", "hooks": [{"type": "command", "command": hook_script_path}]}]
-        },
+        }
+    }
+    
+    hook_settings_path = os.path.join(claude_dir, "settings.json")
+    with open(hook_settings_path, "w") as f:
+        json.dump(hook_settings, f, indent=2)
+    
+    # Also create a --settings file for permissions (passed via CLI flag)
+    cli_settings = {
         "permissions": {
             "allow": [
                 "Bash(orch-*)",
@@ -408,6 +420,6 @@ exit 0
     
     settings_path = os.path.join(brain_dir, "settings.json")
     with open(settings_path, "w") as f:
-        json.dump(settings, f, indent=2)
+        json.dump(cli_settings, f, indent=2)
     
     return settings_path
