@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, Link } from 'react-router-dom'
 import type { Session, Task } from '../../api/types'
 import { api } from '../../api/client'
 import { useNotify } from '../../context/NotificationContext'
@@ -19,6 +19,12 @@ interface Props {
   onDrop?: (e: React.DragEvent) => void
 }
 
+interface TunnelInfo {
+  remote_port: number
+  pid: number
+  host: string
+}
+
 export default function WorkerCard({
   session, assignedTask, onRemove, draggable, onDragStart, onDragOver, onDragEnd, onDrop,
 }: Props) {
@@ -27,10 +33,15 @@ export default function WorkerCard({
   const [preview, setPreview] = useState('')
   const [removing, setRemoving] = useState(false)
   const [actionPending, setActionPending] = useState(false)
+  const [tunnels, setTunnels] = useState<Record<string, TunnelInfo>>({})
   const intervalRef = useRef<ReturnType<typeof setInterval> | undefined>(undefined)
+  const tunnelIntervalRef = useRef<ReturnType<typeof setInterval> | undefined>(undefined)
   const hasLoadedRef = useRef(false)
   const sessionIdRef = useRef(session.id)  // Track current session.id for race protection
   const fetchGenRef = useRef(0)  // Generation counter to ignore stale fetches
+
+  // Check if this is an rdev worker
+  const isRdev = session.host.includes('/')
 
   // Update ref when session changes (for interval callbacks to read current value)
   sessionIdRef.current = session.id
@@ -79,6 +90,38 @@ export default function WorkerCard({
       clearInterval(intervalRef.current)
     }
   }, [session.id])
+
+  // Fetch tunnels for rdev workers
+  useEffect(() => {
+    if (!isRdev) {
+      setTunnels({})
+      return
+    }
+
+    const targetSessionId = session.id
+
+    async function fetchTunnels() {
+      if (sessionIdRef.current !== targetSessionId) return
+      
+      try {
+        const data = await api<{ tunnels: Record<string, TunnelInfo> }>(
+          `/api/sessions/${targetSessionId}/tunnels`
+        )
+        if (sessionIdRef.current === targetSessionId) {
+          setTunnels(data.tunnels || {})
+        }
+      } catch {
+        // Silently ignore tunnel fetch errors
+      }
+    }
+
+    fetchTunnels()
+    tunnelIntervalRef.current = setInterval(fetchTunnels, 10000)
+
+    return () => {
+      clearInterval(tunnelIntervalRef.current)
+    }
+  }, [session.id, isRdev])
 
   async function handleRemove() {
     if (removing) return
@@ -243,8 +286,38 @@ export default function WorkerCard({
       </div>
 
       <div className="wc-footer">
-        <span className="wc-host">{session.host}</span>
-        <span className="wc-task">{assignedTask ? assignedTask.task_key || 'Task assigned' : 'No task'}</span>
+        <div className="wc-footer-left">
+          {assignedTask ? (
+            <Link
+              to={`/tasks/${assignedTask.id}`}
+              className="wc-task-badge"
+              onClick={e => e.stopPropagation()}
+              title={assignedTask.title}
+            >
+              <span className="wc-task-key">{assignedTask.task_key}</span>
+              <span className="wc-task-title">{assignedTask.title}</span>
+            </Link>
+          ) : (
+            <span className="wc-task-empty">No task assigned</span>
+          )}
+          {Object.keys(tunnels).length > 0 && (
+            <div className="wc-tunnels">
+              {Object.entries(tunnels).map(([port]) => (
+                <a
+                  key={port}
+                  href={`http://localhost:${port}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="wc-tunnel-badge"
+                  onClick={e => e.stopPropagation()}
+                  title={`Port forwarding: localhost:${port} → rdev:${port}`}
+                >
+                  :{port}
+                </a>
+              ))}
+            </div>
+          )}
+        </div>
         <span className="wc-activity">{session.last_activity ? timeAgo(session.last_activity) : 'just now'}</span>
       </div>
     </div>

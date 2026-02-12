@@ -128,25 +128,6 @@ export default function ProjectDetailPage() {
         </div>
       )}
 
-      {/* Workers */}
-      <section className="pd-section">
-        <h2>Workers ({assignedSessions.length})</h2>
-        {assignedSessions.length > 0 ? (
-          <div className="pd-worker-grid">
-            {assignedSessions.map(s => (
-              <WorkerCard
-                key={s.id}
-                session={s}
-                assignedTask={parentTasks.find(t => t.assigned_session_id === s.id) || null}
-                onRemove={handleWorkerRemove}
-              />
-            ))}
-          </div>
-        ) : (
-          <p className="empty-state">No workers assigned to tasks in this project</p>
-        )}
-      </section>
-
       {/* Tasks */}
       <section className="pd-section">
         <div className="pd-section-header">
@@ -180,6 +161,25 @@ export default function ProjectDetailPage() {
           <TaskBoard tasks={parentTasks} onTaskClick={handleTaskClick} />
         ) : (
           <TaskTable tasks={parentTasks} onTaskClick={handleTaskClick} />
+        )}
+      </section>
+
+      {/* Workers */}
+      <section className="pd-section">
+        <h2>Workers ({assignedSessions.length})</h2>
+        {assignedSessions.length > 0 ? (
+          <div className="pd-worker-grid">
+            {assignedSessions.map(s => (
+              <WorkerCard
+                key={s.id}
+                session={s}
+                assignedTask={parentTasks.find(t => t.assigned_session_id === s.id) || null}
+                onRemove={handleWorkerRemove}
+              />
+            ))}
+          </div>
+        ) : (
+          <p className="empty-state">No workers assigned to tasks in this project</p>
         )}
       </section>
 

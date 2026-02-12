@@ -3,7 +3,8 @@ import { useParams, Link, useNavigate } from 'react-router-dom'
 import { useApp } from '../context/AppContext'
 import { api } from '../api/client'
 import type { Task, TaskLink, Notification } from '../api/types'
-import { IconArrowLeft } from '../components/common/Icons'
+import { IconArrowLeft, IconPause, IconPlay, IconStop, IconRefresh } from '../components/common/Icons'
+import { timeAgo } from '../components/common/TimeAgo'
 import ConfirmPopover from '../components/common/ConfirmPopover'
 import TagDropdown from '../components/common/TagDropdown'
 import Markdown from '../components/common/Markdown'
@@ -58,6 +59,8 @@ export default function TaskDetailPage() {
   const [notifications, setNotifications] = useState<Notification[]>([])
   const [notificationsExpanded, setNotificationsExpanded] = useState(true)
   const [showAssignModal, setShowAssignModal] = useState(false)
+  const [workerPreview, setWorkerPreview] = useState('')
+  const [workerActionPending, setWorkerActionPending] = useState(false)
 
   // Reset all editing states when navigating to a different task
   useEffect(() => {
@@ -96,6 +99,27 @@ export default function TaskDetailPage() {
   }, [task, isEditingTitle, isEditingDesc, isEditingNotes])
 
   const assignedWorker = sessions.find(s => s.id === task?.assigned_session_id)
+
+  // Fetch worker terminal preview
+  useEffect(() => {
+    if (!assignedWorker) {
+      setWorkerPreview('')
+      return
+    }
+    
+    async function fetchPreview() {
+      try {
+        const data = await api<{ content: string }>(`/api/sessions/${assignedWorker!.id}/preview`)
+        setWorkerPreview(data.content || '')
+      } catch {
+        setWorkerPreview('')
+      }
+    }
+    
+    fetchPreview()
+    const interval = setInterval(fetchPreview, 5000)
+    return () => clearInterval(interval)
+  }, [assignedWorker?.id])
   const isWorkerActive = assignedWorker && assignedWorker.status === 'working'
   const isEditable = !isWorkerActive
   const isSubtask = !!task?.parent_task_id
@@ -267,6 +291,42 @@ export default function TaskDetailPage() {
       setNotifications(prev => prev.filter(n => n.id !== notificationId))
     } catch (err) {
       console.error('Failed to dismiss notification:', err)
+    }
+  }
+
+  async function handleWorkerPauseOrContinue(e: React.MouseEvent) {
+    e.stopPropagation()
+    if (!assignedWorker || workerActionPending) return
+    setWorkerActionPending(true)
+    try {
+      const endpoint = assignedWorker.status === 'paused' ? 'continue' : 'pause'
+      await api(`/api/sessions/${assignedWorker.id}/${endpoint}`, { method: 'POST' })
+      refresh()
+    } finally {
+      setWorkerActionPending(false)
+    }
+  }
+
+  async function handleWorkerStop() {
+    if (!assignedWorker || workerActionPending) return
+    setWorkerActionPending(true)
+    try {
+      await api(`/api/sessions/${assignedWorker.id}/stop`, { method: 'POST' })
+      refresh()
+    } finally {
+      setWorkerActionPending(false)
+    }
+  }
+
+  async function handleWorkerReconnect(e: React.MouseEvent) {
+    e.stopPropagation()
+    if (!assignedWorker || workerActionPending) return
+    setWorkerActionPending(true)
+    try {
+      await api(`/api/sessions/${assignedWorker.id}/reconnect`, { method: 'POST' })
+      refresh()
+    } finally {
+      setWorkerActionPending(false)
     }
   }
 
@@ -498,6 +558,73 @@ export default function TaskDetailPage() {
               )}
             </div>
           </div>
+
+          {/* Worker Preview Card - only show when worker is assigned */}
+          {assignedWorker && (
+            <div
+              className={`tdp-card tdp-worker-preview-card status-${assignedWorker.status}`}
+              onClick={() => navigate(`/workers/${assignedWorker.id}`)}
+            >
+              <div className="tdp-worker-preview-header">
+                <div className="tdp-worker-preview-left">
+                  <span className={`status-indicator ${assignedWorker.status}`} />
+                  <span className="tdp-worker-preview-name">
+                    {assignedWorker.name}
+                  </span>
+                  {assignedWorker.host.includes('/') && <span className="wc-type-tag rdev">rdev</span>}
+                  <span className={`status-badge small ${assignedWorker.status}`}>{assignedWorker.status}</span>
+                </div>
+                <div className="tdp-worker-preview-actions">
+                  {(assignedWorker.status === 'disconnected' || assignedWorker.status === 'screen_detached' || assignedWorker.status === 'error') ? (
+                    <button
+                      className="wc-action-btn reconnect"
+                      onClick={handleWorkerReconnect}
+                      disabled={workerActionPending}
+                      title="Reconnect"
+                    >
+                      <IconRefresh size={14} />
+                    </button>
+                  ) : (
+                    <>
+                      <button
+                        className={`wc-action-btn ${assignedWorker.status === 'paused' ? 'continue' : 'pause'}`}
+                        onClick={handleWorkerPauseOrContinue}
+                        disabled={workerActionPending || assignedWorker.status === 'idle'}
+                        title={assignedWorker.status === 'paused' ? 'Continue' : 'Pause'}
+                      >
+                        {assignedWorker.status === 'paused' ? <IconPlay size={14} /> : <IconPause size={14} />}
+                      </button>
+                      <ConfirmPopover
+                        message={`Stop worker "${assignedWorker.name}" and clear context?`}
+                        confirmLabel="Stop"
+                        onConfirm={handleWorkerStop}
+                        variant="danger"
+                      >
+                        {({ onClick }) => (
+                          <button
+                            className="wc-action-btn stop"
+                            onClick={(e) => { e.stopPropagation(); onClick(e); }}
+                            disabled={workerActionPending || assignedWorker.status === 'idle'}
+                            title="Stop and clear"
+                          >
+                            <IconStop size={14} />
+                          </button>
+                        )}
+                      </ConfirmPopover>
+                    </>
+                  )}
+                </div>
+              </div>
+              <div className="tdp-worker-preview-terminal">
+                <pre>{workerPreview ? workerPreview.split('\n').slice(-15).join('\n') : 'No terminal output yet...'}</pre>
+              </div>
+              <div className="tdp-worker-preview-footer">
+                <span className="tdp-worker-preview-activity">
+                  {assignedWorker.last_activity ? timeAgo(assignedWorker.last_activity) : 'just now'}
+                </span>
+              </div>
+            </div>
+          )}
 
           {/* Links Card */}
           <div className="tdp-card">

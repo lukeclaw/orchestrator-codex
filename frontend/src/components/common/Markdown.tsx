@@ -185,7 +185,7 @@ function tokenize(text: string): Token[] {
   return tokens
 }
 
-// Parse inline markdown (bold, italic, code, links)
+// Parse inline markdown (bold, italic, code, links, images)
 function parseInline(text: string): string {
   // First, protect escaped characters by replacing with placeholders
   const escapeMap: Record<string, string> = {}
@@ -196,28 +196,56 @@ function parseInline(text: string): string {
     return placeholder
   })
 
+  // Protect code spans first (they should not have any inline processing)
+  const codeMap: Record<string, string> = {}
+  let codeIndex = 0
+  // Handle double backticks first (can contain single backticks)
+  processed = processed.replace(/``([^`]|`[^`])+``/g, (match) => {
+    const placeholder = `\x00CODE${codeIndex++}\x00`
+    const content = match.slice(2, -2).trim()
+    codeMap[placeholder] = `<code class="inline-code">${escapeHtml(content)}</code>`
+    return placeholder
+  })
+  // Handle single backticks
+  processed = processed.replace(/`([^`]+)`/g, (_, content) => {
+    const placeholder = `\x00CODE${codeIndex++}\x00`
+    codeMap[placeholder] = `<code class="inline-code">${escapeHtml(content)}</code>`
+    return placeholder
+  })
+
   processed = processed
-    // Escape HTML
+    // Escape HTML (after code extraction to preserve code content)
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
-    // Code (must be before bold/italic to avoid conflicts)
-    .replace(/`([^`]+)`/g, '<code class="inline-code">$1</code>')
-    // Bold + italic
-    .replace(/\*\*\*(.+?)\*\*\*/g, '<strong><em>$1</em></strong>')
-    .replace(/___(.+?)___/g, '<strong><em>$1</em></strong>')
-    // Bold
-    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-    .replace(/__(.+?)__/g, '<strong>$1</strong>')
-    // Italic
-    .replace(/\*(.+?)\*/g, '<em>$1</em>')
-    .replace(/_(.+?)_/g, '<em>$1</em>')
-    // Strikethrough
-    .replace(/~~(.+?)~~/g, '<del>$1</del>')
+    // Images (must be before links since syntax is similar)
+    .replace(/!\[([^\]]*)\]\(([^)\s]+)(?:\s+"([^"]*)")?\)/g, '<img src="$2" alt="$1" title="$3" />')
     // Links
-    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>')
+    .replace(/\[([^\]]+)\]\(([^)\s]+)(?:\s+"([^"]*)")?\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer" title="$3">$1</a>')
+    // Autolinks (bare URLs) - match http/https URLs not already in href/src
+    .replace(/(?<![">])(https?:\/\/[^\s<]+[^\s<.,;:!?'")\]])/g, '<a href="$1" target="_blank" rel="noopener noreferrer">$1</a>')
+    // Bold + italic with asterisks (can work intraword)
+    .replace(/\*\*\*([^*]+)\*\*\*/g, '<strong><em>$1</em></strong>')
+    // Bold + italic with underscores (only at word boundaries per GFM spec)
+    .replace(/(^|[\s\p{P}])___([^_]+)___([\s\p{P}]|$)/gu, '$1<strong><em>$2</em></strong>$3')
+    // Bold with asterisks (can work intraword)
+    .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+    // Bold with underscores (only at word boundaries per GFM spec)
+    .replace(/(^|[\s\p{P}])__([^_]+)__([\s\p{P}]|$)/gu, '$1<strong>$2</strong>$3')
+    // Italic with asterisks (can work intraword)
+    .replace(/\*([^*]+)\*/g, '<em>$1</em>')
+    // Italic with underscores (only at word boundaries per GFM spec)
+    // The underscore must be preceded by whitespace/punctuation/start and followed by whitespace/punctuation/end
+    .replace(/(^|[\s\p{P}])_([^_]+)_([\s\p{P}]|$)/gu, '$1<em>$2</em>$3')
+    // Strikethrough
+    .replace(/~~([^~]+)~~/g, '<del>$1</del>')
     // Line breaks within paragraphs
     .replace(/\n/g, '<br />')
+
+  // Restore code spans
+  for (const [placeholder, html] of Object.entries(codeMap)) {
+    processed = processed.replace(placeholder, html)
+  }
 
   // Restore escaped characters
   for (const [placeholder, char] of Object.entries(escapeMap)) {

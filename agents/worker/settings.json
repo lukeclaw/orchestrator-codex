@@ -12,7 +12,8 @@
       "Bash(orch-subtask *)",
       "Bash(orch-context *)",
       "Bash(orch-notify *)",
-      "Bash(orch-worker *)"
+      "Bash(orch-worker *)",
+      "Bash(orch-tunnel *)"
     ]
   },
   "hooks": {

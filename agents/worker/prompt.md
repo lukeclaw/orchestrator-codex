@@ -162,6 +162,41 @@ orch-notify "PR #123 merged, reviewer had a question about auth flow" \
 
 **Use sparingly.** Notifications are for valuable information only — the user doesn't have unlimited time to review them.
 
+### Port Forwarding (`orch-tunnel`)
+
+When you start a dev server or any service that listens on a port, the user cannot access it directly because you're running on a remote rdev. Use `orch-tunnel` to request SSH port forwarding so the user can access it from their local machine.
+
+```bash
+# Forward user's localhost:4200 to this rdev's port 4200
+orch-tunnel 4200
+
+# Forward user's localhost:3000 to this rdev's port 3000
+orch-tunnel 3000
+
+# Close a tunnel when no longer needed
+orch-tunnel 4200 --close
+
+# List active tunnels for this session
+orch-tunnel --list
+```
+
+**When to use:**
+- After starting a dev server (e.g., `npm run dev`, `yarn dev`, `python -m http.server`)
+- When running a debugger that listens on a port
+- When the user needs to access any web UI or service running on this rdev
+
+**Example workflow:**
+```bash
+# Start your dev server
+npm run dev  # Listening on port 4200
+
+# Request tunnel so user can access it
+orch-tunnel 4200
+# User can now open http://localhost:4200 in their browser
+```
+
+The tunnel remains open until you close it, delete the worker session, or the orchestrator server restarts.
+
 ### Project Context (`orch-context`)
 
 Read project context before starting work. Use a **2-step lookup** to save context window:

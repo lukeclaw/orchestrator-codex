@@ -1,0 +1,114 @@
+#!/bin/bash
+# orch-tunnel: Request SSH port forwarding from user's local machine to this rdev
+#
+# This allows the user to access ports on this rdev from their local machine.
+# For example, if you start a dev server on port 4200, the user can then
+# open http://localhost:4200 in their browser to access it.
+
+source "$(dirname "$0")/lib.sh"
+
+show_help() {
+    echo "Usage: orch-tunnel <port> [options]"
+    echo ""
+    echo "Request SSH port forwarding from the user's local machine to this rdev."
+    echo "After running, localhost:<port> on user's machine forwards to this rdev's <port>."
+    echo ""
+    echo "Options:"
+    echo "  --close       Close an existing tunnel on this port"
+    echo "  --list        List all active tunnels for this session"
+    echo "  -h, --help    Show this help message"
+    echo ""
+    echo "Examples:"
+    echo "  orch-tunnel 4200         # Forward user's localhost:4200 -> this rdev:4200"
+    echo "  orch-tunnel 3000         # Forward user's localhost:3000 -> this rdev:3000"
+    echo "  orch-tunnel 4200 --close # Close the tunnel on port 4200"
+    echo "  orch-tunnel --list       # List active tunnels"
+    echo ""
+    echo "When to use:"
+    echo "  - After starting a dev server (npm run dev, python -m http.server, etc.)"
+    echo "  - When running a debugger that listens on a port"
+    echo "  - When you need the user to access any web UI running on this rdev"
+}
+
+# Handle --list and --help before requiring port
+if [[ "$1" == "--list" ]]; then
+    result=$(curl -s --connect-timeout 5 "$API_BASE/api/sessions/$SESSION_ID/tunnels")
+    if [[ $? -ne 0 ]]; then
+        echo "Error: Could not connect to orchestrator API" >&2
+        exit 1
+    fi
+    echo "$result" | jq .
+    exit 0
+fi
+
+if [[ "$1" == "-h" || "$1" == "--help" || -z "$1" ]]; then
+    show_help
+    exit 0
+fi
+
+PORT="$1"
+
+# Validate port is a number
+if ! [[ "$PORT" =~ ^[0-9]+$ ]]; then
+    echo "Error: Port must be a number" >&2
+    show_help
+    exit 1
+fi
+
+# Validate port range
+if [[ "$PORT" -lt 1 || "$PORT" -gt 65535 ]]; then
+    echo "Error: Port must be between 1 and 65535" >&2
+    exit 1
+fi
+
+if [[ "$2" == "--close" ]]; then
+    # Close tunnel
+    result=$(curl -s --connect-timeout 5 -X DELETE "$API_BASE/api/sessions/$SESSION_ID/tunnel/$PORT")
+    http_code=$?
+    
+    if [[ $http_code -ne 0 ]]; then
+        echo "Error: Could not connect to orchestrator API" >&2
+        exit 1
+    fi
+    
+    echo "$result" | jq .
+    
+    ok=$(echo "$result" | jq -r '.ok // false')
+    if [[ "$ok" == "true" ]]; then
+        echo ""
+        echo "Tunnel on port $PORT closed."
+    else
+        echo ""
+        echo "Note: Tunnel may not have existed or was already closed."
+    fi
+else
+    # Create tunnel
+    result=$(curl -s --connect-timeout 5 -X POST "$API_BASE/api/sessions/$SESSION_ID/tunnel" \
+        -H 'Content-Type: application/json' \
+        -d "{\"port\": $PORT}")
+    http_code=$?
+    
+    if [[ $http_code -ne 0 ]]; then
+        echo "Error: Could not connect to orchestrator API" >&2
+        exit 1
+    fi
+    
+    echo "$result" | jq .
+    
+    ok=$(echo "$result" | jq -r '.ok // false')
+    existing=$(echo "$result" | jq -r '.existing // false')
+    
+    if [[ "$ok" == "true" ]]; then
+        echo ""
+        if [[ "$existing" == "true" ]]; then
+            echo "Tunnel already exists. User can access localhost:$PORT to reach this rdev's port $PORT."
+        else
+            echo "Tunnel created. User can now access localhost:$PORT to reach this rdev's port $PORT."
+        fi
+    else
+        error=$(echo "$result" | jq -r '.detail // .error // "Unknown error"')
+        echo ""
+        echo "Error: $error" >&2
+        exit 1
+    fi
+fi

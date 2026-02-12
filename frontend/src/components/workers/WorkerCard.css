@@ -218,31 +218,94 @@
 .wc-footer {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 8px;
   padding: 6px 12px;
   font-size: 11px;
   color: var(--text-muted);
   border-top: 1px solid var(--border);
-  height: 28px;
+  height: 32px;
   flex-shrink: 0;
 }
 
-.wc-host {
+/* Task badge - prominent clickable link */
+.wc-task-badge {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 8px;
+  background: rgba(88, 166, 255, 0.12);
+  border-radius: 4px;
+  text-decoration: none;
+  max-width: 55%;
+  min-width: 0;
+  transition: background 0.15s;
+}
+
+.wc-task-badge:hover {
+  background: rgba(88, 166, 255, 0.22);
+}
+
+.wc-task-key {
   font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--accent);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.wc-task-title {
   font-size: 11px;
+  color: var(--text-secondary);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  flex: 1;
   min-width: 0;
 }
 
-.wc-task {
-  white-space: nowrap;
-  flex-shrink: 0;
+.wc-task-empty {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-style: italic;
 }
 
 .wc-activity {
   white-space: nowrap;
   flex-shrink: 0;
+}
+
+/* Footer left container for task and tunnels */
+.wc-footer-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  flex: 1;
+}
+
+/* Tunnel badges */
+.wc-tunnels {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.wc-tunnel-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 6px;
+  background: rgba(139, 92, 246, 0.15);
+  color: #a78bfa;
+  border-radius: 4px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  text-decoration: none;
+  transition: background 0.15s;
+}
+
+.wc-tunnel-badge:hover {
+  background: rgba(139, 92, 246, 0.3);
+  color: #c4b5fd;
 }

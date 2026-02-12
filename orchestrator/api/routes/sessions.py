@@ -430,6 +430,16 @@ def delete_session(session_id: str, db=Depends(get_db)):
         except Exception:
             logger.warning("Could not remove local worker directory %s", worker_scripts_dir, exc_info=True)
 
+    # Clean up any SSH port-forward tunnels for this rdev host
+    if is_rdev:
+        from orchestrator.session.tunnel import cleanup_tunnels_for_host
+        try:
+            closed = cleanup_tunnels_for_host(s.host)
+            if closed > 0:
+                logger.info("Cleaned up %d tunnel(s) for session %s", closed, s.name)
+        except Exception:
+            logger.warning("Could not clean up tunnels for session %s", s.name, exc_info=True)
+
     # Note: work_dir is NOT cleaned up - it's the user's working directory
     # Only tmp_dir (worker_scripts_dir) is cleaned up above
 
@@ -858,3 +868,90 @@ def health_check_all_sessions(db=Depends(get_db)):
             results["alive"].append(s.name)
     
     return results
+
+
+# =============================================================================
+# Tunnel Management Endpoints
+# =============================================================================
+
+class TunnelRequest(BaseModel):
+    port: int
+    local_port: int | None = None  # Optional: use different local port
+
+
+@router.post("/sessions/{session_id}/tunnel")
+def create_session_tunnel(session_id: str, body: TunnelRequest, db=Depends(get_db)):
+    """Create SSH port forward from local machine to rdev worker.
+    
+    This spawns an SSH tunnel process that forwards a local port to the remote
+    rdev host's port, allowing local browser/tools to access services on rdev.
+    """
+    from orchestrator.session.tunnel import create_tunnel
+    
+    s = repo.get_session(db, session_id)
+    if s is None:
+        raise HTTPException(404, "Session not found")
+    if not is_rdev_host(s.host):
+        raise HTTPException(400, "Tunnel only supported for rdev workers")
+    
+    local_port = body.local_port or body.port
+    remote_port = body.port
+    
+    success, result = create_tunnel(s.host, remote_port, local_port)
+    
+    if not success:
+        error_msg = result.get("error", "Unknown error")
+        if "already tunneled" in error_msg:
+            raise HTTPException(409, error_msg)
+        raise HTTPException(500, error_msg)
+    
+    return {"ok": True, **result}
+
+
+@router.delete("/sessions/{session_id}/tunnel/{port}")
+def close_session_tunnel(session_id: str, port: int, db=Depends(get_db)):
+    """Close a specific port tunnel for this session."""
+    from orchestrator.session.tunnel import close_tunnel
+    
+    s = repo.get_session(db, session_id)
+    if s is None:
+        raise HTTPException(404, "Session not found")
+    
+    # Only allow closing tunnels that belong to this session's host
+    success, message = close_tunnel(port, host=s.host)
+    
+    return {"ok": success, "message": message}
+
+
+@router.get("/sessions/{session_id}/tunnels")
+def list_session_tunnels(session_id: str, db=Depends(get_db)):
+    """List active tunnels for a session (real-time via process scan)."""
+    from orchestrator.session.tunnel import get_tunnels_for_host
+    
+    s = repo.get_session(db, session_id)
+    if s is None:
+        raise HTTPException(404, "Session not found")
+    
+    if not is_rdev_host(s.host):
+        return {"tunnels": {}}
+    
+    tunnels = get_tunnels_for_host(s.host)
+    return {
+        "tunnels": {
+            str(port): {
+                "remote_port": info["remote_port"],
+                "pid": info["pid"],
+                "host": info["host"],
+            }
+            for port, info in tunnels.items()
+        }
+    }
+
+
+@router.get("/tunnels")
+def list_all_tunnels(db=Depends(get_db)):
+    """List all active SSH port-forward tunnels (for brain/admin)."""
+    from orchestrator.session.tunnel import discover_active_tunnels
+    
+    tunnels = discover_active_tunnels(force_refresh=True)
+    return {"tunnels": tunnels}
