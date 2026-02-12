@@ -16,16 +16,15 @@
   margin: 0;
 }
 
-.tasks-stats {
+.tasks-page .page-header-actions {
   display: flex;
   align-items: center;
-  gap: 8px;
-  color: var(--text-secondary);
-  font-size: 13px;
+  gap: 12px;
 }
 
-.tasks-stats .stat-filter {
-  color: var(--text-muted);
+.tasks-count {
+  font-size: 13px;
+  color: var(--text-secondary);
 }
 
 /* Filters */

@@ -1,8 +1,10 @@
 import { useState, useMemo } from 'react'
 import { Link, useSearchParams, useNavigate } from 'react-router-dom'
 import { useApp } from '../context/AppContext'
+import { api } from '../api/client'
 import type { Task } from '../api/types'
 import { timeAgo } from '../components/common/TimeAgo'
+import TaskForm from '../components/tasks/TaskForm'
 import './TasksPage.css'
 
 type SortKey = 'key' | 'title' | 'project' | 'status' | 'priority' | 'subtasks' | 'assigned' | 'updated'
@@ -22,11 +24,12 @@ function formatStatus(status: string) {
 }
 
 export default function TasksPage() {
-  const { tasks, projects, sessions } = useApp()
+  const { tasks, projects, sessions, refresh } = useApp()
   const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
   const [sortKey, setSortKey] = useState<SortKey>('updated')
   const [sortDir, setSortDir] = useState<SortDir>('desc')
+  const [showAddTask, setShowAddTask] = useState(false)
 
   // Filters from URL params
   const statusFilter = searchParams.get('status') || 'all'
@@ -117,11 +120,11 @@ export default function TasksPage() {
     <div className="tasks-page">
       <div className="page-header">
         <h1>Tasks</h1>
-        <div className="tasks-stats">
-          <span className="stat">{filteredTasks.length} tasks</span>
-          {statusFilter !== 'all' && (
-            <span className="stat-filter">filtered by {formatStatus(statusFilter)}</span>
-          )}
+        <div className="page-header-actions">
+          <span className="tasks-count">{filteredTasks.length} tasks</span>
+          <button className="btn btn-primary btn-sm" onClick={() => setShowAddTask(true)}>
+            + Add Task
+          </button>
         </div>
       </div>
 
@@ -266,6 +269,17 @@ export default function TasksPage() {
           </table>
         </div>
       )}
+      <TaskForm
+        open={showAddTask}
+        onClose={() => setShowAddTask(false)}
+        onSubmit={async (body) => {
+          const result = await api('/api/tasks', { method: 'POST', body: JSON.stringify(body) })
+          refresh()
+          return result
+        }}
+        projects={projects}
+        defaultProjectId={projectFilter !== 'all' ? projectFilter : undefined}
+      />
     </div>
   )
 }
