@@ -316,6 +316,7 @@
   font-family: inherit;
   resize: vertical;
   min-height: 80px;
+  max-height: 400px;
 }
 
 .tdp-desc-edit textarea:focus {
