@@ -9,37 +9,102 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import re
-import subprocess
 from typing import Callable
 
 logger = logging.getLogger(__name__)
 
 
-class TmuxControlConnection:
-    """Persistent tmux control mode connection for a single pane.
-    
-    Instead of spawning a subprocess for each tmux command, this maintains
-    a single long-lived connection that communicates via stdin/stdout.
+def _unescape_tmux_output(data: str) -> bytes:
+    """Convert tmux octal-escaped string to raw bytes.
+
+    tmux control mode escapes non-printable bytes as ``\\NNN`` (octal) and
+    literal backslashes as ``\\\\``.  Everything else is a literal character.
     """
-    
-    def __init__(self, session: str, window: str):
+    result = bytearray()
+    i = 0
+    while i < len(data):
+        if data[i] == '\\' and i + 1 < len(data):
+            if data[i + 1] == '\\':
+                result.append(0x5C)  # literal backslash
+                i += 2
+            elif i + 3 < len(data) and data[i + 1 : i + 4].isdigit():
+                result.append(int(data[i + 1 : i + 4], 8))
+                i += 4
+            else:
+                result.append(ord(data[i]))
+                i += 1
+        else:
+            result.extend(data[i].encode('utf-8'))
+            i += 1
+    return bytes(result)
+
+
+def _parse_output_line(line: str) -> tuple[str, bytes] | None:
+    """Parse a ``%output`` notification from tmux control mode.
+
+    Expected format::
+
+        %output %PANE_ID DATA
+
+    Returns ``(pane_id, raw_bytes)`` on success, ``None`` otherwise.
+    """
+    if not line.startswith('%output '):
+        return None
+    # "%output %5 some data here"
+    rest = line[len('%output '):]
+    space = rest.find(' ')
+    if space == -1:
+        return None
+    pane_id = rest[:space]
+    raw = _unescape_tmux_output(rest[space + 1:])
+    return pane_id, raw
+
+
+async def get_pane_id_async(session: str, window: str) -> str | None:
+    """Resolve a tmux window to its pane ID (e.g. ``%5``).
+
+    Runs ``tmux list-panes`` once — not called per-message.
+    """
+    target = f"{session}:{window}"
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            "tmux", "list-panes", "-t", target, "-F", "#{pane_id}",
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        stdout, _ = await proc.communicate()
+        if proc.returncode != 0:
+            return None
+        # Take the first pane (active pane) if multiple exist
+        pane_id = stdout.decode().strip().split('\n')[0]
+        return pane_id if pane_id else None
+    except Exception as e:
+        logger.error("Failed to resolve pane ID for %s: %s", target, e)
+        return None
+
+
+class TmuxControlConnection:
+    """Persistent tmux control mode connection for a tmux **session**.
+
+    One connection serves all windows/panes in the session.  Subscribers
+    register per-pane callbacks to receive ``%output`` notifications.
+    """
+
+    def __init__(self, session: str):
         self.session = session
-        self.window = window
-        self.target = f"{session}:{window}"
         self._process: asyncio.subprocess.Process | None = None
-        self._output_callback: Callable[[str], None] | None = None
         self._reader_task: asyncio.Task | None = None
         self._running = False
-        self._last_content = ""
-        
+        # pane_id -> set of async callbacks  (callback signature: async (bytes) -> None)
+        self._output_subscribers: dict[str, set[Callable]] = {}
+        self._lock = asyncio.Lock()
+
     async def start(self) -> bool:
         """Start the control mode connection."""
         if self._process is not None:
             return True
-            
+
         try:
-            # Start tmux in control mode, attached to our target
             self._process = await asyncio.create_subprocess_exec(
                 "tmux", "-C", "attach-session", "-t", self.session,
                 stdin=asyncio.subprocess.PIPE,
@@ -47,20 +112,19 @@ class TmuxControlConnection:
                 stderr=asyncio.subprocess.PIPE,
             )
             self._running = True
-            logger.info("Started tmux control mode for %s", self.target)
-            
-            # Start reading output
+            logger.info("Started tmux control mode for session %s", self.session)
+
             self._reader_task = asyncio.create_task(self._read_output())
             return True
-            
+
         except Exception as e:
             logger.error("Failed to start tmux control mode: %s", e)
             return False
-    
+
     async def stop(self):
         """Stop the control mode connection."""
         self._running = False
-        
+
         if self._reader_task:
             self._reader_task.cancel()
             try:
@@ -68,7 +132,7 @@ class TmuxControlConnection:
             except asyncio.CancelledError:
                 pass
             self._reader_task = None
-            
+
         if self._process:
             self._process.terminate()
             try:
@@ -76,54 +140,81 @@ class TmuxControlConnection:
             except asyncio.TimeoutError:
                 self._process.kill()
             self._process = None
-            
-        logger.info("Stopped tmux control mode for %s", self.target)
-    
+
+        logger.info("Stopped tmux control mode for session %s", self.session)
+
     async def _read_output(self):
-        """Read and parse control mode output."""
+        """Read control-mode stdout, dispatch ``%output`` to subscribers."""
         if not self._process or not self._process.stdout:
             return
-            
+
         try:
             while self._running:
                 line = await self._process.stdout.readline()
                 if not line:
                     break
-                # Control mode outputs are prefixed with % for notifications
-                # We mainly care about %output for pane content changes
-                decoded = line.decode('utf-8', errors='replace')
-                if decoded.startswith('%output'):
-                    # Parse output notification
-                    # Format: %output %<pane_id> <data>
-                    pass  # We'll use polling for now, this is for future optimization
+
+                decoded = line.decode('utf-8', errors='replace').rstrip('\n')
+
+                if decoded.startswith('%exit'):
+                    logger.info("tmux control mode exited for session %s", self.session)
+                    break
+
+                parsed = _parse_output_line(decoded)
+                if parsed is None:
+                    continue
+
+                pane_id, raw_bytes = parsed
+                # Snapshot subscriber set under lock, then dispatch outside lock
+                async with self._lock:
+                    callbacks = set(self._output_subscribers.get(pane_id, ()))
+                for cb in callbacks:
+                    try:
+                        await cb(raw_bytes)
+                    except Exception:
+                        logger.exception("Error in %output subscriber for pane %s", pane_id)
         except asyncio.CancelledError:
             pass
         except Exception as e:
             logger.error("Error reading tmux control output: %s", e)
-    
+
+    # -- subscriber management --------------------------------------------------
+
+    async def subscribe(self, pane_id: str, callback: Callable) -> None:
+        """Register *callback* to receive raw bytes for *pane_id*."""
+        async with self._lock:
+            self._output_subscribers.setdefault(pane_id, set()).add(callback)
+
+    async def unsubscribe(self, pane_id: str, callback: Callable) -> None:
+        """Remove *callback* from *pane_id* notifications."""
+        async with self._lock:
+            subs = self._output_subscribers.get(pane_id)
+            if subs:
+                subs.discard(callback)
+                if not subs:
+                    del self._output_subscribers[pane_id]
+
+    # -- command helpers --------------------------------------------------------
+
     @property
     def is_alive(self) -> bool:
         """Check if the control mode connection is still usable."""
         if not self._process or not self._process.stdin:
             return False
-        # If the process has exited, stdin transport will be closed
         transport = self._process.stdin.transport  # type: ignore[union-attr]
         if transport is not None and transport.is_closing():
             return False
         return self._process.returncode is None
 
-    async def send_keys(self, keys: str) -> bool:
-        """Send keys to the target pane via control mode."""
+    async def send_keys(self, target: str, keys: str) -> bool:
+        """Send keys to *target* (e.g. ``session:window``) via control mode."""
         if not self.is_alive:
             return False
 
         try:
-            # Use hex mode (-H) to send raw bytes with no interpretation
-            # This avoids all escaping issues and passes through exactly what the user typed
-            # tmux -H expects space-separated hex pairs: "68 65 6c 6c 6f" for "hello"
             key_bytes = keys.encode('utf-8')
             hex_keys = ' '.join(f'{b:02x}' for b in key_bytes)
-            cmd = f'send-keys -H -t {self.target} {hex_keys}\n'
+            cmd = f'send-keys -H -t {target} {hex_keys}\n'
             self._process.stdin.write(cmd.encode())
             await self._process.stdin.drain()
             return True
@@ -131,13 +222,13 @@ class TmuxControlConnection:
             logger.error("Failed to send keys via control mode: %s", e)
             return False
 
-    async def resize(self, cols: int, rows: int) -> bool:
-        """Resize the target window via control mode."""
+    async def resize(self, target: str, cols: int, rows: int) -> bool:
+        """Resize *target* window via control mode."""
         if not self.is_alive:
             return False
 
         try:
-            cmd = f'resize-window -t {self.target} -x {cols} -y {rows}\n'
+            cmd = f'resize-window -t {target} -x {cols} -y {rows}\n'
             self._process.stdin.write(cmd.encode())
             await self._process.stdin.drain()
             return True
@@ -147,50 +238,44 @@ class TmuxControlConnection:
 
 
 class TmuxControlPool:
-    """Pool of control mode connections, one per session.
-    
-    Reuses connections across multiple WebSocket clients to avoid
-    creating too many control mode processes.
+    """Pool of control mode connections, keyed by **session** name.
+
+    One control-mode process serves all windows in a tmux session.
     """
-    
+
     _instance: TmuxControlPool | None = None
-    
+
     def __init__(self):
         self._connections: dict[str, TmuxControlConnection] = {}
         self._lock = asyncio.Lock()
-    
+
     @classmethod
     def get_instance(cls) -> TmuxControlPool:
         if cls._instance is None:
             cls._instance = TmuxControlPool()
         return cls._instance
-    
-    async def get_connection(self, session: str, window: str) -> TmuxControlConnection:
-        """Get or create a control connection for the given target.
+
+    async def get_connection(self, session: str) -> TmuxControlConnection:
+        """Get or create a control connection for *session*.
 
         Automatically replaces dead connections with fresh ones.
         """
-        key = f"{session}:{window}"
-
         async with self._lock:
-            existing = self._connections.get(key)
+            existing = self._connections.get(session)
             if existing and existing.is_alive:
                 return existing
-            # Dead or missing — clean up and create fresh
             if existing:
-                logger.warning("Replacing dead control connection for %s", key)
+                logger.warning("Replacing dead control connection for session %s", session)
                 await existing.stop()
-            conn = TmuxControlConnection(session, window)
+            conn = TmuxControlConnection(session)
             await conn.start()
-            self._connections[key] = conn
+            self._connections[session] = conn
             return conn
 
-    async def release_connection(self, session: str, window: str):
+    async def release_connection(self, session: str):
         """Release a connection (currently keeps it alive for reuse)."""
-        # For now, we keep connections alive for reuse
-        # Could implement reference counting if needed
         pass
-    
+
     async def close_all(self):
         """Close all connections."""
         async with self._lock:
@@ -205,12 +290,13 @@ async def send_keys_async(session: str, window: str, keys: str) -> bool:
     Retries once with a fresh connection on failure.
     """
     pool = TmuxControlPool.get_instance()
-    conn = await pool.get_connection(session, window)
-    if await conn.send_keys(keys):
+    target = f"{session}:{window}"
+    conn = await pool.get_connection(session)
+    if await conn.send_keys(target, keys):
         return True
     # First attempt failed — get_connection will replace the dead conn
-    conn = await pool.get_connection(session, window)
-    return await conn.send_keys(keys)
+    conn = await pool.get_connection(session)
+    return await conn.send_keys(target, keys)
 
 
 async def resize_async(session: str, window: str, cols: int, rows: int) -> bool:
@@ -219,11 +305,12 @@ async def resize_async(session: str, window: str, cols: int, rows: int) -> bool:
     Retries once with a fresh connection on failure.
     """
     pool = TmuxControlPool.get_instance()
-    conn = await pool.get_connection(session, window)
-    if await conn.resize(cols, rows):
+    target = f"{session}:{window}"
+    conn = await pool.get_connection(session)
+    if await conn.resize(target, cols, rows):
         return True
-    conn = await pool.get_connection(session, window)
-    return await conn.resize(cols, rows)
+    conn = await pool.get_connection(session)
+    return await conn.resize(target, cols, rows)
 
 
 async def capture_pane_async(session: str, window: str) -> str:

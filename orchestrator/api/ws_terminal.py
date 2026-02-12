@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import json
 import logging
 import time
@@ -16,10 +17,12 @@ from orchestrator.terminal.manager import (
     resize_pane,
 )
 from orchestrator.terminal.control import (
+    TmuxControlPool,
     send_keys_async,
     resize_async,
     capture_pane_with_cursor_atomic_async,
     capture_pane_with_history_async,
+    get_pane_id_async,
 )
 
 logger = logging.getLogger(__name__)
@@ -122,11 +125,46 @@ async def terminal_websocket(websocket: WebSocket, session_id: str):
     last_content = ""
     last_cursor_x = -1
     last_cursor_y = -1
-    poll_active = True
+
+    # --- Resolve pane ID for %output streaming --------------------------------
+    pane_id = await get_pane_id_async(tmux_sess, tmux_win)
+    stream_active = False
+    conn = None  # TmuxControlConnection (set when streaming)
+    drift_task: asyncio.Task | None = None
+
+    # Callback invoked by TmuxControlConnection._read_output for our pane
+    async def on_pane_output(raw_bytes: bytes) -> None:
+        if not initial_sent:
+            return
+        try:
+            encoded = base64.b64encode(raw_bytes).decode('ascii')
+            await websocket.send_json({"type": "stream", "data": encoded})
+        except Exception:
+            pass  # WebSocket may have closed
+
+    # --- Drift correction (background sync every 5s) --------------------------
+    async def drift_correction():
+        while True:
+            await asyncio.sleep(5)
+            if not initial_sent:
+                continue
+            try:
+                content, cx, cy = await capture_pane_with_cursor_atomic_async(tmux_sess, tmux_win)
+                await websocket.send_json({
+                    "type": "sync",
+                    "data": content,
+                    "cursorX": cx,
+                    "cursorY": cy,
+                })
+            except Exception:
+                pass
+
+    # --- Fallback poll loop (used when pane_id resolution fails) --------------
+    poll_active = False
 
     async def poll_output():
         nonlocal last_content, last_cursor_x, last_cursor_y
-        poll_interval = 0.02  # Start fast (20ms) - reduced from 50ms
+        poll_interval = 0.02
         idle_count = 0
 
         while poll_active:
@@ -134,17 +172,14 @@ async def terminal_websocket(websocket: WebSocket, session_id: str):
             if not initial_sent:
                 continue
             try:
-                # Use atomic capture to avoid cursor/content race condition
                 content, cursor_x, cursor_y = await capture_pane_with_cursor_atomic_async(tmux_sess, tmux_win)
 
                 content_changed = content != last_content
                 cursor_changed = cursor_x != last_cursor_x or cursor_y != last_cursor_y
 
                 if content_changed:
-                    # Content changed - send full update and reset to fast polling
                     idle_count = 0
-                    poll_interval = 0.02  # 20ms when active
-
+                    poll_interval = 0.02
                     await websocket.send_json({
                         "type": "output",
                         "data": content,
@@ -155,10 +190,8 @@ async def terminal_websocket(websocket: WebSocket, session_id: str):
                     last_cursor_x = cursor_x
                     last_cursor_y = cursor_y
                 elif cursor_changed:
-                    # Only cursor moved (arrow keys, Home, End, etc.)
                     idle_count = 0
                     poll_interval = 0.02
-
                     await websocket.send_json({
                         "type": "cursor",
                         "cursorX": cursor_x,
@@ -167,14 +200,26 @@ async def terminal_websocket(websocket: WebSocket, session_id: str):
                     last_cursor_x = cursor_x
                     last_cursor_y = cursor_y
                 else:
-                    # No change - gradually slow down polling
                     idle_count += 1
-                    if idle_count > 20:  # Wait longer before slowing (was 10)
-                        poll_interval = min(0.15, poll_interval + 0.01)  # Slow to 150ms max (was 200ms)
+                    if idle_count > 20:
+                        poll_interval = min(0.15, poll_interval + 0.01)
             except Exception:
                 pass
 
-    poll_task = asyncio.create_task(poll_output())
+    # --- Start streaming or fall back to polling ------------------------------
+    poll_task: asyncio.Task | None = None
+
+    if pane_id:
+        pool = TmuxControlPool.get_instance()
+        conn = await pool.get_connection(tmux_sess)
+        await conn.subscribe(pane_id, on_pane_output)
+        stream_active = True
+        drift_task = asyncio.create_task(drift_correction())
+        logger.info("Streaming %output for pane %s (session %s)", pane_id, tmux_sess)
+    else:
+        logger.warning("Could not resolve pane ID for %s:%s — falling back to polling", tmux_sess, tmux_win)
+        poll_active = True
+        poll_task = asyncio.create_task(poll_output())
 
     try:
         while True:
@@ -185,13 +230,9 @@ async def terminal_websocket(websocket: WebSocket, session_id: str):
                 continue
 
             if msg.get("type") == "input":
-                # Track user activity for background operation coordination
                 record_user_input(session_id)
-                # Fire-and-forget input - let the fast polling loop handle the response
-                # This removes ~25ms subprocess latency from the input path
                 asyncio.create_task(send_keys_async(tmux_sess, tmux_win, msg.get("data", "")))
             elif msg.get("type") == "request_history":
-                # Client requested scrollback history
                 scrollback = msg.get("lines", 1000)
                 try:
                     content, cursor_x, cursor_y, total_lines = await capture_pane_with_history_async(
@@ -212,14 +253,11 @@ async def terminal_websocket(websocket: WebSocket, session_id: str):
             elif msg.get("type") == "resize":
                 cols = msg.get("cols", 80)
                 rows = msg.get("rows", 24)
-                # Use async control mode for resize too
                 await resize_async(tmux_sess, tmux_win, cols, rows)
 
                 if not initial_sent:
-                    # Give tmux a moment to apply the resize
                     await asyncio.sleep(0.05)
 
-                    # Capture with scrollback history for initial load
                     content, cursor_x, cursor_y, total_lines = await capture_pane_with_history_async(
                         tmux_sess, tmux_win, scrollback_lines=1000
                     )
@@ -237,10 +275,20 @@ async def terminal_websocket(websocket: WebSocket, session_id: str):
     except WebSocketDisconnect:
         pass
     finally:
-        poll_active = False
-        poll_task.cancel()
+        # --- Cleanup ----------------------------------------------------------
+        if stream_active and conn and pane_id:
+            await conn.unsubscribe(pane_id, on_pane_output)
+        if drift_task:
+            drift_task.cancel()
+            try:
+                await drift_task
+            except asyncio.CancelledError:
+                pass
+        if poll_task:
+            poll_active = False
+            poll_task.cancel()
+            try:
+                await poll_task
+            except asyncio.CancelledError:
+                pass
         clear_user_activity(session_id)
-        try:
-            await poll_task
-        except asyncio.CancelledError:
-            pass

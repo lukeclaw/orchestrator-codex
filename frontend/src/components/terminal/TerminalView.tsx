@@ -158,6 +158,16 @@ export default function TerminalView({ sessionId, sessionStatus, onUserInput, di
           if (typeof msg.cursorX === 'number' && typeof msg.cursorY === 'number') {
             terminal.write(`\x1b[${msg.cursorY + 1};${msg.cursorX + 1}H`)
           }
+        } else if (msg.type === 'stream') {
+          // Raw PTY stream from tmux %output — low-latency path
+          if (userScrolledUp) return
+          const raw = atob(msg.data)
+          const bytes = new Uint8Array(raw.length)
+          for (let i = 0; i < raw.length; i++) {
+            bytes[i] = raw.charCodeAt(i)
+          }
+          // Write as Uint8Array to bypass convertEol — data already has \r\n
+          terminal.write(bytes)
         } else if (msg.type === 'error') {
           terminal.write(`\r\n\x1b[31m${msg.message}\x1b[0m\r\n`)
         }
