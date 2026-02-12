@@ -287,15 +287,6 @@ async def terminal_websocket(websocket: WebSocket, session_id: str):
                     last_content = content
                     last_cursor_x = cursor_x
                     last_cursor_y = cursor_y
-
-                    if stream_active:
-                        # Resize bounce triggers SIGWINCH → full app redraw
-                        # via the PTY stream.  Keep initial_sent False during
-                        # the bounce so stale incremental updates are dropped.
-                        await resize_async(tmux_sess, tmux_win, cols, rows + 1)
-                        await asyncio.sleep(0.05)
-                        await resize_async(tmux_sess, tmux_win, cols, rows)
-
                     initial_sent = True
     except WebSocketDisconnect:
         pass
