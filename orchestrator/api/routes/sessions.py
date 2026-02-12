@@ -18,6 +18,7 @@ from orchestrator.api.deps import get_db
 from orchestrator.state.repositories import sessions as repo
 from orchestrator.terminal.manager import (
     capture_output,
+    capture_pane_with_escapes,
     ensure_window,
     kill_window,
     send_keys,
@@ -480,7 +481,7 @@ def send_message(session_id: str, body: SendMessage, request: Request, db=Depend
 
 
 @router.get("/sessions/{session_id}/preview")
-def session_preview(session_id: str, lines: int = 30, db=Depends(get_db)):
+def session_preview(session_id: str, db=Depends(get_db)):
     """Return a plain-text terminal snapshot for a worker session."""
     s = repo.get_session(db, session_id)
     if s is None:
@@ -496,7 +497,12 @@ def session_preview(session_id: str, lines: int = 30, db=Depends(get_db)):
         tmux_sess, tmux_win = "orchestrator", s.tmux_window
 
     try:
-        content = capture_output(tmux_sess, tmux_win, lines=lines)
+        # Capture the current visible pane (not scrollback history) so the
+        # preview matches what the live terminal shows.
+        content = capture_pane_with_escapes(tmux_sess, tmux_win, lines=0)
+        # Strip ANSI escape sequences — the preview renders in a <pre> tag,
+        # not a terminal emulator, so it can't interpret them.
+        content = re.sub(r'\x1b\[[0-9;]*[a-zA-Z]', '', content)
     except Exception:
         logger.warning("Could not capture preview for session %s", s.name, exc_info=True)
         content = ""

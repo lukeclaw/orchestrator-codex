@@ -14,6 +14,7 @@ import logging
 import os
 import random
 import shlex
+import subprocess
 import time
 
 from orchestrator.terminal.manager import capture_output, send_keys, kill_window
@@ -27,13 +28,74 @@ from orchestrator.agents import get_path_export_command, get_worker_prompt
 logger = logging.getLogger(__name__)
 
 
+def _check_claude_session_exists_remote(host: str, session_id: str) -> bool:
+    """Check if a Claude session file exists on remote host via SSH.
+    
+    Claude stores sessions in ~/.claude/projects/<path>/<session_id>.jsonl
+    We check if any .jsonl file with this session_id exists.
+    
+    Returns True if session exists, False otherwise.
+    """
+    try:
+        # Search for session file in any project directory
+        check_cmd = f"ls ~/.claude/projects/*/{session_id}.jsonl 2>/dev/null && echo SESSION_EXISTS || echo SESSION_MISSING"
+        result = subprocess.run(
+            ["ssh", "-o", "ConnectTimeout=10", "-o", "BatchMode=yes", host, check_cmd],
+            capture_output=True,
+            text=True,
+            timeout=15,
+        )
+        output = result.stdout + result.stderr
+        exists = "SESSION_EXISTS" in output and "SESSION_MISSING" not in output.split("SESSION_EXISTS")[-1]
+        logger.debug("Claude session check on %s for %s: exists=%s (output=%r)", host, session_id, exists, output)
+        return exists
+    except Exception as e:
+        logger.warning("Failed to check Claude session existence on %s: %s", host, e)
+        # Default to -r (resume) if check fails - safer to try resume first
+        return True
+
+
+def _check_claude_session_exists_local(session_id: str) -> bool:
+    """Check if a Claude session file exists locally.
+    
+    Claude stores sessions in ~/.claude/projects/<path>/<session_id>.jsonl
+    We check if any .jsonl file with this session_id exists.
+    
+    Returns True if session exists, False otherwise.
+    """
+    import glob
+    claude_dir = os.path.expanduser("~/.claude/projects")
+    pattern = os.path.join(claude_dir, "*", f"{session_id}.jsonl")
+    matches = glob.glob(pattern)
+    exists = len(matches) > 0
+    logger.debug("Claude session check local for %s: exists=%s (matches=%s)", session_id, exists, matches)
+    return exists
+
+
+def _get_claude_session_arg(session_id: str, session_exists: bool) -> str:
+    """Get the appropriate Claude CLI argument based on session existence.
+    
+    Returns:
+        '-r <id>' if session exists (resume)
+        '--session-id <id>' if session doesn't exist (create new)
+    """
+    if session_exists:
+        return f"-r {session_id}"
+    else:
+        return f"--session-id {session_id}"
+
+
 def _launch_claude_in_screen(
-    conn, session, tmux_sess: str, tmux_win: str, remote_tmp_dir: str
+    tmux_sess: str, tmux_win: str, session, tmp_dir: str, remote_tmp_dir: str, repo, conn
 ):
     """Launch Claude inside an existing screen session.
     
     This is called when we're already inside a screen session (either attached or created)
     and just need to launch Claude.
+    
+    Uses proactive check to determine if session exists:
+    - If session exists: use 'claude -r <id>' to resume
+    - If session doesn't exist: use 'claude --session-id <id>' to create new
     """
     # Set up environment
     path_export = get_path_export_command(f"{remote_tmp_dir}/bin")
@@ -49,10 +111,15 @@ def _launch_claude_in_screen(
         tmux_sess, tmux_win, session.id, remote_tmp_dir
     )
     
+    # Check if Claude session exists on remote to choose the right launch command
+    session_exists = _check_claude_session_exists_remote(session.host, session.id)
+    session_arg = _get_claude_session_arg(session.id, session_exists)
+    logger.info("Reconnect %s: Claude session exists=%s, using arg: %s", session.name, session_exists, session_arg)
+    
     # Launch Claude with skills from the remote .claude directory
     settings_file = f"{remote_tmp_dir}/configs/settings.json"
     claude_args = [
-        f"-r {session.id}",
+        session_arg,
         f"--settings {settings_file}",
         f"--add-dir {remote_tmp_dir}",
         "--dangerously-skip-permissions",
@@ -662,10 +729,15 @@ def reconnect_rdev_worker(conn, session, tmux_sess: str, tmux_win: str, api_port
         tmux_sess, tmux_win, session.id, remote_tmp_dir
     )
     
+    # Check if Claude session exists on remote to choose the right launch command
+    session_exists = _check_claude_session_exists_remote(session.host, session.id)
+    session_arg = _get_claude_session_arg(session.id, session_exists)
+    logger.info("Reconnect %s: Claude session exists=%s, using arg: %s", session.name, session_exists, session_arg)
+    
     # Launch Claude with skills from the remote .claude directory
     settings_file = f"{remote_tmp_dir}/configs/settings.json"
     claude_args = [
-        f"-r {session.id}",
+        session_arg,
         f"--settings {settings_file}",
         f"--add-dir {remote_tmp_dir}",
         "--dangerously-skip-permissions",
@@ -685,7 +757,9 @@ def reconnect_rdev_worker(conn, session, tmux_sess: str, tmux_win: str, api_port
 def reconnect_local_worker(session, tmux_sess: str, tmux_win: str, api_port: int, tmp_dir: str):
     """Reconnect a local worker: cd to work_dir and relaunch claude.
     
-    Uses same claude command as new workers (--session-id auto-resumes existing sessions).
+    Uses proactive check to determine if session exists:
+    - If session exists: use 'claude -r <id>' to resume
+    - If session doesn't exist: use 'claude --session-id <id>' to create new
     """
     # Ensure local configs exist (regenerate from templates if orchestrator restarted)
     api_base = f"http://127.0.0.1:{api_port}"
@@ -699,9 +773,14 @@ def reconnect_local_worker(session, tmux_sess: str, tmux_win: str, api_port: int
         send_keys(tmux_sess, tmux_win, f"cd {shlex.quote(session.work_dir)}", enter=True)
         time.sleep(0.3)
     
+    # Check if Claude session exists locally to choose the right launch command
+    session_exists = _check_claude_session_exists_local(session.id)
+    session_arg = _get_claude_session_arg(session.id, session_exists)
+    logger.info("Reconnect local %s: Claude session exists=%s, using arg: %s", session.name, session_exists, session_arg)
+    
     settings_file = os.path.join(tmp_dir, "configs", "settings.json")
     claude_args = [
-        f"-r {session.id}",
+        session_arg,
         f"--settings {shlex.quote(settings_file)}",
     ]
     

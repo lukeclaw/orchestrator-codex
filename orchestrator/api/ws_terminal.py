@@ -120,13 +120,15 @@ async def terminal_websocket(websocket: WebSocket, session_id: str):
     # This ensures the tmux pane matches xterm's dimensions.
     initial_sent = False
     last_content = ""
+    last_cursor_x = -1
+    last_cursor_y = -1
     poll_active = True
 
     async def poll_output():
-        nonlocal last_content
+        nonlocal last_content, last_cursor_x, last_cursor_y
         poll_interval = 0.02  # Start fast (20ms) - reduced from 50ms
         idle_count = 0
-        
+
         while poll_active:
             await asyncio.sleep(poll_interval)
             if not initial_sent:
@@ -134,12 +136,15 @@ async def terminal_websocket(websocket: WebSocket, session_id: str):
             try:
                 # Use atomic capture to avoid cursor/content race condition
                 content, cursor_x, cursor_y = await capture_pane_with_cursor_atomic_async(tmux_sess, tmux_win)
-                
-                if content != last_content:
-                    # Content changed - send update and reset to fast polling
+
+                content_changed = content != last_content
+                cursor_changed = cursor_x != last_cursor_x or cursor_y != last_cursor_y
+
+                if content_changed:
+                    # Content changed - send full update and reset to fast polling
                     idle_count = 0
                     poll_interval = 0.02  # 20ms when active
-                    
+
                     await websocket.send_json({
                         "type": "output",
                         "data": content,
@@ -147,6 +152,20 @@ async def terminal_websocket(websocket: WebSocket, session_id: str):
                         "cursorY": cursor_y,
                     })
                     last_content = content
+                    last_cursor_x = cursor_x
+                    last_cursor_y = cursor_y
+                elif cursor_changed:
+                    # Only cursor moved (arrow keys, Home, End, etc.)
+                    idle_count = 0
+                    poll_interval = 0.02
+
+                    await websocket.send_json({
+                        "type": "cursor",
+                        "cursorX": cursor_x,
+                        "cursorY": cursor_y,
+                    })
+                    last_cursor_x = cursor_x
+                    last_cursor_y = cursor_y
                 else:
                     # No change - gradually slow down polling
                     idle_count += 1
@@ -186,6 +205,8 @@ async def terminal_websocket(websocket: WebSocket, session_id: str):
                         "totalLines": total_lines,
                     })
                     last_content = content
+                    last_cursor_x = cursor_x
+                    last_cursor_y = cursor_y
                 except Exception as e:
                     logger.error("Failed to capture history: %s", e)
             elif msg.get("type") == "resize":
@@ -210,6 +231,8 @@ async def terminal_websocket(websocket: WebSocket, session_id: str):
                         "totalLines": total_lines,
                     })
                     last_content = content
+                    last_cursor_x = cursor_x
+                    last_cursor_y = cursor_y
                     initial_sent = True
     except WebSocketDisconnect:
         pass

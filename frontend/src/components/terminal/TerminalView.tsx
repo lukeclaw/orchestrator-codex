@@ -153,6 +153,11 @@ export default function TerminalView({ sessionId, sessionStatus, onUserInput, di
             
             lastContent = content
           }
+        } else if (msg.type === 'cursor') {
+          // Cursor-only update (arrow keys, Home, End, etc.) — no content rewrite needed
+          if (typeof msg.cursorX === 'number' && typeof msg.cursorY === 'number') {
+            terminal.write(`\x1b[${msg.cursorY + 1};${msg.cursorX + 1}H`)
+          }
         } else if (msg.type === 'error') {
           terminal.write(`\r\n\x1b[31m${msg.message}\x1b[0m\r\n`)
         }
