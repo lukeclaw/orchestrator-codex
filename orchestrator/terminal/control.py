@@ -101,11 +101,22 @@ class TmuxControlConnection:
         except Exception as e:
             logger.error("Error reading tmux control output: %s", e)
     
-    async def send_keys(self, keys: str) -> bool:
-        """Send keys to the target pane via control mode."""
+    @property
+    def is_alive(self) -> bool:
+        """Check if the control mode connection is still usable."""
         if not self._process or not self._process.stdin:
             return False
-            
+        # If the process has exited, stdin transport will be closed
+        transport = self._process.stdin.transport  # type: ignore[union-attr]
+        if transport is not None and transport.is_closing():
+            return False
+        return self._process.returncode is None
+
+    async def send_keys(self, keys: str) -> bool:
+        """Send keys to the target pane via control mode."""
+        if not self.is_alive:
+            return False
+
         try:
             # Use hex mode (-H) to send raw bytes with no interpretation
             # This avoids all escaping issues and passes through exactly what the user typed
@@ -119,12 +130,12 @@ class TmuxControlConnection:
         except Exception as e:
             logger.error("Failed to send keys via control mode: %s", e)
             return False
-    
+
     async def resize(self, cols: int, rows: int) -> bool:
         """Resize the target window via control mode."""
-        if not self._process or not self._process.stdin:
+        if not self.is_alive:
             return False
-            
+
         try:
             cmd = f'resize-window -t {self.target} -x {cols} -y {rows}\n'
             self._process.stdin.write(cmd.encode())
@@ -155,16 +166,25 @@ class TmuxControlPool:
         return cls._instance
     
     async def get_connection(self, session: str, window: str) -> TmuxControlConnection:
-        """Get or create a control connection for the given target."""
+        """Get or create a control connection for the given target.
+
+        Automatically replaces dead connections with fresh ones.
+        """
         key = f"{session}:{window}"
-        
+
         async with self._lock:
-            if key not in self._connections:
-                conn = TmuxControlConnection(session, window)
-                await conn.start()
-                self._connections[key] = conn
-            return self._connections[key]
-    
+            existing = self._connections.get(key)
+            if existing and existing.is_alive:
+                return existing
+            # Dead or missing — clean up and create fresh
+            if existing:
+                logger.warning("Replacing dead control connection for %s", key)
+                await existing.stop()
+            conn = TmuxControlConnection(session, window)
+            await conn.start()
+            self._connections[key] = conn
+            return conn
+
     async def release_connection(self, session: str, window: str):
         """Release a connection (currently keeps it alive for reuse)."""
         # For now, we keep connections alive for reuse
@@ -180,15 +200,28 @@ class TmuxControlPool:
 
 
 async def send_keys_async(session: str, window: str, keys: str) -> bool:
-    """Send keys using control mode pool (async version)."""
+    """Send keys using control mode pool (async version).
+
+    Retries once with a fresh connection on failure.
+    """
     pool = TmuxControlPool.get_instance()
+    conn = await pool.get_connection(session, window)
+    if await conn.send_keys(keys):
+        return True
+    # First attempt failed — get_connection will replace the dead conn
     conn = await pool.get_connection(session, window)
     return await conn.send_keys(keys)
 
 
 async def resize_async(session: str, window: str, cols: int, rows: int) -> bool:
-    """Resize pane using control mode pool (async version)."""
+    """Resize pane using control mode pool (async version).
+
+    Retries once with a fresh connection on failure.
+    """
     pool = TmuxControlPool.get_instance()
+    conn = await pool.get_connection(session, window)
+    if await conn.resize(cols, rows):
+        return True
     conn = await pool.get_connection(session, window)
     return await conn.resize(cols, rows)
 
