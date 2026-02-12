@@ -49,7 +49,7 @@ export default function TasksPage() {
   const sessionMap = useMemo(() => new Map(sessions.map(s => [s.id, s])), [sessions])
 
   const getProjectName = (id: string) => projectMap.get(id)?.name || 'Unknown'
-  const getWorkerName = (id: string | null) => id ? sessionMap.get(id)?.name || null : null
+  const getWorker = (id: string | null) => id ? sessionMap.get(id) || null : null
 
   // Sort value extractor
   function getSortValue(t: Task, key: SortKey): string | number {
@@ -60,7 +60,7 @@ export default function TasksPage() {
       case 'status': return STATUS_ORDER[t.status] ?? 0
       case 'priority': return PRIORITY_ORDER[t.priority] ?? 0
       case 'subtasks': return t.subtask_stats?.total ?? 0
-      case 'assigned': return getWorkerName(t.assigned_session_id) || ''
+      case 'assigned': return getWorker(t.assigned_session_id)?.name || ''
       case 'updated': return new Date(t.updated_at || t.created_at).getTime()
       default: return 0
     }
@@ -206,7 +206,7 @@ export default function TasksPage() {
             <tbody>
               {filteredTasks.map(task => {
                 const stats = task.subtask_stats
-                const workerName = getWorkerName(task.assigned_session_id)
+                const worker = getWorker(task.assigned_session_id)
                 return (
                   <tr
                     key={task.id}
@@ -250,8 +250,10 @@ export default function TasksPage() {
                       ) : '—'}
                     </td>
                     <td className="pt-td task-assigned">
-                      {workerName ? (
-                        <span className="worker-badge">{workerName}</span>
+                      {worker ? (
+                        <span className={`pt-worker-tag ${worker.status}`} title={`${worker.name} (${worker.status})`}>
+                          {worker.name}
+                        </span>
                       ) : '—'}
                     </td>
                     <td className="pt-td date">
