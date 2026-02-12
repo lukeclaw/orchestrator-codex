@@ -21,7 +21,7 @@ export default function ContextPage() {
   const [debouncedSearch, setDebouncedSearch] = useState('')
   const [selectedContext, setSelectedContext] = useState<ContextItem | null>(null)
   const [showNewContext, setShowNewContext] = useState(false)
-  const [sortKey, setSortKey] = useState<SortKey>('updated')
+  const [sortKey, setSortKey] = useState<SortKey>('scope')
   const [sortDir, setSortDir] = useState<SortDir>('desc')
   const searchTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
 
