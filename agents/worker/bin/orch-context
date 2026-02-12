@@ -8,6 +8,7 @@ show_help() {
     echo "Commands:"
     echo "  list --scope SCOPE        List context items with titles and descriptions (no full content)"
     echo "  read ID [ID2 ...]         Read full content of specific context item(s)"
+    echo "  add --title TITLE ...     Add a new context item to the project"
     echo "  tasks                     List all project tasks"
     echo ""
     echo "Scopes:"
@@ -17,12 +18,29 @@ show_help() {
     echo "Options:"
     echo "  --refresh                 Force refresh task info from API"
     echo ""
+    echo "Add options:"
+    echo "  --title TITLE             Title for the context item (required)"
+    echo "  --content TEXT            Content body (use --content-stdin for multi-line)"
+    echo "  --content-stdin           Read content from stdin (for multi-line content)"
+    echo "  --description DESC        Short description (optional)"
+    echo "  --category CAT            Category (default: worker_note)"
+    echo ""
     echo "Examples:"
     echo "  orch-context list --scope project    # List project context (titles + descriptions)"
     echo "  orch-context list --scope global     # List global context (titles + descriptions)"
     echo "  orch-context read abc123             # Read full content of item abc123"
     echo "  orch-context read abc123 def456      # Read multiple items"
     echo "  orch-context tasks                   # List all project tasks"
+    echo ""
+    echo "  # Add context with inline content"
+    echo "  orch-context add --title \"API Notes\" --content \"The auth endpoint requires Bearer token\""
+    echo ""
+    echo "  # Add context with multi-line content via heredoc"
+    echo "  orch-context add --title \"Investigation Notes\" --content-stdin <<'EOF'"
+    echo "  ## Findings"
+    echo "  - Root cause: config parsing bug"
+    echo "  - Fix: use YAML parser"
+    echo "  EOF"
     echo ""
     echo "Workflow: Use 'list' first to see available context, then 'read' to fetch full content"
     echo "          of relevant items. This saves your context window."
@@ -82,6 +100,88 @@ cmd_tasks() {
     curl -s "$API_BASE/api/tasks?project_id=$PROJECT_ID" | jq .
 }
 
+cmd_add() {
+    local title=""
+    local content=""
+    local description=""
+    local category="worker_note"
+    local content_from_stdin=false
+    
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --title)
+                title="$2"
+                shift 2
+                ;;
+            --content)
+                content="$2"
+                shift 2
+                ;;
+            --content-stdin)
+                content_from_stdin=true
+                shift
+                ;;
+            --description)
+                description="$2"
+                shift 2
+                ;;
+            --category)
+                category="$2"
+                shift 2
+                ;;
+            *)
+                echo "Unknown option: $1" >&2
+                exit 1
+                ;;
+        esac
+    done
+    
+    if [[ -z "$title" ]]; then
+        echo "Error: --title is required" >&2
+        exit 1
+    fi
+    
+    # Read content from stdin if requested
+    if [[ "$content_from_stdin" == "true" ]]; then
+        content=$(cat)
+    fi
+    
+    if [[ -z "$content" ]]; then
+        echo "Error: --content or --content-stdin is required" >&2
+        exit 1
+    fi
+    
+    # Load task info to get project_id
+    load_task_info "$FORCE_REFRESH" || exit 1
+    
+    # Build JSON payload
+    local json_payload
+    json_payload=$(jq -n \
+        --arg title "$title" \
+        --arg content "$content" \
+        --arg description "$description" \
+        --arg category "$category" \
+        --arg project_id "$PROJECT_ID" \
+        --arg source "worker:$SESSION_ID" \
+        '{
+            title: $title,
+            content: $content,
+            scope: "project",
+            project_id: $project_id,
+            category: $category,
+            source: $source
+        } + (if $description != "" then {description: $description} else {} end)'
+    )
+    
+    # POST to API
+    local response
+    response=$(curl -s -X POST "$API_BASE/api/context" \
+        -H "Content-Type: application/json" \
+        -d "$json_payload")
+    
+    echo "$response" | jq .
+}
+
 case "$1" in
     list)
         shift
@@ -90,6 +190,10 @@ case "$1" in
     read)
         shift
         cmd_read "$@"
+        ;;
+    add)
+        shift
+        cmd_add "$@"
         ;;
     tasks)
         shift

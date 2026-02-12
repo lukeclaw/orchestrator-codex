@@ -226,6 +226,19 @@ This pattern keeps your context window efficient — scan titles/descriptions fi
 orch-context tasks
 ```
 
+**Contributing context** — Share discoveries with the project for future workers:
+```bash
+# Simple note
+orch-context add --title "API Auth" --description "Bearer token required" \
+  --content "All /api/* endpoints require Authorization: Bearer <token> header"
+
+# Investigation findings (multi-line via heredoc)
+orch-context add --title "Config Parser Bug" --description "Root cause analysis" \
+  --content-stdin <<'EOF'
+Values with `=` break parsing. Fix: use YAML parser instead of split('=').
+EOF
+```
+
 ## When You're Stuck
 
 **Do NOT ask the human directly.** Your status is automatically set to `waiting` when you finish responding. The orchestrator brain monitors all workers periodically and will notice you need help.

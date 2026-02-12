@@ -13,8 +13,8 @@ import stat
 _AGENTS_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "agents"))
 
 # Script names for iteration
-WORKER_SCRIPT_NAMES = ["orch-task", "orch-subtask", "orch-worker", "orch-context", "orch-notify"]
-BRAIN_SCRIPT_NAMES = ["orch-workers", "orch-projects", "orch-tasks", "orch-ctx", "orch-send", "orch-notifications"]
+WORKER_SCRIPT_NAMES = ["orch-task", "orch-subtask", "orch-worker", "orch-context", "orch-notify", "orch-tunnel"]
+BRAIN_SCRIPT_NAMES = ["orch-workers", "orch-projects", "orch-tasks", "orch-ctx", "orch-send", "orch-notifications", "orch-tunnel"]
 
 
 def get_path_export_command(bin_dir: str) -> str:
@@ -287,6 +287,18 @@ def get_brain_skills_dir() -> str | None:
         Path to skills directory, or None if not found
     """
     skills_dir = os.path.join(_AGENTS_DIR, "brain", "skills")
+    if os.path.isdir(skills_dir):
+        return skills_dir
+    return None
+
+
+def get_worker_skills_dir() -> str | None:
+    """Get path to worker skills directory.
+    
+    Returns:
+        Path to skills directory, or None if not found
+    """
+    skills_dir = os.path.join(_AGENTS_DIR, "worker", "skills")
     if os.path.isdir(skills_dir):
         return skills_dir
     return None

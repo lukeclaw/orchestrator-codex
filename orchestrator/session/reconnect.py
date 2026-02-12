@@ -17,6 +17,7 @@ import shlex
 import time
 
 from orchestrator.terminal.manager import capture_output, send_keys, kill_window
+from orchestrator.terminal.session import _copy_dir_to_remote
 from orchestrator.session.health import (
     check_tunnel_alive,
     get_screen_session_name,
@@ -26,7 +27,9 @@ from orchestrator.agents import get_path_export_command, get_worker_prompt
 logger = logging.getLogger(__name__)
 
 
-def _launch_claude_in_screen(tmux_sess: str, tmux_win: str, session, tmp_dir: str, remote_tmp_dir: str, repo, conn):
+def _launch_claude_in_screen(
+    conn, session, tmux_sess: str, tmux_win: str, remote_tmp_dir: str
+):
     """Launch Claude inside an existing screen session.
     
     This is called when we're already inside a screen session (either attached or created)
@@ -41,6 +44,11 @@ def _launch_claude_in_screen(tmux_sess: str, tmux_win: str, session, tmp_dir: st
         send_keys(tmux_sess, tmux_win, f"cd {session.work_dir}", enter=True)
         time.sleep(0.3)
     
+    # Copy prompt to remote (avoids pasting large content through tmux)
+    remote_prompt_path = ensure_prompt_on_remote(
+        tmux_sess, tmux_win, session.id, remote_tmp_dir
+    )
+    
     # Launch Claude
     settings_file = f"{remote_tmp_dir}/configs/settings.json"
     claude_args = [
@@ -49,9 +57,8 @@ def _launch_claude_in_screen(tmux_sess: str, tmux_win: str, session, tmp_dir: st
         "--dangerously-skip-permissions",
     ]
     
-    system_prompt = build_system_prompt(session.id)
-    if system_prompt:
-        claude_args.append(f"--append-system-prompt {system_prompt}")
+    if remote_prompt_path:
+        claude_args.append(get_prompt_load_arg(remote_prompt_path))
     
     claude_cmd = f"claude {' '.join(claude_args)}"
     send_keys(tmux_sess, tmux_win, claude_cmd, enter=True)
@@ -85,66 +92,18 @@ def _copy_configs_to_remote(tmux_sess: str, tmux_win: str, tmp_dir: str, remote_
     
     This ensures the remote configs and scripts exist, which may have been cleared if /tmp was wiped.
     Called before both reattach and new screen creation.
+    Uses tar+base64 for efficient single-command transfer.
     """
-    from orchestrator.agents.deploy import WORKER_SCRIPT_NAMES
+    # Copy entire directory to remote in one shot (tar + base64)
+    _copy_dir_to_remote(tmux_sess, tmux_win, tmp_dir, remote_tmp_dir)
     
-    # Ensure remote directories exist
-    send_keys(tmux_sess, tmux_win, f"mkdir -p {remote_tmp_dir}/configs/hooks {remote_tmp_dir}/bin", enter=True)
+    # Make scripts executable
+    send_keys(tmux_sess, tmux_win, f"chmod +x {remote_tmp_dir}/bin/* 2>/dev/null || true", enter=True)
+    time.sleep(0.3)
+    send_keys(tmux_sess, tmux_win, f"chmod +x {remote_tmp_dir}/configs/hooks/*.sh 2>/dev/null || true", enter=True)
     time.sleep(0.3)
     
-    # Copy bin scripts (lib.sh first, then worker scripts)
-    bin_dir = os.path.join(tmp_dir, "bin")
-    
-    lib_path = os.path.join(bin_dir, "lib.sh")
-    if os.path.exists(lib_path):
-        with open(lib_path) as f:
-            lib_content = f.read()
-        send_keys(tmux_sess, tmux_win,
-            f"cat > {remote_tmp_dir}/bin/lib.sh << 'ORCHEOF'\n{lib_content}\nORCHEOF",
-            enter=True)
-        time.sleep(0.3)
-        send_keys(tmux_sess, tmux_win, f"chmod +x {remote_tmp_dir}/bin/lib.sh", enter=True)
-        time.sleep(0.2)
-    
-    for script_name in WORKER_SCRIPT_NAMES:
-        local_path = os.path.join(bin_dir, script_name)
-        if os.path.exists(local_path):
-            with open(local_path) as f:
-                script_content = f.read()
-            send_keys(tmux_sess, tmux_win,
-                f"cat > {remote_tmp_dir}/bin/{script_name} << 'ORCHEOF'\n{script_content}\nORCHEOF",
-                enter=True)
-            time.sleep(0.3)
-            send_keys(tmux_sess, tmux_win, f"chmod +x {remote_tmp_dir}/bin/{script_name}", enter=True)
-            time.sleep(0.2)
-    
-    logger.info("Reconnect %s: copied bin scripts to remote", session_name)
-    
-    # Copy hook script
-    claude_dir = os.path.join(tmp_dir, "configs")
-    hook_script_path = os.path.join(claude_dir, "hooks", "update-status.sh")
-    if os.path.exists(hook_script_path):
-        with open(hook_script_path) as f:
-            hook_content = f.read()
-        send_keys(tmux_sess, tmux_win,
-            f"cat > {remote_tmp_dir}/configs/hooks/update-status.sh << 'ORCHEOF'\n{hook_content}\nORCHEOF",
-            enter=True)
-        time.sleep(0.3)
-        send_keys(tmux_sess, tmux_win, f"chmod +x {remote_tmp_dir}/configs/hooks/update-status.sh", enter=True)
-        time.sleep(0.2)
-    
-    # Copy settings.json
-    settings_path = os.path.join(claude_dir, "settings.json")
-    if os.path.exists(settings_path):
-        with open(settings_path) as f:
-            settings_content = f.read()
-        send_keys(tmux_sess, tmux_win,
-            f"cat > {remote_tmp_dir}/configs/settings.json << 'ORCHEOF'\n{settings_content}\nORCHEOF",
-            enter=True)
-        time.sleep(0.3)
-        logger.info("Reconnect %s: copied settings.json to remote", session_name)
-    else:
-        logger.warning("Reconnect %s: local settings.json not found at %s", session_name, settings_path)
+    logger.info("Reconnect %s: copied all files to remote via tar+base64", session_name)
 
 
 def reconnect_tunnel_only(conn, session, tmux_sess: str, api_port: int, repo) -> bool:
@@ -319,13 +278,56 @@ def detach_from_screen(tmux_sess: str, tmux_win: str) -> None:
 
 
 def build_system_prompt(session_id: str) -> str | None:
-    """Build the system prompt from template, same as new worker setup."""
+    """Build the system prompt from template, same as new worker setup.
+    
+    DEPRECATED: For rdev workers, use ensure_prompt_on_remote() + get_prompt_load_arg() instead.
+    This function is kept for local workers where file-based loading isn't needed.
+    """
     prompt = get_worker_prompt(session_id)
     if prompt is None:
         logger.warning("Worker prompt template not found")
         return None
     
     return shlex.quote(prompt)
+
+
+def ensure_prompt_on_remote(
+    tmux_sess: str,
+    tmux_win: str,
+    session_id: str,
+    remote_tmp_dir: str,
+    task_id: str | None = None,
+    project_id: str | None = None,
+) -> str | None:
+    """Copy worker prompt to remote and return the remote path.
+    
+    This avoids pasting large prompt content through tmux by copying the file
+    to remote and using $(cat) to load it during claude launch.
+    """
+    prompt = get_worker_prompt(session_id)
+    if prompt is None:
+        logger.warning("Worker prompt template not found")
+        return None
+    
+    # Replace placeholders
+    if task_id:
+        prompt = prompt.replace("TASK_ID", task_id)
+    if project_id:
+        prompt = prompt.replace("PROJECT_ID", project_id)
+    
+    remote_prompt_path = f"{remote_tmp_dir}/prompt.md"
+    send_keys(tmux_sess, tmux_win,
+        f"cat > {remote_prompt_path} << 'ORCHEOF'\n{prompt}\nORCHEOF",
+        enter=True)
+    time.sleep(0.3)
+    logger.info("Copied worker prompt to remote: %s", remote_prompt_path)
+    
+    return remote_prompt_path
+
+
+def get_prompt_load_arg(remote_prompt_path: str) -> str:
+    """Get the claude CLI argument to load prompt from file on remote."""
+    return f'--append-system-prompt "$(cat {remote_prompt_path})"'
 
 
 def check_screen_exists_via_tmux(
@@ -624,6 +626,11 @@ def reconnect_rdev_worker(conn, session, tmux_sess: str, tmux_win: str, api_port
         send_keys(tmux_sess, tmux_win, f"cd {session.work_dir}", enter=True)
         time.sleep(0.3)
     
+    # Copy prompt to remote (avoids pasting large content through tmux)
+    remote_prompt_path = ensure_prompt_on_remote(
+        tmux_sess, tmux_win, session.id, remote_tmp_dir
+    )
+    
     # Launch Claude
     settings_file = f"{remote_tmp_dir}/configs/settings.json"
     claude_args = [
@@ -632,9 +639,8 @@ def reconnect_rdev_worker(conn, session, tmux_sess: str, tmux_win: str, api_port
         "--dangerously-skip-permissions",
     ]
     
-    system_prompt = build_system_prompt(session.id)
-    if system_prompt:
-        claude_args.append(f"--append-system-prompt {system_prompt}")
+    if remote_prompt_path:
+        claude_args.append(get_prompt_load_arg(remote_prompt_path))
     
     claude_cmd = f"claude {' '.join(claude_args)}"
     send_keys(tmux_sess, tmux_win, claude_cmd, enter=True)

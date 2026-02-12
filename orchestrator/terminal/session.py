@@ -2,17 +2,20 @@
 
 from __future__ import annotations
 
+import base64
 import logging
 import os
 import shlex
 import sqlite3
+import subprocess
 import time
 
 from orchestrator.state.models import Session
 from orchestrator.state.repositories import sessions as sessions_repo
 from orchestrator.terminal import manager as tmux
 from orchestrator.terminal import ssh
-from orchestrator.agents import deploy_worker_scripts, generate_worker_hooks, get_path_export_command, WORKER_SCRIPT_NAMES
+from orchestrator.agents import deploy_worker_scripts, generate_worker_hooks, get_path_export_command, get_worker_prompt, WORKER_SCRIPT_NAMES
+from orchestrator.agents.deploy import get_worker_skills_dir
 
 logger = logging.getLogger(__name__)
 
@@ -277,6 +280,65 @@ def _kill_orphaned_screen(tmux_session: str, window_name: str, screen_name: str)
     time.sleep(0.5)
 
 
+def _tar_base64_encode(local_dir: str) -> str:
+    """Create a base64-encoded tar of a local directory.
+    
+    Returns the base64 string that can be decoded and extracted on remote.
+    """
+    result = subprocess.run(
+        ["tar", "czf", "-", "-C", local_dir, "."],
+        capture_output=True,
+        check=True,
+    )
+    return base64.b64encode(result.stdout).decode("ascii")
+
+
+def _copy_dir_to_remote(
+    tmux_session: str,
+    window_name: str,
+    local_dir: str,
+    remote_dir: str,
+) -> None:
+    """Copy a local directory to remote using tar + base64 (single command).
+    
+    Much faster and more reliable than multiple heredocs through tmux.
+    """
+    # Create remote directory
+    tmux.send_keys(tmux_session, window_name, f"mkdir -p {remote_dir}", enter=True)
+    time.sleep(0.3)
+    
+    # Pack, encode, transfer, decode, unpack in one command
+    encoded = _tar_base64_encode(local_dir)
+    
+    # Split into chunks if too large (tmux has line length limits)
+    # Use a temp file approach for large transfers
+    if len(encoded) > 50000:
+        # Write base64 to temp file on remote, then decode
+        chunk_size = 50000
+        chunks = [encoded[i:i+chunk_size] for i in range(0, len(encoded), chunk_size)]
+        
+        tmux.send_keys(tmux_session, window_name, f"rm -f /tmp/_orch_transfer.b64", enter=True)
+        time.sleep(0.1)
+        
+        for chunk in chunks:
+            tmux.send_keys(tmux_session, window_name, 
+                f"echo -n '{chunk}' >> /tmp/_orch_transfer.b64", enter=True)
+            time.sleep(0.1)
+        
+        tmux.send_keys(tmux_session, window_name,
+            f"base64 -d /tmp/_orch_transfer.b64 | tar xzf - -C {remote_dir} && rm -f /tmp/_orch_transfer.b64",
+            enter=True)
+        time.sleep(0.5)
+    else:
+        # Small enough for single command
+        tmux.send_keys(tmux_session, window_name,
+            f"echo '{encoded}' | base64 -d | tar xzf - -C {remote_dir}",
+            enter=True)
+        time.sleep(0.5)
+    
+    logger.info("Copied %s to remote %s via tar+base64", local_dir, remote_dir)
+
+
 def setup_rdev_worker(
     conn: sqlite3.Connection,
     session_id: str,
@@ -344,7 +406,7 @@ def setup_rdev_worker(
         time.sleep(1)  # Wait for screen to start
         logger.info("Entered screen session '%s' for worker %s", screen_name, name)
 
-        # 5. Deploy CLI scripts locally, then copy to remote (inside screen)
+        # 5. Deploy all files locally (scripts, configs, prompt)
         os.makedirs(local_tmp_dir, exist_ok=True)
         bin_dir = deploy_worker_scripts(
             worker_dir=local_tmp_dir,
@@ -353,82 +415,71 @@ def setup_rdev_worker(
         )
         logger.info("Deployed CLI scripts in %s", bin_dir)
         
-        # Create remote directory and copy scripts
-        tmux.send_keys(tmux_session, name, f"mkdir -p {remote_tmp_dir}/bin", enter=True)
-        time.sleep(0.5)
+        # Generate hooks/settings in local tmp dir
+        local_configs_dir = os.path.join(local_tmp_dir, "configs")
+        os.makedirs(local_configs_dir, exist_ok=True)
+        generate_worker_hooks(
+            worker_dir=local_configs_dir,
+            session_id=session_id,
+            api_base=f"http://127.0.0.1:{api_port}",
+        )
+        logger.info("Generated hooks settings in %s", local_configs_dir)
         
-        # Copy lib.sh first (required by other scripts)
-        lib_path = os.path.join(bin_dir, "lib.sh")
-        if os.path.exists(lib_path):
-            with open(lib_path) as f:
-                lib_content = f.read()
-            tmux.send_keys(tmux_session, name, 
-                f"cat > {remote_tmp_dir}/bin/lib.sh << 'ORCHEOF'\n{lib_content}\nORCHEOF", 
-                enter=True)
-            time.sleep(0.3)
-            tmux.send_keys(tmux_session, name, f"chmod +x {remote_tmp_dir}/bin/lib.sh", enter=True)
-            time.sleep(0.2)
+        # Write prompt.md to local tmp dir
+        worker_prompt = get_worker_prompt(session_id)
+        remote_prompt_path = f"{remote_tmp_dir}/prompt.md"
+        if worker_prompt:
+            if task_id:
+                worker_prompt = worker_prompt.replace("TASK_ID", task_id)
+            if project_id:
+                worker_prompt = worker_prompt.replace("PROJECT_ID", project_id)
+            with open(os.path.join(local_tmp_dir, "prompt.md"), "w") as f:
+                f.write(worker_prompt)
         
-        for script_name in WORKER_SCRIPT_NAMES:
-            local_path = os.path.join(bin_dir, script_name)
-            if os.path.exists(local_path):
-                with open(local_path) as f:
-                    script_content = f.read()
-                tmux.send_keys(tmux_session, name, 
-                    f"cat > {remote_tmp_dir}/bin/{script_name} << 'ORCHEOF'\n{script_content}\nORCHEOF", 
-                    enter=True)
-                time.sleep(0.3)
-                tmux.send_keys(tmux_session, name, f"chmod +x {remote_tmp_dir}/bin/{script_name}", enter=True)
-                time.sleep(0.2)
+        # Copy worker skills to local tmp dir for transfer
+        skills_src = get_worker_skills_dir()
+        local_skills_dir = os.path.join(local_tmp_dir, "skills")
+        if skills_src and os.path.isdir(skills_src):
+            import shutil
+            os.makedirs(local_skills_dir, exist_ok=True)
+            for skill_file in os.listdir(skills_src):
+                if skill_file.endswith(".md"):
+                    shutil.copy2(
+                        os.path.join(skills_src, skill_file),
+                        os.path.join(local_skills_dir, skill_file),
+                    )
+            logger.info("Prepared %d skills for transfer", len(os.listdir(local_skills_dir)))
+        
+        # 6. Copy entire directory to remote in one shot (tar + base64)
+        _copy_dir_to_remote(tmux_session, name, local_tmp_dir, remote_tmp_dir)
+        
+        # Make scripts executable
+        tmux.send_keys(tmux_session, name, f"chmod +x {remote_tmp_dir}/bin/*", enter=True)
+        time.sleep(0.3)
+        tmux.send_keys(tmux_session, name, f"chmod +x {remote_tmp_dir}/configs/hooks/*.sh 2>/dev/null || true", enter=True)
+        time.sleep(0.3)
         
         # Export PATH
         path_export = get_path_export_command(f"{remote_tmp_dir}/bin")
         tmux.send_keys(tmux_session, name, path_export, enter=True)
         time.sleep(0.5)
-        logger.info("Copied CLI scripts to remote and updated PATH")
-        
-        # 6. Generate and copy hooks settings (inside screen)
-        local_configs_dir = os.path.join(local_tmp_dir, "configs")
-        os.makedirs(local_configs_dir, exist_ok=True)
-        claude_dir = generate_worker_hooks(
-            worker_dir=local_configs_dir,
-            session_id=session_id,
-            api_base=f"http://127.0.0.1:{api_port}",
-        )
-        logger.info("Generated hooks settings in %s", claude_dir)
-        
-        tmux.send_keys(tmux_session, name, f"mkdir -p {remote_tmp_dir}/configs/hooks", enter=True)
-        time.sleep(0.3)
-        
-        hook_script_path = os.path.join(claude_dir, "hooks", "update-status.sh")
-        if os.path.exists(hook_script_path):
-            with open(hook_script_path) as f:
-                hook_content = f.read()
-            tmux.send_keys(tmux_session, name,
-                f"cat > {remote_tmp_dir}/configs/hooks/update-status.sh << 'ORCHEOF'\n{hook_content}\nORCHEOF",
-                enter=True)
-            time.sleep(0.3)
-            tmux.send_keys(tmux_session, name, f"chmod +x {remote_tmp_dir}/configs/hooks/update-status.sh", enter=True)
-            time.sleep(0.2)
-        
-        settings_path = os.path.join(claude_dir, "settings.json")
-        if os.path.exists(settings_path):
-            with open(settings_path) as f:
-                settings_content = f.read()
-            tmux.send_keys(tmux_session, name,
-                f"cat > {remote_tmp_dir}/configs/settings.json << 'ORCHEOF'\n{settings_content}\nORCHEOF",
-                enter=True)
-            time.sleep(0.3)
-        
-        logger.info("Copied hooks settings to remote")
+        logger.info("Copied all files to remote via tar+base64 and updated PATH")
 
         # 7. cd to work_dir if specified (inside screen)
         if work_dir:
             tmux.send_keys(tmux_session, name, f"cd {work_dir}", enter=True)
             time.sleep(0.3)
+            
+            # Deploy skills to work_dir/.claude/commands/
+            if skills_src and os.path.isdir(skills_src):
+                remote_skills_dest = f"{work_dir}/.claude/commands"
+                tmux.send_keys(tmux_session, name, f"mkdir -p {remote_skills_dest}", enter=True)
+                time.sleep(0.2)
+                tmux.send_keys(tmux_session, name, f"cp {remote_tmp_dir}/skills/*.md {remote_skills_dest}/ 2>/dev/null || true", enter=True)
+                time.sleep(0.3)
+                logger.info("Deployed skills to %s for rdev worker %s", remote_skills_dest, name)
         
         # 8. Launch Claude (inside screen)
-        template_path = os.path.join(_SOURCE_ROOT, "prompts", "worker_claude_template.md")
         settings_file = f"{remote_tmp_dir}/configs/settings.json"
         
         claude_args = [
@@ -437,16 +488,9 @@ def setup_rdev_worker(
             f"--session-id {session_id}",
         ]
         
-        if os.path.exists(template_path):
-            with open(template_path) as f:
-                template = f.read()
-            rendered = template.replace("SESSION_ID", session_id)
-            if task_id:
-                rendered = rendered.replace("TASK_ID", task_id)
-            if project_id:
-                rendered = rendered.replace("PROJECT_ID", project_id)
-            quoted_prompt = shlex.quote(rendered)
-            claude_args.append(f"--append-system-prompt {quoted_prompt}")
+        # Use $(cat prompt.md) to load prompt from file instead of pasting content
+        if worker_prompt:
+            claude_args.append(f'--append-system-prompt "$(cat {remote_prompt_path})"')
         
         claude_cmd = f"claude {' '.join(claude_args)}"
         tmux.send_keys(tmux_session, name, claude_cmd, enter=True)

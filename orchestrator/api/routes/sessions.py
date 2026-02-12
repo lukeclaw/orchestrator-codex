@@ -24,6 +24,7 @@ from orchestrator.terminal.manager import (
 )
 from orchestrator.terminal.ssh import is_rdev_host
 from orchestrator.agents import deploy_worker_scripts, generate_worker_hooks, get_path_export_command, get_worker_prompt
+from orchestrator.agents.deploy import get_worker_skills_dir
 from orchestrator.session import (
     is_reconnectable,
     get_screen_session_name,
@@ -292,6 +293,21 @@ def create_session(body: SessionCreate, request: Request, db=Depends(get_db)):
             api_base=f"http://127.0.0.1:{api_port}",
         )
         logger.info("Generated hooks settings for local worker %s", sanitized_name)
+        
+        # Deploy worker skills to .claude/commands/ in work_dir
+        skills_src = get_worker_skills_dir()
+        if skills_src and os.path.isdir(skills_src) and work_dir:
+            skills_dest = os.path.join(work_dir, ".claude", "commands")
+            os.makedirs(skills_dest, exist_ok=True)
+            for skill_file in os.listdir(skills_src):
+                if skill_file.endswith(".md"):
+                    shutil.copy2(
+                        os.path.join(skills_src, skill_file),
+                        os.path.join(skills_dest, skill_file),
+                    )
+            logger.info("Deployed %d skills to %s for local worker %s", 
+                       len([f for f in os.listdir(skills_dest) if f.endswith(".md")]), 
+                       skills_dest, sanitized_name)
         
         # Load worker prompt
         worker_prompt = get_worker_prompt(s.id)
