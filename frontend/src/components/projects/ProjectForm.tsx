@@ -60,7 +60,7 @@ export default function ProjectForm({ open, onClose, onSubmit, initial, title = 
   }
 
   return (
-    <Modal open={open} onClose={onClose} title={title} closeOnOutsideClick={false}>
+    <Modal open={open} onClose={onClose} title={title}>
       <form onSubmit={handleSubmit}>
         <div className="modal-body">
           <div className="form-group">

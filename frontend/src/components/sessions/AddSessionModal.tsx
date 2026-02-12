@@ -159,7 +159,7 @@ export default function AddSessionModal({ open, onClose }: Props) {
   }
 
   return (
-    <Modal open={open} onClose={onClose} title="Add New Worker" closeOnOutsideClick={false}>
+    <Modal open={open} onClose={onClose} title="Add New Worker">
       <form onSubmit={handleSubmit} data-testid="add-session-form">
         <div className="modal-body">
           <div className="form-group">

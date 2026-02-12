@@ -94,6 +94,9 @@ def check_tunnel_alive(tmux_sess: str, tunnel_win: str) -> bool:
             "Permission denied",
             "Could not resolve hostname",
             "Network is unreachable",
+            # Host key changed - SSH connects but disables port forwarding
+            "REMOTE HOST IDENTIFICATION HAS CHANGED",
+            "Port forwarding is disabled",
         ]
         for indicator in error_indicators:
             if indicator.lower() in output_lower:

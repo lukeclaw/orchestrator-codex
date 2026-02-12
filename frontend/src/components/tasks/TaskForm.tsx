@@ -55,7 +55,7 @@ export default function TaskForm({ open, onClose, onSubmit, projects, defaultPro
   }
 
   return (
-    <Modal open={open} onClose={onClose} title="New Task" closeOnOutsideClick={false}>
+    <Modal open={open} onClose={onClose} title="New Task">
       <form onSubmit={handleSubmit}>
         <div className="modal-body">
           <div className="form-group">

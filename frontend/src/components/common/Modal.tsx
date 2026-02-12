@@ -10,7 +10,7 @@ interface ModalProps {
   children: ReactNode
 }
 
-export default function Modal({ open, onClose, title, wide, extraWide, closeOnOutsideClick = true, children }: ModalProps) {
+export default function Modal({ open, onClose, title, wide, extraWide, closeOnOutsideClick = false, children }: ModalProps) {
   useEffect(() => {
     if (!open) return
     const handler = (e: KeyboardEvent) => {

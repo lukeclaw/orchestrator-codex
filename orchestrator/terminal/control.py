@@ -60,6 +60,21 @@ def _parse_output_line(line: str) -> tuple[str, bytes] | None:
     return pane_id, raw
 
 
+async def check_alternate_screen_async(session: str, window: str) -> bool:
+    """Return True if the pane is currently in alternate screen buffer mode."""
+    target = f"{session}:{window}"
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            "tmux", "display-message", "-p", "-t", target, "#{alternate_on}",
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        stdout, _ = await proc.communicate()
+        return stdout.decode().strip() == "1"
+    except Exception:
+        return False
+
+
 async def get_pane_id_async(session: str, window: str) -> str | None:
     """Resolve a tmux window to its pane ID (e.g. ``%5``).
 

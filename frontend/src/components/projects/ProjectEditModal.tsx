@@ -73,7 +73,7 @@ export default function ProjectEditModal({ project, onClose, onUpdate, onDelete 
   if (!project) return null
 
   return (
-    <Modal open={!!project} onClose={onClose} title="Edit Project" closeOnOutsideClick={false}>
+    <Modal open={!!project} onClose={onClose} title="Edit Project">
       <form onSubmit={handleSubmit}>
         <div className="modal-body">
           <div className="form-group">

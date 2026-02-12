@@ -113,6 +113,16 @@ export default function TerminalView({ sessionId, sessionStatus, onUserInput, di
         if (msg.type === 'history') {
           // Full history received (initial load or explicit request)
           terminal.reset()
+          // If the app is in alternate screen buffer (TUI apps like
+          // Claude Code, vim, htop), mirror that mode in xterm.js so
+          // cursor-positioning escapes from the PTY stream land at
+          // the correct rows.  Without this, stream coordinates
+          // (meant for alternate screen's clean row 1..N space) get
+          // applied to normal screen which may have scrollback,
+          // causing content to render on wrong lines.
+          if (msg.alternateScreen) {
+            terminal.write('\x1b[?1049h')
+          }
           terminal.write(msg.data)
           if (typeof msg.cursorX === 'number' && typeof msg.cursorY === 'number') {
             terminal.write(`\x1b[${msg.cursorY + 1};${msg.cursorX + 1}H`)

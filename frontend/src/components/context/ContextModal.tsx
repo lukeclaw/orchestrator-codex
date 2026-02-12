@@ -207,7 +207,7 @@ export default function ContextModal({ context, projectId, isNew, onClose, onSav
   const contentChanged = content.trim() !== (context?.content || '') && !!content.trim()
 
   return (
-    <div className="modal-backdrop" onClick={onClose}>
+    <div className="modal-backdrop">
       <div className="modal-content modal-extra-wide cm-modal" onClick={e => e.stopPropagation()}>
         {/* Header */}
         <div className="cm-header">

@@ -23,6 +23,7 @@ from orchestrator.terminal.control import (
     capture_pane_with_cursor_atomic_async,
     capture_pane_with_history_async,
     get_pane_id_async,
+    check_alternate_screen_async,
 )
 
 logger = logging.getLogger(__name__)
@@ -238,6 +239,8 @@ async def terminal_websocket(websocket: WebSocket, session_id: str):
                     content, cursor_x, cursor_y, total_lines = await capture_pane_with_history_async(
                         tmux_sess, tmux_win, scrollback
                     )
+                    if content.endswith('\n'):
+                        content = content[:-1]
                     await websocket.send_json({
                         "type": "history",
                         "data": content,
@@ -258,19 +261,41 @@ async def terminal_websocket(websocket: WebSocket, session_id: str):
                 if not initial_sent:
                     await asyncio.sleep(0.05)
 
+                    # Check if the app is using alternate screen buffer.
+                    # TUI apps (Claude Code / Ink, vim, htop, etc.) switch to
+                    # alternate screen on startup.  xterm.js must be in the
+                    # same mode so that cursor-positioning escape sequences
+                    # from the PTY stream land at the correct rows.
+                    alternate_on = await check_alternate_screen_async(tmux_sess, tmux_win)
+
                     content, cursor_x, cursor_y, total_lines = await capture_pane_with_history_async(
                         tmux_sess, tmux_win, scrollback_lines=1000
                     )
+                    # Strip trailing newline — capture-pane outputs every row
+                    # (including the last) followed by \n.  With convertEol
+                    # the final \n scrolls the viewport up by 1 line.
+                    if content.endswith('\n'):
+                        content = content[:-1]
                     await websocket.send_json({
                         "type": "history",
                         "data": content,
                         "cursorX": cursor_x,
                         "cursorY": cursor_y,
                         "totalLines": total_lines,
+                        "alternateScreen": alternate_on,
                     })
                     last_content = content
                     last_cursor_x = cursor_x
                     last_cursor_y = cursor_y
+
+                    if stream_active:
+                        # Resize bounce triggers SIGWINCH → full app redraw
+                        # via the PTY stream.  Keep initial_sent False during
+                        # the bounce so stale incremental updates are dropped.
+                        await resize_async(tmux_sess, tmux_win, cols, rows + 1)
+                        await asyncio.sleep(0.05)
+                        await resize_async(tmux_sess, tmux_win, cols, rows)
+
                     initial_sent = True
     except WebSocketDisconnect:
         pass

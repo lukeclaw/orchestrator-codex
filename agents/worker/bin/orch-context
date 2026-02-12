@@ -9,6 +9,7 @@ show_help() {
     echo "  list --scope SCOPE        List context items with titles and descriptions (no full content)"
     echo "  read ID [ID2 ...]         Read full content of specific context item(s)"
     echo "  add --title TITLE ...     Add a new context item to the project"
+    echo "  update ID [options]       Update an existing context item"
     echo "  tasks                     List all project tasks"
     echo ""
     echo "Scopes:"
@@ -40,6 +41,19 @@ show_help() {
     echo "  ## Findings"
     echo "  - Root cause: config parsing bug"
     echo "  - Fix: use YAML parser"
+    echo "  EOF"
+    echo ""
+    echo "Update options:"
+    echo "  --title TITLE             New title"
+    echo "  --content TEXT            New content (use --content-stdin for multi-line)"
+    echo "  --content-stdin           Read new content from stdin"
+    echo "  --description DESC        New description"
+    echo ""
+    echo "Update examples:"
+    echo "  orch-context update abc123 --title \"New Title\""
+    echo "  orch-context update abc123 --content \"Updated content here\""
+    echo "  orch-context update abc123 --content-stdin <<'EOF'"
+    echo "  Updated multi-line content"
     echo "  EOF"
     echo ""
     echo "Workflow: Use 'list' first to see available context, then 'read' to fetch full content"
@@ -182,6 +196,77 @@ cmd_add() {
     echo "$response" | jq .
 }
 
+cmd_update() {
+    if [[ $# -eq 0 ]]; then
+        echo "Error: Context item ID is required" >&2
+        echo "Usage: orch-context update ID [--title TITLE] [--content TEXT] [--description DESC]" >&2
+        exit 1
+    fi
+    
+    local item_id="$1"
+    shift
+    
+    local title=""
+    local content=""
+    local description=""
+    local content_from_stdin=false
+    
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --title)
+                title="$2"
+                shift 2
+                ;;
+            --content)
+                content="$2"
+                shift 2
+                ;;
+            --content-stdin)
+                content_from_stdin=true
+                shift
+                ;;
+            --description)
+                description="$2"
+                shift 2
+                ;;
+            *)
+                echo "Unknown option: $1" >&2
+                exit 1
+                ;;
+        esac
+    done
+    
+    # Read content from stdin if requested
+    if [[ "$content_from_stdin" == "true" ]]; then
+        content=$(cat)
+    fi
+    
+    # Build JSON payload with only provided fields
+    local json_payload="{}"
+    if [[ -n "$title" ]]; then
+        json_payload=$(echo "$json_payload" | jq --arg v "$title" '. + {title: $v}')
+    fi
+    if [[ -n "$content" ]]; then
+        json_payload=$(echo "$json_payload" | jq --arg v "$content" '. + {content: $v}')
+    fi
+    if [[ -n "$description" ]]; then
+        json_payload=$(echo "$json_payload" | jq --arg v "$description" '. + {description: $v}')
+    fi
+    
+    if [[ "$json_payload" == "{}" ]]; then
+        echo "Error: At least one field to update is required (--title, --content, --description)" >&2
+        exit 1
+    fi
+    
+    # PATCH to API
+    local response
+    response=$(curl -s -X PATCH "$API_BASE/api/context/$item_id" \
+        -H "Content-Type: application/json" \
+        -d "$json_payload")
+    
+    echo "$response" | jq .
+}
+
 case "$1" in
     list)
         shift
@@ -194,6 +279,10 @@ case "$1" in
     add)
         shift
         cmd_add "$@"
+        ;;
+    update)
+        shift
+        cmd_update "$@"
         ;;
     tasks)
         shift

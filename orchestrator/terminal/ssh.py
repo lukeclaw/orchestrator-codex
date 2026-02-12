@@ -72,8 +72,13 @@ def setup_rdev_tunnel(
 
     Unlike setup_tunnel() which backgrounds with -f, this runs in the
     foreground of its own window so the process is trackable and killable.
+    
+    Uses StrictHostKeyChecking=no because rdev VMs are ephemeral and their
+    host keys change frequently when VMs are recycled.
     """
-    cmd = f"ssh -N -R {remote_port}:127.0.0.1:{local_port} {host}"
+    # -o StrictHostKeyChecking=no: Accept any host key (rdev VMs are ephemeral)
+    # -o UserKnownHostsFile=/dev/null: Don't pollute known_hosts with ephemeral keys
+    cmd = f"ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -N -R {remote_port}:127.0.0.1:{local_port} {host}"
     return send_keys(session_name, window_name, cmd)
 
 
