@@ -16,7 +16,7 @@ export default function ProjectsPage() {
   const [showForm, setShowForm] = useState(false)
   const [statusFilter, setStatusFilter] = useState('')
   const [editingProject, setEditingProject] = useState<Project | null>(null)
-  const [viewMode, setViewMode] = useState<'table' | 'cards'>('table')
+  const [viewMode, setViewMode] = useState<'table' | 'cards'>('cards')
 
   const filtered = statusFilter
     ? projects.filter(p => p.status === statusFilter)
