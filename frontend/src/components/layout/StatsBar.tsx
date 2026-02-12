@@ -5,7 +5,7 @@ import './StatsBar.css'
 export default function StatsBar() {
   const { workers, projects, tasks } = useApp()
 
-  const activeSessions = workers.filter(s => s.status !== 'disconnected').length
+  const activeSessions = workers.length
   const activeProjects = projects.filter(p => p.status === 'active').length
   const inProgressTasks = tasks.filter(t => t.status === 'in_progress').length
 
