@@ -1,3 +1,8 @@
+---
+name: check-worker
+description: Check waiting workers and handle low-risk actions. Use when workers are stuck in "waiting" status.
+---
+
 # Check Waiting Workers
 
 Handle workers in "waiting" status with low-risk actions to move tasks forward.

@@ -280,17 +280,67 @@ def _kill_orphaned_screen(tmux_session: str, window_name: str, screen_name: str)
     time.sleep(0.5)
 
 
-def _tar_base64_encode(local_dir: str) -> str:
-    """Create a base64-encoded tar of a local directory.
+def _copy_dir_to_rdev_ssh(local_dir: str, host: str, remote_dir: str) -> bool:
+    """Copy a local directory to rdev host using direct SSH subprocess.
     
-    Returns the base64 string that can be decoded and extracted on remote.
+    This bypasses tmux/screen entirely by piping tar directly through SSH stdin.
+    Much more reliable than sending large commands through tmux send-keys.
+    
+    Args:
+        local_dir: Local directory to copy
+        host: rdev host (e.g., "user/rdev-vm")
+        remote_dir: Remote directory to extract to
+        
+    Returns:
+        True if copy succeeded, False otherwise
     """
-    result = subprocess.run(
-        ["tar", "czf", "-", "-C", local_dir, "."],
-        capture_output=True,
-        check=True,
-    )
-    return base64.b64encode(result.stdout).decode("ascii")
+    try:
+        # First create remote directory via SSH
+        mkdir_result = subprocess.run(
+            ["ssh", "-o", "ConnectTimeout=10", "-o", "BatchMode=yes", host,
+             f"mkdir -p {remote_dir}"],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        if mkdir_result.returncode != 0:
+            logger.error("Failed to create remote dir %s: %s", remote_dir, mkdir_result.stderr)
+            return False
+        
+        # Pipe tar directly through SSH - no base64, no tmux, no screen
+        # tar on local | ssh host "tar extract on remote"
+        tar_proc = subprocess.Popen(
+            ["tar", "czf", "-", "-C", local_dir, "."],
+            stdout=subprocess.PIPE,
+        )
+        
+        ssh_proc = subprocess.Popen(
+            ["ssh", "-o", "ConnectTimeout=10", "-o", "BatchMode=yes", host,
+             f"tar xzf - -C {remote_dir}"],
+            stdin=tar_proc.stdout,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        
+        # Allow tar_proc to receive SIGPIPE if ssh_proc exits
+        tar_proc.stdout.close()
+        
+        stdout, stderr = ssh_proc.communicate(timeout=60)
+        tar_proc.wait()
+        
+        if ssh_proc.returncode != 0:
+            logger.error("SSH tar extract failed: %s", stderr.decode())
+            return False
+        
+        logger.info("Copied %s to %s:%s via direct SSH", local_dir, host, remote_dir)
+        return True
+        
+    except subprocess.TimeoutExpired:
+        logger.error("SSH copy timed out for %s -> %s:%s", local_dir, host, remote_dir)
+        return False
+    except Exception as e:
+        logger.error("SSH copy failed: %s", e)
+        return False
 
 
 def _copy_dir_to_remote(
@@ -299,44 +349,42 @@ def _copy_dir_to_remote(
     local_dir: str,
     remote_dir: str,
 ) -> None:
-    """Copy a local directory to remote using tar + base64 (single command).
+    """Copy a local directory to remote using tar + base64 via tmux.
     
-    Much faster and more reliable than multiple heredocs through tmux.
+    DEPRECATED: Use _copy_dir_to_rdev_ssh() for rdev hosts instead.
+    This function sends commands through tmux which can fail with large payloads.
+    Kept for backwards compatibility with non-rdev hosts.
     """
     # Create remote directory
     tmux.send_keys(tmux_session, window_name, f"mkdir -p {remote_dir}", enter=True)
     time.sleep(0.3)
     
-    # Pack, encode, transfer, decode, unpack in one command
-    encoded = _tar_base64_encode(local_dir)
+    # Pack and send via heredoc (more reliable than echo for large content)
+    result = subprocess.run(
+        ["tar", "czf", "-", "-C", local_dir, "."],
+        capture_output=True,
+        check=True,
+    )
+    encoded = base64.b64encode(result.stdout).decode("ascii")
     
-    # Split into chunks if too large (tmux has line length limits)
-    # Use a temp file approach for large transfers
-    if len(encoded) > 50000:
-        # Write base64 to temp file on remote, then decode
-        chunk_size = 50000
-        chunks = [encoded[i:i+chunk_size] for i in range(0, len(encoded), chunk_size)]
-        
-        tmux.send_keys(tmux_session, window_name, f"rm -f /tmp/_orch_transfer.b64", enter=True)
-        time.sleep(0.1)
-        
-        for chunk in chunks:
-            tmux.send_keys(tmux_session, window_name, 
-                f"echo -n '{chunk}' >> /tmp/_orch_transfer.b64", enter=True)
-            time.sleep(0.1)
-        
-        tmux.send_keys(tmux_session, window_name,
-            f"base64 -d /tmp/_orch_transfer.b64 | tar xzf - -C {remote_dir} && rm -f /tmp/_orch_transfer.b64",
-            enter=True)
-        time.sleep(0.5)
-    else:
-        # Small enough for single command
-        tmux.send_keys(tmux_session, window_name,
-            f"echo '{encoded}' | base64 -d | tar xzf - -C {remote_dir}",
-            enter=True)
-        time.sleep(0.5)
+    # Always use chunked file approach for reliability
+    chunk_size = 4000  # Much smaller chunks for tmux reliability
+    chunks = [encoded[i:i+chunk_size] for i in range(0, len(encoded), chunk_size)]
     
-    logger.info("Copied %s to remote %s via tar+base64", local_dir, remote_dir)
+    tmux.send_keys(tmux_session, window_name, f"rm -f /tmp/_orch_transfer.b64", enter=True)
+    time.sleep(0.1)
+    
+    for chunk in chunks:
+        tmux.send_keys(tmux_session, window_name, 
+            f"echo -n '{chunk}' >> /tmp/_orch_transfer.b64", enter=True)
+        time.sleep(0.05)
+    
+    tmux.send_keys(tmux_session, window_name,
+        f"base64 -d /tmp/_orch_transfer.b64 | tar xzf - -C {remote_dir} && rm -f /tmp/_orch_transfer.b64",
+        enter=True)
+    time.sleep(0.5)
+    
+    logger.info("Copied %s to remote %s via tar+base64 (tmux)", local_dir, remote_dir)
 
 
 def setup_rdev_worker(
@@ -383,14 +431,14 @@ def setup_rdev_worker(
         if not ssh.wait_for_prompt(tmux_session, name, timeout=30):
             raise RuntimeError(f"Timed out waiting for shell prompt on {host}")
 
-        # 3b. Update Claude to latest version and ensure PATH includes ~/.local/bin
-        tmux.send_keys(tmux_session, name, "claude update", enter=True)
-        time.sleep(5)  # Wait for update to complete
+        # 3b. Source bashrc first to pick up correct claude binary, then update
         tmux.send_keys(tmux_session, name, 
             'echo \'export PATH="$HOME/.local/bin:$PATH"\' >> ~/.bashrc && source ~/.bashrc', 
             enter=True)
         time.sleep(1)
-        logger.info("Updated Claude and configured PATH for %s", name)
+        tmux.send_keys(tmux_session, name, "claude update", enter=True)
+        time.sleep(5)  # Wait for update to complete
+        logger.info("Configured PATH and updated Claude for %s", name)
         
         # 3c. Install screen if needed
         if not _install_screen_if_needed(tmux_session, name):
@@ -436,9 +484,9 @@ def setup_rdev_worker(
             with open(os.path.join(local_tmp_dir, "prompt.md"), "w") as f:
                 f.write(worker_prompt)
         
-        # Copy worker skills to local tmp dir for transfer
+        # Copy worker skills to local tmp dir for transfer (inside .claude/commands/)
         skills_src = get_worker_skills_dir()
-        local_skills_dir = os.path.join(local_tmp_dir, "skills")
+        local_skills_dir = os.path.join(local_tmp_dir, ".claude", "commands")
         if skills_src and os.path.isdir(skills_src):
             import shutil
             os.makedirs(local_skills_dir, exist_ok=True)
@@ -450,8 +498,11 @@ def setup_rdev_worker(
                     )
             logger.info("Prepared %d skills for transfer", len(os.listdir(local_skills_dir)))
         
-        # 6. Copy entire directory to remote in one shot (tar + base64)
-        _copy_dir_to_remote(tmux_session, name, local_tmp_dir, remote_tmp_dir)
+        # 6. Copy entire directory to remote via direct SSH (bypasses tmux/screen)
+        if not _copy_dir_to_rdev_ssh(local_tmp_dir, host, remote_tmp_dir):
+            raise RuntimeError(f"Failed to copy files to remote via SSH: {host}:{remote_tmp_dir}")
+        
+        logger.info("Copied files to remote via direct SSH: %s", remote_tmp_dir)
         
         # Make scripts executable
         tmux.send_keys(tmux_session, name, f"chmod +x {remote_tmp_dir}/bin/*", enter=True)
@@ -469,15 +520,18 @@ def setup_rdev_worker(
         if work_dir:
             tmux.send_keys(tmux_session, name, f"cd {work_dir}", enter=True)
             time.sleep(0.3)
-            
-            # Deploy skills to work_dir/.claude/commands/
-            if skills_src and os.path.isdir(skills_src):
-                remote_skills_dest = f"{work_dir}/.claude/commands"
-                tmux.send_keys(tmux_session, name, f"mkdir -p {remote_skills_dest}", enter=True)
-                time.sleep(0.2)
-                tmux.send_keys(tmux_session, name, f"cp {remote_tmp_dir}/skills/*.md {remote_skills_dest}/ 2>/dev/null || true", enter=True)
-                time.sleep(0.3)
-                logger.info("Deployed skills to %s for rdev worker %s", remote_skills_dest, name)
+        
+        # Deploy skills to ~/.claude/commands/ (global user skills directory)
+        # NOTE: --add-dir flag doesn't work reliably in recent Claude Code versions,
+        # so we copy skills directly to the user's global ~/.claude/commands/ folder
+        # which Claude always loads regardless of working directory.
+        if skills_src and os.path.isdir(skills_src):
+            global_skills_dest = "~/.claude/commands"
+            tmux.send_keys(tmux_session, name, f"mkdir -p {global_skills_dest}", enter=True)
+            time.sleep(0.2)
+            tmux.send_keys(tmux_session, name, f"cp {remote_tmp_dir}/.claude/commands/*.md {global_skills_dest}/ 2>/dev/null || true", enter=True)
+            time.sleep(0.3)
+            logger.info("Deployed skills to %s for rdev worker %s", global_skills_dest, name)
         
         # 8. Launch Claude (inside screen)
         settings_file = f"{remote_tmp_dir}/configs/settings.json"

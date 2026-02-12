@@ -54,6 +54,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, [])
 
   // WebSocket
+  const location = useLocation()
   useEffect(() => {
     let ws: WebSocket | null = null
     let reconnectTimer: ReturnType<typeof setTimeout>
@@ -62,14 +63,29 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
       ws = new WebSocket(`${proto}//${window.location.host}/ws`)
 
-      ws.onopen = () => setConnected(true)
+      ws.onopen = () => {
+        setConnected(true)
+        // Send current focus on connect
+        ws?.send(JSON.stringify({ type: 'focus_update', url: location.pathname }))
+      }
       ws.onclose = () => {
         setConnected(false)
         reconnectTimer = setTimeout(connect, 3000)
       }
       ws.onerror = () => ws?.close()
-      ws.onmessage = () => {
-        fetchAll()
+      ws.onmessage = (event) => {
+        try {
+          const msg = JSON.parse(event.data)
+          if (msg.type === 'request_focus') {
+            // Backend requesting current URL - respond immediately
+            ws?.send(JSON.stringify({ type: 'focus_response', url: location.pathname }))
+          } else {
+            // Other messages trigger data refresh
+            fetchAll()
+          }
+        } catch {
+          fetchAll()
+        }
       }
     }
 
@@ -78,7 +94,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       clearTimeout(reconnectTimer)
       ws?.close()
     }
-  }, [fetchAll])
+  }, [fetchAll, location.pathname])
 
   // Initial fetch + polling
   useEffect(() => {
@@ -119,14 +135,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setSessions(prev => prev.filter(s => s.id !== id))
   }, [])
 
-  // Track current URL for brain context
-  const location = useLocation()
-  useEffect(() => {
-    api('/api/brain/focus', {
-      method: 'POST',
-      body: JSON.stringify({ url: location.pathname }),
-    }).catch(() => {})
-  }, [location.pathname])
+  // Focus tracking now handled via WebSocket (see above)
 
   return (
     <AppContext.Provider value={{ sessions, workers, projects, tasks, connected, loading, refresh: fetchAll, removeSession }}>

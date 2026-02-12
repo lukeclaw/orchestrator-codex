@@ -1,9 +1,12 @@
 """Orchestrator brain — manages the Claude Code process that acts as the central intelligence."""
 
+import base64
 import logging
 import os
 import shutil
 import time
+import uuid
+from datetime import datetime
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -23,8 +26,7 @@ router = APIRouter()
 BRAIN_SESSION_NAME = "brain"
 TMUX_SESSION = "orchestrator"
 
-# In-memory storage for current dashboard URL
-_current_url: str | None = None
+from orchestrator.api.websocket import get_current_focus, set_current_focus, request_focus_from_frontend
 
 
 def _get_brain_session(db):
@@ -52,17 +54,25 @@ class FocusUpdate(BaseModel):
 
 
 @router.get("/brain/focus")
-def get_focus():
-    """Get the current dashboard URL."""
-    return {"url": _current_url}
+async def get_focus(realtime: bool = True):
+    """Get the current dashboard URL.
+    
+    Args:
+        realtime: If True (default), request fresh URL from frontend via WebSocket.
+                  If False, return cached value immediately.
+    """
+    if realtime:
+        url = await request_focus_from_frontend(timeout=0.5)
+    else:
+        url = get_current_focus()
+    return {"url": url}
 
 
 @router.post("/brain/focus")
 def set_focus(focus: FocusUpdate):
     """Set the current dashboard URL. Called by frontend on navigation."""
-    global _current_url
-    _current_url = focus.url
-    return {"ok": True, "url": _current_url}
+    set_current_focus(focus.url)
+    return {"ok": True, "url": focus.url}
 
 
 @router.post("/brain/start", status_code=200)
@@ -251,4 +261,88 @@ def brain_sync(db=Depends(get_db)):
         "ok": True,
         "message": f"Monitoring prompt sent, checking {len(active_workers)} workers",
         "workers_checked": len(active_workers),
+    }
+
+
+class PasteImageRequest(BaseModel):
+    """Request body for pasting an image from clipboard."""
+    image_data: str  # Base64-encoded image data (with or without data URL prefix)
+    filename: Optional[str] = None  # Optional custom filename
+
+
+@router.post("/brain/paste-image")
+def paste_image(req: PasteImageRequest, db=Depends(get_db)):
+    """Save a clipboard image to the brain's tmp folder and return the file path.
+    
+    The image is saved to /tmp/orchestrator/brain/tmp/ with a timestamped filename.
+    Returns the absolute path that can be used in Claude Code prompts.
+    """
+    session = _get_brain_session(db)
+    if session is None or session.status in ("disconnected",):
+        raise HTTPException(400, "Brain is not running")
+    
+    # Parse the base64 data (handle data URL prefix if present)
+    image_data = req.image_data
+    file_ext = "png"  # Default extension
+    
+    if image_data.startswith("data:"):
+        # Extract mime type and base64 data from data URL
+        # Format: data:image/png;base64,<base64data>
+        try:
+            header, image_data = image_data.split(",", 1)
+            mime_part = header.split(";")[0]  # data:image/png
+            if "/" in mime_part:
+                mime_type = mime_part.split("/")[1]
+                # Map common mime types to extensions
+                ext_map = {"png": "png", "jpeg": "jpg", "jpg": "jpg", "gif": "gif", "webp": "webp"}
+                file_ext = ext_map.get(mime_type, "png")
+        except ValueError:
+            pass  # Keep defaults if parsing fails
+    
+    # Decode base64 data
+    try:
+        image_bytes = base64.b64decode(image_data)
+    except Exception as e:
+        raise HTTPException(400, f"Invalid base64 image data: {e}")
+    
+    # Create tmp directory inside brain working directory
+    brain_tmp_dir = "/tmp/orchestrator/brain/tmp"
+    os.makedirs(brain_tmp_dir, exist_ok=True)
+    
+    # Generate filename with timestamp for uniqueness
+    if req.filename:
+        # Sanitize custom filename
+        safe_name = "".join(c for c in req.filename if c.isalnum() or c in ".-_")
+        if not safe_name:
+            safe_name = "image"
+        filename = f"{safe_name}.{file_ext}"
+    else:
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        short_id = uuid.uuid4().hex[:6]
+        filename = f"clipboard_{timestamp}_{short_id}.{file_ext}"
+    
+    file_path = os.path.join(brain_tmp_dir, filename)
+    
+    # Handle filename collision by appending counter
+    counter = 1
+    base_path = file_path
+    while os.path.exists(file_path):
+        name, ext = os.path.splitext(base_path)
+        file_path = f"{name}_{counter}{ext}"
+        counter += 1
+    
+    # Write the image file
+    try:
+        with open(file_path, "wb") as f:
+            f.write(image_bytes)
+        logger.info("Saved clipboard image to %s (%d bytes)", file_path, len(image_bytes))
+    except Exception as e:
+        logger.exception("Failed to save clipboard image")
+        raise HTTPException(500, f"Failed to save image: {e}")
+    
+    return {
+        "ok": True,
+        "file_path": file_path,
+        "filename": os.path.basename(file_path),
+        "size": len(image_bytes),
     }

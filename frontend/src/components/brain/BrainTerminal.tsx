@@ -14,6 +14,7 @@ interface BrainTerminalProps {
   onStart: () => void
   onStop: () => void
   onUserInput?: () => void
+  onTerminalInputRef?: (fn: (text: string) => void) => void
 }
 
 export default function BrainTerminal({
@@ -23,6 +24,7 @@ export default function BrainTerminal({
   onStart,
   onStop,
   onUserInput,
+  onTerminalInputRef,
 }: BrainTerminalProps) {
   const isRunning = brainStatus?.running && brainStatus?.session_id
 
@@ -34,7 +36,8 @@ export default function BrainTerminal({
             key={brainStatus.session_id} 
             sessionId={brainStatus.session_id} 
             sessionStatus={brainStatus.status || undefined}
-            onUserInput={onUserInput} 
+            onUserInput={onUserInput}
+            onInputRef={onTerminalInputRef}
           />
         </div>
       ) : (

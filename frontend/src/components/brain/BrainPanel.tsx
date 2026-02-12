@@ -4,7 +4,7 @@ import { useNotify } from '../../context/NotificationContext'
 import BrainTerminal from './BrainTerminal'
 import type { BrainStatus } from './BrainTerminal'
 import AutoSyncTimer from './AutoSyncTimer'
-import { IconChevronLeft, IconChevronRight } from '../common/Icons'
+import { IconChevronLeft, IconChevronRight, IconImage } from '../common/Icons'
 import ConfirmPopover from '../common/ConfirmPopover'
 import './BrainPanel.css'
 
@@ -29,7 +29,9 @@ export default function BrainPanel({
   const [brainStatus, setBrainStatus] = useState<BrainStatus | null>(null)
   const [starting, setStarting] = useState(false)
   const [stopping, setStopping] = useState(false)
+  const [pastingImage, setPastingImage] = useState(false)
   const isDragging = useRef(false)
+  const terminalInputRef = useRef<((text: string) => void) | null>(null)
 
   // Poll brain status
   const fetchStatus = useCallback(async () => {
@@ -68,6 +70,66 @@ export default function BrainPanel({
       notify(e instanceof Error ? e.message : 'Failed to stop brain', 'error')
     } finally {
       setStopping(false)
+    }
+  }
+
+  async function handlePasteImage() {
+    if (pastingImage) return
+    
+    setPastingImage(true)
+    try {
+      // Read image from clipboard
+      const clipboardItems = await navigator.clipboard.read()
+      let imageBlob: Blob | null = null
+      
+      for (const item of clipboardItems) {
+        // Check for image types
+        const imageType = item.types.find(type => type.startsWith('image/'))
+        if (imageType) {
+          imageBlob = await item.getType(imageType)
+          break
+        }
+      }
+      
+      if (!imageBlob) {
+        notify('No image found in clipboard', 'error')
+        return
+      }
+      
+      // Convert blob to base64
+      const reader = new FileReader()
+      const base64Promise = new Promise<string>((resolve, reject) => {
+        reader.onload = () => resolve(reader.result as string)
+        reader.onerror = reject
+      })
+      reader.readAsDataURL(imageBlob)
+      const base64Data = await base64Promise
+      
+      // Send to backend
+      const result = await api<{ ok: boolean; file_path: string; filename: string }>(
+        '/api/brain/paste-image',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ image_data: base64Data }),
+        }
+      )
+      
+      if (result.ok && result.file_path) {
+        // Inject the file path into the terminal input
+        if (terminalInputRef.current) {
+          terminalInputRef.current(result.file_path)
+        }
+        notify(`Image saved: ${result.filename}`, 'success')
+      }
+    } catch (e) {
+      if (e instanceof Error && e.name === 'NotAllowedError') {
+        notify('Clipboard access denied. Please allow clipboard permissions.', 'error')
+      } else {
+        notify(e instanceof Error ? e.message : 'Failed to paste image', 'error')
+      }
+    } finally {
+      setPastingImage(false)
     }
   }
 
@@ -144,6 +206,16 @@ export default function BrainPanel({
           )}
         </div>
         <div className="bp-header-right">
+          {isRunning && (
+            <button
+              className="bp-paste-image-btn"
+              onClick={handlePasteImage}
+              disabled={pastingImage}
+              title="Paste image from clipboard"
+            >
+              <IconImage size={14} />
+            </button>
+          )}
           {isRunning ? (
             <ConfirmPopover
               message="Stop the brain?"
@@ -188,6 +260,7 @@ export default function BrainPanel({
           onStart={handleStart}
           onStop={handleStop}
           onUserInput={handleUserInput}
+          onTerminalInputRef={(fn: (text: string) => void) => { terminalInputRef.current = fn }}
         />
       </div>
     </div>

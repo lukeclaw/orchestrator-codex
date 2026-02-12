@@ -1,3 +1,8 @@
+---
+name: screenshot-gh-upload
+description: Capture screenshots via Playwright MCP and upload to GitHub for PR descriptions. Use for UI changes and visual documentation.
+---
+
 # Screenshot & GitHub Upload
 
 Capture screenshots via Playwright MCP and host them for use in PR descriptions or comments.

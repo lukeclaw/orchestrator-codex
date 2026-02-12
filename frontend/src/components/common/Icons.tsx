@@ -227,6 +227,25 @@ export function IconExternalLink(props: IconProps) {
   )
 }
 
+export function IconImage(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <rect x="3" y="3" width="18" height="18" rx="2" />
+      <circle cx="8.5" cy="8.5" r="1.5" />
+      <polyline points="21 15 16 10 5 21" />
+    </Icon>
+  )
+}
+
+export function IconClipboard(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2" />
+      <rect x="8" y="2" width="8" height="4" rx="1" />
+    </Icon>
+  )
+}
+
 export function IconLogo({ size = 24 }: { size?: number }) {
   return (
     <svg

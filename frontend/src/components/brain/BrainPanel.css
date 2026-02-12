@@ -139,6 +139,33 @@
   50% { opacity: 0.5; }
 }
 
+/* Paste image button */
+.bp-paste-image-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  background: none;
+  border: 1px solid transparent;
+  color: var(--text-muted);
+  border-radius: var(--radius);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+
+.bp-paste-image-btn:hover {
+  background: var(--surface-hover);
+  color: var(--text-primary);
+  border-color: var(--border);
+}
+
+.bp-paste-image-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 /* Content area — fills remaining space */
 .bp-content {
   flex: 1;

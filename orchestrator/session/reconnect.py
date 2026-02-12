@@ -17,7 +17,7 @@ import shlex
 import time
 
 from orchestrator.terminal.manager import capture_output, send_keys, kill_window
-from orchestrator.terminal.session import _copy_dir_to_remote
+from orchestrator.terminal.session import _copy_dir_to_rdev_ssh
 from orchestrator.session.health import (
     check_tunnel_alive,
     get_screen_session_name,
@@ -49,11 +49,12 @@ def _launch_claude_in_screen(
         tmux_sess, tmux_win, session.id, remote_tmp_dir
     )
     
-    # Launch Claude
+    # Launch Claude with skills from the remote .claude directory
     settings_file = f"{remote_tmp_dir}/configs/settings.json"
     claude_args = [
         f"-r {session.id}",
         f"--settings {settings_file}",
+        f"--add-dir {remote_tmp_dir}",
         "--dangerously-skip-permissions",
     ]
     
@@ -73,7 +74,8 @@ def _ensure_local_configs_exist(tmp_dir: str, session_id: str, api_base: str = "
     Always regenerates to ensure configs match current templates, even if files exist.
     This handles both missing files (orchestrator restart) and stale files (template updates).
     """
-    from orchestrator.agents.deploy import generate_worker_hooks, deploy_worker_scripts
+    import shutil
+    from orchestrator.agents.deploy import generate_worker_hooks, deploy_worker_scripts, get_worker_skills_dir
     
     configs_dir = os.path.join(tmp_dir, "configs")
     os.makedirs(configs_dir, exist_ok=True)
@@ -85,25 +87,54 @@ def _ensure_local_configs_exist(tmp_dir: str, session_id: str, api_base: str = "
     # Always regenerate bin scripts from templates
     logger.info("Regenerating local bin scripts at %s", tmp_dir)
     deploy_worker_scripts(tmp_dir, session_id, api_base)
+    
+    # Always regenerate skills to .claude/commands/
+    skills_src = get_worker_skills_dir()
+    local_skills_dir = os.path.join(tmp_dir, ".claude", "commands")
+    if skills_src and os.path.isdir(skills_src):
+        os.makedirs(local_skills_dir, exist_ok=True)
+        for skill_file in os.listdir(skills_src):
+            if skill_file.endswith(".md"):
+                shutil.copy2(
+                    os.path.join(skills_src, skill_file),
+                    os.path.join(local_skills_dir, skill_file),
+                )
+        logger.info("Regenerated %d skills at %s", len(os.listdir(local_skills_dir)), local_skills_dir)
 
 
-def _copy_configs_to_remote(tmux_sess: str, tmux_win: str, tmp_dir: str, remote_tmp_dir: str, session_name: str):
-    """Copy settings.json, hooks, and bin scripts to remote host.
+def _copy_configs_to_remote(host: str, tmp_dir: str, remote_tmp_dir: str, session_name: str):
+    """Copy settings.json, hooks, bin scripts, and skills to remote host via direct SSH.
     
     This ensures the remote configs and scripts exist, which may have been cleared if /tmp was wiped.
     Called before both reattach and new screen creation.
-    Uses tar+base64 for efficient single-command transfer.
+    Uses direct SSH subprocess (bypasses tmux/screen for reliability).
     """
-    # Copy entire directory to remote in one shot (tar + base64)
-    _copy_dir_to_remote(tmux_sess, tmux_win, tmp_dir, remote_tmp_dir)
+    import subprocess
     
-    # Make scripts executable
-    send_keys(tmux_sess, tmux_win, f"chmod +x {remote_tmp_dir}/bin/* 2>/dev/null || true", enter=True)
-    time.sleep(0.3)
-    send_keys(tmux_sess, tmux_win, f"chmod +x {remote_tmp_dir}/configs/hooks/*.sh 2>/dev/null || true", enter=True)
-    time.sleep(0.3)
+    # Copy entire directory to remote via direct SSH
+    if not _copy_dir_to_rdev_ssh(tmp_dir, host, remote_tmp_dir):
+        raise RuntimeError(f"Failed to copy configs to remote via SSH: {host}:{remote_tmp_dir}")
     
-    logger.info("Reconnect %s: copied all files to remote via tar+base64", session_name)
+    # Make scripts executable via SSH subprocess
+    chmod_cmd = f"chmod +x {remote_tmp_dir}/bin/* 2>/dev/null; chmod +x {remote_tmp_dir}/configs/hooks/*.sh 2>/dev/null"
+    subprocess.run(
+        ["ssh", "-o", "ConnectTimeout=10", "-o", "BatchMode=yes", host, chmod_cmd],
+        capture_output=True,
+        timeout=30,
+    )
+    
+    # Copy skills to ~/.claude/commands/ (global user skills directory)
+    # NOTE: --add-dir flag doesn't work reliably in recent Claude Code versions,
+    # so we copy skills directly to the user's global ~/.claude/commands/ folder
+    # which Claude always loads regardless of working directory.
+    skills_copy_cmd = f"mkdir -p ~/.claude/commands && cp {remote_tmp_dir}/.claude/commands/*.md ~/.claude/commands/ 2>/dev/null || true"
+    subprocess.run(
+        ["ssh", "-o", "ConnectTimeout=10", "-o", "BatchMode=yes", host, skills_copy_cmd],
+        capture_output=True,
+        timeout=30,
+    )
+    
+    logger.info("Reconnect %s: copied all files to remote via direct SSH (including skills to ~/.claude/commands/)", session_name)
 
 
 def reconnect_tunnel_only(conn, session, tmux_sess: str, api_port: int, repo) -> bool:
@@ -535,7 +566,7 @@ def reconnect_rdev_worker(conn, session, tmux_sess: str, tmux_win: str, api_port
     
     # Always ensure remote configs exist (may have been cleared even if screen is running)
     logger.info("Reconnect %s: ensuring remote configs exist", session.name)
-    _copy_configs_to_remote(tmux_sess, tmux_win, tmp_dir, remote_tmp_dir, session.name)
+    _copy_configs_to_remote(session.host, tmp_dir, remote_tmp_dir, session.name)
     
     if screen_exists and claude_running:
         # Best case: screen exists with Claude running
@@ -631,11 +662,12 @@ def reconnect_rdev_worker(conn, session, tmux_sess: str, tmux_win: str, api_port
         tmux_sess, tmux_win, session.id, remote_tmp_dir
     )
     
-    # Launch Claude
+    # Launch Claude with skills from the remote .claude directory
     settings_file = f"{remote_tmp_dir}/configs/settings.json"
     claude_args = [
         f"-r {session.id}",
         f"--settings {settings_file}",
+        f"--add-dir {remote_tmp_dir}",
         "--dangerously-skip-permissions",
     ]
     
