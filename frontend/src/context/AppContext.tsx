@@ -58,6 +58,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     let ws: WebSocket | null = null
     let reconnectTimer: ReturnType<typeof setTimeout>
+    let intentionalClose = false
 
     function connect() {
       const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
@@ -70,7 +71,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
       }
       ws.onclose = () => {
         setConnected(false)
-        reconnectTimer = setTimeout(connect, 3000)
+        // Only reconnect on unexpected disconnects, not effect cleanup
+        if (!intentionalClose) {
+          reconnectTimer = setTimeout(connect, 3000)
+        }
       }
       ws.onerror = () => ws?.close()
       ws.onmessage = (event) => {
@@ -91,6 +95,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
     connect()
     return () => {
+      intentionalClose = true
       clearTimeout(reconnectTimer)
       ws?.close()
     }
