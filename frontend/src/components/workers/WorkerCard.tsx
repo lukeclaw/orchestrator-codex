@@ -183,6 +183,11 @@ export default function WorkerCard({
   async function handleCheckProgress(e: React.MouseEvent) {
     e.stopPropagation()
     if (actionPending) return
+    // Validate ID is a UUID, not 'auto' or other keywords
+    if (!/^[0-9a-f-]{36}$/i.test(session.id)) {
+      notify(`Invalid worker ID: ${session.id}`, 'error')
+      return
+    }
     setActionPending(true)
     try {
       // Get brain session ID first
@@ -191,13 +196,24 @@ export default function WorkerCard({
         notify('Brain is not running. Start the brain first.', 'error')
         return
       }
-      // Send check-worker command to brain for this specific worker
+      // Cancel any existing input and clear the line
+      // Ctrl-C to cancel, then Ctrl-U to clear line buffer
+      await api(`/api/sessions/${brainStatus.session_id}/send`, {
+        method: 'POST',
+        body: JSON.stringify({ message: '\x03' }),  // Ctrl-C
+      })
+      await new Promise(resolve => setTimeout(resolve, 50))
+      await api(`/api/sessions/${brainStatus.session_id}/send`, {
+        method: 'POST',
+        body: JSON.stringify({ message: '\x15' }),  // Ctrl-U to clear line
+      })
+      await new Promise(resolve => setTimeout(resolve, 50))
+      // Send check_worker command to brain for this specific worker
       const message = `/check_worker ${session.id}`
       await api(`/api/sessions/${brainStatus.session_id}/send`, {
         method: 'POST',
         body: JSON.stringify({ message }),
       })
-      notify(`Checking progress of ${session.name}...`, 'success')
     } catch (e) {
       notify(e instanceof Error ? e.message : 'Failed to check progress', 'error')
     } finally {

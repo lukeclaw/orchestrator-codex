@@ -44,103 +44,95 @@ Skip Step 1 if a specific worker ID is provided — go straight to checking that
 
 **Auto mode (`auto` arg):** Process ALL waiting workers sequentially.
 
-### Step 3: Get task description and deliverables
-```bash
-orch-tasks list --assigned <worker-id> --format json | jq '.[0]'
-```
-
-Check the task description for **explicit deliverables** (e.g., "deliver a design doc", "create a POC", "fix the bug").
-- If specific deliverable is defined → use that as completion criteria
-- If no specific deliverable → default completion = **PR merged**
-
-### Step 4: Capture terminal state
+### Step 3: Capture terminal state FIRST (before any external commands)
 ```bash
 tmux capture-pane -p -t orchestrator:<worker-name> -S -50
 ```
 
-### Step 5: Analyze situation and determine action
+**⚡ IMPORTANT:** Read the terminal output to understand what the worker is doing. This is the fastest way to determine the situation — no external API calls needed.
 
-**Case 1: Waiting for nudge** — Worker finished a step, sitting at prompt
-- Check `status_age`: If **<2m**, skip to avoid double-nudging
-- If **>2m**: `orch-send <worker-id> "continue"`
+### Step 4: Quick triage — Is worker claiming completion?
 
-**Case 2: Context exhaustion (0%)** — Claude shows context limit warning
+Scan the terminal output for **completion signals**:
+- "PR merged", "PR has been merged", "Successfully merged"
+- "Task complete", "Task done", "All done"
+- "Deliverable ready", "Doc published"
+- Worker explicitly says it finished
+
+**If NO completion signals → Go to [Fast Path](#fast-path-worker-still-working)** (most common)
+
+**If completion signals found → Go to [Slow Path](#slow-path-verify-completion)** (requires verification)
+
+---
+
+## Fast Path: Worker Still Working
+
+This is the **quick path** — no external API calls needed. Just decide if we should nudge.
+
+### Check `status_age` and terminal context:
+
+**Case 1: Recently waiting (<2m)**
+- Action: **Skip** — avoid double-nudging
+- Worker may still be processing
+
+**Case 2: Waiting 2m-2h, at prompt**
+- Worker finished a step, sitting at prompt
+- Action: `orch-send <worker-id> "continue"`
+
+**Case 3: Context exhaustion (0%)**
+- Claude shows context limit warning
 - Action: `orch-send <worker-id> "continue"` (triggers auto-compact)
 - Do NOT stop or recreate the worker
 
-**Case 3: Blocked on PR reviews** — Worker waiting for PR approval/merge
-- **⚠️ DO NOT STOP THE WORKER** — worker must stay alive to address review comments when they arrive
-- Check `status_age` to see how long they've been waiting
+**Case 4: Waiting for PR reviews (>2h)**
+- Terminal shows worker is waiting for PR approval/merge
+- **⚠️ DO NOT STOP THE WORKER** — must stay alive for review cycle
 - If **>2h**: Nudge to check PR status
   - `orch-send <worker-id> "Check PR status. If there are review comments, address them. If approved, merge."`
 - If **<2h**: Skip — PR reviews take time
 - **Recommended follow-up:** "Nudge again in 2h if still waiting"
-- **Why keep worker alive?** Reviewers will leave comments → worker needs to address them → iterate until merged
 
-**Case 3b: Worker just checked PR, still waiting for reviewer**
-- Terminal shows worker already checked PR and is waiting
-- **⚠️ DO NOT STOP THE WORKER** — even if "idle", it must stay alive for the review cycle
-- Do NOT nudge again immediately — reviewer needs time
-- Action: **Skip** (no action needed, just wait)
+**Case 4b: Worker just checked PR, still waiting**
+- Terminal shows worker already checked PR recently
+- **⚠️ DO NOT STOP** — even if "idle", must stay alive
+- Action: **Skip** (no action needed)
 - **Recommended follow-up:** "Check again in 2-4h"
 
-**Case 4: Missing info** — Worker needs information you can look up
-- Use your tools (jarvis, confluence, jira, gh CLI) to find the info
-- Relay via: `orch-send <worker-id> "<the information they need>"`
+**Case 5: Missing info**
+- Worker needs information you can look up
+- Use your tools (jarvis, confluence, jira) to find the info
+- Relay via: `orch-send <worker-id> "<the information>"`
 - If you cannot find the info: Skip, leave for human
 
-**Case 5: Blocked by auth** — Worker needs credentials or permissions
+**Case 6: Blocked by auth**
 - Action: Skip, leave for human to handle
 
-**Case 6: Need decision** — Worker asking which approach to take
-- Only act if you have >90% confidence in the right choice
+**Case 7: Need decision**
+- Worker asking which approach to take
+- Only act if you have >90% confidence
 - If confident: `orch-send <worker-id> "Use approach X because..."`
 - If not confident: Skip, leave for human
 
-**Case 7: Worker claims task is complete** — See [Task Completion Verification](#task-completion-verification) below
-
-### Step 6: Propose or execute action
-
-**Default mode:** Present your analysis and proposed action to the user:
-```
-## Worker: <name> (<id>)
-**Situation:** <brief description of what you see>
-**Proposed action:** <the command you would run>
-
-Proceed? (yes/no/skip)
-```
-Wait for user confirmation before executing. If user says "skip", move on without action.
-
-**Auto mode:** Execute the action immediately, then verify and continue to next worker.
-
-### Step 7: Verify action worked (after execution)
-Wait 3 seconds, then check worker status:
-```bash
-orch-workers show <worker-id> | jq '.status'
-```
-
-If status is not "working", the Enter key may not have registered. Resend:
-```bash
-tmux send-keys -t orchestrator:<worker-name> Enter
-```
+**After fast path → Go to [Shared Steps](#shared-steps-after-fast-or-slow-path)**
 
 ---
 
-## Task Completion Verification
+## Slow Path: Verify Completion
 
-**CRITICAL:** Before marking ANY task as done, you MUST verify 100% completion. A PR created is NOT the same as a task completed.
+**Only enter this path if worker claims task is done or PR is merged.**
 
-### Step A: Read the task thoroughly
+This path is slower because it requires external verification, but it's necessary to ensure quality.
+
+### Step A: Get task details
 ```bash
-orch-tasks show <task-id>
+orch-tasks list --assigned <worker-id> --format json | jq '.[0]'
 ```
 
-Identify ALL deliverables explicitly stated in the task:
+Identify the task ID and deliverables:
 - Design doc? → Must be shared/published
 - POC? → Must be working and demo-able
-- Bug fix? → Must be verified fixed (not just "PR created")
-- Feature? → Must be merged and deployed (or at least merged)
-- Code change? → Default = **PR merged** (not just created)
+- Bug fix? → Must be verified fixed
+- Code change? → Default = **PR merged**
 
 ### Step B: Verify PR status (for coding tasks)
 
@@ -222,7 +214,38 @@ After sending the notification:
 
 ---
 
+## Shared Steps (after Fast or Slow Path)
+
+### Step 5: Propose or execute action
+
+**Default mode:** Present your analysis and proposed action to the user:
+```
+## Worker: <name> (<id>)
+**Situation:** <brief description of what you see>
+**Proposed action:** <the command you would run>
+
+Proceed? (yes/no/skip)
+```
+Wait for user confirmation before executing. If user says "skip", move on without action.
+
+**Auto mode:** Execute the action immediately, then verify and continue to next worker.
+
+### Step 6: Verify action worked (after execution)
+Wait 3 seconds, then check worker status:
+```bash
+orch-workers show <worker-id> | jq '.status'
+```
+
+If status is not "working", the Enter key may not have registered. Resend:
+```bash
+tmux send-keys -t orchestrator:<worker-name> Enter
+```
+
+---
+
 ## Key Rules
+- **⚡ Terminal-first approach** — read terminal output BEFORE running external commands (gh, jarvis, etc.). Most checks don't need verification.
+- **Fast path = no external calls** — if worker isn't claiming completion, just check `status_age` and decide to nudge or skip
 - **Default action is "continue"** — never stop or delete workers unless task is done
 - **⚠️ NEVER stop a worker waiting for PR review** — worker must stay alive to address reviewer comments when they arrive. "Waiting for reviewer" is NOT a reason to stop. Only stop when PR is MERGED.
 - **Check task deliverables first** — if task specifies a deliverable (doc, POC, etc.), use that; otherwise default to PR merged

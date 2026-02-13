@@ -1,4 +1,5 @@
-import { useMemo } from 'react'
+import { useMemo, useState, useCallback } from 'react'
+import { IconCopy, IconCheck } from './Icons'
 import './Markdown.css'
 
 interface Props {
@@ -332,15 +333,36 @@ function renderTokens(tokens: Token[]): string {
 export { tokenize, renderTokens }
 
 export default function Markdown({ children, className }: Props) {
+  const [copied, setCopied] = useState(false)
+  
   const html = useMemo(() => {
     const tokens = tokenize(children)
     return renderTokens(tokens)
   }, [children])
 
+  const handleCopy = useCallback(async () => {
+    try {
+      await navigator.clipboard.writeText(children)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 1500)
+    } catch (err) {
+      console.error('Failed to copy:', err)
+    }
+  }, [children])
+
   return (
-    <div 
-      className={`markdown-content ${className || ''}`}
-      dangerouslySetInnerHTML={{ __html: html }}
-    />
+    <div className={`markdown-wrapper ${className || ''}`}>
+      <button 
+        className={`markdown-copy-btn ${copied ? 'copied' : ''}`}
+        onClick={handleCopy}
+        title={copied ? 'Copied!' : 'Copy content'}
+      >
+        {copied ? <IconCheck size={14} /> : <IconCopy size={14} />}
+      </button>
+      <div 
+        className="markdown-content"
+        dangerouslySetInnerHTML={{ __html: html }}
+      />
+    </div>
   )
 }
