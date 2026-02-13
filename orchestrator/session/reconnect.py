@@ -318,10 +318,11 @@ def check_ssh_alive(tmux_sess: str, worker_win: str, host: str, retries: int = 3
             
             logger.info("SSH alive check: hostname='%s'", hostname)
             
-            if hostname.lower().startswith("rdev-"):
+            # If hostname doesn't look like the local machine, we're on a remote host
+            if not hostname.lower().endswith(".linkedin.biz"):
                 return True
             else:
-                logger.info("SSH alive check: hostname doesn't start with 'rdev-', not connected")
+                logger.info("SSH alive check: hostname '%s' looks like local machine, not connected to rdev", hostname)
                 return False
         except Exception as e:
             logger.warning("SSH alive check failed (attempt %d): %s", attempt + 1, e)
