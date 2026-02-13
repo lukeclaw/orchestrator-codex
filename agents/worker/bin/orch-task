@@ -32,11 +32,13 @@ show_help() {
 }
 
 cmd_show() {
+    [[ "$1" == "-h" || "$1" == "--help" ]] && show_help && exit 0
     load_task_info "$FORCE_REFRESH" || exit 1
     curl -s "$API_BASE/api/tasks/$TASK_ID" | jq .
 }
 
 cmd_update() {
+    [[ "$1" == "-h" || "$1" == "--help" ]] && show_help && exit 0
     load_task_info "$FORCE_REFRESH" || exit 1
     
     local status="" notes="" notes_stdin="" add_link="" add_link_tag="" clear_links=""

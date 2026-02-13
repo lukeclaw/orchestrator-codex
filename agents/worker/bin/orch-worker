@@ -21,6 +21,7 @@ show_help() {
 }
 
 cmd_update() {
+    [[ "$1" == "-h" || "$1" == "--help" ]] && show_help && exit 0
     local status=""
     while [[ $# -gt 0 ]]; do
         case "$1" in

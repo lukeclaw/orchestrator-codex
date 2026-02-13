@@ -36,6 +36,7 @@ show_help() {
 }
 
 cmd_list() {
+    [[ "$1" == "-h" || "$1" == "--help" ]] && show_help && exit 0
     local scope="" project_id="" category="" search=""
     while [[ $# -gt 0 ]]; do
         case "$1" in
@@ -71,6 +72,7 @@ cmd_read() {
 }
 
 cmd_create() {
+    [[ "$1" == "-h" || "$1" == "--help" ]] && show_help && exit 0
     local title="" content="" content_file="" content_stdin="" description="" scope="global" project_id="" category=""
     while [[ $# -gt 0 ]]; do
         case "$1" in
@@ -127,6 +129,7 @@ cmd_create() {
 }
 
 cmd_update() {
+    [[ "$1" == "-h" || "$1" == "--help" ]] && show_help && exit 0
     local id="$1"
     shift
     if [[ -z "$id" ]]; then

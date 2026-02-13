@@ -29,6 +29,7 @@ show_help() {
 }
 
 cmd_list() {
+    [[ "$1" == "-h" || "$1" == "--help" ]] && show_help && exit 0
     local status="" include_stats="true"
     while [[ $# -gt 0 ]]; do
         case "$1" in
@@ -54,6 +55,7 @@ cmd_show() {
 }
 
 cmd_create() {
+    [[ "$1" == "-h" || "$1" == "--help" ]] && show_help && exit 0
     local name="" description="" status="" task_prefix=""
     while [[ $# -gt 0 ]]; do
         case "$1" in
@@ -92,6 +94,7 @@ cmd_create() {
 }
 
 cmd_update() {
+    [[ "$1" == "-h" || "$1" == "--help" ]] && show_help && exit 0
     local id="$1"
     shift
     if [[ -z "$id" ]]; then

@@ -61,6 +61,7 @@ show_help() {
 }
 
 cmd_list() {
+    [[ "$1" == "-h" || "$1" == "--help" ]] && show_help && exit 0
     local scope=""
     while [[ $# -gt 0 ]]; do
         case "$1" in
@@ -115,6 +116,7 @@ cmd_tasks() {
 }
 
 cmd_add() {
+    [[ "$1" == "-h" || "$1" == "--help" ]] && show_help && exit 0
     local title=""
     local content=""
     local description=""
@@ -197,6 +199,7 @@ cmd_add() {
 }
 
 cmd_update() {
+    [[ "$1" == "-h" || "$1" == "--help" ]] && show_help && exit 0
     if [[ $# -eq 0 ]]; then
         echo "Error: Context item ID is required" >&2
         echo "Usage: orch-context update ID [--title TITLE] [--content TEXT] [--description DESC]" >&2

@@ -36,6 +36,7 @@ show_help() {
 }
 
 cmd_list() {
+    [[ "$1" == "-h" || "$1" == "--help" ]] && show_help && exit 0
     local status=""
     while [[ $# -gt 0 ]]; do
         case "$1" in
@@ -72,6 +73,7 @@ cmd_show() {
 }
 
 cmd_create() {
+    [[ "$1" == "-h" || "$1" == "--help" ]] && show_help && exit 0
     local name="" host="localhost" work_dir="" task_id=""
     while [[ $# -gt 0 ]]; do
         case "$1" in

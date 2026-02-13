@@ -42,11 +42,13 @@ show_help() {
 }
 
 cmd_list() {
+    [[ "$1" == "-h" || "$1" == "--help" ]] && show_help && exit 0
     load_task_info "$FORCE_REFRESH" || exit 1
     curl -s "$API_BASE/api/tasks/$TASK_ID/subtasks" | jq .
 }
 
 cmd_show() {
+    [[ "$1" == "-h" || "$1" == "--help" ]] && show_help && exit 0
     load_task_info "$FORCE_REFRESH" || exit 1
     local subtask_id=""
     
@@ -79,6 +81,7 @@ cmd_show() {
 }
 
 cmd_delete() {
+    [[ "$1" == "-h" || "$1" == "--help" ]] && show_help && exit 0
     load_task_info "$FORCE_REFRESH" || exit 1
     local subtask_id=""
     
@@ -111,6 +114,7 @@ cmd_delete() {
 }
 
 cmd_create() {
+    [[ "$1" == "-h" || "$1" == "--help" ]] && show_help && exit 0
     load_task_info "$FORCE_REFRESH" || exit 1
     local title=""
     local description=""
@@ -186,6 +190,7 @@ cmd_create() {
 }
 
 cmd_update() {
+    [[ "$1" == "-h" || "$1" == "--help" ]] && show_help && exit 0
     load_task_info "$FORCE_REFRESH" || exit 1
     local subtask_id=""
     local status=""
