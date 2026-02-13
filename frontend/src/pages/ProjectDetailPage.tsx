@@ -211,7 +211,7 @@ export default function ProjectDetailPage() {
                 }}
               >
                 <div className="pd-context-header">
-                  {c.category && <span className="cp-category-tag">{c.category}</span>}
+                  {c.category && <span className={`cm-badge cm-cat-${c.category}`}>{c.category}</span>}
                   <strong>{c.title}</strong>
                   <span className="pd-context-time">{c.updated_at ? parseDate(c.updated_at).toLocaleDateString() : ''}</span>
                 </div>

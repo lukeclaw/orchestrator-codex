@@ -120,16 +120,39 @@
   color: #3fb950;
 }
 
-/* Category tag */
-.ctx-category-tag {
+/* Category badges - same colors as ContextModal dropdown */
+.cm-badge {
   display: inline-block;
-  padding: 3px 8px;
-  border-radius: 4px;
   font-size: 11px;
-  background: var(--surface-raised);
-  color: var(--text-secondary);
+  font-weight: 500;
+  padding: 2px 8px;
+  border-radius: 10px;
   white-space: nowrap;
-  text-transform: capitalize;
+}
+
+.cm-cat-instruction {
+  background: rgba(56, 139, 253, 0.15);
+  color: #58a6ff;
+}
+
+.cm-cat-requirement {
+  background: rgba(248, 81, 73, 0.15);
+  color: #f85149;
+}
+
+.cm-cat-convention {
+  background: rgba(187, 128, 255, 0.15);
+  color: #bc8cff;
+}
+
+.cm-cat-reference {
+  background: rgba(63, 185, 80, 0.15);
+  color: #3fb950;
+}
+
+.cm-cat-note {
+  background: rgba(210, 153, 34, 0.15);
+  color: #d29922;
 }
 
 /* Project column */

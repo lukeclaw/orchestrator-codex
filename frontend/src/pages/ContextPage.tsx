@@ -201,7 +201,7 @@ export default function ContextPage() {
                     </td>
                     <td className="pt-td">
                       {item.category ? (
-                        <span className="ctx-category-tag">{item.category}</span>
+                        <span className={`cm-badge cm-cat-${item.category}`}>{item.category}</span>
                       ) : '—'}
                     </td>
                     <td className="pt-td ctx-project">
