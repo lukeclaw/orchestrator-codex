@@ -11,9 +11,9 @@ show_help() {
     echo "  orch-send abc123 \"Please focus on the API endpoint first\""
 }
 
-if [[ $# -lt 2 ]]; then
+if [[ $# -lt 2 ]] || [[ "$1" == "-h" ]] || [[ "$1" == "--help" ]]; then
     show_help
-    exit 1
+    [[ "$1" == "-h" || "$1" == "--help" ]] && exit 0 || exit 1
 fi
 
 worker_id="$1"
