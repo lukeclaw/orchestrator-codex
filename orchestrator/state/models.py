@@ -61,6 +61,7 @@ class Session:
     created_at: str = ""
     last_activity: str | None = None
     session_type: str = "worker"  # "worker" | "brain" | "system"
+    last_viewed_at: str | None = None
 
     def __post_init__(self):
         self.takeover_mode = bool(self.takeover_mode)

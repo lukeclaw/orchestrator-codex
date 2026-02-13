@@ -553,6 +553,25 @@
   overflow: hidden;
 }
 
+.tdp-progress-inline {
+  display: flex;
+  width: 80px;
+  height: 6px;
+  background: var(--border);
+  border-radius: 3px;
+  overflow: hidden;
+  margin-left: 4px;
+}
+
+.tdp-progress-inline .seg {
+  height: 100%;
+  transition: width 0.2s;
+}
+
+.tdp-progress-inline .seg.done { background: var(--green); }
+.tdp-progress-inline .seg.active { background: var(--accent); }
+.tdp-progress-inline .seg.blocked { background: var(--red); }
+
 .tdp-progress-bar {
   height: 100%;
   background: #3fb950;

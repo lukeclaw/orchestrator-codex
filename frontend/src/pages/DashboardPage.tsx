@@ -24,6 +24,13 @@ export default function DashboardPage() {
       .map(t => [t.assigned_session_id!, t])
   )
 
+  // Sort workers by last_viewed_at (most recent first), fallback to created_at
+  const sortedWorkers = [...workers].sort((a, b) => {
+    const aViewed = new Date(a.last_viewed_at || a.created_at).getTime()
+    const bViewed = new Date(b.last_viewed_at || b.created_at).getTime()
+    return bViewed - aViewed
+  })
+
   return (
     <>
       <StatsBar />
@@ -66,7 +73,7 @@ export default function DashboardPage() {
           <p className="empty-state">No workers yet.</p>
         ) : (
           <div className="dashboard-worker-grid" data-testid="session-grid">
-            {workers.map(s => (
+            {sortedWorkers.map(s => (
               <WorkerCardCompact
                 key={s.id}
                 session={s}

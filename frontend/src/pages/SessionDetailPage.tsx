@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import { api } from '../api/client'
 import { useNotify } from '../context/NotificationContext'
@@ -22,6 +22,13 @@ export default function SessionDetailPage() {
   // Local state for page-specific data
   const [error, setError] = useState('')
   const [actionPending, setActionPending] = useState(false)
+
+  // Record that user viewed this session
+  useEffect(() => {
+    if (id) {
+      api(`/api/sessions/${id}/viewed`, { method: 'POST' }).catch(() => {})
+    }
+  }, [id])
 
   async function handlePauseOrContinue() {
     if (!id || actionPending) return

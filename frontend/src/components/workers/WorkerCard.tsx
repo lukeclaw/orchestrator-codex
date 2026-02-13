@@ -318,7 +318,7 @@ export default function WorkerCard({
             </div>
           )}
         </div>
-        <span className="wc-activity">{session.last_activity ? timeAgo(session.last_activity) : 'just now'}</span>
+        <span className="wc-activity" title="Last viewed">{timeAgo(session.last_viewed_at || session.created_at)}</span>
       </div>
     </div>
   )

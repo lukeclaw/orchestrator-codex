@@ -75,6 +75,7 @@ def _serialize_session(s):
         "status": s.status, "takeover_mode": s.takeover_mode,
         "created_at": s.created_at, "last_activity": s.last_activity,
         "session_type": s.session_type,
+        "last_viewed_at": s.last_viewed_at,
     }
 
 
@@ -187,6 +188,17 @@ def get_session(session_id: str, db=Depends(get_db)):
     if s is None:
         raise HTTPException(404, "Session not found")
     return _serialize_session(s)
+
+
+@router.post("/sessions/{session_id}/viewed")
+def record_session_viewed(session_id: str, db=Depends(get_db)):
+    """Record that the user viewed this session's detail page."""
+    from datetime import datetime, timezone
+    s = repo.get_session(db, session_id)
+    if s is None:
+        raise HTTPException(404, "Session not found")
+    repo.update_session(db, session_id, last_viewed_at=datetime.now(timezone.utc).isoformat())
+    return {"ok": True}
 
 
 def _sanitize_worker_name(name: str) -> str:

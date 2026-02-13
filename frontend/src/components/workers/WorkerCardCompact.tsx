@@ -72,7 +72,7 @@ export default function WorkerCardCompact({ session, assignedTask }: Props) {
         ) : (
           <span className="wcc-no-task">No task</span>
         )}
-        <span className="wcc-activity">{session.last_activity ? timeAgo(session.last_activity) : 'just now'}</span>
+        <span className="wcc-activity" title="Last viewed">{timeAgo(session.last_viewed_at || session.created_at)}</span>
       </div>
     </div>
   )

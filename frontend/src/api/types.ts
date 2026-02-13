@@ -8,6 +8,7 @@ export interface Session {
   status: 'idle' | 'working' | 'waiting' | 'paused' | 'error' | 'disconnected' | 'connecting' | 'screen_detached'
   created_at: string
   last_activity: string | null
+  last_viewed_at: string | null
   session_type: 'worker' | 'brain' | 'system'
 }
 

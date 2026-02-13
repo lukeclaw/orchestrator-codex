@@ -34,13 +34,19 @@ export default function WorkersPage() {
   const [overIdx, setOverIdx] = useState<number | null>(null)
   const dragCounter = useRef(0)
 
-  // Sort workers by persisted order, with stable fallback for new workers
+  // Sort workers by last_viewed_at (most recent first), then by stored order for drag reordering
   const storedOrder = getStoredOrder()
   const sorted = [...workers].sort((a, b) => {
+    // Primary sort: by last_viewed_at (most recent first), fallback to created_at
+    const aViewed = new Date(a.last_viewed_at || a.created_at).getTime()
+    const bViewed = new Date(b.last_viewed_at || b.created_at).getTime()
+    if (aViewed !== bViewed) {
+      return bViewed - aViewed  // Descending (newest first)
+    }
+    // Secondary sort: by stored order for manual drag reordering
     const ai = storedOrder.indexOf(a.id)
     const bi = storedOrder.indexOf(b.id)
     if (ai === -1 && bi === -1) {
-      // Both not in stored order - sort by ID for stability (prevents reordering on refresh)
       return a.id.localeCompare(b.id)
     }
     if (ai === -1) return 1

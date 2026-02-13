@@ -354,8 +354,9 @@ export default function TaskDetailPage() {
   }
 
   const doneSubtasks = subtasks.filter(st => st.status === 'done').length
+  const activeSubtasks = subtasks.filter(st => st.status === 'in_progress').length
+  const blockedSubtasks = subtasks.filter(st => st.status === 'blocked').length
   const totalSubtasks = subtasks.length
-  const progressPct = totalSubtasks > 0 ? Math.round((doneSubtasks / totalSubtasks) * 100) : 0
 
   return (
     <div className="task-detail-page">
@@ -692,13 +693,17 @@ export default function TaskDetailPage() {
               <h3 className="clickable" onClick={() => setSubtasksExpanded(!subtasksExpanded)}>
                 <span className={`expand-icon ${subtasksExpanded ? 'expanded' : ''}`}>▶</span>
                 Subtasks
-                {subtasks.length > 0 && <span className="count">({doneSubtasks}/{totalSubtasks})</span>}
+                {subtasks.length > 0 && (
+                  <>
+                    <span className="count">({doneSubtasks}/{totalSubtasks})</span>
+                    <div className="tdp-progress-inline">
+                      {doneSubtasks > 0 && <div className="seg done" style={{ width: `${(doneSubtasks / totalSubtasks) * 100}%` }} />}
+                      {activeSubtasks > 0 && <div className="seg active" style={{ width: `${(activeSubtasks / totalSubtasks) * 100}%` }} />}
+                      {blockedSubtasks > 0 && <div className="seg blocked" style={{ width: `${(blockedSubtasks / totalSubtasks) * 100}%` }} />}
+                    </div>
+                  </>
+                )}
               </h3>
-              {subtasks.length > 0 && (
-                <div className="tdp-progress">
-                  <div className="tdp-progress-bar" style={{ width: `${progressPct}%` }} />
-                </div>
-              )}
               {isEditable && !showAddSubtask && (
                 <button className="tdp-edit-btn" onClick={() => setShowAddSubtask(true)}>+ Add</button>
               )}

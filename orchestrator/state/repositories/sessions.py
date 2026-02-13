@@ -2,6 +2,7 @@
 
 import sqlite3
 import uuid
+from datetime import datetime
 
 from orchestrator.state.db import transaction, with_retry
 from orchestrator.state.models import Session, WorkerCapability
@@ -60,10 +61,11 @@ def create_session(
     session_type: str = "worker",
 ) -> Session:
     id = str(uuid.uuid4())
+    now = datetime.now().isoformat()
     conn.execute(
-        """INSERT INTO sessions (id, name, host, work_dir, tmux_window, session_type)
-           VALUES (?, ?, ?, ?, ?, ?)""",
-        (id, name, host, work_dir, tmux_window, session_type),
+        """INSERT INTO sessions (id, name, host, work_dir, tmux_window, session_type, last_activity)
+           VALUES (?, ?, ?, ?, ?, ?, ?)""",
+        (id, name, host, work_dir, tmux_window, session_type, now),
     )
     conn.commit()
     return get_session(conn, id)
@@ -78,6 +80,7 @@ def update_session(
     tunnel_pane: str | None = ...,
     takeover_mode: bool | None = None,
     last_activity: str | None = None,
+    last_viewed_at: str | None = None,
 ) -> Session | None:
     sets = []
     params = []
@@ -96,6 +99,9 @@ def update_session(
     if last_activity is not None:
         sets.append("last_activity = ?")
         params.append(last_activity)
+    if last_viewed_at is not None:
+        sets.append("last_viewed_at = ?")
+        params.append(last_viewed_at)
     if not sets:
         return get_session(conn, id)
     params.append(id)

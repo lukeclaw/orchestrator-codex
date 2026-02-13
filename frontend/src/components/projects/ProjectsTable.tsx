@@ -111,12 +111,16 @@ export default function ProjectsTable({ projects }: Props) {
           const subtaskStats = stats?.subtasks
           const workerDetails = stats?.workers?.details ?? []
           const tasksDone = taskStats?.done ?? 0
+          const tasksInProgress = taskStats?.in_progress ?? 0
+          const tasksBlocked = taskStats?.blocked ?? 0
           const tasksTotal = taskStats?.total ?? 0
           const subtasksDone = subtaskStats?.done ?? 0
           const subtasksTotal = subtaskStats?.total ?? 0
-          // Combined progress: tasks + subtasks
+          // Combined progress: tasks + subtasks (subtasks only have done/total at project level)
           const totalItems = tasksTotal + subtasksTotal
           const doneItems = tasksDone + subtasksDone
+          const activeItems = tasksInProgress
+          const blockedItems = tasksBlocked
 
           return (
             <tr key={p.id} className="pt-row" onClick={() => window.location.href = `/projects/${p.id}`}>
@@ -129,10 +133,9 @@ export default function ProjectsTable({ projects }: Props) {
               <td className="pt-td progress">
                 <div className="pt-progress">
                   <div className="pt-progress-bar">
-                    <div 
-                      className="pt-progress-fill" 
-                      style={{ width: totalItems > 0 ? `${(doneItems / totalItems) * 100}%` : '0%' }}
-                    />
+                    {doneItems > 0 && <div className="pt-seg done" style={{ width: `${(doneItems / totalItems) * 100}%` }} />}
+                    {activeItems > 0 && <div className="pt-seg active" style={{ width: `${(activeItems / totalItems) * 100}%` }} />}
+                    {blockedItems > 0 && <div className="pt-seg blocked" style={{ width: `${(blockedItems / totalItems) * 100}%` }} />}
                   </div>
                   <span className="pt-progress-count">{doneItems}/{totalItems}</span>
                 </div>

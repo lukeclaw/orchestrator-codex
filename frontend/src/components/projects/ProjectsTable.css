@@ -124,6 +124,7 @@
 }
 
 .pt-progress-bar {
+  display: flex;
   flex: 1;
   height: 4px;
   background: var(--border);
@@ -131,6 +132,15 @@
   overflow: hidden;
   min-width: 60px;
 }
+
+.pt-seg {
+  height: 100%;
+  transition: width 0.3s ease;
+}
+
+.pt-seg.done { background: var(--green); }
+.pt-seg.active { background: var(--accent); }
+.pt-seg.blocked { background: var(--red); }
 
 .pt-progress-fill {
   height: 100%;
