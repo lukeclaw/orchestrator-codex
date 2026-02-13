@@ -32,7 +32,7 @@ export default function SessionCard({ session }: Props) {
             ? 'Needs attention'
             : session.status === 'working' ? 'Task assigned' : 'No task'}
         </span>
-        <span className="sc-activity">{timeAgo(session.last_activity)}</span>
+        <span className="sc-activity">{timeAgo(session.last_status_changed_at)}</span>
       </div>
     </div>
   )

@@ -143,14 +143,40 @@ async def terminal_websocket(websocket: WebSocket, session_id: str):
         except Exception:
             pass  # WebSocket may have closed
 
-    # --- Drift correction (background sync every 5s) --------------------------
+    # --- Drift correction (background sync) ------------------------------------
     async def drift_correction():
+        # Early sync: correct desync from the gap between initial snapshot
+        # capture and when streaming begins (~50ms of dropped %output events).
+        # Without this, TUI apps doing rapid redraws (Claude Code) can show
+        # corrupted content from missed cursor-positioning escape sequences.
+        await asyncio.sleep(0.3)
+        if initial_sent:
+            try:
+                content, cx, cy = await capture_pane_with_cursor_atomic_async(tmux_sess, tmux_win)
+                # Strip trailing newline — same as the history handler.
+                # capture-pane outputs each row followed by \n; with
+                # convertEol the final \n scrolls the viewport up by 1
+                # row, shifting all content and making cursor positions
+                # from subsequent stream events land on the wrong line.
+                if content.endswith('\n'):
+                    content = content[:-1]
+                await websocket.send_json({
+                    "type": "sync",
+                    "data": content,
+                    "cursorX": cx,
+                    "cursorY": cy,
+                })
+            except Exception:
+                pass
+        # Regular interval
         while True:
             await asyncio.sleep(5)
             if not initial_sent:
                 continue
             try:
                 content, cx, cy = await capture_pane_with_cursor_atomic_async(tmux_sess, tmux_win)
+                if content.endswith('\n'):
+                    content = content[:-1]
                 await websocket.send_json({
                     "type": "sync",
                     "data": content,
@@ -174,6 +200,8 @@ async def terminal_websocket(websocket: WebSocket, session_id: str):
                 continue
             try:
                 content, cursor_x, cursor_y = await capture_pane_with_cursor_atomic_async(tmux_sess, tmux_win)
+                if content.endswith('\n'):
+                    content = content[:-1]
 
                 content_changed = content != last_content
                 cursor_changed = cursor_x != last_cursor_x or cursor_y != last_cursor_y

@@ -121,10 +121,10 @@ class StateManager:
             
             session = sessions_repo.get_session_by_name(conn, session_name)
             if session:
+                # last_status_changed_at is auto-updated by update_session when status changes
                 sessions_repo.update_session(
                     conn,
                     session.id,
                     status=new_state,
-                    last_activity=datetime.now().isoformat(),
                 )
                 logger.debug("Updated session %s state to %s", session_name, new_state)

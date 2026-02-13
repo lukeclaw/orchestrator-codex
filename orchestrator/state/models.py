@@ -59,7 +59,7 @@ class Session:
     status: str = "idle"
     takeover_mode: bool = False
     created_at: str = ""
-    last_activity: str | None = None
+    last_status_changed_at: str | None = None
     session_type: str = "worker"  # "worker" | "brain" | "system"
     last_viewed_at: str | None = None
 

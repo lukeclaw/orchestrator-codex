@@ -178,6 +178,17 @@ export default function TerminalView({ sessionId, sessionStatus, onUserInput, di
           }
           // Write as Uint8Array to bypass convertEol — data already has \r\n
           terminal.write(bytes)
+        } else if (msg.type === 'sync') {
+          // Drift correction — ground truth pane capture from tmux.
+          // Rewrites the full visible screen to correct any desync
+          // (e.g., from the gap between initial snapshot and stream start,
+          // or accumulated stream processing edge cases).
+          if (userScrolledUp) return
+          terminal.write('\x1b[H\x1b[J' + msg.data)
+          if (typeof msg.cursorX === 'number' && typeof msg.cursorY === 'number') {
+            terminal.write(`\x1b[${msg.cursorY + 1};${msg.cursorX + 1}H`)
+          }
+          lastContent = msg.data
         } else if (msg.type === 'error') {
           terminal.write(`\r\n\x1b[31m${msg.message}\x1b[0m\r\n`)
         }

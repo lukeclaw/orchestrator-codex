@@ -31,7 +31,7 @@ class TestSessionCreate:
         mock_session.tunnel_pane = None
         mock_session.takeover_mode = False
         mock_session.created_at = "2024-01-01"
-        mock_session.last_activity = "2024-01-01"
+        mock_session.last_status_changed_at = "2024-01-01"
         mock_session.session_type = "local"
         mock_repo.create_session.return_value = mock_session
         

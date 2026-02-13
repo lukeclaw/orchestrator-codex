@@ -2,9 +2,9 @@
 
 import sqlite3
 import uuid
-from datetime import datetime
 
 from orchestrator.state.db import transaction, with_retry
+from orchestrator.utils import utc_now_iso
 from orchestrator.state.models import Session, WorkerCapability
 
 
@@ -61,9 +61,9 @@ def create_session(
     session_type: str = "worker",
 ) -> Session:
     id = str(uuid.uuid4())
-    now = datetime.now().isoformat()
+    now = utc_now_iso()
     conn.execute(
-        """INSERT INTO sessions (id, name, host, work_dir, tmux_window, session_type, last_activity)
+        """INSERT INTO sessions (id, name, host, work_dir, tmux_window, session_type, last_status_changed_at)
            VALUES (?, ?, ?, ?, ?, ?, ?)""",
         (id, name, host, work_dir, tmux_window, session_type, now),
     )
@@ -79,14 +79,16 @@ def update_session(
     tmux_window: str | None = None,
     tunnel_pane: str | None = ...,
     takeover_mode: bool | None = None,
-    last_activity: str | None = None,
     last_viewed_at: str | None = None,
 ) -> Session | None:
     sets = []
     params = []
+    # Auto-update last_status_changed_at whenever status changes
     if status is not None:
         sets.append("status = ?")
         params.append(status)
+        sets.append("last_status_changed_at = ?")
+        params.append(utc_now_iso())
     if tmux_window is not None:
         sets.append("tmux_window = ?")
         params.append(tmux_window)
@@ -96,9 +98,6 @@ def update_session(
     if takeover_mode is not None:
         sets.append("takeover_mode = ?")
         params.append(takeover_mode)
-    if last_activity is not None:
-        sets.append("last_activity = ?")
-        params.append(last_activity)
     if last_viewed_at is not None:
         sets.append("last_viewed_at = ?")
         params.append(last_viewed_at)

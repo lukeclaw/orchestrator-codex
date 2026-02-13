@@ -22,6 +22,15 @@ orch-workers list --status waiting
 
 If no waiting workers, report "No workers in waiting status" and stop.
 
+Each worker has:
+- `status_age` — Human-readable duration like "5m ago", "2h ago", "1d ago"
+- `last_status_changed_at` — ISO timestamp (if you need exact time)
+
+Use `status_age` to prioritize:
+- **Recently waiting (<5m):** May still be processing, consider skipping
+- **Waiting 5-30m:** Good candidate for nudge
+- **Waiting >30m:** Likely stuck, prioritize checking these first
+
 ### Step 2: Select worker(s) to process
 
 **Default mode (no args):** Pick only the FIRST waiting worker from the list.
@@ -45,21 +54,24 @@ tmux capture-pane -p -t orchestrator:<worker-name> -S -50
 ### Step 5: Analyze situation and determine action
 
 **Case 1: Waiting for nudge** — Worker finished a step, sitting at prompt
-- Action: `orch-send <worker-id> "continue"`
+- Check `status_age`: If **<2m**, skip to avoid double-nudging
+- If **>2m**: `orch-send <worker-id> "continue"`
 
 **Case 2: Context exhaustion (0%)** — Claude shows context limit warning
 - Action: `orch-send <worker-id> "continue"` (triggers auto-compact)
 - Do NOT stop or recreate the worker
 
-**Case 3: Blocked on PR reviews** — Worker waiting for PR approval
-- Check if more than 4 hours have passed since last activity
-- If yes: `orch-send <worker-id> "Check PR status again and proceed if possible"`
-- If no: Skip, let it wait
+**Case 3: Blocked on PR reviews** — Worker waiting for PR approval/merge
+- Check `status_age` to see how long they've been waiting
+- If **>2h**: Nudge to check PR status
+  - `orch-send <worker-id> "Check PR status. If there are review comments, address them. If approved, merge."`
+- If **<2h**: Skip — PR reviews take time
+- **Recommended follow-up:** "Nudge again in 2h if still waiting"
 
-**Case 3b: PR created, waiting for merge** — Worker created PR and is waiting
-- Do NOT stop the worker — task is NOT done until PR is merged (unless task has different deliverable)
-- Nudge worker: `orch-send <worker-id> "Check PR status. If there are review comments, address them. Task is complete only after PR is merged."`
-- The worker should stay alive to handle review feedback and merge the PR
+**Case 3b: Worker just checked PR, still waiting for reviewer**
+- Terminal shows worker already checked PR and is waiting
+- Do NOT nudge again immediately — reviewer needs time
+- **Recommended follow-up:** "Check again in 2-4h"
 
 **Case 4: Missing info** — Worker needs information you can look up
 - Use your tools (jarvis, confluence, jira, gh CLI) to find the info
@@ -113,3 +125,4 @@ tmux send-keys -t orchestrator:<worker-name> Enter
 Provide a brief summary:
 - Workers checked and actions taken (or proposed)
 - Workers skipped and why (left for human)
+- **Recommended follow-ups** with timing (e.g., "Worker X: nudge again in 2h if still waiting for PR review")

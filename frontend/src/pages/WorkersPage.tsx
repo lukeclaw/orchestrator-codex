@@ -1,23 +1,12 @@
-import { useState, useRef, useCallback } from 'react'
+import { useState, useCallback } from 'react'
 import { useApp } from '../context/AppContext'
 import WorkerCard from '../components/workers/WorkerCard'
 import AddSessionModal from '../components/sessions/AddSessionModal'
 import './WorkersPage.css'
 
-const ORDER_KEY = 'orchestrator-worker-order'
+type SortOption = 'last_viewed' | 'last_status_changed' | 'name' | 'status'
 
-function getStoredOrder(): string[] {
-  try {
-    const raw = localStorage.getItem(ORDER_KEY)
-    return raw ? JSON.parse(raw) : []
-  } catch {
-    return []
-  }
-}
-
-function saveOrder(ids: string[]) {
-  localStorage.setItem(ORDER_KEY, JSON.stringify(ids))
-}
+const SORT_KEY = 'orchestrator-worker-sort'
 
 export default function WorkersPage() {
   const { workers, tasks } = useApp()
@@ -30,87 +19,46 @@ export default function WorkersPage() {
   )
   const [showAddModal, setShowAddModal] = useState(false)
   const [statusFilter, setStatusFilter] = useState('')
-  const [dragIdx, setDragIdx] = useState<number | null>(null)
-  const [overIdx, setOverIdx] = useState<number | null>(null)
-  const dragCounter = useRef(0)
+  const [sortBy, setSortBy] = useState<SortOption>(() => {
+    const stored = localStorage.getItem(SORT_KEY)
+    return (stored as SortOption) || 'last_viewed'
+  })
 
-  // Sort workers by last_viewed_at (most recent first), then by stored order for drag reordering
-  const storedOrder = getStoredOrder()
+  const handleSortChange = (value: SortOption) => {
+    setSortBy(value)
+    localStorage.setItem(SORT_KEY, value)
+  }
+
+  // Sort workers based on selected option
   const sorted = [...workers].sort((a, b) => {
-    // Primary sort: by last_viewed_at (most recent first), fallback to created_at
-    const aViewed = new Date(a.last_viewed_at || a.created_at).getTime()
-    const bViewed = new Date(b.last_viewed_at || b.created_at).getTime()
-    if (aViewed !== bViewed) {
-      return bViewed - aViewed  // Descending (newest first)
+    switch (sortBy) {
+      case 'last_viewed': {
+        const aTime = new Date(a.last_viewed_at || a.created_at).getTime()
+        const bTime = new Date(b.last_viewed_at || b.created_at).getTime()
+        return bTime - aTime  // Descending (newest first)
+      }
+      case 'last_status_changed': {
+        const aTime = new Date(a.last_status_changed_at || a.created_at).getTime()
+        const bTime = new Date(b.last_status_changed_at || b.created_at).getTime()
+        return bTime - aTime  // Descending (newest first)
+      }
+      case 'name':
+        return a.name.localeCompare(b.name)
+      case 'status':
+        return a.status.localeCompare(b.status)
+      default:
+        return 0
     }
-    // Secondary sort: by stored order for manual drag reordering
-    const ai = storedOrder.indexOf(a.id)
-    const bi = storedOrder.indexOf(b.id)
-    if (ai === -1 && bi === -1) {
-      return a.id.localeCompare(b.id)
-    }
-    if (ai === -1) return 1
-    if (bi === -1) return -1
-    return ai - bi
   })
 
   const filtered = statusFilter
     ? sorted.filter(s => s.status === statusFilter)
     : sorted
 
-  function handleDragStart(idx: number) {
-    return (e: React.DragEvent) => {
-      setDragIdx(idx)
-      e.dataTransfer.effectAllowed = 'move'
-      ;(e.currentTarget as HTMLElement).classList.add('dragging')
-    }
-  }
-
-  function handleDragOver(idx: number) {
-    return (e: React.DragEvent) => {
-      e.preventDefault()
-      e.dataTransfer.dropEffect = 'move'
-      setOverIdx(idx)
-    }
-  }
-
-  function handleDragEnd(e: React.DragEvent) {
-    ;(e.currentTarget as HTMLElement).classList.remove('dragging')
-    setDragIdx(null)
-    setOverIdx(null)
-    dragCounter.current = 0
-  }
-
-  function handleDrop(targetIdx: number) {
-    return (e: React.DragEvent) => {
-      e.preventDefault()
-      if (dragIdx === null || dragIdx === targetIdx) return
-
-      const reordered = [...filtered]
-      const [moved] = reordered.splice(dragIdx, 1)
-      reordered.splice(targetIdx, 0, moved)
-
-      // Save full order (include any workers not in filtered view)
-      const newOrder = reordered.map(w => w.id)
-      // Append IDs that are in sorted but not in filtered
-      for (const w of sorted) {
-        if (!newOrder.includes(w.id)) newOrder.push(w.id)
-      }
-      saveOrder(newOrder)
-
-      setDragIdx(null)
-      setOverIdx(null)
-    }
-  }
-
   const { removeSession } = useApp()
 
   const handleRemove = useCallback((id: string) => {
-    // Remove from client cache immediately for instant UI feedback
     removeSession(id)
-    // Remove from stored order
-    const order = getStoredOrder().filter(oid => oid !== id)
-    saveOrder(order)
   }, [removeSession])
 
   return (
@@ -118,6 +66,19 @@ export default function WorkersPage() {
       <div className="page-header">
         <h1>Workers</h1>
         <div className="page-header-actions">
+          <div className="sort-control">
+            <label>Sort by:</label>
+            <select
+              className="sort-select"
+              value={sortBy}
+              onChange={e => handleSortChange(e.target.value as SortOption)}
+            >
+              <option value="last_viewed">Last Viewed</option>
+              <option value="last_status_changed">Last Status Changed</option>
+              <option value="name">Name</option>
+              <option value="status">Status</option>
+            </select>
+          </div>
           <select
             className="status-filter-select"
             value={statusFilter}
@@ -144,17 +105,12 @@ export default function WorkersPage() {
 
       {filtered.length > 0 ? (
         <div className="worker-grid" data-testid="session-grid">
-          {filtered.map((s, idx) => (
+          {filtered.map(s => (
             <WorkerCard
               key={s.id}
               session={s}
               assignedTask={taskBySession.get(s.id) || null}
               onRemove={handleRemove}
-              draggable={!statusFilter}
-              onDragStart={handleDragStart(idx)}
-              onDragOver={handleDragOver(idx)}
-              onDragEnd={handleDragEnd}
-              onDrop={handleDrop(idx)}
             />
           ))}
         </div>

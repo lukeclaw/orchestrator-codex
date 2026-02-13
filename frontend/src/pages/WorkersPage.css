@@ -21,6 +21,18 @@
   gap: 12px;
 }
 
+.sort-control {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.sort-control label {
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.sort-select,
 .status-filter-select {
   padding: 6px 32px 6px 10px;
   font-size: 13px;

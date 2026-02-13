@@ -67,13 +67,53 @@ class SendMessage(BaseModel):
     message: str
 
 
+def _time_ago(iso_timestamp: str | None) -> str | None:
+    """Convert ISO timestamp to human-readable duration like '5m ago' or '2h ago'.
+    
+    All timestamps should be UTC (from utc_now_iso()). Legacy timestamps without
+    timezone are assumed to be local time and converted.
+    """
+    if not iso_timestamp:
+        return None
+    try:
+        from datetime import datetime, timezone
+        
+        # Parse ISO timestamp
+        ts = iso_timestamp.replace("Z", "+00:00")
+        dt = datetime.fromisoformat(ts)
+        
+        # If no timezone info, assume it's local time (legacy data) and make aware
+        if dt.tzinfo is None:
+            dt = dt.astimezone()  # Interpret as local, then make aware
+        
+        now = datetime.now(timezone.utc)
+        delta = now - dt.astimezone(timezone.utc)
+        seconds = int(delta.total_seconds())
+        
+        if seconds < 0:
+            return "just now"  # Future timestamps (clock skew)
+        elif seconds < 60:
+            return f"{seconds}s ago"
+        elif seconds < 3600:
+            return f"{seconds // 60}m ago"
+        elif seconds < 86400:
+            return f"{seconds // 3600}h ago"
+        else:
+            return f"{seconds // 86400}d ago"
+    except Exception:
+        return None
+
+
 def _serialize_session(s):
+    status_age = _time_ago(s.last_status_changed_at)
     return {
         "id": s.id, "name": s.name, "host": s.host,
         "work_dir": s.work_dir, "tmux_window": s.tmux_window,
         "tunnel_pane": s.tunnel_pane,
         "status": s.status, "takeover_mode": s.takeover_mode,
-        "created_at": s.created_at, "last_activity": s.last_activity,
+        "created_at": s.created_at,
+        "last_status_changed_at": s.last_status_changed_at,
+        "status_age": status_age,  # Human-readable: "5m ago", "2h ago"
         "session_type": s.session_type,
         "last_viewed_at": s.last_viewed_at,
     }

@@ -4,7 +4,7 @@ import type { Session, Task } from '../../api/types'
 import { api } from '../../api/client'
 import { useNotify } from '../../context/NotificationContext'
 import { timeAgo } from '../common/TimeAgo'
-import { IconTrash, IconGripVertical, IconPause, IconPlay, IconStop, IconRefresh } from '../common/Icons'
+import { IconTrash, IconPause, IconPlay, IconStop, IconRefresh } from '../common/Icons'
 import ConfirmPopover from '../common/ConfirmPopover'
 import './WorkerCard.css'
 
@@ -12,11 +12,6 @@ interface Props {
   session: Session
   assignedTask?: Task | null  // Task assigned to this worker
   onRemove?: (id: string) => void
-  draggable?: boolean
-  onDragStart?: (e: React.DragEvent) => void
-  onDragOver?: (e: React.DragEvent) => void
-  onDragEnd?: (e: React.DragEvent) => void
-  onDrop?: (e: React.DragEvent) => void
 }
 
 interface TunnelInfo {
@@ -26,7 +21,7 @@ interface TunnelInfo {
 }
 
 export default function WorkerCard({
-  session, assignedTask, onRemove, draggable, onDragStart, onDragOver, onDragEnd, onDrop,
+  session, assignedTask, onRemove,
 }: Props) {
   const navigate = useNavigate()
   const notify = useNotify()
@@ -193,24 +188,10 @@ export default function WorkerCard({
       className={`worker-card ${session.status}${removing ? ' removing' : ''}`}
       data-testid="worker-card"
       data-session-id={session.id}
-      draggable={draggable}
-      onDragStart={onDragStart}
-      onDragOver={onDragOver}
-      onDragEnd={onDragEnd}
-      onDrop={onDrop}
       onClick={() => navigate(`/workers/${session.id}`)}
     >
       <div className="wc-header">
         <div className="wc-header-left">
-          {draggable && (
-            <span
-              className="wc-drag-handle"
-              onMouseDown={e => e.stopPropagation()}
-              title="Drag to reorder"
-            >
-              <IconGripVertical size={14} />
-            </span>
-          )}
           <span className={`status-indicator ${session.status}`} />
           <span className="wc-name">{session.name}</span>
           {session.host.includes('/') && <span className="wc-type-tag rdev">rdev</span>}

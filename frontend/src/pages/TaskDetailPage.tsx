@@ -623,7 +623,7 @@ export default function TaskDetailPage() {
               </div>
               <div className="tdp-worker-preview-footer">
                 <span className="tdp-worker-preview-activity">
-                  {assignedWorker.last_activity ? timeAgo(assignedWorker.last_activity) : 'just now'}
+                  {assignedWorker.last_status_changed_at ? timeAgo(assignedWorker.last_status_changed_at) : 'just now'}
                 </span>
               </div>
             </div>

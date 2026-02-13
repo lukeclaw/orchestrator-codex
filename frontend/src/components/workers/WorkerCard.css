@@ -20,17 +20,6 @@
   pointer-events: none;
 }
 
-/* Drag state */
-.worker-card.dragging {
-  opacity: 0.5;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
-}
-
-.worker-card.drag-over {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 2px var(--accent);
-}
-
 /* Status border colors */
 .worker-card.working { border-left-color: #58a6ff; }
 .worker-card.idle { border-left-color: var(--green); }
@@ -82,25 +71,6 @@
 .wc-type-tag.rdev {
   background: rgba(139, 92, 246, 0.15);
   color: #a78bfa;
-}
-
-/* Drag handle */
-.wc-drag-handle {
-  display: flex;
-  align-items: center;
-  cursor: grab;
-  color: var(--text-muted);
-  padding: 2px;
-  border-radius: 3px;
-}
-
-.wc-drag-handle:hover {
-  color: var(--text-secondary);
-  background: var(--surface-hover);
-}
-
-.wc-drag-handle:active {
-  cursor: grabbing;
 }
 
 /* Action buttons container */
