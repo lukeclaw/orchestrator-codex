@@ -251,7 +251,6 @@ def create_session(body: SessionCreate, request: Request, db=Depends(get_db)):
                 result = setup_rdev_worker(
                     bg_conn, s.id, sanitized_name, body.host,
                     tmux_session_name, api_port,
-                    task_id=body.task_id,
                     work_dir=work_dir,
                     tmp_dir=tmp_dir,
                 )

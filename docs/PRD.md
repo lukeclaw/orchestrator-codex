@@ -250,7 +250,7 @@ Each worker has two distinct directory concepts:
 
 | Event | Behavior |
 |-------|----------|
-| **Delete task** | 1. Unassign all workers (set to `idle`, clear `current_task_id`) — **do not delete workers** |
+| **Delete task** | 1. Unassign all workers (set to `idle`, clear `assigned_session_id` on task) — **do not delete workers** |
 |                 | 2. Recursively delete all subtasks (cascading delete) |
 |                 | 3. Clean up task dependencies and requirements |
 | **Delete subtask** | Same cascading behavior if subtask has its own children |

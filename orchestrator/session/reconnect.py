@@ -394,11 +394,9 @@ def ensure_prompt_on_remote(
     tmux_win: str,
     session_id: str,
     remote_tmp_dir: str,
-    task_id: str | None = None,
-    project_id: str | None = None,
 ) -> str | None:
     """Copy worker prompt to remote and return the remote path.
-    
+
     This avoids pasting large prompt content through tmux by copying the file
     to remote and using $(cat) to load it during claude launch.
     """
@@ -406,12 +404,6 @@ def ensure_prompt_on_remote(
     if prompt is None:
         logger.warning("Worker prompt template not found")
         return None
-    
-    # Replace placeholders
-    if task_id:
-        prompt = prompt.replace("TASK_ID", task_id)
-    if project_id:
-        prompt = prompt.replace("PROJECT_ID", project_id)
     
     remote_prompt_path = f"{remote_tmp_dir}/prompt.md"
     send_keys(tmux_sess, tmux_win,

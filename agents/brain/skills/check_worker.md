@@ -30,8 +30,7 @@ If no waiting workers, report "No workers in waiting status" and stop.
 
 ### Step 3: Get task description and deliverables
 ```bash
-orch-workers show <worker-id> | jq -r '.task_id'
-orch-tasks show <task-id>
+orch-tasks list --assigned <worker-id> --format json | jq '.[0]'
 ```
 
 Check the task description for **explicit deliverables** (e.g., "deliver a design doc", "create a POC", "fix the bug").

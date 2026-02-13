@@ -394,8 +394,6 @@ def setup_rdev_worker(
     host: str,
     tmux_session: str = "orchestrator",
     api_port: int = 8093,
-    task_id: str | None = None,
-    project_id: str | None = None,
     work_dir: str | None = None,
     tmp_dir: str | None = None,
 ) -> dict:
@@ -477,10 +475,6 @@ def setup_rdev_worker(
         worker_prompt = get_worker_prompt(session_id)
         remote_prompt_path = f"{remote_tmp_dir}/prompt.md"
         if worker_prompt:
-            if task_id:
-                worker_prompt = worker_prompt.replace("TASK_ID", task_id)
-            if project_id:
-                worker_prompt = worker_prompt.replace("PROJECT_ID", project_id)
             with open(os.path.join(local_tmp_dir, "prompt.md"), "w") as f:
                 f.write(worker_prompt)
         
