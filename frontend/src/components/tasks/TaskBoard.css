@@ -35,10 +35,29 @@
 
 .tb-column-count {
   font-size: 12px;
-  color: var(--text-muted);
-  background: var(--surface);
+  font-weight: 500;
   padding: 1px 7px;
   border-radius: 10px;
+}
+
+.tb-column-count.status-todo {
+  background: var(--surface);
+  color: var(--text-muted);
+}
+
+.tb-column-count.status-in_progress {
+  background: rgba(56, 139, 253, 0.15);
+  color: #58a6ff;
+}
+
+.tb-column-count.status-done {
+  background: rgba(63, 185, 80, 0.15);
+  color: #3fb950;
+}
+
+.tb-column-count.status-blocked {
+  background: rgba(248, 81, 73, 0.15);
+  color: #f85149;
 }
 
 .tb-column-body {

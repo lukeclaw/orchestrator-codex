@@ -23,7 +23,7 @@ export default function TaskBoard({ tasks, onTaskClick }: Props) {
           <div key={col.key} className="tb-column">
             <div className="tb-column-header">
               <span className="tb-column-title">{col.label}</span>
-              <span className="tb-column-count">{colTasks.length}</span>
+              <span className={`tb-column-count status-${col.key}`}>{colTasks.length}</span>
             </div>
             <div className="tb-column-body">
               {colTasks.length > 0
