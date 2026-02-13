@@ -4,7 +4,7 @@ import { api } from '../api/client'
 import { useNotify } from '../context/NotificationContext'
 import { useApp } from '../context/AppContext'
 import TerminalView from '../components/terminal/TerminalView'
-import { IconArrowLeft, IconPause, IconPlay, IconStop, IconRefresh, IconTrash, IconSync } from '../components/common/Icons'
+import { IconArrowLeft, IconPause, IconPlay, IconStop, IconRefresh, IconTrash, IconSync, IconSearch } from '../components/common/Icons'
 import ConfirmPopover from '../components/common/ConfirmPopover'
 import './SessionDetailPage.css'
 
@@ -105,6 +105,30 @@ export default function SessionDetailPage() {
     }
   }
 
+  async function handleCheckProgress() {
+    if (!id || actionPending) return
+    setActionPending(true)
+    try {
+      // Get brain session ID first
+      const brainStatus = await api<{ session_id: string | null; running: boolean }>('/api/brain/status')
+      if (!brainStatus.running || !brainStatus.session_id) {
+        notify('Brain is not running. Start the brain first.', 'error')
+        return
+      }
+      // Send check-worker command to brain for this specific worker
+      const message = `/check-worker ${id}`
+      await api(`/api/sessions/${brainStatus.session_id}/send`, {
+        method: 'POST',
+        body: JSON.stringify({ message }),
+      })
+      notify(`Checking progress of ${session?.name}...`, 'success')
+    } catch (e) {
+      notify(e instanceof Error ? e.message : 'Failed to check progress', 'error')
+    } finally {
+      setActionPending(false)
+    }
+  }
+
   if (error) {
     return (
       <div className="error-page">
@@ -153,6 +177,15 @@ export default function SessionDetailPage() {
             </button>
           ) : (
             <>
+              {/* Check Progress button - always visible */}
+              <button
+                className="sd-control-btn check-progress"
+                onClick={handleCheckProgress}
+                disabled={actionPending || session.status === 'idle'}
+                title="Check Progress"
+              >
+                <IconSearch size={16} />
+              </button>
               <button
                 className={`sd-control-btn ${session.status === 'paused' ? 'continue' : 'pause'}`}
                 onClick={handlePauseOrContinue}

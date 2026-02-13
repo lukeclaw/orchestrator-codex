@@ -23,6 +23,7 @@ type Token =
   | { type: 'table'; headers: string[]; rows: string[][] }
 
 // Parse a list with potential nested items
+// Handles "loose lists" where items are separated by blank lines
 function parseList(lines: string[], startIndex: number, ordered: boolean): { items: ListItem[], endIndex: number } {
   const items: ListItem[] = []
   let i = startIndex
@@ -31,6 +32,22 @@ function parseList(lines: string[], startIndex: number, ordered: boolean): { ite
 
   while (i < lines.length) {
     const line = lines[i]
+    
+    // Skip blank lines within the list (loose list support)
+    if (!line.trim()) {
+      // Look ahead to see if there's another list item coming
+      let nextNonEmpty = i + 1
+      while (nextNonEmpty < lines.length && !lines[nextNonEmpty].trim()) {
+        nextNonEmpty++
+      }
+      // If next non-empty line is a list item of the same type, continue
+      if (nextNonEmpty < lines.length && listPattern.test(lines[nextNonEmpty])) {
+        i = nextNonEmpty
+        continue
+      }
+      // Otherwise, end the list
+      break
+    }
     
     // Check for top-level list item
     const match = line.match(listPattern)
@@ -310,6 +327,9 @@ function renderTokens(tokens: Token[]): string {
     }
   }).join('\n')
 }
+
+// Export for testing
+export { tokenize, renderTokens }
 
 export default function Markdown({ children, className }: Props) {
   const html = useMemo(() => {

@@ -4,7 +4,7 @@ import type { Session, Task } from '../../api/types'
 import { api } from '../../api/client'
 import { useNotify } from '../../context/NotificationContext'
 import { timeAgo } from '../common/TimeAgo'
-import { IconTrash, IconPause, IconPlay, IconStop, IconRefresh } from '../common/Icons'
+import { IconTrash, IconPause, IconPlay, IconStop, IconRefresh, IconSearch } from '../common/Icons'
 import ConfirmPopover from '../common/ConfirmPopover'
 import './WorkerCard.css'
 
@@ -180,6 +180,31 @@ export default function WorkerCard({
     }
   }
 
+  async function handleCheckProgress(e: React.MouseEvent) {
+    e.stopPropagation()
+    if (actionPending) return
+    setActionPending(true)
+    try {
+      // Get brain session ID first
+      const brainStatus = await api<{ session_id: string | null; running: boolean }>('/api/brain/status')
+      if (!brainStatus.running || !brainStatus.session_id) {
+        notify('Brain is not running. Start the brain first.', 'error')
+        return
+      }
+      // Send check-worker command to brain for this specific worker
+      const message = `/check-worker ${session.id}`
+      await api(`/api/sessions/${brainStatus.session_id}/send`, {
+        method: 'POST',
+        body: JSON.stringify({ message }),
+      })
+      notify(`Checking progress of ${session.name}...`, 'success')
+    } catch (e) {
+      notify(e instanceof Error ? e.message : 'Failed to check progress', 'error')
+    } finally {
+      setActionPending(false)
+    }
+  }
+
   // Take last ~20 lines for the preview
   const previewLines = preview ? preview.split('\n').slice(-20).join('\n') : ''
 
@@ -210,15 +235,26 @@ export default function WorkerCard({
             </button>
           ) : (
             <>
-              {/* Pause/Continue button */}
-              <button
-                className={`wc-action-btn ${session.status === 'paused' ? 'continue' : 'pause'}`}
-                onClick={handlePauseOrContinue}
-                disabled={actionPending || session.status === 'idle'}
-                title={session.status === 'paused' ? 'Continue' : 'Pause'}
-              >
-                {session.status === 'paused' ? <IconPlay size={14} /> : <IconPause size={14} />}
-              </button>
+              {/* Check Progress button for waiting workers, Pause/Continue for others */}
+              {session.status === 'waiting' ? (
+                <button
+                  className="wc-action-btn check-progress"
+                  onClick={handleCheckProgress}
+                  disabled={actionPending}
+                  title="Check Progress"
+                >
+                  <IconSearch size={14} />
+                </button>
+              ) : (
+                <button
+                  className={`wc-action-btn ${session.status === 'paused' ? 'continue' : 'pause'}`}
+                  onClick={handlePauseOrContinue}
+                  disabled={actionPending || session.status === 'idle'}
+                  title={session.status === 'paused' ? 'Continue' : 'Pause'}
+                >
+                  {session.status === 'paused' ? <IconPlay size={14} /> : <IconPause size={14} />}
+                </button>
+              )}
 
               {/* Stop button */}
               <ConfirmPopover

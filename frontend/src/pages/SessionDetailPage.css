@@ -153,6 +153,11 @@
   border-color: var(--red);
 }
 
+.sd-control-btn.check-progress:hover:not(:disabled) {
+  color: var(--yellow, #d29922);
+  border-color: var(--yellow, #d29922);
+}
+
 /* Rdev hint banner */
 .sd-rdev-hint {
   display: flex;
