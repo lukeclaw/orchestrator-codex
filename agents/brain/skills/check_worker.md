@@ -247,6 +247,7 @@ tmux send-keys -t orchestrator:<worker-name> Enter
 - **⚡ Terminal-first approach** — read terminal output BEFORE running external commands (gh, jarvis, etc.). Most checks don't need verification.
 - **Fast path = no external calls** — if worker isn't claiming completion, just check `status_age` and decide to nudge or skip
 - **Default action is "continue"** — never stop or delete workers unless task is done
+- **Never guess GitHub URLs** — copy PR URLs exactly from worker output or `gh pr view --json url`. Never construct URLs from memory.
 - **⚠️ NEVER stop a worker waiting for PR review** — worker must stay alive to address reviewer comments when they arrive. "Waiting for reviewer" is NOT a reason to stop. Only stop when PR is MERGED.
 - **Check task deliverables first** — if task specifies a deliverable (doc, POC, etc.), use that; otherwise default to PR merged
 - **PR created ≠ done** — worker must stay alive until PR is MERGED with all checks passing

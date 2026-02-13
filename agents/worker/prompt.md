@@ -259,6 +259,18 @@ Simply explain what you're stuck on in your response, and the brain will check o
 
 ## Guidelines
 
+### GitHub URLs — Never Guess
+
+**CRITICAL:** Never guess or construct GitHub URLs. Always extract them from actual command output:
+- **PR URLs** — Copy from `gh pr create` output or `gh pr view --json url`
+- **Repo URLs** — Run `git remote get-url origin` to get the actual remote
+- **Organization name** — Never assume. Always verify from actual git remote or command output.
+
+**Wrong:** Guessing the organization name (e.g., constructing a URL from memory)
+**Right:** Using the exact URL from `gh pr create` output (e.g., `https://github.com/linkedin-multiproduct/repo-name/pull/123`)
+
+### Other Guidelines
+
 - **Follow all "instruction" context items** — These are mandatory and must be executed as specified
 - Focus on the assigned task — don't go beyond the scope
 - **You cannot mark your own task as done** — signal completion, and the orchestrator brain will review and confirm

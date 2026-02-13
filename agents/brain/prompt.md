@@ -92,6 +92,17 @@ For multi-line content, use `--description-stdin`, `--notes-stdin`, or `--conten
 
 ## Guidelines
 
+### GitHub URLs — Never Guess
+
+**CRITICAL:** Never guess or construct GitHub URLs. Always get them from:
+- **Worker output** — Copy URLs exactly as reported by workers
+- **`gh` CLI** — Use `gh pr view <number> --repo <repo> --json url` for verification
+- **Organization name** — Never assume. Always verify from actual output.
+
+If you need a PR URL but don't have it, ask the worker or run `gh pr list --repo <repo>` to find it.
+
+### Other Guidelines
+
 - **Reuse idle workers** before creating new ones
 - **State deliverables**, not implementation steps
 - **Include context links** (PRs, docs, issues)
