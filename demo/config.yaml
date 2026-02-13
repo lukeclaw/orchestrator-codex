@@ -1,0 +1,24 @@
+# Demo configuration — runs on a separate port to avoid conflicts with production.
+
+server:
+  host: "127.0.0.1"
+  port: 8094
+
+database:
+  path: "demo/data/demo.db"
+
+tmux:
+  session_name: "orchestrator-demo"
+
+anthropic:
+  model: "claude-sonnet-4-20250514"
+  max_tokens: 4096
+
+monitoring:
+  poll_interval_seconds: 5
+  heartbeat_timeout_seconds: 120
+  reconciliation_interval_seconds: 300
+
+logging:
+  level: "INFO"
+  file: "demo/data/demo.log"

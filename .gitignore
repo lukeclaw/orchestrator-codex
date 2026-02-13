@@ -61,6 +61,9 @@ Icon?
 # DB
 *.db
 data/
+!demo/data/
+demo/data/*
+!demo/data/.gitkeep
 
 # workspace tmp
 tmp/

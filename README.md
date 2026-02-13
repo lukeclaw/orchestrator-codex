@@ -2,6 +2,17 @@
 
 A meta-agent that manages multiple concurrent Claude Code sessions from a single dashboard.
 
+## Try the Demo
+
+The fastest way to see the orchestrator in action — no tmux, no API keys, no setup beyond `uv`:
+
+```bash
+uv sync
+uv run uvicorn demo.app:create_demo_app --factory --port 8094
+```
+
+Open http://localhost:8094 — you'll see 3 projects, 5 workers, and ~15 tasks pre-loaded with realistic data. See [`demo/README.md`](demo/README.md) for details.
+
 ## Quick Start
 
 ### Prerequisites
