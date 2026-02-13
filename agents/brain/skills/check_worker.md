@@ -28,12 +28,22 @@ If no waiting workers, report "No workers in waiting status" and stop.
 
 **Auto mode (`auto` arg):** Process ALL waiting workers sequentially.
 
-### Step 3: For selected worker, capture terminal state
+### Step 3: Get task description and deliverables
+```bash
+orch-workers show <worker-id> | jq -r '.task_id'
+orch-tasks show <task-id>
+```
+
+Check the task description for **explicit deliverables** (e.g., "deliver a design doc", "create a POC", "fix the bug").
+- If specific deliverable is defined → use that as completion criteria
+- If no specific deliverable → default completion = **PR merged**
+
+### Step 4: Capture terminal state
 ```bash
 tmux capture-pane -p -t orchestrator:<worker-name> -S -50
 ```
 
-### Step 4: Analyze situation and determine action
+### Step 5: Analyze situation and determine action
 
 **Case 1: Waiting for nudge** — Worker finished a step, sitting at prompt
 - Action: `orch-send <worker-id> "continue"`
@@ -46,6 +56,11 @@ tmux capture-pane -p -t orchestrator:<worker-name> -S -50
 - Check if more than 4 hours have passed since last activity
 - If yes: `orch-send <worker-id> "Check PR status again and proceed if possible"`
 - If no: Skip, let it wait
+
+**Case 3b: PR created, waiting for merge** — Worker created PR and is waiting
+- Do NOT stop the worker — task is NOT done until PR is merged (unless task has different deliverable)
+- Nudge worker: `orch-send <worker-id> "Check PR status. If there are review comments, address them. Task is complete only after PR is merged."`
+- The worker should stay alive to handle review feedback and merge the PR
 
 **Case 4: Missing info** — Worker needs information you can look up
 - Use your tools (jarvis, confluence, jira, gh CLI) to find the info
@@ -60,7 +75,7 @@ tmux capture-pane -p -t orchestrator:<worker-name> -S -50
 - If confident: `orch-send <worker-id> "Use approach X because..."`
 - If not confident: Skip, leave for human
 
-### Step 5: Propose or execute action
+### Step 6: Propose or execute action
 
 **Default mode:** Present your analysis and proposed action to the user:
 ```
@@ -74,7 +89,7 @@ Wait for user confirmation before executing. If user says "skip", move on withou
 
 **Auto mode:** Execute the action immediately, then verify and continue to next worker.
 
-### Step 6: Verify action worked (after execution)
+### Step 7: Verify action worked (after execution)
 Wait 3 seconds, then check worker status:
 ```bash
 orch-workers show <worker-id> | jq '.status'
@@ -89,6 +104,8 @@ tmux send-keys -t orchestrator:<worker-name> Enter
 
 ## Key Rules
 - **Default action is "continue"** — never stop or delete workers unless task is done
+- **Check task deliverables first** — if task specifies a deliverable (doc, POC, etc.), use that; otherwise default to PR merged
+- **PR created ≠ done** — unless task says otherwise, worker must stay alive until PR is merged
 - **Act on facts only** — if unsure about a decision, do NOT take action
 - **You have more tools than workers** — use captain MCP tools (LIX, jarvis, confluence, jira) to relay info workers can't access
 - **For special keys** (up/down arrow to select options): use `tmux send-keys -t orchestrator:<name> Up` or `Down`
