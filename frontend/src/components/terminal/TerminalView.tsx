@@ -180,15 +180,17 @@ export default function TerminalView({ sessionId, sessionStatus, onUserInput, di
           terminal.write(bytes)
         } else if (msg.type === 'sync') {
           // Drift correction — ground truth pane capture from tmux.
-          // Rewrites the full visible screen to correct any desync
-          // (e.g., from the gap between initial snapshot and stream start,
-          // or accumulated stream processing edge cases).
-          if (userScrolledUp) return
+          // Always applied regardless of scroll state: sync is the
+          // authoritative snapshot and must break the deadlock where
+          // userScrolledUp gets stuck true (e.g., after alternate
+          // screen exit) and blocks all updates permanently.
           terminal.write('\x1b[H\x1b[J' + msg.data)
           if (typeof msg.cursorX === 'number' && typeof msg.cursorY === 'number') {
             terminal.write(`\x1b[${msg.cursorY + 1};${msg.cursorX + 1}H`)
           }
+          terminal.scrollToBottom()
           lastContent = msg.data
+          userScrolledUp = false
         } else if (msg.type === 'error') {
           terminal.write(`\r\n\x1b[31m${msg.message}\x1b[0m\r\n`)
         }
