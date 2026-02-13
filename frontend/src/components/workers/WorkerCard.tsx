@@ -4,7 +4,7 @@ import type { Session, Task } from '../../api/types'
 import { api } from '../../api/client'
 import { useNotify } from '../../context/NotificationContext'
 import { timeAgo } from '../common/TimeAgo'
-import { IconTrash, IconPause, IconPlay, IconStop, IconRefresh, IconSearch } from '../common/Icons'
+import { IconTrash, IconPause, IconPlay, IconStop, IconRefresh, IconBrain } from '../common/Icons'
 import ConfirmPopover from '../common/ConfirmPopover'
 import './WorkerCard.css'
 
@@ -192,7 +192,7 @@ export default function WorkerCard({
         return
       }
       // Send check-worker command to brain for this specific worker
-      const message = `/check-worker ${session.id}`
+      const message = `/check_worker ${session.id}`
       await api(`/api/sessions/${brainStatus.session_id}/send`, {
         method: 'POST',
         body: JSON.stringify({ message }),
@@ -243,7 +243,7 @@ export default function WorkerCard({
                   disabled={actionPending}
                   title="Check Progress"
                 >
-                  <IconSearch size={14} />
+                  <IconBrain size={14} />
                 </button>
               ) : (
                 <button

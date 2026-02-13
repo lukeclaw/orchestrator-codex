@@ -4,7 +4,7 @@ import { api } from '../api/client'
 import { useNotify } from '../context/NotificationContext'
 import { useApp } from '../context/AppContext'
 import TerminalView from '../components/terminal/TerminalView'
-import { IconArrowLeft, IconPause, IconPlay, IconStop, IconRefresh, IconTrash, IconSync, IconSearch } from '../components/common/Icons'
+import { IconArrowLeft, IconPause, IconPlay, IconStop, IconRefresh, IconTrash, IconSync, IconBrain } from '../components/common/Icons'
 import ConfirmPopover from '../components/common/ConfirmPopover'
 import './SessionDetailPage.css'
 
@@ -116,7 +116,7 @@ export default function SessionDetailPage() {
         return
       }
       // Send check-worker command to brain for this specific worker
-      const message = `/check-worker ${id}`
+      const message = `/check_worker ${id}`
       await api(`/api/sessions/${brainStatus.session_id}/send`, {
         method: 'POST',
         body: JSON.stringify({ message }),
@@ -184,7 +184,7 @@ export default function SessionDetailPage() {
                 disabled={actionPending || session.status === 'idle'}
                 title="Check Progress"
               >
-                <IconSearch size={16} />
+                <IconBrain size={16} />
               </button>
               <button
                 className={`sd-control-btn ${session.status === 'paused' ? 'continue' : 'pause'}`}

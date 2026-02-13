@@ -1,5 +1,5 @@
 ---
-name: check-worker
+name: check_worker
 description: Check waiting workers and handle low-risk actions. Use when workers are stuck in "waiting" status.
 ---
 
@@ -8,9 +8,9 @@ description: Check waiting workers and handle low-risk actions. Use when workers
 Handle workers in "waiting" status with low-risk actions to move tasks forward.
 
 ## Usage
-- `/check-worker` — Check first waiting worker, propose action, wait for confirmation
-- `/check-worker <worker-id>` — Check a specific worker by ID
-- `/check-worker auto` — Automatically process ALL waiting workers
+- `/check_worker` — Check first waiting worker, propose action, wait for confirmation
+- `/check_worker <worker-id>` — Check a specific worker by ID
+- `/check_worker auto` — Automatically process ALL waiting workers
 
 ---
 
@@ -69,15 +69,19 @@ tmux capture-pane -p -t orchestrator:<worker-name> -S -50
 - Do NOT stop or recreate the worker
 
 **Case 3: Blocked on PR reviews** — Worker waiting for PR approval/merge
+- **⚠️ DO NOT STOP THE WORKER** — worker must stay alive to address review comments when they arrive
 - Check `status_age` to see how long they've been waiting
 - If **>2h**: Nudge to check PR status
   - `orch-send <worker-id> "Check PR status. If there are review comments, address them. If approved, merge."`
 - If **<2h**: Skip — PR reviews take time
 - **Recommended follow-up:** "Nudge again in 2h if still waiting"
+- **Why keep worker alive?** Reviewers will leave comments → worker needs to address them → iterate until merged
 
 **Case 3b: Worker just checked PR, still waiting for reviewer**
 - Terminal shows worker already checked PR and is waiting
+- **⚠️ DO NOT STOP THE WORKER** — even if "idle", it must stay alive for the review cycle
 - Do NOT nudge again immediately — reviewer needs time
+- Action: **Skip** (no action needed, just wait)
 - **Recommended follow-up:** "Check again in 2-4h"
 
 **Case 4: Missing info** — Worker needs information you can look up
@@ -220,8 +224,10 @@ After sending the notification:
 
 ## Key Rules
 - **Default action is "continue"** — never stop or delete workers unless task is done
+- **⚠️ NEVER stop a worker waiting for PR review** — worker must stay alive to address reviewer comments when they arrive. "Waiting for reviewer" is NOT a reason to stop. Only stop when PR is MERGED.
 - **Check task deliverables first** — if task specifies a deliverable (doc, POC, etc.), use that; otherwise default to PR merged
 - **PR created ≠ done** — worker must stay alive until PR is MERGED with all checks passing
+- **PR waiting for review ≠ done** — worker stays alive, will address comments when reviews come in
 - **PR with open comments ≠ done** — reviewer comments must be addressed
 - **PR with failing CI ≠ done** — CI must pass
 - **PR with conflicts ≠ done** — conflicts must be resolved

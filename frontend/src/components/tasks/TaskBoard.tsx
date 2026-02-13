@@ -20,7 +20,7 @@ export default function TaskBoard({ tasks, onTaskClick }: Props) {
       {COLUMNS.map(col => {
         const colTasks = tasks.filter(t => t.status === col.key)
         return (
-          <div key={col.key} className="tb-column">
+          <div key={col.key} className={`tb-column status-${col.key}`}>
             <div className="tb-column-header">
               <span className="tb-column-title">{col.label}</span>
               <span className={`tb-column-count status-${col.key}`}>{colTasks.length}</span>
