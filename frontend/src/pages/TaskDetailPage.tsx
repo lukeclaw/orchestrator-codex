@@ -504,7 +504,25 @@ export default function TaskDetailPage() {
                   <span className={`expand-icon ${notesExpanded ? 'expanded' : ''}`}>▶</span>
                 </button>
                 <label>Notes</label>
-                {!isEditingNotes && isEditable && notesExpanded && (
+                {isEditingNotes ? (
+                  <div className="tdp-inline-actions">
+                    <button
+                      className="tdp-action-btn save"
+                      onClick={handleNotesSave}
+                      disabled={editNotes === (task.notes || '')}
+                      title="Save"
+                    >
+                      ✓
+                    </button>
+                    <button
+                      className="tdp-action-btn cancel"
+                      onClick={() => { setIsEditingNotes(false); setEditNotes(task.notes || '') }}
+                      title="Discard"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                ) : isEditable && notesExpanded && (
                   <button className="tdp-edit-btn" onClick={() => setIsEditingNotes(true)}>Edit</button>
                 )}
                 {!notesExpanded && task.notes && (
@@ -527,23 +545,6 @@ export default function TaskDetailPage() {
                         }
                       }}
                     />
-                    <div className="tdp-inline-actions desc-actions">
-                      <button
-                        className="tdp-action-btn save"
-                        onClick={handleNotesSave}
-                        disabled={editNotes === (task.notes || '')}
-                        title="Save"
-                      >
-                        ✓
-                      </button>
-                      <button
-                        className="tdp-action-btn cancel"
-                        onClick={() => { setIsEditingNotes(false); setEditNotes(task.notes || '') }}
-                        title="Discard"
-                      >
-                        ✕
-                      </button>
-                    </div>
                   </div>
                 ) : task.notes ? (
                   <div className="tdp-notes-content">
