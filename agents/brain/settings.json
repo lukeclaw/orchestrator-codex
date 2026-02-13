@@ -14,7 +14,9 @@
       "Bash(orch-ctx *)",
       "Bash(orch-notifications *)",
       "Bash(orch-send *)",
-      "Bash(orch-tunnel *)"
+      "Bash(orch-tunnel *)",
+      "Bash(gh *)",
+      "Bash(captain *)"
     ]
   }
 }
