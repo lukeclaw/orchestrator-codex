@@ -376,20 +376,6 @@ def detach_from_screen(tmux_sess: str, tmux_win: str) -> None:
     time.sleep(0.5)
 
 
-def build_system_prompt(session_id: str) -> str | None:
-    """Build the system prompt from template, same as new worker setup.
-    
-    DEPRECATED: For rdev workers, use ensure_prompt_on_remote() + get_prompt_load_arg() instead.
-    This function is kept for local workers where file-based loading isn't needed.
-    """
-    prompt = get_worker_prompt(session_id)
-    if prompt is None:
-        logger.warning("Worker prompt template not found")
-        return None
-    
-    return shlex.quote(prompt)
-
-
 def ensure_prompt_on_remote(
     tmux_sess: str,
     tmux_win: str,
@@ -776,10 +762,14 @@ def reconnect_local_worker(session, tmux_sess: str, tmux_win: str, api_port: int
         session_arg,
         f"--settings {shlex.quote(settings_file)}",
     ]
-    
-    system_prompt = build_system_prompt(session.id)
-    if system_prompt:
-        claude_args.append(f"--append-system-prompt {system_prompt}")
+
+    # Write prompt to file and load via $(cat) to avoid pasting large content through tmux
+    prompt = get_worker_prompt(session.id)
+    prompt_file = os.path.join(tmp_dir, "prompt.md")
+    if prompt:
+        with open(prompt_file, "w") as f:
+            f.write(prompt)
+        claude_args.append(f'--append-system-prompt "$(cat {shlex.quote(prompt_file)})"')
     
     claude_cmd = f"claude {' '.join(claude_args)}"
     send_keys(tmux_sess, tmux_win, claude_cmd, enter=True)

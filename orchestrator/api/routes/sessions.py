@@ -34,7 +34,6 @@ from orchestrator.session import (
     check_screen_and_claude_rdev,
     check_ssh_alive,
     check_screen_exists_via_tmux,
-    build_system_prompt,
     reconnect_rdev_worker,
     reconnect_local_worker,
 )
@@ -361,30 +360,34 @@ def create_session(body: SessionCreate, request: Request, db=Depends(get_db)):
                        len([f for f in os.listdir(skills_dest) if f.endswith(".md")]), 
                        skills_dest, sanitized_name)
         
-        # Load worker prompt
+        # Write worker prompt to file in tmp_dir (avoids pasting large content through tmux)
         worker_prompt = get_worker_prompt(s.id)
+        prompt_file = os.path.join(tmp_dir, "prompt.md")
+        if worker_prompt:
+            with open(prompt_file, "w") as f:
+                f.write(worker_prompt)
+            logger.info("Wrote worker prompt to %s", prompt_file)
 
         # cd to working directory, export PATH, and launch claude with --settings
         if tmux_window:
             try:
                 import shlex
                 cmd_parts = []
-                
+
                 # cd to work_dir if specified, otherwise stay in current dir
                 if work_dir:
                     cmd_parts.append(f"cd {work_dir}")
-                
+
                 # Export PATH to include CLI scripts
                 path_export = get_path_export_command(os.path.join(tmp_dir, "bin"))
                 cmd_parts.append(path_export)
-                
+
                 # Build claude command with --settings for hooks
                 settings_file = os.path.join(tmp_dir, "configs", "settings.json")
                 claude_args = [f"--settings {shlex.quote(settings_file)}"]
-                
+
                 if worker_prompt:
-                    quoted_prompt = shlex.quote(worker_prompt)
-                    claude_args.append(f"--append-system-prompt {quoted_prompt}")
+                    claude_args.append(f'--append-system-prompt "$(cat {shlex.quote(prompt_file)})"')
                 
                 cmd_parts.append(f"claude {' '.join(claude_args)}")
                 
