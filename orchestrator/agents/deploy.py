@@ -355,71 +355,30 @@ def generate_brain_hooks(
     brain_dir: str,
     api_base: str = "http://127.0.0.1:8093",
 ) -> str:
-    """Generate Claude Code hooks in .claude/settings.json for the brain.
+    """Deploy brain hooks and settings.
     
     Args:
-        brain_dir: Directory to generate hooks in
+        brain_dir: Directory to deploy to (must be /tmp/orchestrator/brain)
         api_base: API base URL
         
     Returns:
-        Path to the settings.json file (for --settings flag, though hooks are in .claude/)
+        Path to the settings.json file
     """
+    # Deploy hook script
     hooks_dir = os.path.join(brain_dir, "hooks")
     os.makedirs(hooks_dir, exist_ok=True)
     
-    hook_script_path = os.path.join(hooks_dir, "inject-focus.sh")
-    hook_script = f'''#!/bin/bash
-# Hook script to inject current dashboard URL into brain prompts
-
-API_BASE="{api_base}"
-
-INPUT=$(cat)
-EVENT=$(echo "$INPUT" | jq -r '.hook_event_name // empty')
-if [[ "$EVENT" != "UserPromptSubmit" ]]; then
-    exit 0
-fi
-
-URL=$(curl -s "$API_BASE/api/brain/focus" | jq -r '.url // empty')
-if [[ -n "$URL" && "$URL" != "null" ]]; then
-    echo "[Dashboard: $URL]"
-fi
-
-exit 0
-'''
+    src_hook_path = os.path.join(_AGENTS_DIR, "brain", "hooks", "inject-focus.sh")
+    dst_hook_path = os.path.join(hooks_dir, "inject-focus.sh")
+    shutil.copy2(src_hook_path, dst_hook_path)
+    os.chmod(dst_hook_path, os.stat(dst_hook_path).st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
     
-    with open(hook_script_path, "w") as f:
-        f.write(hook_script)
-    os.chmod(hook_script_path, os.stat(hook_script_path).st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
-    
-    # Hooks must be in .claude/settings.json for Claude Code to load them
+    # Copy settings.json template to .claude/settings.json
     claude_dir = os.path.join(brain_dir, ".claude")
     os.makedirs(claude_dir, exist_ok=True)
     
-    hook_settings = {
-        "hooks": {
-            "UserPromptSubmit": [{"matcher": "", "hooks": [{"type": "command", "command": hook_script_path}]}]
-        }
-    }
-    
-    hook_settings_path = os.path.join(claude_dir, "settings.json")
-    with open(hook_settings_path, "w") as f:
-        json.dump(hook_settings, f, indent=2)
-    
-    # Also create a --settings file for permissions (passed via CLI flag)
-    cli_settings = {
-        "permissions": {
-            "allow": [
-                "Bash(orch-*)",
-                "Bash(tmux capture-pane*)",
-                "Bash(tmux send-keys*)",
-                "Bash(curl *127.0.0.1:8093*)",
-                "Bash(jq *)",
-            ]
-        }
-    }
-    
-    settings_path = os.path.join(brain_dir, "settings.json")
-    with open(settings_path, "w") as f:
-        json.dump(cli_settings, f, indent=2)
+    src_settings_path = os.path.join(_AGENTS_DIR, "brain", "settings.json")
+    settings_path = os.path.join(claude_dir, "settings.json")
+    shutil.copy2(src_settings_path, settings_path)
     
     return settings_path

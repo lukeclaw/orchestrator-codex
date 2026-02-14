@@ -1,6 +1,7 @@
 {
   "env": {
-    "CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION": "false"
+    "CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION": "false",
+    "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "true"
   },
   "spinnerTipsEnabled": false,
   "terminalProgressBarEnabled": false,
@@ -18,5 +19,8 @@
       "Bash(gh *)",
       "Bash(captain *)"
     ]
+  },
+  "hooks": {
+    "UserPromptSubmit": [{"matcher": "", "hooks": [{"type": "command", "command": "/tmp/orchestrator/brain/hooks/inject-focus.sh"}]}]
   }
 }
