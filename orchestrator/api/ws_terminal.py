@@ -10,12 +10,7 @@ import time
 
 from fastapi import WebSocket, WebSocketDisconnect
 
-from orchestrator.terminal.manager import (
-    capture_pane_with_escapes,
-    ensure_window,
-    send_keys_literal,
-    resize_pane,
-)
+from orchestrator.terminal.manager import ensure_window
 from orchestrator.terminal.control import (
     TmuxControlPool,
     send_keys_async,
@@ -123,9 +118,6 @@ async def terminal_websocket(websocket: WebSocket, session_id: str):
     # Wait for the client to send a resize before capturing initial content.
     # This ensures the tmux pane matches xterm's dimensions.
     initial_sent = False
-    last_content = ""
-    last_cursor_x = -1
-    last_cursor_y = -1
 
     # --- Resolve pane ID for %output streaming --------------------------------
     pane_id = await get_pane_id_async(tmux_sess, tmux_win)
@@ -186,69 +178,19 @@ async def terminal_websocket(websocket: WebSocket, session_id: str):
             except Exception:
                 pass
 
-    # --- Fallback poll loop (used when pane_id resolution fails) --------------
-    poll_active = False
-
-    async def poll_output():
-        nonlocal last_content, last_cursor_x, last_cursor_y
-        poll_interval = 0.02
-        idle_count = 0
-
-        while poll_active:
-            await asyncio.sleep(poll_interval)
-            if not initial_sent:
-                continue
-            try:
-                content, cursor_x, cursor_y = await capture_pane_with_cursor_atomic_async(tmux_sess, tmux_win)
-                if content.endswith('\n'):
-                    content = content[:-1]
-
-                content_changed = content != last_content
-                cursor_changed = cursor_x != last_cursor_x or cursor_y != last_cursor_y
-
-                if content_changed:
-                    idle_count = 0
-                    poll_interval = 0.02
-                    await websocket.send_json({
-                        "type": "output",
-                        "data": content,
-                        "cursorX": cursor_x,
-                        "cursorY": cursor_y,
-                    })
-                    last_content = content
-                    last_cursor_x = cursor_x
-                    last_cursor_y = cursor_y
-                elif cursor_changed:
-                    idle_count = 0
-                    poll_interval = 0.02
-                    await websocket.send_json({
-                        "type": "cursor",
-                        "cursorX": cursor_x,
-                        "cursorY": cursor_y,
-                    })
-                    last_cursor_x = cursor_x
-                    last_cursor_y = cursor_y
-                else:
-                    idle_count += 1
-                    if idle_count > 20:
-                        poll_interval = min(0.15, poll_interval + 0.01)
-            except Exception:
-                pass
-
-    # --- Start streaming or fall back to polling ------------------------------
-    poll_task: asyncio.Task | None = None
-
+    # --- Start streaming and drift correction ---------------------------------
     if pane_id:
         pool = TmuxControlPool.get_instance()
         conn = await pool.get_connection(tmux_sess)
         await conn.subscribe(pane_id, on_pane_output)
         stream_active = True
-        drift_task = asyncio.create_task(drift_correction())
         logger.info("Streaming %output for pane %s (session %s)", pane_id, tmux_sess)
     else:
-        logger.warning("Could not resolve pane ID for %s:%s — falling back to polling", tmux_sess, tmux_win)
-        poll_active = True
-        poll_task = asyncio.create_task(poll_output())
+        logger.warning("Could not resolve pane ID for %s:%s — drift correction only", tmux_sess, tmux_win)
+
+    # Always start drift correction — it provides ground-truth sync even if
+    # streaming is active, and is the only update path if pane_id failed.
+    drift_task = asyncio.create_task(drift_correction())
 
     try:
         while True:
@@ -276,9 +218,6 @@ async def terminal_websocket(websocket: WebSocket, session_id: str):
                         "cursorY": cursor_y,
                         "totalLines": total_lines,
                     })
-                    last_content = content
-                    last_cursor_x = cursor_x
-                    last_cursor_y = cursor_y
                 except Exception as e:
                     logger.error("Failed to capture history: %s", e)
             elif msg.get("type") == "resize":
@@ -312,9 +251,6 @@ async def terminal_websocket(websocket: WebSocket, session_id: str):
                         "totalLines": total_lines,
                         "alternateScreen": alternate_on,
                     })
-                    last_content = content
-                    last_cursor_x = cursor_x
-                    last_cursor_y = cursor_y
                     initial_sent = True
     except WebSocketDisconnect:
         pass
@@ -326,13 +262,6 @@ async def terminal_websocket(websocket: WebSocket, session_id: str):
             drift_task.cancel()
             try:
                 await drift_task
-            except asyncio.CancelledError:
-                pass
-        if poll_task:
-            poll_active = False
-            poll_task.cancel()
-            try:
-                await poll_task
             except asyncio.CancelledError:
                 pass
         clear_user_activity(session_id)

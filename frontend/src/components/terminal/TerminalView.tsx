@@ -130,44 +130,6 @@ export default function TerminalView({ sessionId, sessionStatus, onUserInput, di
           terminal.scrollToBottom()
           lastContent = msg.data
           userScrolledUp = false
-        } else if (msg.type === 'output') {
-          if (userScrolledUp) return
-          
-          if (msg.data !== lastContent) {
-            const content = msg.data
-            const isAppend = lastContent.length > 0 && 
-                            content.startsWith(lastContent) &&
-                            content.length - lastContent.length < 100
-            
-            if (isAppend) {
-              const newPart = content.slice(lastContent.length)
-              terminal.write(newPart)
-            } else {
-              let trimmedContent = content
-              const lineCount = (content.match(/\n/g) || []).length + 1
-              if (lineCount > terminal.rows) {
-                let idx = 0
-                for (let i = 0; i < terminal.rows && idx < content.length; i++) {
-                  const next = content.indexOf('\n', idx)
-                  if (next === -1) break
-                  idx = next + 1
-                }
-                trimmedContent = content.slice(0, idx > 0 ? idx - 1 : content.length)
-              }
-              terminal.write('\x1b[H\x1b[J' + trimmedContent)
-            }
-            
-            if (typeof msg.cursorX === 'number' && typeof msg.cursorY === 'number') {
-              terminal.write(`\x1b[${msg.cursorY + 1};${msg.cursorX + 1}H`)
-            }
-            
-            lastContent = content
-          }
-        } else if (msg.type === 'cursor') {
-          // Cursor-only update (arrow keys, Home, End, etc.) — no content rewrite needed
-          if (typeof msg.cursorX === 'number' && typeof msg.cursorY === 'number') {
-            terminal.write(`\x1b[${msg.cursorY + 1};${msg.cursorX + 1}H`)
-          }
         } else if (msg.type === 'stream') {
           // Raw PTY stream from tmux %output — low-latency path
           if (userScrolledUp) return
