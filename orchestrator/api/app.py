@@ -59,7 +59,14 @@ async def lifespan(app: FastAPI):
     app.state.orchestrator = orch
     await orch.start()
 
+    # Start rdev background refresh task
+    from orchestrator.api.routes.rdevs import start_background_refresh, stop_background_refresh
+    start_background_refresh()
+
     yield
+
+    # Stop rdev background refresh
+    await stop_background_refresh()
 
     # Shutdown: stop monitor, state manager
     logger.info("Orchestrator API shutting down")
@@ -137,12 +144,14 @@ def create_app(
         context,
         notifications,
         projects,
+        rdevs,
         sessions,
         settings,
         tasks,
     )
 
     app.include_router(sessions.router, prefix="/api", tags=["sessions"])
+    app.include_router(rdevs.router, prefix="/api", tags=["rdevs"])
     app.include_router(projects.router, prefix="/api", tags=["projects"])
     app.include_router(tasks.router, prefix="/api", tags=["tasks"])
     app.include_router(context.router, prefix="/api", tags=["context"])

@@ -275,6 +275,17 @@ export function IconBrain(props: IconProps) {
   )
 }
 
+export function IconServer(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <rect x="2" y="2" width="20" height="8" rx="2" />
+      <rect x="2" y="14" width="20" height="8" rx="2" />
+      <line x1="6" y1="6" x2="6.01" y2="6" />
+      <line x1="6" y1="18" x2="6.01" y2="18" />
+    </Icon>
+  )
+}
+
 export function IconLogo({ size = 24 }: { size?: number }) {
   return (
     <svg

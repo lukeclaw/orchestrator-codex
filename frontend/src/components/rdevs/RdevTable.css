@@ -1,0 +1,197 @@
+.rdev-table-wrapper {
+  overflow-x: auto;
+}
+
+.rdev-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.rdev-table th {
+  text-align: left;
+  padding: 10px 12px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+
+.rdev-table th.th-actions {
+  text-align: right;
+}
+
+.rdev-table td {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border-subtle, var(--border));
+  color: var(--text-primary);
+  vertical-align: middle;
+}
+
+.rt-row {
+  transition: background 0.1s;
+}
+
+.rt-row:hover {
+  background: var(--surface-hover, var(--bg-hover));
+}
+
+.rt-name {
+  font-weight: 500;
+  word-break: break-all;
+}
+
+.rt-cluster {
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.rt-time {
+  color: var(--text-muted, var(--text-secondary));
+  white-space: nowrap;
+  font-size: 12px;
+}
+
+.rt-empty {
+  color: var(--text-muted, var(--text-secondary));
+}
+
+/* State badges */
+.state-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+.state-badge.state-running {
+  background: rgba(63, 185, 80, 0.15);
+  color: #3fb950;
+  border: 1px solid rgba(63, 185, 80, 0.3);
+}
+
+.state-badge.state-stopped {
+  background: rgba(210, 153, 34, 0.15);
+  color: #d29922;
+  border: 1px solid rgba(210, 153, 34, 0.3);
+}
+
+/* Worker info */
+.worker-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.worker-name {
+  font-weight: 500;
+  color: var(--accent, #58a6ff);
+}
+
+/* Worker status badges */
+.worker-status-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: lowercase;
+}
+
+.worker-status-badge.status-idle {
+  background: var(--surface);
+  color: var(--text-secondary);
+  border: 1px solid var(--border);
+}
+
+.worker-status-badge.status-working {
+  background: rgba(88, 166, 255, 0.15);
+  color: #58a6ff;
+  border: 1px solid rgba(88, 166, 255, 0.3);
+}
+
+.worker-status-badge.status-waiting {
+  background: rgba(210, 153, 34, 0.15);
+  color: #d29922;
+  border: 1px solid rgba(210, 153, 34, 0.3);
+}
+
+.worker-status-badge.status-connecting {
+  background: rgba(136, 136, 136, 0.15);
+  color: #888;
+  border: 1px solid rgba(136, 136, 136, 0.3);
+}
+
+.worker-status-badge.status-error,
+.worker-status-badge.status-disconnected {
+  background: rgba(248, 81, 73, 0.15);
+  color: #f85149;
+  border: 1px solid rgba(248, 81, 73, 0.3);
+}
+
+.worker-status-badge.status-screen_detached {
+  background: rgba(210, 153, 34, 0.15);
+  color: #d29922;
+  border: 1px solid rgba(210, 153, 34, 0.3);
+}
+
+.worker-status-badge.status-paused {
+  background: rgba(136, 136, 136, 0.15);
+  color: #888;
+  border: 1px solid rgba(136, 136, 136, 0.3);
+}
+
+/* Action buttons */
+.rt-actions {
+  text-align: right;
+  white-space: nowrap;
+}
+
+.btn-action {
+  padding: 4px 10px;
+  font-size: 12px;
+  font-weight: 500;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  margin-left: 6px;
+}
+
+.btn-action:first-child {
+  margin-left: 0;
+}
+
+.btn-action:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.btn-restart,
+.btn-stop {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--text-primary);
+}
+
+.btn-restart:hover:not(:disabled),
+.btn-stop:hover:not(:disabled) {
+  background: var(--bg-hover, var(--surface-hover));
+}
+
+.btn-delete {
+  background: transparent;
+  border: 1px solid rgba(248, 81, 73, 0.5);
+  color: #f85149;
+}
+
+.btn-delete:hover:not(:disabled) {
+  background: rgba(248, 81, 73, 0.1);
+}

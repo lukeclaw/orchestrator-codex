@@ -45,10 +45,6 @@ router = APIRouter()
 
 WORKER_BASE_DIR = "/tmp/orchestrator/workers"
 
-# Cache for rdev list (1 hour TTL)
-_rdev_cache: dict[str, Any] = {"data": [], "timestamp": 0}
-RDEV_CACHE_TTL = 3600  # 1 hour in seconds
-
 
 class SessionCreate(BaseModel):
     name: str
@@ -132,93 +128,6 @@ def list_sessions(
     """
     sessions = repo.list_sessions(db, status=status, session_type=session_type)
     return [_serialize_session(s) for s in sessions]
-
-
-def _fetch_rdev_list() -> list[dict]:
-    """Fetch rdev list from CLI command."""
-    rdevs = []
-    try:
-        result = subprocess.run(
-            ["rdev", "list"],
-            capture_output=True,
-            text=True,
-            timeout=30,
-        )
-        output = result.stdout
-        
-        # Parse the table output
-        # Format: Name | State | Cluster Name | Created | Last Accessed | Server URL
-        lines = output.strip().split('\n')
-        for line in lines:
-            # Skip header, separator lines, and info messages
-            if '|' not in line or line.startswith('-') or 'Name' in line and 'State' in line:
-                continue
-            
-            parts = [p.strip() for p in line.split('|')]
-            if len(parts) >= 2:
-                name = parts[0].strip()
-                state = parts[1].strip() if len(parts) > 1 else ''
-                
-                # Skip empty or invalid entries
-                if not name or '/' not in name:
-                    continue
-                
-                rdevs.append({
-                    "name": name,
-                    "state": state,
-                    "cluster": parts[2].strip() if len(parts) > 2 else '',
-                    "created": parts[3].strip() if len(parts) > 3 else '',
-                    "last_accessed": parts[4].strip() if len(parts) > 4 else '',
-                })
-    except subprocess.TimeoutExpired:
-        logger.warning("rdev list command timed out")
-    except FileNotFoundError:
-        logger.warning("rdev command not found")
-    except Exception:
-        logger.warning("Failed to run rdev list", exc_info=True)
-    
-    return rdevs
-
-
-@router.get("/rdevs")
-def list_rdevs(refresh: bool = False, db=Depends(get_db)):
-    """List available rdev instances and show which ones have workers assigned.
-    
-    Uses server-side cache with 1 hour TTL. Pass refresh=true to force refresh.
-    """
-    global _rdev_cache
-    
-    now = time.time()
-    cache_age = now - _rdev_cache["timestamp"]
-    
-    # Use cache if valid and not forcing refresh
-    if not refresh and cache_age < RDEV_CACHE_TTL and _rdev_cache["data"]:
-        rdevs = _rdev_cache["data"]
-        logger.debug("Using cached rdev list (age: %.0fs)", cache_age)
-    else:
-        # Fetch fresh data
-        rdevs = _fetch_rdev_list()
-        _rdev_cache["data"] = rdevs
-        _rdev_cache["timestamp"] = now
-        logger.info("Refreshed rdev list cache (%d instances)", len(rdevs))
-    
-    # Always check current session state for in_use status
-    sessions = repo.list_sessions(db)
-    used_hosts = {s.host for s in sessions}
-    
-    # Return copies with in_use status (don't modify cache)
-    result = []
-    for rdev in rdevs:
-        item = dict(rdev)
-        item["in_use"] = rdev["name"] in used_hosts
-        # Find the worker name if in use
-        for s in sessions:
-            if s.host == rdev["name"]:
-                item["worker_name"] = s.name
-                break
-        result.append(item)
-    
-    return result
 
 
 @router.get("/sessions/{session_id}")
