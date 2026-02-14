@@ -17,7 +17,8 @@
       "Bash(orch-send *)",
       "Bash(orch-tunnel *)",
       "Bash(gh *)",
-      "Bash(captain *)"
+      "Bash(captain *)",
+      "Bash(tmux *)"
     ]
   },
   "hooks": {
