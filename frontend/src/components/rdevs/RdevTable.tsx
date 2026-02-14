@@ -1,3 +1,5 @@
+import { Link } from 'react-router-dom'
+import { IconStop, IconTrash, IconPlay } from '../common/Icons'
 import './RdevTable.css'
 
 interface Rdev {
@@ -9,7 +11,11 @@ interface Rdev {
   in_use: boolean
   worker_name?: string
   worker_status?: string
+  worker_id?: string
 }
+
+export type RdevSortKey = 'state' | 'name' | 'worker' | 'cluster' | 'last_accessed' | 'created'
+export type SortDir = 'asc' | 'desc'
 
 interface Props {
   rdevs: Rdev[]
@@ -17,11 +23,24 @@ interface Props {
   onRestart: (name: string) => void
   onStop: (name: string) => void
   actionLoading: string | null
+  sortKey: RdevSortKey
+  sortDir: SortDir
+  onSort: (key: RdevSortKey) => void
 }
 
-export default function RdevTable({ rdevs, onDelete, onRestart, onStop, actionLoading }: Props) {
+export default function RdevTable({ rdevs, onDelete, onRestart, onStop, actionLoading, sortKey, sortDir, onSort }: Props) {
   if (!rdevs.length) {
     return <p className="empty-state">No rdevs found</p>
+  }
+
+  function SortHeader({ k, children }: { k: RdevSortKey; children: React.ReactNode }) {
+    const active = sortKey === k
+    return (
+      <th className={`rt-th sortable ${active ? 'active' : ''}`} onClick={() => onSort(k)}>
+        {children}
+        {active && <span className="sort-arrow">{sortDir === 'asc' ? '↑' : '↓'}</span>}
+      </th>
+    )
   }
 
   return (
@@ -29,12 +48,12 @@ export default function RdevTable({ rdevs, onDelete, onRestart, onStop, actionLo
       <table className="rdev-table">
         <thead>
           <tr>
-            <th>State</th>
-            <th>Name</th>
-            <th>Worker</th>
-            <th>Cluster</th>
-            <th>Last Accessed</th>
-            <th>Created</th>
+            <SortHeader k="state">State</SortHeader>
+            <SortHeader k="name">Name</SortHeader>
+            <SortHeader k="worker">Worker</SortHeader>
+            <SortHeader k="cluster">Cluster</SortHeader>
+            <SortHeader k="last_accessed">Last Accessed</SortHeader>
+            <SortHeader k="created">Created</SortHeader>
             <th className="th-actions">Actions</th>
           </tr>
         </thead>
@@ -53,15 +72,12 @@ export default function RdevTable({ rdevs, onDelete, onRestart, onStop, actionLo
                 </td>
                 <td className="rt-name">{rdev.name}</td>
                 <td>
-                  {rdev.in_use && rdev.worker_name ? (
-                    <div className="worker-info">
-                      <span className="worker-name">{rdev.worker_name}</span>
-                      {rdev.worker_status && (
-                        <span className={`worker-status-badge status-${rdev.worker_status}`}>
-                          {rdev.worker_status}
-                        </span>
-                      )}
-                    </div>
+                  {rdev.in_use && rdev.worker_name && rdev.worker_id ? (
+                    <Link to={`/workers/${rdev.worker_id}`} className="worker-tag-link">
+                      <span className={`status-badge ${rdev.worker_status || 'idle'}`}>
+                        {rdev.worker_name}
+                      </span>
+                    </Link>
                   ) : (
                     <span className="rt-empty">—</span>
                   )}
@@ -72,31 +88,31 @@ export default function RdevTable({ rdevs, onDelete, onRestart, onStop, actionLo
                 <td className="rt-actions">
                   {isRunning && (
                     <button
-                      className="btn-action btn-stop"
+                      className="rt-action-btn stop"
                       onClick={() => onStop(rdev.name)}
                       disabled={isLoading}
                       title="Stop rdev"
                     >
-                      {isLoading ? '...' : 'Stop'}
+                      <IconStop size={14} />
                     </button>
                   )}
                   {isStopped && (
                     <button
-                      className="btn-action btn-restart"
+                      className="rt-action-btn restart"
                       onClick={() => onRestart(rdev.name)}
                       disabled={isLoading}
-                      title="Restart rdev"
+                      title="Start rdev"
                     >
-                      {isLoading ? '...' : 'Restart'}
+                      <IconPlay size={14} />
                     </button>
                   )}
                   <button
-                    className="btn-action btn-delete"
+                    className="rt-action-btn delete"
                     onClick={() => onDelete(rdev.name)}
                     disabled={isLoading || rdev.in_use}
                     title={rdev.in_use ? 'Remove worker first' : 'Delete rdev'}
                   >
-                    Delete
+                    <IconTrash size={14} />
                   </button>
                 </td>
               </tr>

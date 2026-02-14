@@ -27,6 +27,7 @@ export default function App() {
               <Route path="/tasks" element={<TasksPage />} />
               <Route path="/tasks/:id" element={<TaskDetailPage />} />
               <Route path="/workers" element={<WorkersPage />} />
+              <Route path="/workers/rdevs" element={<WorkersPage />} />
               <Route path="/workers/:id" element={<SessionDetailPage />} />
               <Route path="/context" element={<ContextPage />} />
               <Route path="/notifications" element={<NotificationsPage />} />

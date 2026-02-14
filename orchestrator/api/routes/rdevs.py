@@ -167,11 +167,12 @@ def list_rdevs(refresh: bool = False, db=Depends(get_db)):
     for rdev in rdevs:
         item = dict(rdev)
         item["in_use"] = rdev["name"] in used_hosts
-        # Find the worker name and status if in use
+        # Find the worker name, status, and id if in use
         for s in sessions:
             if s.host == rdev["name"]:
                 item["worker_name"] = s.name
                 item["worker_status"] = s.status
+                item["worker_id"] = s.id
                 break
         result.append(item)
     

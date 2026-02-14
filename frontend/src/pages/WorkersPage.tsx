@@ -1,15 +1,15 @@
 import { useState, useCallback, useEffect } from 'react'
+import { Link, useLocation } from 'react-router-dom'
 import { useApp } from '../context/AppContext'
 import { api } from '../api/client'
 import WorkerCard from '../components/workers/WorkerCard'
 import AddSessionModal from '../components/sessions/AddSessionModal'
-import RdevTable from '../components/rdevs/RdevTable'
+import RdevTable, { RdevSortKey, SortDir } from '../components/rdevs/RdevTable'
 import CreateRdevModal from '../components/rdevs/CreateRdevModal'
 import { IconRefresh } from '../components/common/Icons'
 import './WorkersPage.css'
 
 type SortOption = 'last_viewed' | 'last_status_changed' | 'name' | 'status'
-type TabType = 'workers' | 'rdevs'
 
 interface Rdev {
   name: string
@@ -20,17 +20,17 @@ interface Rdev {
   in_use: boolean
   worker_name?: string
   worker_status?: string
+  worker_id?: string
 }
 
 const SORT_KEY = 'orchestrator-worker-sort'
-const TAB_KEY = 'orchestrator-workers-tab'
 
 export default function WorkersPage() {
   const { workers, tasks } = useApp()
-  const [activeTab, setActiveTab] = useState<TabType>(() => {
-    const stored = localStorage.getItem(TAB_KEY)
-    return (stored as TabType) || 'workers'
-  })
+  const location = useLocation()
+  
+  // Determine active tab from URL
+  const isRdevsPage = location.pathname === '/workers/rdevs'
   
   // Build a map of session_id -> assigned task for quick lookup
   const taskBySession = new Map(
@@ -89,12 +89,10 @@ export default function WorkersPage() {
   const [showCreateRdevModal, setShowCreateRdevModal] = useState(false)
   const [rdevStateFilter, setRdevStateFilter] = useState<'' | 'RUNNING' | 'STOPPED'>('')
   const [rdevActionLoading, setRdevActionLoading] = useState<string | null>(null)
+  const [rdevSortKey, setRdevSortKey] = useState<RdevSortKey>('name')
+  const [rdevSortDir, setRdevSortDir] = useState<SortDir>('asc')
 
-  const handleTabChange = (tab: TabType) => {
-    setActiveTab(tab)
-    localStorage.setItem(TAB_KEY, tab)
-  }
-
+  
   const fetchRdevs = useCallback(async (forceRefresh = false) => {
     if (forceRefresh) {
       setRdevsRefreshing(true)
@@ -113,11 +111,25 @@ export default function WorkersPage() {
     }
   }, [])
 
+  // Fetch rdevs on mount to show correct count in toggle link
   useEffect(() => {
-    if (activeTab === 'rdevs' && rdevs.length === 0) {
+    if (rdevs.length === 0) {
       fetchRdevs()
     }
-  }, [activeTab, rdevs.length, fetchRdevs])
+  }, [rdevs.length, fetchRdevs])
+
+  // Auto-refresh when any rdev is in an intermediate state (not RUNNING or STOPPED)
+  const hasIntermediateState = rdevs.some(r => r.state !== 'RUNNING' && r.state !== 'STOPPED')
+  
+  useEffect(() => {
+    if (!isRdevsPage || !hasIntermediateState) return
+    
+    const interval = setInterval(() => {
+      fetchRdevs(true)
+    }, 60000) // 60 seconds
+    
+    return () => clearInterval(interval)
+  }, [isRdevsPage, hasIntermediateState, fetchRdevs])
 
   const handleDeleteRdev = async (name: string) => {
     if (!confirm(`Delete rdev "${name}"? This cannot be undone.`)) return
@@ -161,9 +173,36 @@ export default function WorkersPage() {
     fetchRdevs(true)
   }
 
-  const filteredRdevs = rdevStateFilter
+  const handleRdevSort = (key: RdevSortKey) => {
+    if (rdevSortKey === key) {
+      setRdevSortDir(d => d === 'asc' ? 'desc' : 'asc')
+    } else {
+      setRdevSortKey(key)
+      setRdevSortDir(key === 'name' || key === 'cluster' ? 'asc' : 'desc')
+    }
+  }
+
+  const getRdevSortValue = (r: Rdev, key: RdevSortKey): string | number => {
+    switch (key) {
+      case 'state': return r.state
+      case 'name': return r.name.toLowerCase()
+      case 'worker': return r.worker_name?.toLowerCase() || ''
+      case 'cluster': return r.cluster?.toLowerCase() || ''
+      case 'last_accessed': return r.last_accessed || ''
+      case 'created': return r.created || ''
+      default: return ''
+    }
+  }
+
+  const filteredRdevs = (rdevStateFilter
     ? rdevs.filter(r => r.state === rdevStateFilter)
     : rdevs
+  ).sort((a, b) => {
+    const aVal = getRdevSortValue(a, rdevSortKey)
+    const bVal = getRdevSortValue(b, rdevSortKey)
+    const cmp = aVal < bVal ? -1 : aVal > bVal ? 1 : 0
+    return rdevSortDir === 'asc' ? cmp : -cmp
+  })
 
   const runningCount = rdevs.filter(r => r.state === 'RUNNING').length
   const stoppedCount = rdevs.filter(r => r.state === 'STOPPED').length
@@ -172,24 +211,16 @@ export default function WorkersPage() {
     <div className="workers-page">
       <div className="page-header">
         <div className="page-header-left">
-          <h1>Workers</h1>
-          <div className="tab-nav">
-            <button
-              className={`tab-btn ${activeTab === 'workers' ? 'active' : ''}`}
-              onClick={() => handleTabChange('workers')}
-            >
-              Workers ({workers.length})
-            </button>
-            <button
-              className={`tab-btn ${activeTab === 'rdevs' ? 'active' : ''}`}
-              onClick={() => handleTabChange('rdevs')}
-            >
-              Rdevs ({rdevs.length})
-            </button>
-          </div>
+          <h1>{isRdevsPage ? 'Rdevs' : 'Workers'}</h1>
+          <Link
+            to={isRdevsPage ? '/workers' : '/workers/rdevs'}
+            className="tab-toggle-btn"
+          >
+            {isRdevsPage ? `Workers (${workers.length})` : `Rdevs (${rdevs.length})`} →
+          </Link>
         </div>
 
-        {activeTab === 'workers' ? (
+        {!isRdevsPage ? (
           <div className="page-header-actions">
             <div className="sort-control">
               <label>Sort by:</label>
@@ -255,7 +286,7 @@ export default function WorkersPage() {
         )}
       </div>
 
-      {activeTab === 'workers' ? (
+      {!isRdevsPage ? (
         <>
           {filtered.length > 0 ? (
             <div className="worker-grid" data-testid="session-grid">
@@ -287,6 +318,9 @@ export default function WorkersPage() {
               onRestart={handleRestartRdev}
               onStop={handleStopRdev}
               actionLoading={rdevActionLoading}
+              sortKey={rdevSortKey}
+              sortDir={rdevSortDir}
+              onSort={handleRdevSort}
             />
           ) : (
             <p className="empty-state">
