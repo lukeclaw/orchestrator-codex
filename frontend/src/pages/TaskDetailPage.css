@@ -1110,6 +1110,10 @@
   background: #58a6ff;
 }
 
+.worker-status-dot.status-screen_detached {
+  background: #f97316;
+}
+
 .tdp-assign-icon-btn {
   display: flex;
   align-items: center;
@@ -1291,6 +1295,11 @@
   color: #58a6ff;
 }
 
+.worker-status-label.status-screen_detached {
+  background: rgba(249, 115, 22, 0.15);
+  color: #f97316;
+}
+
 .worker-current {
   font-size: 10px;
   font-weight: 600;
@@ -1299,6 +1308,65 @@
   background: rgba(63, 185, 80, 0.15);
   color: #3fb950;
   text-transform: uppercase;
+}
+
+/* Disconnected workers section */
+.tdp-worker-section-divider {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 14px;
+  margin-top: 4px;
+}
+
+.tdp-worker-section-divider::before,
+.tdp-worker-section-divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--border);
+}
+
+.tdp-worker-section-divider span {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.tdp-worker-option.disabled {
+  cursor: not-allowed;
+  opacity: 0.7;
+}
+
+.tdp-worker-option.disabled:hover {
+  background: var(--bg);
+  border-color: transparent;
+}
+
+.tdp-worker-option.disabled .worker-name {
+  color: var(--text-muted);
+}
+
+.tdp-worker-reconnect-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  background: rgba(88, 166, 255, 0.15);
+  border: none;
+  border-radius: 4px;
+  color: #58a6ff;
+  cursor: pointer;
+  transition: all 0.15s;
+  margin-left: auto;
+}
+
+.tdp-worker-reconnect-btn:hover {
+  background: rgba(88, 166, 255, 0.25);
+  color: #79b8ff;
 }
 
 /* Worker Preview Card */

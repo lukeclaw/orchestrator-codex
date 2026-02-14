@@ -656,6 +656,59 @@ def stop_session(session_id: str, db=Depends(get_db)):
     return {"ok": True, "message": f"Session {s.name} stopped and cleared"}
 
 
+@router.post("/sessions/{session_id}/prepare-for-task")
+def prepare_session_for_task(session_id: str, db=Depends(get_db)):
+    """Prepare a worker session for a new task assignment.
+    
+    Sends Escape + Ctrl-C to cancel any running terminal commands,
+    then sends /clear to reset the Claude Code context.
+    
+    This should be called before reassigning a worker to a different task.
+    """
+    s = repo.get_session(db, session_id)
+    if s is None:
+        raise HTTPException(404, "Session not found")
+
+    # Check if session is in a connectable state
+    disconnected_statuses = {"disconnected", "screen_detached", "error", "connecting"}
+    if s.status in disconnected_statuses:
+        raise HTTPException(400, f"Session is not connected (status: {s.status})")
+
+    if not s.tmux_window:
+        return {"ok": True, "message": "No tmux window, nothing to prepare"}
+
+    if ":" in s.tmux_window:
+        tmux_sess, tmux_win = s.tmux_window.split(":", 1)
+    else:
+        tmux_sess, tmux_win = "orchestrator", s.tmux_window
+
+    import time
+    try:
+        # 1. Send Escape to exit any mode/stop current action
+        send_keys(tmux_sess, tmux_win, "Escape", enter=False)
+        time.sleep(0.3)
+        
+        # 2. Send Ctrl-C to cancel any running terminal command
+        import subprocess
+        subprocess.run(
+            ["tmux", "send-keys", "-t", f"{tmux_sess}:{tmux_win}", "C-c"],
+            capture_output=True, timeout=2
+        )
+        time.sleep(0.5)
+        
+        # 3. Send /clear to reset Claude Code context
+        from orchestrator.terminal.manager import send_keys_literal
+        send_keys_literal(tmux_sess, tmux_win, "/clear")
+        send_keys(tmux_sess, tmux_win, "", enter=True)
+        
+        logger.info("Prepared session %s for new task assignment", s.name)
+    except Exception:
+        logger.warning("Could not fully prepare session %s", s.name, exc_info=True)
+        # Don't fail - partial preparation is still useful
+
+    return {"ok": True, "message": f"Session {s.name} prepared for new task"}
+
+
 @router.post("/sessions/{session_id}/reconnect")
 def reconnect_session(session_id: str, request: Request, db=Depends(get_db)):
     """Reconnect a disconnected or screen_detached worker session.

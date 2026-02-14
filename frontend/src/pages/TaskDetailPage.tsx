@@ -189,8 +189,33 @@ export default function TaskDetailPage() {
   }
 
   const handleAssignChange = async (sessionId: string) => {
+    // If assigning to a worker (not unassigning), prepare it first
+    if (sessionId) {
+      try {
+        await api(`/api/sessions/${sessionId}/prepare-for-task`, { method: 'POST' })
+      } catch (err) {
+        console.error('Failed to prepare worker:', err)
+        // Continue with assignment even if prepare fails
+      }
+    }
     setAssignedSession(sessionId)
     await handleSaveField('assigned_session_id', sessionId || null)
+  }
+
+  const handleWorkerReconnectInModal = async (sessionId: string, e: React.MouseEvent) => {
+    e.stopPropagation()
+    try {
+      await api(`/api/sessions/${sessionId}/reconnect`, { method: 'POST' })
+      refresh()
+    } catch (err) {
+      console.error('Failed to reconnect worker:', err)
+    }
+  }
+
+  // Helper to check if a worker is connected
+  const isWorkerConnected = (status: string) => {
+    const disconnectedStatuses = ['disconnected', 'screen_detached', 'error', 'connecting']
+    return !disconnectedStatuses.includes(status)
   }
 
   const handleAddLink = async () => {
@@ -907,8 +932,10 @@ export default function TaskDetailPage() {
                           <span className="worker-name">Unassign</span>
                         </button>
                       )}
+                      {/* Connected workers - can be assigned */}
                       {sessions.filter(s => {
                         if (s.session_type !== 'worker') return false
+                        if (!isWorkerConnected(s.status)) return false
                         // Allow current task's assigned worker
                         if (s.id === assignedSession) return true
                         // Exclude workers assigned to other tasks
@@ -930,6 +957,40 @@ export default function TaskDetailPage() {
                           <span className={`worker-status-label status-${s.status}`}>{s.status}</span>
                           {s.id === assignedSession && <span className="worker-current">Current</span>}
                         </button>
+                      ))}
+                      {/* Disconnected workers - show with reconnect button */}
+                      {sessions.filter(s => {
+                        if (s.session_type !== 'worker') return false
+                        if (isWorkerConnected(s.status)) return false
+                        // Show disconnected workers that are either unassigned or assigned to this task
+                        const assignedToOther = tasks.some(t => t.id !== task?.id && t.assigned_session_id === s.id)
+                        return !assignedToOther
+                      }).length > 0 && (
+                        <div className="tdp-worker-section-divider">
+                          <span>Disconnected</span>
+                        </div>
+                      )}
+                      {sessions.filter(s => {
+                        if (s.session_type !== 'worker') return false
+                        if (isWorkerConnected(s.status)) return false
+                        const assignedToOther = tasks.some(t => t.id !== task?.id && t.assigned_session_id === s.id)
+                        return !assignedToOther
+                      }).map(s => (
+                        <div
+                          key={s.id}
+                          className="tdp-worker-option disabled"
+                        >
+                          <span className={`worker-status-dot status-${s.status}`} />
+                          <span className="worker-name">{s.name}</span>
+                          <span className={`worker-status-label status-${s.status}`}>{s.status}</span>
+                          <button
+                            className="tdp-worker-reconnect-btn"
+                            onClick={(e) => handleWorkerReconnectInModal(s.id, e)}
+                            title="Reconnect worker"
+                          >
+                            <IconRefresh size={12} />
+                          </button>
+                        </div>
                       ))}
                     </div>
                   </div>
