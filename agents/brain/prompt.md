@@ -101,6 +101,15 @@ For multi-line content, use `--description-stdin`, `--notes-stdin`, or `--conten
 
 If you need a PR URL but don't have it, ask the worker or run `gh pr list --repo <repo>` to find it.
 
+### Human Interaction Notifications
+
+When you or a worker interacts with another human (PR comments, issue replies, etc.), ensure the user is notified. Workers should send notifications automatically via `orch-notify --message-stdin`, but if you observe a worker replied to a PR comment without sending a notification, remind them or create the notification yourself via `orch-notifications create`.
+
+The user needs visibility into all external communications happening on their behalf, including:
+- **Task context** — What task triggered this interaction
+- **Link** — Direct URL to the exact comment/interaction
+- **Full message** — The complete text sent to the other human
+
 ### Other Guidelines
 
 - **Reuse idle workers** before creating new ones

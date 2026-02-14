@@ -10,14 +10,22 @@ show_help() {
     echo "Options:"
     echo "  --type TYPE             Notification type (info|pr_comment|warning), default: info"
     echo "  --link URL              Optional external link (e.g., PR URL)"
+    echo "  --message-stdin         Read additional message content from stdin (for multi-line messages)"
     echo ""
     echo "Examples:"
     echo "  orch-notify \"PR merged, but reviewer asked about error handling\""
     echo "  orch-notify \"Found potential issue in config\" --type warning"
     echo "  orch-notify \"PR #123 merged with comments\" --type pr_comment --link \"https://github.com/...\""
     echo ""
+    echo "  # Multi-line message (e.g., for PR comment replies):"
+    echo "  orch-notify \"[Task: Fix auth] Replied to reviewer\" --type pr_comment --link \"URL\" --message-stdin <<'EOF'"
+    echo "  Full text of my reply to the reviewer goes here."
+    echo "  Can be multiple lines."
+    echo "  EOF"
+    echo ""
     echo "Guidelines:"
     echo "  - Use sparingly for valuable information that doesn't block your work"
+    echo "  - ALWAYS notify when replying to PR comments or interacting with humans"
     echo "  - Good: PR merged but reviewer left a question, found issue but proceeded safely"
     echo "  - Bad: Routine progress updates, status changes (use orch-task update instead)"
 }
@@ -30,6 +38,7 @@ fi
 MESSAGE=""
 NOTIFY_TYPE="info"
 LINK_URL=""
+MESSAGE_STDIN=false
 
 MESSAGE="$1"
 shift
@@ -44,6 +53,10 @@ while [[ $# -gt 0 ]]; do
             LINK_URL="$2"
             shift 2
             ;;
+        --message-stdin)
+            MESSAGE_STDIN=true
+            shift
+            ;;
         *)
             echo "Unknown option: $1" >&2
             show_help
@@ -56,6 +69,16 @@ if [[ -z "$MESSAGE" ]]; then
     echo "Error: Message is required" >&2
     show_help
     exit 1
+fi
+
+# If --message-stdin, append stdin content to the message
+if [[ "$MESSAGE_STDIN" == true ]]; then
+    STDIN_CONTENT=$(cat)
+    if [[ -n "$STDIN_CONTENT" ]]; then
+        MESSAGE="$MESSAGE
+
+$STDIN_CONTENT"
+    fi
 fi
 
 load_task_info "$FORCE_REFRESH"

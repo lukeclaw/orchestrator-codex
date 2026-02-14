@@ -142,6 +142,14 @@ Use notifications to inform the user about **non-blocking but valuable informati
 - Found something unexpected but proceeded safely
 - Information the user should know but doesn't need to act on immediately
 
+**MANDATORY — Human Interaction Notifications:**
+**Whenever you interact with another human** (reply to PR review comments, respond to issues, post comments, etc.), you **MUST** send a notification containing:
+1. **Task context** — What task this is for
+2. **Link** — Direct URL to the exact comment/interaction (e.g., the specific PR comment URL)
+3. **Full message** — The complete text you sent to the other human
+
+This lets the user stay informed about all external communications happening on their behalf.
+
 **When NOT to use notifications:**
 - Routine status updates (use `orch-task update --status` instead)
 - When you're blocked (just explain the issue — orchestrator will notice)
@@ -158,9 +166,19 @@ orch-notify "Found potential memory issue in cache module" --type warning
 orch-notify "PR #123 merged, reviewer had a question about auth flow" \
   --type pr_comment \
   --link "https://github.com/org/repo/pull/123#discussion_r123456"
+
+# REQUIRED: After replying to a PR review comment
+orch-notify "[Task: Add rate limiting] Replied to reviewer comment" \
+  --type pr_comment \
+  --link "https://github.com/org/repo/pull/123#discussion_r789012" \
+  --message-stdin <<'EOF'
+Thanks for the feedback! I've updated the implementation to use a sliding window 
+instead of fixed buckets. The new approach handles burst traffic more gracefully 
+while still respecting the 100 req/min limit. See commit abc123 for the changes.
+EOF
 ```
 
-**Use sparingly.** Notifications are for valuable information only — the user doesn't have unlimited time to review them.
+**Use sparingly** for general notifications, but **always notify for human interactions** — the user needs visibility into all external communications.
 
 ### Port Forwarding (`orch-tunnel`)
 
