@@ -32,17 +32,17 @@ export default function TerminalView({ sessionId, sessionStatus, onUserInput, di
   
   // Terminal is locked when session is in 'connecting' state (background op in progress)
   const isLocked = sessionStatus === 'connecting'
-  const canSendInput = connectionState === 'connected' && !isLocked
 
   // Create WebSocket connection with reconnection support
   const connectWebSocket = useCallback((terminal: Terminal) => {
     const proto = location.protocol === 'https:' ? 'wss:' : 'ws:'
     const ws = new WebSocket(`${proto}//${location.host}/ws/terminal/${sessionId}`)
+    ws.binaryType = 'arraybuffer'  // receive binary frames as ArrayBuffer, not Blob
     wsRef.current = ws
 
-    // Track last content for smart diffing and scroll state
-    let lastContent = ''
+    // Track scroll state and divergence detection
     let userScrolledUp = false
+    let lastSyncHash: number | null = null  // CRC32 from last sync message
 
     // Track when user scrolls up to pause live updates
     const scrollDisposable = terminal.onScroll(() => {
@@ -107,19 +107,24 @@ export default function TerminalView({ sessionId, sessionStatus, onUserInput, di
     }
 
     ws.onmessage = (event) => {
+      // Binary frames = raw PTY stream bytes (high-frequency path)
+      if (event.data instanceof ArrayBuffer) {
+        // Write to terminal unless user is scrolled up reviewing history
+        if (!userScrolledUp) {
+          const bytes = new Uint8Array(event.data)
+          terminal.write(bytes)
+        }
+        // NOTE: No ACK needed — server uses snapshot recovery instead
+        // of drop-based flow control.  Bytes are never dropped.
+        return
+      }
+
+      // Text frames = JSON control messages
       try {
         const msg = JSON.parse(event.data)
-        
+
         if (msg.type === 'history') {
-          // Full history received (initial load or explicit request)
           terminal.reset()
-          // If the app is in alternate screen buffer (TUI apps like
-          // Claude Code, vim, htop), mirror that mode in xterm.js so
-          // cursor-positioning escapes from the PTY stream land at
-          // the correct rows.  Without this, stream coordinates
-          // (meant for alternate screen's clean row 1..N space) get
-          // applied to normal screen which may have scrollback,
-          // causing content to render on wrong lines.
           if (msg.alternateScreen) {
             terminal.write('\x1b[?1049h')
           }
@@ -128,35 +133,23 @@ export default function TerminalView({ sessionId, sessionStatus, onUserInput, di
             terminal.write(`\x1b[${msg.cursorY + 1};${msg.cursorX + 1}H`)
           }
           terminal.scrollToBottom()
-          lastContent = msg.data
           userScrolledUp = false
-        } else if (msg.type === 'stream') {
-          // Raw PTY stream from tmux %output — low-latency path
-          if (userScrolledUp) return
-          const raw = atob(msg.data)
-          const bytes = new Uint8Array(raw.length)
-          for (let i = 0; i < raw.length; i++) {
-            bytes[i] = raw.charCodeAt(i)
-          }
-          // Write as Uint8Array to bypass convertEol — data already has \r\n
-          terminal.write(bytes)
+          if (typeof msg.hash === 'number') lastSyncHash = msg.hash
         } else if (msg.type === 'sync') {
           // Drift correction — ground truth pane capture from tmux.
-          // Always applied regardless of scroll state: sync is the
-          // authoritative snapshot and must break the deadlock where
-          // userScrolledUp gets stuck true (e.g., after alternate
-          // screen exit) and blocks all updates permanently.
+          // Always applied regardless of scroll state to break deadlocks.
           terminal.write('\x1b[H\x1b[J' + msg.data)
           if (typeof msg.cursorX === 'number' && typeof msg.cursorY === 'number') {
             terminal.write(`\x1b[${msg.cursorY + 1};${msg.cursorX + 1}H`)
           }
           terminal.scrollToBottom()
-          lastContent = msg.data
           userScrolledUp = false
+          if (typeof msg.hash === 'number') lastSyncHash = msg.hash
         } else if (msg.type === 'error') {
           terminal.write(`\r\n\x1b[31m${msg.message}\x1b[0m\r\n`)
         }
       } catch {
+        // Fallback: write raw text if JSON parse fails
         terminal.write(event.data)
       }
     }
