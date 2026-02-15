@@ -112,6 +112,18 @@ gh pr create --draft --title "Your PR title" --body "..."
 
 **Immediately after creating**, attach the PR link to your subtask. Keep subtask as `in_progress` — it's not done until merged.
 
+### Testing Done Section
+
+First, check the MP's PR template for a testing checklist. If the template has its own testing requirements, **follow those first** — then supplement with our guidelines below where they don't conflict.
+
+For verifiable evidence, choose the approach that fits the change:
+
+1. **API/behavior changes** (preferred): Deploy locally on qprod/qei and include `curli`/`grpcurli` call + response showing the change works
+2. **UI changes**: E2E test with screenshots (use `/screenshot-gh-upload` skill)
+3. **Internal/non-API changes**: Unit test results and coverage stats are sufficient
+
+Include the actual output — not just "tests pass". Reviewers should be able to verify the change from the PR description without checking out the branch.
+
 ---
 
 ## Handling PR Reviews
