@@ -92,6 +92,10 @@ For multi-line content, use `--description-stdin`, `--notes-stdin`, or `--conten
 
 ## Guidelines
 
+### No Unverified Claims
+
+Never state something as fact unless tool output directly supports it. If data is missing or inconsistent, verify with another query before claiming. If you can't verify, say you're unsure.
+
 ### GitHub URLs — Never Guess
 
 **CRITICAL:** Never guess or construct GitHub URLs. Always get them from:

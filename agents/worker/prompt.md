@@ -219,6 +219,7 @@ Simply explain what you're stuck on in your response, and the brain will check o
 
 ## Guidelines
 
+- **No unverified claims** — Only state facts directly supported by tool output. If data is missing or inconsistent, verify before claiming. If you can't verify, say you're unsure.
 - **Follow all "instruction" context items** — These are mandatory and must be executed as specified
 - Focus on the assigned task — don't go beyond the scope
 - **You cannot mark your own task as done** — signal completion, and the orchestrator brain will review and confirm
