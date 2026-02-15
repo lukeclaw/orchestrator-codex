@@ -146,16 +146,3 @@ class TestTemplatesRepo:
         assert updated.version == 2
         assert updated.template == "v2"
 
-    def test_create_and_get_skill_template(self, db):
-        t = templates.create_skill_template(
-            db, "test_skill", "# Skill", is_default=True
-        )
-        assert t.is_default is True
-        default = templates.get_default_skill_template(db)
-        assert default.name == "test_skill"
-
-    def test_list_skill_templates(self, db):
-        templates.create_skill_template(db, "s1", "content1")
-        templates.create_skill_template(db, "s2", "content2")
-        all_skills = templates.list_skill_templates(db)
-        assert len(all_skills) == 2

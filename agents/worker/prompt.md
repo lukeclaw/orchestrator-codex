@@ -63,17 +63,9 @@ EOF
 
 When your task is complex, break it into subtasks to track progress.
 
-**CRITICAL: One PR = One Subtask.** Each subtask should represent a distinct deliverable with its own PR or artifact:
-- **DO**: Create separate subtasks for separate PRs (e.g., "API changes" → PR #1, "Frontend changes" → PR #2)
-- **DON'T**: Create multiple subtasks that all point to the same PR (e.g., "Create PR", "Address review", "Merge PR" — this is one subtask, not three)
-
-**Subtask = distinct piece of work**, not a phase of the same work. If all your work goes into one PR, that's one subtask.
-
 **Subtask descriptions should be concise deliverables** — state what "done" looks like, not implementation details:
-- **Good**: "PR merged: Add rate limiting to /api/users endpoint"
+- **Good**: "Add rate limiting (100 req/min) on /api/users endpoint"
 - **Bad**: "First I'll analyze the codebase, then implement rate limiting using Redis, then write tests..."
-
-The description is used to verify completion. Keep it short and verifiable.
 
 **Always attach links when creating subtasks:**
 - **Code changes** — Include the PR URL once created
@@ -87,12 +79,9 @@ orch-subtask list
 # Show a specific subtask
 orch-subtask show --id SUBTASK_UUID
 
-# Create subtasks with CONCISE deliverable descriptions
+# Create a subtask with a concise deliverable description
 orch-subtask create --title "Add rate limiting to API" \
   --description "PR merged: Rate limiting (100 req/min) on /api/users endpoint"
-
-orch-subtask create --title "Update API documentation" \
-  --description "Docs updated: Rate limiting section with examples added"
 
 # Update subtask status (use the UUID from list output)
 orch-subtask update --id SUBTASK_UUID --status done
@@ -114,20 +103,8 @@ The config parser fails when:
 Fix: Use proper YAML parsing instead of split('=')
 EOF
 
-# Add a link to an existing subtask (do this as soon as you have the link)
-orch-subtask update --id SUBTASK_UUID --add-link "https://github.com/org/repo/pull/123"
-
-# Add a link with an optional tag (e.g., PR, PRD, DOC, ISSUE)
+# Add a link to a subtask
 orch-subtask update --id SUBTASK_UUID --add-link "https://github.com/org/repo/pull/123" --add-link-tag "PR"
-
-# Update subtask with multiple changes
-orch-subtask update --id SUBTASK_UUID --status done --add-link "https://github.com/org/repo/pull/123" --add-link-tag "PR"
-
-# Clear all links from a subtask
-orch-subtask update --id SUBTASK_UUID --clear-links
-
-# Replace links (clear + add in one command)
-orch-subtask update --id SUBTASK_UUID --clear-links --add-link "https://new-pr.url" --add-link-tag "PR"
 
 # Delete a subtask (if created by mistake)
 orch-subtask delete --id SUBTASK_UUID
@@ -138,14 +115,13 @@ orch-subtask delete --id SUBTASK_UUID
 Use notifications to inform the user about **non-blocking but valuable information**. The user will see these in the dashboard and can dismiss them when addressed.
 
 **When to use notifications:**
-- PR was merged but a reviewer left a question worth addressing later
 - Found something unexpected but proceeded safely
 - Information the user should know but doesn't need to act on immediately
 
 **MANDATORY — Human Interaction Notifications:**
 **Whenever you interact with another human** (reply to PR review comments, respond to issues, post comments, etc.), you **MUST** send a notification containing:
 1. **Task context** — What task this is for
-2. **Link** — Direct URL to the exact comment/interaction (e.g., the specific PR comment URL)
+2. **Link** — Direct URL to the exact comment/interaction
 3. **Full message** — The complete text you sent to the other human
 
 This lets the user stay informed about all external communications happening on their behalf.
@@ -157,25 +133,13 @@ This lets the user stay informed about all external communications happening on 
 
 ```bash
 # Basic notification
-orch-notify "PR merged, but reviewer asked about error handling approach"
+orch-notify "Found potential memory issue in cache module"
 
 # With type (info, pr_comment, warning)
 orch-notify "Found potential memory issue in cache module" --type warning
 
 # With external link
-orch-notify "PR #123 merged, reviewer had a question about auth flow" \
-  --type pr_comment \
-  --link "https://github.com/org/repo/pull/123#discussion_r123456"
-
-# REQUIRED: After replying to a PR review comment
-orch-notify "[Task: Add rate limiting] Replied to reviewer comment" \
-  --type pr_comment \
-  --link "https://github.com/org/repo/pull/123#discussion_r789012" \
-  --message-stdin <<'EOF'
-Thanks for the feedback! I've updated the implementation to use a sliding window 
-instead of fixed buckets. The new approach handles burst traffic more gracefully 
-while still respecting the 100 req/min limit. See commit abc123 for the changes.
-EOF
+orch-notify "Docs page needs update" --type info --link "https://example.com/docs"
 ```
 
 **Use sparingly** for general notifications, but **always notify for human interactions** — the user needs visibility into all external communications.
@@ -188,32 +152,12 @@ When you start a dev server or any service that listens on a port, the user cann
 # Forward user's localhost:4200 to this rdev's port 4200
 orch-tunnel 4200
 
-# Forward user's localhost:3000 to this rdev's port 3000
-orch-tunnel 3000
-
 # Close a tunnel when no longer needed
 orch-tunnel 4200 --close
 
 # List active tunnels for this session
 orch-tunnel --list
 ```
-
-**When to use:**
-- After starting a dev server (e.g., `npm run dev`, `yarn dev`, `python -m http.server`)
-- When running a debugger that listens on a port
-- When the user needs to access any web UI or service running on this rdev
-
-**Example workflow:**
-```bash
-# Start your dev server
-npm run dev  # Listening on port 4200
-
-# Request tunnel so user can access it
-orch-tunnel 4200
-# User can now open http://localhost:4200 in their browser
-```
-
-The tunnel remains open until you close it, delete the worker session, or the orchestrator server restarts.
 
 ### Project Context (`orch-context`)
 
@@ -237,8 +181,6 @@ orch-context read ITEM_ID
 orch-context read ITEM_ID_1 ITEM_ID_2
 ```
 
-This pattern keeps your context window efficient — scan titles/descriptions first, then only fetch full content for items relevant to your task.
-
 ```bash
 # See the overall project plan (all tasks)
 orch-context tasks
@@ -246,16 +188,16 @@ orch-context tasks
 
 **Contributing context** — Share discoveries with the project for future workers:
 ```bash
-# Simple note
 orch-context add --title "API Auth" --description "Bearer token required" \
   --content "All /api/* endpoints require Authorization: Bearer <token> header"
-
-# Investigation findings (multi-line via heredoc)
-orch-context add --title "Config Parser Bug" --description "Root cause analysis" \
-  --content-stdin <<'EOF'
-Values with `=` break parsing. Fix: use YAML parser instead of split('=').
-EOF
 ```
+
+## Skills
+
+You have skills available for specific workflows. Use `/skill-name` to invoke them when relevant:
+
+- **`/pr-workflow`** — Use when creating PRs, handling reviews, or driving PRs to merge
+- **`/screenshot-gh-upload`** — Use when capturing screenshots for PR descriptions
 
 ## When You're Stuck
 
@@ -272,30 +214,16 @@ Simply explain what you're stuck on in your response, and the brain will check o
 5. **Update task status** — `orch-task update --status in_progress`
 6. **Break into subtasks** — If complex, use `orch-subtask create` with concise deliverable descriptions
 7. **Do the work** — Implement each subtask, marking them done with `orch-subtask update --id UUID --status done`
-8. **Add links** — Use `--add-link` to attach relevant PRs or docs to subtasks
+8. **Add links** — Use `--add-link` to attach relevant PRs or docs to tasks/subtasks
 9. **Signal completion** — When all subtasks are done, state "Task complete" in your response. The orchestrator brain will review your work and mark the task as done.
 
 ## Guidelines
 
-### GitHub URLs — Never Guess
-
-**CRITICAL:** Never guess or construct GitHub URLs. Always extract them from actual command output:
-- **PR URLs** — Copy from `gh pr create` output or `gh pr view --json url`
-- **Repo URLs** — Run `git remote get-url origin` to get the actual remote
-- **Organization name** — Never assume. Always verify from actual git remote or command output.
-
-**Wrong:** Guessing the organization name (e.g., constructing a URL from memory)
-**Right:** Using the exact URL from `gh pr create` output (e.g., `https://github.com/linkedin-multiproduct/repo-name/pull/123`)
-
-### Other Guidelines
-
 - **Follow all "instruction" context items** — These are mandatory and must be executed as specified
 - Focus on the assigned task — don't go beyond the scope
 - **You cannot mark your own task as done** — signal completion, and the orchestrator brain will review and confirm
-- Use subtasks for distinct deliverables (one PR = one subtask), not for phases of the same work
-- **Subtask descriptions = concise deliverables** — state what "done" looks like, not how you'll do it
-- **ALWAYS attach links to subtasks** — each subtask needs its own PR or artifact URL
+- **One subtask per PR** — Each subtask is a distinct deliverable. Don't split phases of the same PR into separate subtasks.
+- **Never guess URLs** — Always extract URLs from actual command output (e.g., `gh pr create`, `gh pr view --json url`, `git remote get-url origin`). Never construct them from memory.
 - Read project context before making architectural decisions
 - Write clean, tested code that follows the project's existing conventions
-- Commit your work when the task is complete
 - If stuck or environment issues arise, explain the problem and wait — the orchestrator will notice and provide guidance

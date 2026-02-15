@@ -6,7 +6,6 @@ from orchestrator.state.models import (
     Config,
     Project,
     Session,
-    SkillTemplate,
     Task,
     WorkerCapability,
 )
@@ -57,7 +56,3 @@ def test_worker_capability():
     assert wc.session_id == "s1"
 
 
-def test_skill_template_defaults():
-    st = SkillTemplate(id="st1", name="test", template="content")
-    assert st.version == 1
-    assert st.is_default is False

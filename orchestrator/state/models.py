@@ -178,22 +178,6 @@ class PromptTemplate:
 
 
 @dataclass
-class SkillTemplate:
-    id: str
-    name: str
-    template: str
-    version: int = 1
-    install_instruction: str | None = None
-    description: str | None = None
-    is_default: bool = False
-    created_at: str = ""
-    updated_at: str = ""
-
-    def __post_init__(self):
-        self.is_default = bool(self.is_default)
-
-
-@dataclass
 class SessionSnapshot:
     id: str
     session_id: str

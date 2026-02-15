@@ -10,9 +10,7 @@ from scripts.seed_db import seed_all
 from orchestrator.state.repositories.config import get_config, list_config
 from orchestrator.state.repositories.templates import (
     get_prompt_template,
-    get_default_skill_template,
     list_prompt_templates,
-    list_skill_templates,
 )
 
 
@@ -44,18 +42,6 @@ def test_seed_cleans_legacy_prompt_templates(db):
     # These should not exist (removed)
     assert get_prompt_template(db, "system_prompt") is None
     assert get_prompt_template(db, "rebrief") is None
-
-
-def test_seed_populates_skill_template(db):
-    seed_all(db)
-    skills = list_skill_templates(db)
-    assert len(skills) >= 1
-
-    default = get_default_skill_template(db)
-    assert default is not None
-    assert default.name == "orchestrator"
-    assert "${SESSION_NAME}" in default.template
-    assert "${ORCHESTRATOR_URL}" in default.template
 
 
 def test_seed_idempotent(db):

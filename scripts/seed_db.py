@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Populate the database with default config, prompt templates, and skill templates."""
+"""Populate the database with default config, prompt templates, and context."""
 
 import sys
 from pathlib import Path
@@ -12,7 +12,6 @@ from orchestrator.state.db import get_connection
 from orchestrator.state.migrations.runner import apply_migrations
 from orchestrator.state.repositories import config as config_repo
 from orchestrator.state.repositories import context as context_repo
-from orchestrator.state.repositories import templates as templates_repo
 
 
 def seed_config(conn):
@@ -57,83 +56,6 @@ def seed_prompt_templates(conn):
     )
     conn.commit()
     # No prompt templates currently needed - all prompts are stored in files
-
-
-def seed_skill_templates(conn):
-    """Seed default skill template for remote sessions."""
-    existing = templates_repo.get_skill_template(conn, "orchestrator")
-    if existing is not None:
-        return
-
-    skill_template = """# Orchestrator Integration Skill
-<!-- orchestrator-skill-version: ${SKILL_VERSION} -->
-
-You are connected to an orchestrator system managing multiple Claude Code
-sessions. Use this skill to report your progress.
-
-## Environment
-
-- Session Name: ${SESSION_NAME}
-- Orchestrator URL: ${ORCHESTRATOR_URL}
-
-## Report Progress
-
-After completing significant milestones, report them:
-
-    curl -sX POST ${ORCHESTRATOR_URL}/api/report \\
-      -H "Content-Type: application/json" \\
-      -d '{"session":"${SESSION_NAME}","event":"task_progress",
-           "data":{"task":"DESCRIPTION","progress":PERCENT,
-                   "subtasks":[{"name":"...","done":true/false}]}}'
-
-## Report PR Creation
-
-When you create a pull request:
-
-    curl -sX POST ${ORCHESTRATOR_URL}/api/report \\
-      -H "Content-Type: application/json" \\
-      -d '{"session":"${SESSION_NAME}","event":"pr_created",
-           "data":{"url":"PR_URL","title":"PR_TITLE"}}'
-
-## Check for Guidance
-
-Before starting major work:
-
-    curl -s "${ORCHESTRATOR_URL}/api/guidance?session=${SESSION_NAME}"
-
-## Report Errors
-
-When blocked by errors:
-
-    curl -sX POST ${ORCHESTRATOR_URL}/api/report \\
-      -H "Content-Type: application/json" \\
-      -d '{"session":"${SESSION_NAME}","event":"error",
-           "data":{"type":"ERROR_TYPE","message":"DESCRIPTION"}}'
-
-## Best Practices
-
-1. Report progress after completing each significant subtask
-2. Check for guidance at the start of each major task
-3. Report PRs immediately after creation
-4. Report errors when blocked
-
-The orchestrator may send you messages directly through the terminal.
-Always acknowledge received instructions."""
-
-    install_instruction = (
-        "Please create a custom slash command at .claude/commands/orchestrator.md "
-        "with the following content. This is an orchestrator integration skill "
-        "that I need you to use for reporting progress."
-    )
-
-    templates_repo.create_skill_template(
-        conn,
-        name="orchestrator",
-        template=skill_template,
-        install_instruction=install_instruction,
-        description="Default orchestrator integration skill installed into remote Claude Code sessions",
-        is_default=True,
-    )
 
 
 def seed_context(conn):
@@ -221,7 +143,6 @@ def seed_all(conn):
     """Run all seed functions."""
     seed_config(conn)
     seed_prompt_templates(conn)
-    seed_skill_templates(conn)
     seed_context(conn)
 
 
