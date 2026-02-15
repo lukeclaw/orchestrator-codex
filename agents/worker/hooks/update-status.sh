@@ -9,13 +9,29 @@ EVENT=$(echo "$INPUT" | jq -r '.hook_event_name // empty')
 
 case "$EVENT" in
     SessionStart)
-        STATUS="idle"
+        # Only set idle on fresh startup, not on compact/resume/clear
+        SOURCE=$(echo "$INPUT" | jq -r '.source // empty')
+        if [ "$SOURCE" = "startup" ]; then
+            STATUS="idle"
+        else
+            exit 0
+        fi
         ;;
     UserPromptSubmit|PreToolUse)
         STATUS="working"
         ;;
-    Stop|Notification)
+    Stop)
         STATUS="waiting"
+        ;;
+    Notification)
+        # Only set waiting for notification types that indicate Claude needs input
+        # idle_prompt = Claude waiting for user, permission_prompt = needs permission
+        NTYPE=$(echo "$INPUT" | jq -r '.notification_type // empty')
+        if [ "$NTYPE" = "idle_prompt" ] || [ "$NTYPE" = "permission_prompt" ]; then
+            STATUS="waiting"
+        else
+            exit 0
+        fi
         ;;
     SessionEnd)
         STATUS="disconnected"
