@@ -77,7 +77,6 @@ def update_session(
     id: str,
     status: str | None = None,
     tmux_window: str | None = None,
-    tunnel_pane: str | None = ...,
     tunnel_pid: int | None = ...,
     takeover_mode: bool | None = None,
     last_viewed_at: str | None = None,
@@ -93,9 +92,6 @@ def update_session(
     if tmux_window is not None:
         sets.append("tmux_window = ?")
         params.append(tmux_window)
-    if tunnel_pane is not ...:
-        sets.append("tunnel_pane = ?")
-        params.append(tunnel_pane)
     if tunnel_pid is not ...:
         sets.append("tunnel_pid = ?")
         params.append(tunnel_pid)

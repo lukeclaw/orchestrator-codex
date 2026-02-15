@@ -1,6 +1,6 @@
 """Integration tests for all API endpoints."""
 
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
@@ -88,34 +88,32 @@ class TestSessions:
         assert resp.status_code == 201
         assert resp.json()["status"] == "idle"
 
-    def test_session_serialization_includes_tunnel_pane(self, client):
-        """GET /sessions should include tunnel_pane field."""
+    def test_session_serialization_includes_tunnel_pid(self, client):
+        """GET /sessions should include tunnel_pid field."""
         with patch("orchestrator.api.routes.sessions.ensure_window", return_value="orchestrator:tp1"):
             create = client.post("/api/sessions", json={"name": "tp1", "host": "localhost"})
         sid = create.json()["id"]
         resp = client.get(f"/api/sessions/{sid}")
-        assert "tunnel_pane" in resp.json()
-        assert resp.json()["tunnel_pane"] is None
+        assert "tunnel_pid" in resp.json()
+        assert resp.json()["tunnel_pid"] is None
 
-    def test_delete_rdev_session_kills_tunnel(self, client):
-        """Deleting an rdev session also kills the tunnel window."""
+    def test_delete_rdev_session_stops_tunnel(self, client):
+        """Deleting an rdev session stops the tunnel subprocess."""
         with patch("orchestrator.api.routes.sessions.ensure_window", return_value="orchestrator:rdev-del"):
             with patch("orchestrator.api.routes.sessions.threading"):
                 resp = client.post("/api/sessions", json={
                     "name": "rdev-del", "host": "subs-mt/test"
                 })
         sid = resp.json()["id"]
-        # Manually set tunnel_pane in DB
-        conn = client.app.state.conn
-        conn.execute("UPDATE sessions SET tunnel_pane = ? WHERE id = ?", ("orchestrator:rdev-del-tunnel", sid))
-        conn.commit()
 
-        with patch("orchestrator.api.routes.sessions.kill_window") as mock_kill:
+        mock_tm = MagicMock()
+        mock_tm.stop_tunnel.return_value = True
+        client.app.state.tunnel_manager = mock_tm
+
+        with patch("orchestrator.api.routes.sessions.kill_window"):
             resp = client.delete(f"/api/sessions/{sid}")
         assert resp.status_code == 200
-        # kill_window should have been called for the tunnel
-        calls = [str(c) for c in mock_kill.call_args_list]
-        assert any("rdev-del-tunnel" in c for c in calls)
+        mock_tm.stop_tunnel.assert_called_once_with(sid)
 
 
 # --- Projects ---
@@ -284,8 +282,8 @@ class TestBrain:
         s = brain_sessions[0]
         assert s["host"] == "local"
         assert s["status"] == "working"
-        assert "tunnel_pane" in s
-        assert s["tunnel_pane"] is None
+        assert "tunnel_pid" in s
+        assert s["tunnel_pid"] is None
 
     def test_brain_sync_not_running(self, client):
         resp = client.post("/api/brain/sync")

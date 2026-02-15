@@ -1,18 +1,15 @@
-"""Tests for tunnel health checking, probing, kill escalation, and periodic monitoring.
+"""Tests for tunnel health probing, kill escalation, and periodic monitoring.
 
 Covers:
-- SSH keepalive options in tunnel command
 - Active tunnel probing (probe_tunnel_connectivity)
-- check_tunnel_alive with active probe integration
-- check_tunnel_alive false-positive fallback removal
 - kill_tunnel_processes SIGKILL escalation
 - find_tunnel_pids process discovery
-- Periodic tunnel health monitor loop
+- Periodic tunnel health monitor loop (subprocess-based)
 """
 
 import asyncio
 import signal
-from unittest.mock import AsyncMock, MagicMock, patch, call
+from unittest.mock import MagicMock, patch, call
 
 import pytest
 
@@ -27,44 +24,6 @@ def reset_tunnel_cache():
     yield
     tunnel._tunnel_cache = {}
     tunnel._cache_timestamp = 0
-
-
-# ==============================================================================
-# SSH Keepalive Options
-# ==============================================================================
-
-
-class TestSSHKeepalive:
-    """Verify the reverse tunnel command includes keepalive and failure options."""
-
-    @patch("orchestrator.terminal.ssh.send_keys")
-    def test_setup_rdev_tunnel_includes_keepalive(self, mock_send_keys):
-        """setup_rdev_tunnel should include ServerAliveInterval, ServerAliveCountMax,
-        and ExitOnForwardFailure in the SSH command."""
-        from orchestrator.terminal.ssh import setup_rdev_tunnel
-
-        setup_rdev_tunnel("sess", "win", "user/rdev-vm", 8093, 8093)
-
-        mock_send_keys.assert_called_once()
-        cmd = mock_send_keys.call_args[0][2]
-
-        assert "ServerAliveInterval=30" in cmd
-        assert "ServerAliveCountMax=3" in cmd
-        assert "ExitOnForwardFailure=yes" in cmd
-        assert "-N" in cmd
-        assert "-R 8093:127.0.0.1:8093" in cmd
-        assert "user/rdev-vm" in cmd
-
-    @patch("orchestrator.terminal.ssh.send_keys")
-    def test_setup_rdev_tunnel_still_has_host_key_options(self, mock_send_keys):
-        """Should still disable strict host key checking for ephemeral rdev VMs."""
-        from orchestrator.terminal.ssh import setup_rdev_tunnel
-
-        setup_rdev_tunnel("sess", "win", "user/rdev-vm", 8093, 8093)
-
-        cmd = mock_send_keys.call_args[0][2]
-        assert "StrictHostKeyChecking=no" in cmd
-        assert "UserKnownHostsFile=/dev/null" in cmd
 
 
 # ==============================================================================
@@ -152,149 +111,6 @@ class TestProbeTunnelConnectivity:
         mock_run.return_value = MagicMock(stdout="'200'", stderr="", returncode=0)
 
         assert probe_tunnel_connectivity("user/rdev-vm") is True
-
-
-# ==============================================================================
-# check_tunnel_alive (updated with active probe + no false-positive fallback)
-# ==============================================================================
-
-
-class TestCheckTunnelAlive:
-    """Tests for check_tunnel_alive with the updated logic."""
-
-    @patch("orchestrator.session.health.capture_output")
-    def test_returns_false_on_no_output(self, mock_capture):
-        """Empty output → dead."""
-        from orchestrator.session.health import check_tunnel_alive
-
-        mock_capture.return_value = ""
-        assert check_tunnel_alive("sess", "win") is False
-
-    @patch("orchestrator.session.health.capture_output")
-    def test_returns_false_on_none_output(self, mock_capture):
-        """None output → dead."""
-        from orchestrator.session.health import check_tunnel_alive
-
-        mock_capture.return_value = None
-        assert check_tunnel_alive("sess", "win") is False
-
-    @patch("orchestrator.session.health.capture_output")
-    def test_detects_connection_closed(self, mock_capture):
-        """Should detect 'Connection closed' error."""
-        from orchestrator.session.health import check_tunnel_alive
-
-        mock_capture.return_value = "ssh -N -R ...\nConnection closed by remote host"
-        assert check_tunnel_alive("sess", "win") is False
-
-    @patch("orchestrator.session.health.capture_output")
-    def test_detects_connection_refused(self, mock_capture):
-        """Should detect 'Connection refused' error."""
-        from orchestrator.session.health import check_tunnel_alive
-
-        mock_capture.return_value = "ssh: connect to host ...: Connection refused"
-        assert check_tunnel_alive("sess", "win") is False
-
-    @patch("orchestrator.session.health.capture_output")
-    def test_detects_broken_pipe(self, mock_capture):
-        """Should detect 'broken pipe' error."""
-        from orchestrator.session.health import check_tunnel_alive
-
-        mock_capture.return_value = "Write failed: Broken pipe"
-        assert check_tunnel_alive("sess", "win") is False
-
-    @patch("orchestrator.session.health.capture_output")
-    def test_detects_host_key_changed(self, mock_capture):
-        """Should detect host key verification failure."""
-        from orchestrator.session.health import check_tunnel_alive
-
-        mock_capture.return_value = "@@@@@@@@@\nREMOTE HOST IDENTIFICATION HAS CHANGED\n@@@@@@@@@"
-        assert check_tunnel_alive("sess", "win") is False
-
-    @patch("orchestrator.session.health.capture_output")
-    def test_detects_shell_prompt(self, mock_capture):
-        """Shell prompt at end → tunnel exited back to shell."""
-        from orchestrator.session.health import check_tunnel_alive
-
-        mock_capture.return_value = "some output\nuser@host $ "
-        assert check_tunnel_alive("sess", "win") is False
-
-    @patch("orchestrator.session.health.capture_output")
-    def test_alive_when_ssh_command_visible(self, mock_capture):
-        """Should return True when SSH command with -R is visible and no errors."""
-        from orchestrator.session.health import check_tunnel_alive
-
-        mock_capture.return_value = "ssh -o StrictHostKeyChecking=no -N -R 8093:127.0.0.1:8093 user/rdev-vm"
-        assert check_tunnel_alive("sess", "win") is True
-
-    @patch("orchestrator.session.health.capture_output")
-    def test_alive_when_ssh_L_command_visible(self, mock_capture):
-        """Should return True when SSH command with -L is visible and no errors."""
-        from orchestrator.session.health import check_tunnel_alive
-
-        mock_capture.return_value = "ssh -N -L 4200:localhost:4200 user/rdev-vm"
-        assert check_tunnel_alive("sess", "win") is True
-
-    @patch("orchestrator.session.health.probe_tunnel_connectivity")
-    @patch("orchestrator.session.health.capture_output")
-    def test_inconclusive_with_host_does_active_probe(self, mock_capture, mock_probe):
-        """When tmux output is inconclusive and host is provided, should use active probe."""
-        from orchestrator.session.health import check_tunnel_alive
-
-        # Output that doesn't match any rule (no ssh command, no error, no prompt)
-        mock_capture.return_value = "some random output\nwithout indicators"
-        mock_probe.return_value = True
-
-        result = check_tunnel_alive("sess", "win", host="user/rdev-vm")
-
-        assert result is True
-        mock_probe.assert_called_once_with("user/rdev-vm", 8093)
-
-    @patch("orchestrator.session.health.probe_tunnel_connectivity")
-    @patch("orchestrator.session.health.capture_output")
-    def test_inconclusive_with_host_probe_fails(self, mock_capture, mock_probe):
-        """When tmux inconclusive and active probe fails, should return False."""
-        from orchestrator.session.health import check_tunnel_alive
-
-        mock_capture.return_value = "some random output"
-        mock_probe.return_value = False
-
-        result = check_tunnel_alive("sess", "win", host="user/rdev-vm")
-
-        assert result is False
-        mock_probe.assert_called_once()
-
-    @patch("orchestrator.session.health.capture_output")
-    def test_inconclusive_without_host_returns_false(self, mock_capture):
-        """When tmux inconclusive and no host for probing, should return False (fail safe)."""
-        from orchestrator.session.health import check_tunnel_alive
-
-        # Output that doesn't match any rule
-        mock_capture.return_value = "some random output\nwithout any indicators"
-
-        # No host provided → can't probe → fail safe
-        result = check_tunnel_alive("sess", "win")
-        assert result is False
-
-    @patch("orchestrator.session.health.capture_output")
-    def test_exception_returns_false(self, mock_capture):
-        """Should return False on exception."""
-        from orchestrator.session.health import check_tunnel_alive
-
-        mock_capture.side_effect = RuntimeError("tmux error")
-        assert check_tunnel_alive("sess", "win") is False
-
-    @patch("orchestrator.session.health.probe_tunnel_connectivity")
-    @patch("orchestrator.session.health.capture_output")
-    def test_custom_remote_port_passed_to_probe(self, mock_capture, mock_probe):
-        """Custom remote_port should be passed through to probe."""
-        from orchestrator.session.health import check_tunnel_alive
-
-        mock_capture.return_value = "ambiguous output"
-        mock_probe.return_value = True
-
-        check_tunnel_alive("sess", "win", host="user/rdev-vm", remote_port=9999)
-
-        mock_probe.assert_called_once_with("user/rdev-vm", 9999)
 
 
 # ==============================================================================

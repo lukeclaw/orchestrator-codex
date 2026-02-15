@@ -28,7 +28,6 @@ class TestSessionCreate:
         mock_session.status = "idle"
         mock_session.tmux_window = "orchestrator:test-worker"
         mock_session.work_dir = None
-        mock_session.tunnel_pane = None
         mock_session.takeover_mode = False
         mock_session.created_at = "2024-01-01"
         mock_session.last_status_changed_at = "2024-01-01"
@@ -191,7 +190,6 @@ class TestSessionDelete:
         mock_session.name = "test-worker"
         mock_session.host = "localhost"
         mock_session.tmux_window = "orchestrator:test-worker"
-        mock_session.tunnel_pane = None
         mock_repo.get_session.return_value = mock_session
 
         mock_request = MagicMock()
@@ -221,7 +219,6 @@ class TestSessionDelete:
         mock_session.name = "test-worker"
         mock_session.host = "localhost"
         mock_session.tmux_window = "orchestrator:test-worker"
-        mock_session.tunnel_pane = None
         mock_session.work_dir = "/home/user/project"
         mock_repo.get_session.return_value = mock_session
 
@@ -253,7 +250,6 @@ class TestSessionDelete:
         mock_session.name = "test-rdev"
         mock_session.host = "user/rdev-vm"
         mock_session.tmux_window = "orchestrator:test-rdev"
-        mock_session.tunnel_pane = "orchestrator:test-rdev-tunnel"
         mock_repo.get_session.return_value = mock_session
 
         mock_request = MagicMock()
@@ -282,7 +278,6 @@ class TestSessionDelete:
         mock_session.name = "test-rdev"
         mock_session.host = "user/rdev-vm"
         mock_session.tmux_window = "orchestrator:test-rdev"
-        mock_session.tunnel_pane = "orchestrator:test-rdev-tunnel"
         mock_repo.get_session.return_value = mock_session
 
         mock_tm = MagicMock()
@@ -311,7 +306,6 @@ class TestSessionDelete:
         mock_session.name = "test-worker"
         mock_session.host = "localhost"
         mock_session.tmux_window = "orchestrator:test-worker"
-        mock_session.tunnel_pane = None
         mock_repo.get_session.return_value = mock_session
 
         mock_request = MagicMock()

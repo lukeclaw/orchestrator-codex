@@ -42,7 +42,6 @@ def recover_tunnels(conn: sqlite3.Connection, tunnel_manager):
 
     For each rdev session with a stored tunnel_pid, try to adopt the
     existing SSH process. If the process is dead, start a fresh tunnel.
-    Also cleans up any legacy tmux tunnel windows.
     """
     from orchestrator.terminal.ssh import is_rdev_host
 
@@ -54,20 +53,6 @@ def recover_tunnels(conn: sqlite3.Connection, tunnel_manager):
             continue
         if s.status in ("disconnected",):
             continue
-
-        # Clean up legacy tmux tunnel windows (from old tmux-based approach)
-        if s.tunnel_pane:
-            try:
-                if ":" in s.tunnel_pane:
-                    t_sess, t_win = s.tunnel_pane.split(":", 1)
-                else:
-                    t_sess, t_win = "orchestrator", s.tunnel_pane
-                tmux.kill_window(t_sess, t_win)
-                logger.info("Cleaned up legacy tmux tunnel window %s", s.tunnel_pane)
-            except Exception:
-                pass
-            # Clear the old tunnel_pane field
-            sessions.update_session(conn, s.id, tunnel_pane=None)
 
         # Recover or start tunnel
         pid = tunnel_manager.recover_tunnel(

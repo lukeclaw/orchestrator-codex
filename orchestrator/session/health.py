@@ -9,9 +9,6 @@ import os
 import signal
 import subprocess
 import time
-from typing import Optional
-
-from orchestrator.terminal.manager import capture_output
 
 logger = logging.getLogger(__name__)
 
@@ -169,7 +166,7 @@ def probe_tunnel_connectivity(host: str, remote_port: int = DEFAULT_API_PORT, ti
     """Actively test if the reverse tunnel works by SSHing to host and curling the tunneled port.
 
     This provides a definitive answer about tunnel health by testing actual connectivity,
-    unlike check_tunnel_alive() which only inspects tmux output heuristics.
+    unlike the old check_tunnel_alive() which only inspected tmux output heuristics.
 
     Args:
         host: rdev host (e.g., "user/rdev-vm")
@@ -206,93 +203,6 @@ def probe_tunnel_connectivity(host: str, remote_port: int = DEFAULT_API_PORT, ti
         return False
     except Exception as e:
         logger.warning("Tunnel probe: %s port %d - error: %s", host, remote_port, e)
-        return False
-
-
-def check_tunnel_alive(
-    tmux_sess: str,
-    tunnel_win: str,
-    host: Optional[str] = None,
-    remote_port: int = DEFAULT_API_PORT,
-) -> bool:
-    """Check if the tunnel window has an active SSH tunnel running.
-
-    Two-stage check:
-    1. Fast check: inspect tmux window output for error indicators or shell prompt.
-       If errors/prompt found, tunnel is definitely dead → return False.
-    2. If the fast check is inconclusive AND host is provided, do an active probe
-       by SSHing to the remote host and curling through the tunnel.
-
-    Args:
-        tmux_sess: tmux session name
-        tunnel_win: tmux window name for the tunnel
-        host: Optional rdev host for active probing (e.g., "user/rdev-vm")
-        remote_port: Port used by the reverse tunnel (default 8093)
-
-    Returns:
-        True if tunnel appears alive, False otherwise
-    """
-    try:
-        output = capture_output(tmux_sess, tunnel_win, lines=10)
-        if not output:
-            logger.info("Tunnel check: no output from window - assuming dead")
-            return False
-
-        output_lower = output.lower()
-        logger.debug("Tunnel check output: %s", output[:200])
-
-        # Check for common SSH failure indicators
-        error_indicators = [
-            "Connection closed",
-            "Connection refused",
-            "Connection timed out",
-            "Connection reset",
-            "broken pipe",
-            "Host key verification failed",
-            "Permission denied",
-            "Could not resolve hostname",
-            "Network is unreachable",
-            # Host key changed - SSH connects but disables port forwarding
-            "REMOTE HOST IDENTIFICATION HAS CHANGED",
-            "Port forwarding is disabled",
-        ]
-        for indicator in error_indicators:
-            if indicator.lower() in output_lower:
-                logger.info("Tunnel check: found error indicator '%s'", indicator)
-                return False
-
-        # Check for shell prompt - indicates tunnel command has exited
-        lines = output.strip().split('\n')
-        last_line = lines[-1].strip() if lines else ""
-
-        # Shell prompt patterns (tunnel exited, back to shell)
-        shell_prompt_indicators = ['$ ', '% ', '> ', 'bash-', '# ']
-        for prompt in shell_prompt_indicators:
-            if last_line.endswith(prompt.strip()) or prompt in last_line:
-                # Check if it's just a shell prompt (tunnel exited)
-                # vs ssh command still running (which wouldn't show prompt)
-                if not ('ssh' in output_lower and '-L' in output):
-                    logger.info("Tunnel check: shell prompt detected, tunnel likely dead: '%s'", last_line)
-                    return False
-
-        # If output contains active SSH tunnel command and no errors, likely alive
-        if 'ssh' in output_lower and ('-L' in output or '-R' in output):
-            logger.info("Tunnel check: SSH tunnel command visible, appears alive")
-            return True
-
-        # Inconclusive from tmux output — fall through to active probe or fail safe
-        logger.info("Tunnel check: inconclusive from tmux output (last_line: %s)", last_line[:50])
-
-        # If host provided, do an active probe to get a definitive answer
-        if host:
-            logger.info("Tunnel check: running active probe to %s:%d", host, remote_port)
-            return probe_tunnel_connectivity(host, remote_port)
-
-        # No host for active probe — fail safe (trigger reconnect rather than ignore dead tunnel)
-        logger.info("Tunnel check: no host for active probe, assuming dead")
-        return False
-    except Exception as e:
-        logger.warning("Tunnel check failed: %s", e)
         return False
 
 

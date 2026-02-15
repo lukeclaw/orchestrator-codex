@@ -103,7 +103,6 @@ def _serialize_session(s):
     return {
         "id": s.id, "name": s.name, "host": s.host,
         "work_dir": s.work_dir, "tmux_window": s.tmux_window,
-        "tunnel_pane": s.tunnel_pane,
         "tunnel_pid": s.tunnel_pid,
         "status": s.status, "takeover_mode": s.takeover_mode,
         "created_at": s.created_at,
@@ -387,17 +386,6 @@ def delete_session(session_id: str, request: Request, db=Depends(get_db)):
                 logger.info("Stopped tunnel subprocess for session %s", s.name)
         except Exception:
             logger.warning("Could not stop tunnel for session %s", s.name, exc_info=True)
-
-    # Also clean up any legacy tmux tunnel window
-    if s.tunnel_pane:
-        if ":" in s.tunnel_pane:
-            t_sess, t_win = s.tunnel_pane.split(":", 1)
-        else:
-            t_sess, t_win = "orchestrator", s.tunnel_pane
-        try:
-            kill_window(t_sess, t_win)
-        except Exception:
-            pass  # Legacy cleanup — may already be gone
 
     # Kill the tmux window if it exists
     if s.tmux_window:
