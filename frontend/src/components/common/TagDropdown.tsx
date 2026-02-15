@@ -1,10 +1,11 @@
 import { useState, useRef, useEffect } from 'react'
 import './TagDropdown.css'
 
-interface TagOption {
+export interface TagOption {
   value: string
   label: string
   className?: string
+  children?: TagOption[]  // Nested submenu options
 }
 
 interface Props {
@@ -17,6 +18,7 @@ interface Props {
 
 export default function TagDropdown({ value, options, onChange, disabled = false, renderTag }: Props) {
   const [open, setOpen] = useState(false)
+  const [hoveredOption, setHoveredOption] = useState<string | null>(null)
   const ref = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -25,6 +27,7 @@ export default function TagDropdown({ value, options, onChange, disabled = false
     const handleClickOutside = (e: MouseEvent) => {
       if (ref.current && !ref.current.contains(e.target as Node)) {
         setOpen(false)
+        setHoveredOption(null)
       }
     }
     
@@ -39,12 +42,29 @@ export default function TagDropdown({ value, options, onChange, disabled = false
     }
   }, [open])
 
-  const selectedOption = options.find(o => o.value === value) || options[0]
-  const otherOptions = options.filter(o => o.value !== value)
+  // For nested options, find the selected option by checking children too
+  const findSelectedOption = (): { option: TagOption; parent?: TagOption } => {
+    for (const opt of options) {
+      if (opt.value === value) return { option: opt }
+      if (opt.children) {
+        const child = opt.children.find(c => c.value === value)
+        if (child) return { option: child, parent: opt }
+      }
+    }
+    return { option: options[0] }
+  }
 
-  const handleSelect = (val: string) => {
+  const { option: selectedOption, parent: selectedParent } = findSelectedOption()
+  const otherOptions = options.filter(o => o.value !== value && o.value !== selectedParent?.value)
+
+  const handleSelect = (val: string, hasChildren: boolean) => {
+    if (hasChildren) {
+      // Don't select parent options that have children
+      return
+    }
     onChange(val)
     setOpen(false)
+    setHoveredOption(null)
   }
 
   const defaultRenderTag = (option: TagOption, isSelected: boolean) => (
@@ -68,8 +88,35 @@ export default function TagDropdown({ value, options, onChange, disabled = false
       {open && (
         <div className="tag-dropdown-menu">
           {otherOptions.map(opt => (
-            <div key={opt.value} className="tag-dropdown-option" onClick={() => handleSelect(opt.value)}>
+            <div
+              key={opt.value}
+              className={`tag-dropdown-option ${opt.children ? 'has-children' : ''}`}
+              onClick={() => handleSelect(opt.value, !!opt.children)}
+              onMouseEnter={() => opt.children && setHoveredOption(opt.value)}
+              onMouseLeave={() => !opt.children && setHoveredOption(null)}
+            >
               {render(opt, false)}
+              {opt.children && <span className="tag-dropdown-submenu-arrow">►</span>}
+              {opt.children && hoveredOption === opt.value && (
+                <div
+                  className="tag-dropdown-submenu"
+                  onMouseEnter={() => setHoveredOption(opt.value)}
+                  onMouseLeave={() => setHoveredOption(null)}
+                >
+                  {opt.children.map(child => (
+                    <div
+                      key={child.value}
+                      className="tag-dropdown-option"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        handleSelect(child.value, false)
+                      }}
+                    >
+                      {render(child, false)}
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           ))}
         </div>

@@ -197,6 +197,11 @@
   color: #3fb950;
 }
 
+.cm-scope-project-item {
+  background: rgba(63, 185, 80, 0.1);
+  color: #3fb950;
+}
+
 /* ─── Description ─── */
 .cm-header-desc {
   padding-left: 0;

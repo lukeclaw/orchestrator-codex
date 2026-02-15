@@ -220,6 +220,7 @@ export default function ContextPage() {
 
       <ContextModal
         context={selectedContext}
+        projects={projects}
         isNew={showNewContext}
         onClose={() => {
           setSelectedContext(null)

@@ -1,14 +1,15 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import ConfirmPopover from '../common/ConfirmPopover'
-import TagDropdown from '../common/TagDropdown'
+import TagDropdown, { type TagOption } from '../common/TagDropdown'
 import Markdown from '../common/Markdown'
-import type { ContextItem } from '../../api/types'
+import type { ContextItem, Project } from '../../api/types'
 import { parseDate } from '../common/TimeAgo'
 import './ContextModal.css'
 
 interface Props {
   context: ContextItem | null
   projectId?: string
+  projects?: Project[]
   isNew?: boolean
   onClose: () => void
   onSave: (body: Partial<ContextItem> & { title: string; content: string }) => Promise<unknown>
@@ -24,18 +25,32 @@ const CATEGORY_OPTIONS = [
   { value: 'note', label: 'Note', className: 'cm-cat-note' },
 ]
 
-const SCOPE_OPTIONS = [
-  { value: 'global', label: 'Global', className: 'cm-scope-global' },
-  { value: 'brain', label: 'Brain', className: 'cm-scope-brain' },
-  { value: 'project', label: 'Project', className: 'cm-scope-project' },
-]
-
-export default function ContextModal({ context, projectId, isNew, onClose, onSave, onDelete }: Props) {
+export default function ContextModal({ context, projectId, projects = [], isNew, onClose, onSave, onDelete }: Props) {
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
   const [content, setContent] = useState('')
   const [category, setCategory] = useState('')
   const [scope, setScope] = useState<'global' | 'project' | 'brain'>(projectId ? 'project' : 'global')
+  const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null)
+
+  // Build scope options with projects as children under "Project"
+  const scopeOptions: TagOption[] = useMemo(() => {
+    const projectChildren = projects.map(p => ({
+      value: `project:${p.id}`,
+      label: p.name,
+      className: 'cm-scope-project-item',
+    }))
+    return [
+      { value: 'global', label: 'Global', className: 'cm-scope-global' },
+      { value: 'brain', label: 'Brain', className: 'cm-scope-brain' },
+      {
+        value: 'project',
+        label: 'Project',
+        className: 'cm-scope-project',
+        children: projectChildren.length > 0 ? projectChildren : undefined,
+      },
+    ]
+  }, [projects])
   const [saving, setSaving] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [viewMode, setViewMode] = useState<'edit' | 'preview'>('edit')
@@ -53,6 +68,7 @@ export default function ContextModal({ context, projectId, isNew, onClose, onSav
       setContent(context.content || '')
       setCategory(context.category || '')
       setScope(context.scope as 'global' | 'project' | 'brain')
+      setSelectedProjectId(context.project_id)
       setViewMode('preview')
       setEditingField(null)
       initializedContextId.current = context.id
@@ -63,6 +79,7 @@ export default function ContextModal({ context, projectId, isNew, onClose, onSav
       setContent('')
       setCategory('')
       setScope(projectId ? 'project' : 'global')
+      setSelectedProjectId(projectId || null)
       setViewMode('preview')
       setEditingField(null)
       initializedContextId.current = null
@@ -94,7 +111,7 @@ export default function ContextModal({ context, projectId, isNew, onClose, onSav
     content: content.trim(),
     category: category || null,
     scope: (scopeLocked ? 'project' : scope) as string,
-    project_id: scopeLocked ? projectId : (scope === 'project' ? context?.project_id : undefined),
+    project_id: scopeLocked ? projectId : (scope === 'project' ? selectedProjectId : null),
     source: 'user' as const,
   })
 
@@ -180,11 +197,31 @@ export default function ContextModal({ context, projectId, isNew, onClose, onSav
   }
 
   const handleScopeChange = async (val: string) => {
-    setScope(val as 'global' | 'project' | 'brain')
+    // Parse project:id format from nested submenu
+    let newScope: 'global' | 'project' | 'brain'
+    let newProjectId: string | null = null
+
+    if (val.startsWith('project:')) {
+      newScope = 'project'
+      newProjectId = val.slice('project:'.length)
+    } else {
+      newScope = val as 'global' | 'project' | 'brain'
+      if (newScope !== 'project') {
+        newProjectId = null
+      }
+    }
+
+    setScope(newScope)
+    setSelectedProjectId(newProjectId)
+
     if (context) {
       setSaving(true)
       try {
-        await onSave({ ...buildBody(), scope: val } as Parameters<typeof onSave>[0])
+        await onSave({
+          ...buildBody(),
+          scope: newScope,
+          project_id: newProjectId,
+        } as Parameters<typeof onSave>[0])
       } finally {
         setSaving(false)
       }
@@ -264,8 +301,8 @@ export default function ContextModal({ context, projectId, isNew, onClose, onSav
             />
             {!scopeLocked && (
               <TagDropdown
-                value={scope}
-                options={SCOPE_OPTIONS}
+                value={scope === 'project' && selectedProjectId ? `project:${selectedProjectId}` : scope}
+                options={scopeOptions}
                 onChange={handleScopeChange}
                 renderTag={(opt) => (
                   <span className={`cm-badge ${opt.className}`}>{opt.label}</span>
