@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import type { Project } from '../../api/types'
 import { timeAgo, parseDate } from '../common/TimeAgo'
 import './ProjectsTable.css'
@@ -52,6 +52,7 @@ function getProjectSortValue(p: Project, key: SortKey): string | number {
 }
 
 export default function ProjectsTable({ projects }: Props) {
+  const navigate = useNavigate()
   const [sortKey, setSortKey] = useState<SortKey>('updated')
   const [sortDir, setSortDir] = useState<SortDir>('desc')
 
@@ -123,7 +124,7 @@ export default function ProjectsTable({ projects }: Props) {
           const blockedItems = tasksBlocked
 
           return (
-            <tr key={p.id} className="pt-row" onClick={() => window.location.href = `/projects/${p.id}`}>
+            <tr key={p.id} className="pt-row" onClick={() => navigate(`/projects/${p.id}`)}>
               <td className="pt-td name">
                 <span className={`pt-status-dot ${p.status}`} />
                 <Link to={`/projects/${p.id}`} className="pt-name">{p.name}</Link>
