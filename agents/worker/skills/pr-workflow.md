@@ -83,10 +83,11 @@ If conflicts arise that you're unsure about: **STOP and wait for help.**
 
 ### Branch Naming
 
-**Always use `yuqiu/` as the branch prefix:**
+**Always prefix branches with your GitHub username.** Derive it once at the start:
 ```bash
+GH_USER=$(gh api user --jq '.login | split("_")[0]')
 git checkout master && git pull origin master
-git checkout -b yuqiu/your-branch-name
+git checkout -b "$GH_USER/your-branch-name"
 ```
 Never use `feature/`, `fix/`, or other generic prefixes.
 
