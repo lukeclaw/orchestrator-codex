@@ -10,6 +10,7 @@ from orchestrator.api.deps import get_db
 from orchestrator.state.repositories import tasks as repo
 from orchestrator.state.repositories import sessions as sessions_repo
 from orchestrator.state.repositories import projects as projects_repo
+from orchestrator.utils import derive_tag_from_url
 
 logger = logging.getLogger(__name__)
 
@@ -158,10 +159,18 @@ def update_task(task_id: str, body: TaskUpdate, request: Request, db=Depends(get
     if new_assigned and new_assigned != old_assigned and t.status == "todo" and not body.status:
         effective_status = "in_progress"
 
-    # Handle links update
+    # Handle links update — auto-derive tags from URLs when not provided
     links_json = None
     if "links" in body.model_fields_set:
-        links_json = json.dumps(body.links) if body.links else None
+        if body.links:
+            for link in body.links:
+                if not link.get("tag"):
+                    derived = derive_tag_from_url(link.get("url", ""))
+                    if derived:
+                        link["tag"] = derived
+            links_json = json.dumps(body.links)
+        else:
+            links_json = None
 
     updated = repo.update_task(
         db, task_id,
@@ -265,11 +274,11 @@ def manage_task_link(task_id: str, body: TaskLinkAction, db=Depends(get_db)):
         existing = next((l for l in links if l.get("url") == body.url), None)
         if existing:
             raise HTTPException(400, f"Link already exists: {body.url}")
-        links.append({
-            "url": body.url,
-            "title": body.title or body.url,
-            "type": body.link_type or "reference",
-        })
+        tag = body.tag or derive_tag_from_url(body.url)
+        new_link: dict = {"url": body.url}
+        if tag:
+            new_link["tag"] = tag
+        links.append(new_link)
     elif body.action == "update":
         existing = next((l for l in links if l.get("url") == body.url), None)
         if not existing:
