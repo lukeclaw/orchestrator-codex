@@ -10,6 +10,7 @@ from pathlib import Path
 from orchestrator.core.events import Event, subscribe
 from orchestrator.state.db import ConnectionFactory
 from orchestrator.terminal.monitor import monitor_loop
+from orchestrator.session.tunnel_monitor import tunnel_health_loop
 
 logger = logging.getLogger(__name__)
 
@@ -27,6 +28,7 @@ class Orchestrator:
         self.config = config
         self.tmux_session = config.get("tmux", {}).get("session_name", "orchestrator")
         self._monitor_task: asyncio.Task | None = None
+        self._tunnel_monitor_task: asyncio.Task | None = None
         
         # Connection factory for write operations (avoids lock contention)
         self._conn_factory: ConnectionFactory | None = None
@@ -52,10 +54,30 @@ class Orchestrator:
                 poll_interval=poll_interval,
             )
         )
-        logger.info("Orchestrator started (monitor interval=%.1fs)", poll_interval)
+
+        # Start periodic tunnel health monitor
+        tunnel_interval = monitoring.get("tunnel_check_interval_seconds", 60)
+        self._tunnel_monitor_task = asyncio.create_task(
+            tunnel_health_loop(
+                self.conn,
+                tmux_session=self.tmux_session,
+                check_interval=tunnel_interval,
+            )
+        )
+
+        logger.info(
+            "Orchestrator started (monitor interval=%.1fs, tunnel check interval=%.0fs)",
+            poll_interval, tunnel_interval,
+        )
 
     async def stop(self):
         """Stop the orchestrator."""
+        if self._tunnel_monitor_task:
+            self._tunnel_monitor_task.cancel()
+            try:
+                await self._tunnel_monitor_task
+            except asyncio.CancelledError:
+                pass
         if self._monitor_task:
             self._monitor_task.cancel()
             try:

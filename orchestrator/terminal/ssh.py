@@ -78,7 +78,15 @@ def setup_rdev_tunnel(
     """
     # -o StrictHostKeyChecking=no: Accept any host key (rdev VMs are ephemeral)
     # -o UserKnownHostsFile=/dev/null: Don't pollute known_hosts with ephemeral keys
-    cmd = f"ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -N -R {remote_port}:127.0.0.1:{local_port} {host}"
+    # -o ServerAliveInterval=30: Send keepalive every 30s to detect dead connections
+    # -o ServerAliveCountMax=3: Exit after 3 missed keepalives (~90s of dead connection)
+    # -o ExitOnForwardFailure=yes: Exit immediately if port forwarding setup fails
+    cmd = (
+        f"ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
+        f" -o ServerAliveInterval=30 -o ServerAliveCountMax=3"
+        f" -o ExitOnForwardFailure=yes"
+        f" -N -R {remote_port}:127.0.0.1:{local_port} {host}"
+    )
     return send_keys(session_name, window_name, cmd)
 
 

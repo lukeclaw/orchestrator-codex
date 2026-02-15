@@ -5,11 +5,115 @@ SSH tunnels, and SSH connections for both local and rdev workers.
 """
 
 import logging
+import os
+import signal
 import subprocess
+import time
+from typing import Optional
 
 from orchestrator.terminal.manager import capture_output
 
 logger = logging.getLogger(__name__)
+
+# Default port used by the reverse tunnel for API access
+DEFAULT_API_PORT = 8093
+
+
+def find_tunnel_pids(host: str) -> list[int]:
+    """Find PIDs of SSH tunnel processes for a given host.
+
+    Scans ps output for SSH processes with -N (no command) and -R (reverse tunnel)
+    targeting the given host.
+
+    Args:
+        host: rdev host (e.g., "user/rdev-vm")
+
+    Returns:
+        List of matching PIDs
+    """
+    try:
+        result = subprocess.run(
+            ["ps", "aux"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        pids = []
+        for line in result.stdout.split("\n"):
+            if "ssh" in line and "-N" in line and "-R" in line and host in line and "grep" not in line:
+                parts = line.split()
+                if len(parts) > 1:
+                    try:
+                        pids.append(int(parts[1]))
+                    except ValueError:
+                        pass
+        return pids
+    except Exception as e:
+        logger.warning("find_tunnel_pids error: %s", e)
+        return []
+
+
+def kill_tunnel_processes(host: str, graceful_timeout: float = 3.0) -> int:
+    """Kill all SSH tunnel processes for a given host with SIGKILL escalation.
+
+    1. Send SIGTERM to all matching tunnel PIDs
+    2. Wait up to graceful_timeout seconds for them to exit
+    3. Send SIGKILL to any that are still alive
+
+    This handles the case where SSH -N processes get stuck and resist Ctrl-C/SIGTERM.
+
+    Args:
+        host: rdev host (e.g., "user/rdev-vm")
+        graceful_timeout: Seconds to wait after SIGTERM before escalating to SIGKILL
+
+    Returns:
+        Number of processes killed
+    """
+    pids = find_tunnel_pids(host)
+    if not pids:
+        return 0
+
+    logger.info("Killing %d tunnel processes for %s: %s", len(pids), host, pids)
+
+    # Phase 1: SIGTERM
+    for pid in pids:
+        try:
+            os.kill(pid, signal.SIGTERM)
+            logger.debug("Sent SIGTERM to tunnel pid %d", pid)
+        except ProcessLookupError:
+            pass
+        except PermissionError:
+            logger.warning("Permission denied sending SIGTERM to pid %d", pid)
+
+    # Phase 2: Wait for graceful exit
+    deadline = time.time() + graceful_timeout
+    still_alive = list(pids)
+    while still_alive and time.time() < deadline:
+        time.sleep(0.5)
+        still_alive = [pid for pid in still_alive if _is_pid_alive(pid)]
+
+    # Phase 3: SIGKILL any survivors
+    killed = len(pids)
+    for pid in still_alive:
+        try:
+            os.kill(pid, signal.SIGKILL)
+            logger.warning("Sent SIGKILL to stuck tunnel pid %d for %s", pid, host)
+        except ProcessLookupError:
+            pass
+        except PermissionError:
+            logger.warning("Permission denied sending SIGKILL to pid %d", pid)
+            killed -= 1
+
+    return killed
+
+
+def _is_pid_alive(pid: int) -> bool:
+    """Check if a process is still running."""
+    try:
+        os.kill(pid, 0)
+        return True
+    except (ProcessLookupError, PermissionError):
+        return False
 
 
 def get_screen_session_name(session_id: str) -> str:
@@ -61,16 +165,70 @@ def check_worker_ssh_alive(tmux_sess: str, tmux_win: str, host: str) -> bool:
         return False
 
 
-def check_tunnel_alive(tmux_sess: str, tunnel_win: str) -> bool:
+def probe_tunnel_connectivity(host: str, remote_port: int = DEFAULT_API_PORT, timeout: int = 8) -> bool:
+    """Actively test if the reverse tunnel works by SSHing to host and curling the tunneled port.
+
+    This provides a definitive answer about tunnel health by testing actual connectivity,
+    unlike check_tunnel_alive() which only inspects tmux output heuristics.
+
+    Args:
+        host: rdev host (e.g., "user/rdev-vm")
+        remote_port: Port on remote that should be tunneled back to local
+        timeout: Total timeout for the SSH+curl operation
+
+    Returns:
+        True if the tunnel is working (remote can reach local API), False otherwise
+    """
+    try:
+        # curl the health endpoint through the tunnel from the remote side
+        curl_cmd = (
+            f"curl -s -o /dev/null -w '%{{http_code}}' "
+            f"--connect-timeout 3 http://localhost:{remote_port}/api/health"
+        )
+        result = subprocess.run(
+            ["ssh", "-o", "ConnectTimeout=5", "-o", "BatchMode=yes", host, curl_cmd],
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+        http_code = result.stdout.strip().strip("'\"")
+        if http_code == "200":
+            logger.debug("Tunnel probe: %s port %d - healthy (HTTP 200)", host, remote_port)
+            return True
+        else:
+            logger.info(
+                "Tunnel probe: %s port %d - unhealthy (HTTP %s, stderr=%s)",
+                host, remote_port, http_code, result.stderr.strip()[:100],
+            )
+            return False
+    except subprocess.TimeoutExpired:
+        logger.info("Tunnel probe: %s port %d - timed out", host, remote_port)
+        return False
+    except Exception as e:
+        logger.warning("Tunnel probe: %s port %d - error: %s", host, remote_port, e)
+        return False
+
+
+def check_tunnel_alive(
+    tmux_sess: str,
+    tunnel_win: str,
+    host: Optional[str] = None,
+    remote_port: int = DEFAULT_API_PORT,
+) -> bool:
     """Check if the tunnel window has an active SSH tunnel running.
-    
-    A dead tunnel will show error messages OR return to shell prompt.
-    An alive tunnel shows no output (SSH is blocking, waiting for connection).
-    
+
+    Two-stage check:
+    1. Fast check: inspect tmux window output for error indicators or shell prompt.
+       If errors/prompt found, tunnel is definitely dead → return False.
+    2. If the fast check is inconclusive AND host is provided, do an active probe
+       by SSHing to the remote host and curling through the tunnel.
+
     Args:
         tmux_sess: tmux session name
         tunnel_win: tmux window name for the tunnel
-        
+        host: Optional rdev host for active probing (e.g., "user/rdev-vm")
+        remote_port: Port used by the reverse tunnel (default 8093)
+
     Returns:
         True if tunnel appears alive, False otherwise
     """
@@ -79,14 +237,14 @@ def check_tunnel_alive(tmux_sess: str, tunnel_win: str) -> bool:
         if not output:
             logger.info("Tunnel check: no output from window - assuming dead")
             return False
-        
+
         output_lower = output.lower()
         logger.debug("Tunnel check output: %s", output[:200])
-        
+
         # Check for common SSH failure indicators
         error_indicators = [
             "Connection closed",
-            "Connection refused", 
+            "Connection refused",
             "Connection timed out",
             "Connection reset",
             "broken pipe",
@@ -102,11 +260,11 @@ def check_tunnel_alive(tmux_sess: str, tunnel_win: str) -> bool:
             if indicator.lower() in output_lower:
                 logger.info("Tunnel check: found error indicator '%s'", indicator)
                 return False
-        
+
         # Check for shell prompt - indicates tunnel command has exited
         lines = output.strip().split('\n')
         last_line = lines[-1].strip() if lines else ""
-        
+
         # Shell prompt patterns (tunnel exited, back to shell)
         shell_prompt_indicators = ['$ ', '% ', '> ', 'bash-', '# ']
         for prompt in shell_prompt_indicators:
@@ -116,15 +274,23 @@ def check_tunnel_alive(tmux_sess: str, tunnel_win: str) -> bool:
                 if not ('ssh' in output_lower and '-L' in output):
                     logger.info("Tunnel check: shell prompt detected, tunnel likely dead: '%s'", last_line)
                     return False
-        
+
         # If output contains active SSH tunnel command and no errors, likely alive
         if 'ssh' in output_lower and ('-L' in output or '-R' in output):
             logger.info("Tunnel check: SSH tunnel command visible, appears alive")
             return True
-        
-        # Fallback: if we can't determine, assume alive
-        logger.info("Tunnel check: uncertain status, assuming alive (output: %s)", last_line[:50])
-        return True
+
+        # Inconclusive from tmux output — fall through to active probe or fail safe
+        logger.info("Tunnel check: inconclusive from tmux output (last_line: %s)", last_line[:50])
+
+        # If host provided, do an active probe to get a definitive answer
+        if host:
+            logger.info("Tunnel check: running active probe to %s:%d", host, remote_port)
+            return probe_tunnel_connectivity(host, remote_port)
+
+        # No host for active probe — fail safe (trigger reconnect rather than ignore dead tunnel)
+        logger.info("Tunnel check: no host for active probe, assuming dead")
+        return False
     except Exception as e:
         logger.warning("Tunnel check failed: %s", e)
         return False

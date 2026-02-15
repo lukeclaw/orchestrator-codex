@@ -222,11 +222,17 @@ def reconnect_tunnel_only(conn, session, tmux_sess: str, api_port: int, repo) ->
     """
     from orchestrator.terminal import ssh
     from orchestrator.terminal.manager import create_window
-    
+    from orchestrator.session.health import kill_tunnel_processes
+
     tunnel_name = f"{session.name}-tunnel"
-    
+
     logger.info("Reconnect tunnel only for %s", session.name)
-    
+
+    # Kill any stuck SSH tunnel processes for this host (SIGTERM then SIGKILL)
+    killed = kill_tunnel_processes(session.host)
+    if killed:
+        logger.info("Force-killed %d old tunnel processes for %s", killed, session.host)
+
     # Clean up old tunnel window if it exists
     if session.tunnel_pane:
         try:
@@ -245,8 +251,8 @@ def reconnect_tunnel_only(conn, session, tmux_sess: str, api_port: int, repo) ->
         ssh.setup_rdev_tunnel(tmux_sess, tunnel_name, session.host, api_port, api_port)
         time.sleep(3)
         
-        # Verify tunnel is alive
-        if check_tunnel_alive(tmux_sess, tunnel_name):
+        # Verify tunnel is alive (use active probe since we have the host)
+        if check_tunnel_alive(tmux_sess, tunnel_name, host=session.host):
             repo.update_session(conn, session.id, tunnel_pane=f"{tmux_sess}:{tunnel_name}")
             logger.info("Tunnel reconnected successfully for %s", session.name)
             return True
@@ -491,7 +497,7 @@ def reconnect_rdev_worker(conn, session, tmux_sess: str, tmux_win: str, api_port
     # =========================================================================
     # Use subprocess SSH check to verify remote state WITHOUT typing into the terminal
     # This prevents accidentally typing commands into Claude
-    from orchestrator.session.health import check_screen_and_claude_rdev, check_worker_ssh_alive
+    from orchestrator.session.health import check_screen_and_claude_rdev, check_worker_ssh_alive, kill_tunnel_processes
     
     tunnel_alive = False
     if session.tunnel_pane:
@@ -499,7 +505,7 @@ def reconnect_rdev_worker(conn, session, tmux_sess: str, tmux_win: str, api_port
             t_sess, t_win = session.tunnel_pane.split(":", 1)
         else:
             t_sess, t_win = tmux_sess, session.tunnel_pane
-        tunnel_alive = check_tunnel_alive(t_sess, t_win)
+        tunnel_alive = check_tunnel_alive(t_sess, t_win, host=session.host)
     
     if not tunnel_alive:
         # Check if SSH/screen/Claude are all running via subprocess (doesn't touch terminal)
@@ -527,6 +533,10 @@ def reconnect_rdev_worker(conn, session, tmux_sess: str, tmux_win: str, api_port
     
     if not tunnel_alive:
         logger.info("Reconnect %s: re-establishing tunnel", session.name)
+        # Kill any stuck SSH tunnel processes for this host (SIGTERM then SIGKILL)
+        killed = kill_tunnel_processes(session.host)
+        if killed:
+            logger.info("Reconnect %s: force-killed %d stuck tunnel processes", session.name, killed)
         # Clean up old tunnel window if it exists
         if session.tunnel_pane:
             try:

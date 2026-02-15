@@ -739,7 +739,7 @@ def health_check_session(session_id: str, db=Depends(get_db)):
                 t_sess, t_win = s.tunnel_pane.split(":", 1)
             else:
                 t_sess, t_win = tmux_sess, s.tunnel_pane
-            tunnel_alive = check_tunnel_alive(t_sess, t_win)
+            tunnel_alive = check_tunnel_alive(t_sess, t_win, host=s.host)
         
         if screen_status == "alive":
             # Screen and Claude both running

@@ -85,20 +85,22 @@ class TestStatusTransitions:
         # Should update to disconnected
         mock_repo.update_session.assert_called()
 
+    @patch('orchestrator.session.reconnect.reconnect_tunnel_only')
     @patch('orchestrator.api.routes.sessions.check_tunnel_alive')
     @patch('orchestrator.api.routes.sessions.check_screen_and_claude_rdev')
     @patch('orchestrator.api.routes.sessions.repo')
     @patch('orchestrator.api.routes.sessions.is_rdev_host')
-    def test_working_to_screen_detached_on_tunnel_fail(
-        self, mock_is_rdev, mock_repo, mock_screen_check, mock_tunnel_check, db
+    def test_working_tunnel_dead_auto_reconnect_success(
+        self, mock_is_rdev, mock_repo, mock_screen_check, mock_tunnel_check, mock_tunnel_reconnect, db
     ):
-        """Dead tunnel with alive Claude should transition to screen_detached."""
+        """Dead tunnel with alive Claude should auto-reconnect and stay alive."""
         from orchestrator.api.routes.sessions import health_check_session
-        
+
         mock_is_rdev.return_value = True
         mock_screen_check.return_value = ("alive", "Claude running")
         mock_tunnel_check.return_value = False  # Tunnel dead
-        
+        mock_tunnel_reconnect.return_value = True  # Auto-reconnect succeeds
+
         mock_session = MagicMock()
         mock_session.id = "test-id"
         mock_session.name = "test-rdev"
@@ -107,12 +109,43 @@ class TestStatusTransitions:
         mock_session.tmux_window = "orchestrator:test-rdev"
         mock_session.tunnel_pane = "orchestrator:test-rdev-tunnel"
         mock_repo.get_session.return_value = mock_session
-        
+
         result = health_check_session("test-id", db=db)
-        
+
+        assert result["alive"] is True
+        assert result["tunnel_reconnected"] is True
+        mock_tunnel_reconnect.assert_called_once()
+
+    @patch('orchestrator.session.reconnect.reconnect_tunnel_only')
+    @patch('orchestrator.api.routes.sessions.check_tunnel_alive')
+    @patch('orchestrator.api.routes.sessions.check_screen_and_claude_rdev')
+    @patch('orchestrator.api.routes.sessions.repo')
+    @patch('orchestrator.api.routes.sessions.is_rdev_host')
+    def test_working_to_screen_detached_on_tunnel_reconnect_fail(
+        self, mock_is_rdev, mock_repo, mock_screen_check, mock_tunnel_check, mock_tunnel_reconnect, db
+    ):
+        """Dead tunnel with failed auto-reconnect should transition to screen_detached."""
+        from orchestrator.api.routes.sessions import health_check_session
+
+        mock_is_rdev.return_value = True
+        mock_screen_check.return_value = ("alive", "Claude running")
+        mock_tunnel_check.return_value = False  # Tunnel dead
+        mock_tunnel_reconnect.return_value = False  # Auto-reconnect fails
+
+        mock_session = MagicMock()
+        mock_session.id = "test-id"
+        mock_session.name = "test-rdev"
+        mock_session.host = "user/rdev-vm"
+        mock_session.status = "working"
+        mock_session.tmux_window = "orchestrator:test-rdev"
+        mock_session.tunnel_pane = "orchestrator:test-rdev-tunnel"
+        mock_repo.get_session.return_value = mock_session
+
+        result = health_check_session("test-id", db=db)
+
+        assert result["alive"] is False
         assert result["status"] == "screen_detached"
-        # Should update session status
-        mock_repo.update_session.assert_called()
+        assert result["needs_reconnect"] is True
 
     @patch('orchestrator.api.routes.sessions.reconnect_local_worker')
     @patch('orchestrator.api.routes.sessions.repo')
