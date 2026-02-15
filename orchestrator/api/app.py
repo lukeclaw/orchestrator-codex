@@ -23,9 +23,10 @@ WEB_DIR = Path(__file__).parent.parent / "web"
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan: startup and shutdown."""
-    from orchestrator.core.lifecycle import startup_check, shutdown
+    from orchestrator.core.lifecycle import startup_check, shutdown, recover_tunnels
     from orchestrator.core.orchestrator import Orchestrator
     from orchestrator.core.state_manager import StateManager
+    from orchestrator.session.tunnel import ReverseTunnelManager
 
     logger.info("Orchestrator API starting up")
 
@@ -40,12 +41,23 @@ async def lifespan(app: FastAPI):
         config = {}
 
     app.state.config = config
+    api_port = config.get("server", {}).get("port", 8093)
 
     # Reconcile DB with tmux state
     try:
         startup_check(conn)
     except Exception:
         logger.exception("Startup check failed (non-fatal)")
+
+    # Create the reverse tunnel manager (subprocess-based)
+    tunnel_manager = ReverseTunnelManager(api_port=api_port)
+    app.state.tunnel_manager = tunnel_manager
+
+    # Recover tunnels from previous orchestrator run
+    try:
+        recover_tunnels(conn, tunnel_manager)
+    except Exception:
+        logger.exception("Tunnel recovery failed (non-fatal)")
 
     # Start the StateManager (handles event-driven DB writes)
     state_manager = None
@@ -54,8 +66,8 @@ async def lifespan(app: FastAPI):
         app.state.state_manager = state_manager
         await state_manager.start()
 
-    # Start the orchestrator engine (monitor, events)
-    orch = Orchestrator(conn, config, db_path=db_path)
+    # Start the orchestrator engine (monitor, events, tunnel health)
+    orch = Orchestrator(conn, config, db_path=db_path, tunnel_manager=tunnel_manager)
     app.state.orchestrator = orch
     await orch.start()
 
@@ -68,11 +80,14 @@ async def lifespan(app: FastAPI):
     # Stop rdev background refresh
     await stop_background_refresh()
 
-    # Shutdown: stop monitor, state manager
+    # Shutdown: stop monitor, state manager, tunnels
     logger.info("Orchestrator API shutting down")
     await orch.stop()
     if state_manager:
         await state_manager.stop()
+    # Note: we do NOT call tunnel_manager.stop_all() here because tunnels
+    # use start_new_session=True and should survive orchestrator restarts.
+    # They'll be adopted on next startup via recover_tunnels().
     try:
         shutdown(conn)
     except Exception:

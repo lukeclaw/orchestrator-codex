@@ -29,7 +29,6 @@ from orchestrator.agents.deploy import get_worker_skills_dir
 from orchestrator.session import (
     is_reconnectable,
     get_screen_session_name,
-    check_tunnel_alive,
     check_claude_process_local,
     check_screen_and_claude_rdev,
     check_ssh_alive,
@@ -105,6 +104,7 @@ def _serialize_session(s):
         "id": s.id, "name": s.name, "host": s.host,
         "work_dir": s.work_dir, "tmux_window": s.tmux_window,
         "tunnel_pane": s.tunnel_pane,
+        "tunnel_pid": s.tunnel_pid,
         "status": s.status, "takeover_mode": s.takeover_mode,
         "created_at": s.created_at,
         "last_status_changed_at": s.last_status_changed_at,
@@ -187,6 +187,7 @@ def create_session(body: SessionCreate, request: Request, db=Depends(get_db)):
         config = getattr(request.app.state, "config", {})
         api_port = config.get("server", {}).get("port", 8093)
         db_path = getattr(request.app.state, "db_path", None)
+        tunnel_manager = getattr(request.app.state, "tunnel_manager", None)
 
         repo.update_session(db, s.id, status="connecting")
 
@@ -201,13 +202,13 @@ def create_session(body: SessionCreate, request: Request, db=Depends(get_db)):
                     tmux_session_name, api_port,
                     work_dir=work_dir,
                     tmp_dir=tmp_dir,
+                    tunnel_manager=tunnel_manager,
                 )
                 if result["ok"]:
-                    tunnel_target = f"{tmux_session_name}:{result['tunnel_window']}"
                     repo.update_session(
                         bg_conn, s.id,
                         status="working",
-                        tunnel_pane=tunnel_target,
+                        tunnel_pid=result.get("tunnel_pid"),
                     )
                     if body.task_id:
                         from orchestrator.state.repositories import tasks
@@ -339,7 +340,7 @@ def update_session(session_id: str, body: SessionUpdate, db=Depends(get_db)):
 
 
 @router.delete("/sessions/{session_id}")
-def delete_session(session_id: str, db=Depends(get_db)):
+def delete_session(session_id: str, request: Request, db=Depends(get_db)):
     s = repo.get_session(db, session_id)
     if s is None:
         raise HTTPException(404, "Session not found")
@@ -361,16 +362,16 @@ def delete_session(session_id: str, db=Depends(get_db)):
                 capture_output=True, timeout=2
             )
             time.sleep(0.3)
-            
+
             # First "exit" exits Claude Code
             send_keys(tmux_sess, tmux_win, "exit", enter=True)
             time.sleep(0.5)
-            
+
             # Second "exit" exits the screen session (terminates it)
             send_keys(tmux_sess, tmux_win, "exit", enter=True)
             time.sleep(0.5)
             logger.info("Exited Claude and screen session for worker %s", s.name)
-            
+
             # Remove remote worker directory
             send_keys(tmux_sess, tmux_win, f"rm -rf {worker_scripts_dir}", enter=True)
             time.sleep(0.5)
@@ -378,7 +379,16 @@ def delete_session(session_id: str, db=Depends(get_db)):
         except Exception:
             logger.warning("Could not clean up remote resources for session %s", s.name, exc_info=True)
 
-    # Kill the tunnel window if it exists (rdev workers)
+    # Stop the reverse tunnel subprocess (replaces old tmux window kill)
+    tunnel_manager = getattr(request.app.state, "tunnel_manager", None)
+    if tunnel_manager:
+        try:
+            if tunnel_manager.stop_tunnel(session_id):
+                logger.info("Stopped tunnel subprocess for session %s", s.name)
+        except Exception:
+            logger.warning("Could not stop tunnel for session %s", s.name, exc_info=True)
+
+    # Also clean up any legacy tmux tunnel window
     if s.tunnel_pane:
         if ":" in s.tunnel_pane:
             t_sess, t_win = s.tunnel_pane.split(":", 1)
@@ -386,9 +396,8 @@ def delete_session(session_id: str, db=Depends(get_db)):
             t_sess, t_win = "orchestrator", s.tunnel_pane
         try:
             kill_window(t_sess, t_win)
-            logger.info("Killed tunnel window %s for session %s", s.tunnel_pane, s.name)
         except Exception:
-            logger.warning("Could not kill tunnel window for session %s", s.name, exc_info=True)
+            pass  # Legacy cleanup — may already be gone
 
     # Kill the tmux window if it exists
     if s.tmux_window:
@@ -657,6 +666,7 @@ def reconnect_session(session_id: str, request: Request, db=Depends(get_db)):
     if is_rdev_host(s.host):
         # rdev worker — check tunnel and SSH, re-establish if needed, then launch claude -c
         db_path = getattr(request.app.state, "db_path", None)
+        tunnel_manager = getattr(request.app.state, "tunnel_manager", None)
         repo.update_session(db, session_id, status="connecting")
 
         def _background_reconnect():
@@ -664,7 +674,8 @@ def reconnect_session(session_id: str, request: Request, db=Depends(get_db)):
             bg_conn = get_connection(db_path) if db_path else db
             try:
                 reconnect_rdev_worker(
-                    bg_conn, s, tmux_sess, tmux_win, api_port, tmp_dir, repo
+                    bg_conn, s, tmux_sess, tmux_win, api_port, tmp_dir, repo,
+                    tunnel_manager=tunnel_manager,
                 )
                 logger.info("rdev worker %s reconnected", s.name)
             except Exception as e:
@@ -695,22 +706,22 @@ def reconnect_session(session_id: str, request: Request, db=Depends(get_db)):
 
 
 @router.post("/sessions/{session_id}/health-check")
-def health_check_session(session_id: str, db=Depends(get_db)):
+def health_check_session(session_id: str, request: Request, db=Depends(get_db)):
     """Check if a worker's Claude Code process is still running.
-    
+
     For rdev workers with screen sessions:
     - Checks both screen session and Claude process
     - Returns screen_detached if SSH fails but screen may be running
     - Returns error if screen exists but Claude is not running
-    
+
     For local workers:
     - Uses ps | grep to check Claude process
-    
+
     Status checks don't lock user input - they just check status without sending commands
     to the worker terminal.
-    
+
     Updates status accordingly.
-    
+
     Returns:
         {"alive": bool, "status": str, "reason": str, "screen_status": str (rdev only)}
     """
@@ -731,52 +742,45 @@ def health_check_session(session_id: str, db=Depends(get_db)):
     if is_rdev_host(s.host):
         # Use detailed screen check for rdev workers
         screen_status, reason = check_screen_and_claude_rdev(s.host, session_id, tmux_sess, tmux_win)
-        
-        # Also check tunnel status for rdev workers
-        tunnel_alive = False
-        if s.tunnel_pane:
-            if ":" in s.tunnel_pane:
-                t_sess, t_win = s.tunnel_pane.split(":", 1)
-            else:
-                t_sess, t_win = tmux_sess, s.tunnel_pane
-            tunnel_alive = check_tunnel_alive(t_sess, t_win, host=s.host)
-        
+
+        # Check tunnel via ReverseTunnelManager (deterministic process check)
+        tunnel_manager = getattr(request.app.state, "tunnel_manager", None)
+        tunnel_alive = tunnel_manager.is_alive(session_id) if tunnel_manager else False
+
         if screen_status == "alive":
             # Screen and Claude both running
             if not tunnel_alive:
-                # Claude running but tunnel dead - auto-reconnect tunnel without touching main window
-                logger.info("Health check: %s has Claude running but tunnel dead, auto-reconnecting tunnel", s.name)
-                from orchestrator.session.reconnect import reconnect_tunnel_only
-                
-                api_port = 8093  # TODO: get from config
-                tunnel_reconnected = reconnect_tunnel_only(db, s, tmux_sess, api_port, repo)
-                
-                if tunnel_reconnected:
-                    logger.info("Health check: %s tunnel auto-reconnected successfully", s.name)
-                    # Update status back to waiting if it was in error state
-                    if s.status in ("screen_detached", "error", "disconnected"):
-                        repo.update_session(db, session_id, status="waiting")
-                    return {
-                        "alive": True,
-                        "status": "waiting",
-                        "reason": f"{reason}, tunnel was dead but auto-reconnected",
-                        "screen_status": screen_status,
-                        "tunnel_alive": True,
-                        "tunnel_reconnected": True,
-                    }
-                else:
-                    # Tunnel reconnect failed - mark as needing manual reconnect
-                    reason = f"{reason}, but tunnel is dead and auto-reconnect failed"
-                    if s.status not in ("screen_detached", "connecting"):
-                        repo.update_session(db, session_id, status="screen_detached")
-                    return {
-                        "alive": False,
-                        "status": "screen_detached",
-                        "reason": reason,
-                        "screen_status": screen_status,
-                        "tunnel_alive": False,
-                        "needs_reconnect": True,
-                    }
+                # Claude running but tunnel dead - auto-restart tunnel
+                logger.info("Health check: %s has Claude running but tunnel dead, restarting tunnel", s.name)
+
+                if tunnel_manager:
+                    new_pid = tunnel_manager.restart_tunnel(s.id, s.name, s.host)
+                    if new_pid:
+                        repo.update_session(db, session_id, tunnel_pid=new_pid)
+                        logger.info("Health check: %s tunnel restarted (pid=%d)", s.name, new_pid)
+                        if s.status in ("screen_detached", "error", "disconnected"):
+                            repo.update_session(db, session_id, status="waiting")
+                        return {
+                            "alive": True,
+                            "status": "waiting",
+                            "reason": f"{reason}, tunnel was dead but auto-restarted",
+                            "screen_status": screen_status,
+                            "tunnel_alive": True,
+                            "tunnel_reconnected": True,
+                        }
+
+                # Tunnel restart failed
+                reason = f"{reason}, but tunnel is dead and restart failed"
+                if s.status not in ("screen_detached", "connecting"):
+                    repo.update_session(db, session_id, status="screen_detached")
+                return {
+                    "alive": False,
+                    "status": "screen_detached",
+                    "reason": reason,
+                    "screen_status": screen_status,
+                    "tunnel_alive": False,
+                    "needs_reconnect": True,
+                }
             # All good - screen, Claude, and tunnel alive
             # If status was screen_detached/error/disconnected, update to waiting (Claude is running)
             if s.status in ("screen_detached", "error", "disconnected"):

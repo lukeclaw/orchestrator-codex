@@ -37,6 +37,56 @@ def startup_check(conn: sqlite3.Connection, tmux_session: str = "orchestrator"):
             sessions.update_session(conn, s.id, status="disconnected")
 
 
+def recover_tunnels(conn: sqlite3.Connection, tunnel_manager):
+    """Recover reverse tunnels after orchestrator restart.
+
+    For each rdev session with a stored tunnel_pid, try to adopt the
+    existing SSH process. If the process is dead, start a fresh tunnel.
+    Also cleans up any legacy tmux tunnel windows.
+    """
+    from orchestrator.terminal.ssh import is_rdev_host
+
+    all_sessions = sessions.list_sessions(conn, session_type="worker")
+    recovered = 0
+
+    for s in all_sessions:
+        if not is_rdev_host(s.host):
+            continue
+        if s.status in ("disconnected",):
+            continue
+
+        # Clean up legacy tmux tunnel windows (from old tmux-based approach)
+        if s.tunnel_pane:
+            try:
+                if ":" in s.tunnel_pane:
+                    t_sess, t_win = s.tunnel_pane.split(":", 1)
+                else:
+                    t_sess, t_win = "orchestrator", s.tunnel_pane
+                tmux.kill_window(t_sess, t_win)
+                logger.info("Cleaned up legacy tmux tunnel window %s", s.tunnel_pane)
+            except Exception:
+                pass
+            # Clear the old tunnel_pane field
+            sessions.update_session(conn, s.id, tunnel_pane=None)
+
+        # Recover or start tunnel
+        pid = tunnel_manager.recover_tunnel(
+            session_id=s.id,
+            session_name=s.name,
+            host=s.host,
+            stored_pid=s.tunnel_pid,
+        )
+
+        if pid:
+            sessions.update_session(conn, s.id, tunnel_pid=pid)
+            recovered += 1
+        else:
+            logger.warning("Failed to recover tunnel for %s", s.name)
+
+    if recovered:
+        logger.info("Recovered %d tunnels on startup", recovered)
+
+
 def shutdown(conn: sqlite3.Connection):
     """Clean shutdown."""
     logger.info("Shutting down orchestrator")

@@ -396,30 +396,37 @@ def setup_rdev_worker(
     api_port: int = 8093,
     work_dir: str | None = None,
     tmp_dir: str | None = None,
+    tunnel_manager=None,
 ) -> dict:
     """Set up a full rdev worker: tunnel, SSH, screen, Claude, prompt.
 
-    Returns {"ok": True, "tunnel_window": ...} on success,
+    Returns {"ok": True, "tunnel_pid": ...} on success,
     or {"ok": False, "error": "..."} on failure.
-    
+
     Args:
         work_dir: Where Claude Code runs (user's codebase). If None, uses rdev home.
         tmp_dir: Local tmp directory for generating scripts/configs before copying to remote.
-    
+        tunnel_manager: ReverseTunnelManager for subprocess-based tunnel management.
+
     Claude Code runs inside a GNU Screen session to survive SSH disconnections.
     Screen session name: claude-{session_id}
     """
-    tunnel_name = f"{name}-tunnel"
     remote_tmp_dir = f"/tmp/orchestrator/workers/{name}"
     local_tmp_dir = tmp_dir or f"/tmp/orchestrator/workers/{name}"
     screen_name = _get_screen_session_name(session_id)
 
     try:
-        # 1. Create tunnel window and start reverse SSH tunnel
-        tmux.create_window(tmux_session, tunnel_name)
-        ssh.setup_rdev_tunnel(tmux_session, tunnel_name, host, api_port, api_port)
-        logger.info("Started reverse tunnel for %s -> %s", name, host)
-        time.sleep(3)
+        # 1. Start reverse SSH tunnel via subprocess (no tmux window needed)
+        tunnel_pid = None
+        if tunnel_manager:
+            tunnel_pid = tunnel_manager.start_tunnel(session_id, name, host)
+            if tunnel_pid:
+                logger.info("Started reverse tunnel subprocess for %s -> %s (pid=%d)", name, host, tunnel_pid)
+            else:
+                logger.warning("Failed to start tunnel subprocess for %s, continuing setup", name)
+        else:
+            logger.warning("No tunnel_manager provided, skipping tunnel setup for %s", name)
+        time.sleep(2)  # Give tunnel a moment to establish
 
         # 2. Connect to rdev VM
         ssh.rdev_connect(tmux_session, name, host)
@@ -545,13 +552,14 @@ def setup_rdev_worker(
         logger.info("Launched Claude Code in screen session '%s' for rdev worker %s (work_dir=%s)", 
                     screen_name, name, work_dir)
 
-        return {"ok": True, "tunnel_window": tunnel_name}
+        return {"ok": True, "tunnel_pid": tunnel_pid}
 
     except Exception as e:
         logger.exception("Failed to set up rdev worker %s", name)
-        # Clean up tunnel window on failure
-        try:
-            tmux.kill_window(tmux_session, tunnel_name)
-        except Exception:
-            pass
+        # Clean up tunnel subprocess on failure
+        if tunnel_manager:
+            try:
+                tunnel_manager.stop_tunnel(session_id)
+            except Exception:
+                pass
         return {"ok": False, "error": str(e)}

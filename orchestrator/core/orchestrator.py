@@ -23,13 +23,15 @@ class Orchestrator:
         conn: sqlite3.Connection,
         config: dict,
         db_path: str | Path | None = None,
+        tunnel_manager=None,
     ):
         self.conn = conn  # For read operations (monitor loop)
         self.config = config
         self.tmux_session = config.get("tmux", {}).get("session_name", "orchestrator")
+        self.tunnel_manager = tunnel_manager
         self._monitor_task: asyncio.Task | None = None
         self._tunnel_monitor_task: asyncio.Task | None = None
-        
+
         # Connection factory for write operations (avoids lock contention)
         self._conn_factory: ConnectionFactory | None = None
         if db_path:
@@ -60,7 +62,7 @@ class Orchestrator:
         self._tunnel_monitor_task = asyncio.create_task(
             tunnel_health_loop(
                 self.conn,
-                tmux_session=self.tmux_session,
+                tunnel_manager=self.tunnel_manager,
                 check_interval=tunnel_interval,
             )
         )

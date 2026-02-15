@@ -183,9 +183,9 @@ class TestSessionDelete:
     ):
         """Deleting a local session should kill its tmux window."""
         from orchestrator.api.routes.sessions import delete_session
-        
+
         mock_is_rdev.return_value = False
-        
+
         mock_session = MagicMock()
         mock_session.id = "test-session-id"
         mock_session.name = "test-worker"
@@ -193,9 +193,12 @@ class TestSessionDelete:
         mock_session.tmux_window = "orchestrator:test-worker"
         mock_session.tunnel_pane = None
         mock_repo.get_session.return_value = mock_session
-        
-        delete_session("test-session-id", db=db)
-        
+
+        mock_request = MagicMock()
+        mock_request.app.state.tunnel_manager = None
+
+        delete_session("test-session-id", mock_request, db=db)
+
         mock_kill_window.assert_called()
         mock_repo.delete_session.assert_called_once_with(db, "test-session-id")
 
@@ -209,10 +212,10 @@ class TestSessionDelete:
     ):
         """Deleting a local session should clean up tmp directory."""
         from orchestrator.api.routes.sessions import delete_session
-        
+
         mock_is_rdev.return_value = False
         mock_exists.return_value = True
-        
+
         mock_session = MagicMock()
         mock_session.id = "test-session-id"
         mock_session.name = "test-worker"
@@ -221,9 +224,12 @@ class TestSessionDelete:
         mock_session.tunnel_pane = None
         mock_session.work_dir = "/home/user/project"
         mock_repo.get_session.return_value = mock_session
-        
-        delete_session("test-session-id", db=db)
-        
+
+        mock_request = MagicMock()
+        mock_request.app.state.tunnel_manager = None
+
+        delete_session("test-session-id", mock_request, db=db)
+
         # Should clean tmp dir
         mock_rmtree.assert_called()
         # Verify it's the tmp dir, not work_dir
@@ -239,9 +245,9 @@ class TestSessionDelete:
     ):
         """Deleting an rdev session should exit Claude and screen before cleanup."""
         from orchestrator.api.routes.sessions import delete_session
-        
+
         mock_is_rdev.return_value = True
-        
+
         mock_session = MagicMock()
         mock_session.id = "test-session-id"
         mock_session.name = "test-rdev"
@@ -249,9 +255,12 @@ class TestSessionDelete:
         mock_session.tmux_window = "orchestrator:test-rdev"
         mock_session.tunnel_pane = "orchestrator:test-rdev-tunnel"
         mock_repo.get_session.return_value = mock_session
-        
-        delete_session("test-session-id", db=db)
-        
+
+        mock_request = MagicMock()
+        mock_request.app.state.tunnel_manager = MagicMock()
+
+        delete_session("test-session-id", mock_request, db=db)
+
         # Should have sent exit commands
         exit_calls = [c for c in mock_send_keys.call_args_list if 'exit' in str(c)]
         assert len(exit_calls) >= 2, "Should send 'exit' at least twice (Claude + screen)"
@@ -263,11 +272,11 @@ class TestSessionDelete:
     def test_delete_rdev_session_kills_tunnel(
         self, mock_is_rdev, mock_repo, mock_kill_window, mock_send_keys, db
     ):
-        """Deleting an rdev session should kill the tunnel window."""
+        """Deleting an rdev session should stop the tunnel subprocess."""
         from orchestrator.api.routes.sessions import delete_session
-        
+
         mock_is_rdev.return_value = True
-        
+
         mock_session = MagicMock()
         mock_session.id = "test-session-id"
         mock_session.name = "test-rdev"
@@ -275,13 +284,16 @@ class TestSessionDelete:
         mock_session.tmux_window = "orchestrator:test-rdev"
         mock_session.tunnel_pane = "orchestrator:test-rdev-tunnel"
         mock_repo.get_session.return_value = mock_session
-        
-        delete_session("test-session-id", db=db)
-        
-        # Should kill tunnel window
-        tunnel_kills = [c for c in mock_kill_window.call_args_list 
-                        if 'tunnel' in str(c).lower()]
-        assert len(tunnel_kills) >= 1, "Should kill tunnel window"
+
+        mock_tm = MagicMock()
+        mock_tm.stop_tunnel.return_value = True
+        mock_request = MagicMock()
+        mock_request.app.state.tunnel_manager = mock_tm
+
+        delete_session("test-session-id", mock_request, db=db)
+
+        # Should stop tunnel via tunnel_manager
+        mock_tm.stop_tunnel.assert_called_once_with("test-session-id")
 
     @patch('orchestrator.api.routes.sessions.kill_window')
     @patch('orchestrator.api.routes.sessions.repo')
@@ -291,9 +303,9 @@ class TestSessionDelete:
     ):
         """Deleting a session should delete it from the database."""
         from orchestrator.api.routes.sessions import delete_session
-        
+
         mock_is_rdev.return_value = False
-        
+
         mock_session = MagicMock()
         mock_session.id = "test-session-id"
         mock_session.name = "test-worker"
@@ -301,9 +313,12 @@ class TestSessionDelete:
         mock_session.tmux_window = "orchestrator:test-worker"
         mock_session.tunnel_pane = None
         mock_repo.get_session.return_value = mock_session
-        
-        delete_session("test-session-id", db=db)
-        
+
+        mock_request = MagicMock()
+        mock_request.app.state.tunnel_manager = None
+
+        delete_session("test-session-id", mock_request, db=db)
+
         # Should delete from database
         mock_repo.delete_session.assert_called_once_with(db, "test-session-id")
 

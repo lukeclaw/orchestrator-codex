@@ -456,182 +456,165 @@ class TestKillTunnelProcesses:
 
 
 class TestTunnelHealthLoop:
-    """Tests for the periodic tunnel health monitoring loop."""
+    """Tests for the periodic tunnel health monitoring loop (subprocess-based)."""
 
-    @patch("orchestrator.session.tunnel_monitor.check_tunnel_alive")
     @patch("orchestrator.session.tunnel_monitor.sessions_repo")
-    def test_check_all_tunnels_skips_non_rdev(self, mock_repo, mock_check):
+    def test_check_all_tunnels_skips_non_rdev(self, mock_repo):
         """Should skip local (non-rdev) workers."""
         from orchestrator.session.tunnel_monitor import _check_all_tunnels
 
         mock_session = MagicMock()
-        mock_session.host = "local"  # Not an rdev host
+        mock_session.host = "local"
         mock_session.status = "waiting"
-        mock_session.tunnel_pane = "orchestrator:w1-tunnel"
+        mock_session.id = "sess-1"
         mock_repo.list_sessions.return_value = [mock_session]
 
-        asyncio.run(
-            _check_all_tunnels(MagicMock(), "orchestrator", 8093)
-        )
+        mock_tm = MagicMock()
 
-        mock_check.assert_not_called()
+        asyncio.run(_check_all_tunnels(MagicMock(), mock_tm))
 
-    @patch("orchestrator.session.tunnel_monitor.check_tunnel_alive")
+        mock_tm.is_alive.assert_not_called()
+
     @patch("orchestrator.session.tunnel_monitor.sessions_repo")
-    def test_check_all_tunnels_skips_disconnected(self, mock_repo, mock_check):
+    def test_check_all_tunnels_skips_disconnected(self, mock_repo):
         """Should skip disconnected workers."""
         from orchestrator.session.tunnel_monitor import _check_all_tunnels
 
         mock_session = MagicMock()
         mock_session.host = "user/rdev-vm"
         mock_session.status = "disconnected"
-        mock_session.tunnel_pane = "orchestrator:w1-tunnel"
+        mock_session.id = "sess-1"
         mock_repo.list_sessions.return_value = [mock_session]
 
-        asyncio.run(
-            _check_all_tunnels(MagicMock(), "orchestrator", 8093)
-        )
+        mock_tm = MagicMock()
 
-        mock_check.assert_not_called()
+        asyncio.run(_check_all_tunnels(MagicMock(), mock_tm))
 
-    @patch("orchestrator.session.tunnel_monitor.check_tunnel_alive")
+        mock_tm.is_alive.assert_not_called()
+
     @patch("orchestrator.session.tunnel_monitor.sessions_repo")
-    def test_check_all_tunnels_skips_no_tunnel_pane(self, mock_repo, mock_check):
-        """Should skip workers without a tunnel_pane."""
+    def test_check_all_tunnels_skips_connecting(self, mock_repo):
+        """Should skip workers in connecting state."""
         from orchestrator.session.tunnel_monitor import _check_all_tunnels
 
         mock_session = MagicMock()
         mock_session.host = "user/rdev-vm"
-        mock_session.status = "waiting"
-        mock_session.tunnel_pane = None
+        mock_session.status = "connecting"
+        mock_session.id = "sess-1"
         mock_repo.list_sessions.return_value = [mock_session]
 
-        asyncio.run(
-            _check_all_tunnels(MagicMock(), "orchestrator", 8093)
-        )
+        mock_tm = MagicMock()
 
-        mock_check.assert_not_called()
+        asyncio.run(_check_all_tunnels(MagicMock(), mock_tm))
 
-    @patch("orchestrator.session.tunnel_monitor._reconnect_tunnel", new_callable=AsyncMock)
-    @patch("orchestrator.session.tunnel_monitor.check_tunnel_alive")
+        mock_tm.is_alive.assert_not_called()
+
     @patch("orchestrator.session.tunnel_monitor.sessions_repo")
-    def test_check_all_tunnels_reconnects_dead(self, mock_repo, mock_check, mock_reconnect):
-        """Should trigger reconnect when tunnel is dead."""
-        from orchestrator.session.tunnel_monitor import _check_all_tunnels
-
-        mock_session = MagicMock()
-        mock_session.host = "user/rdev-vm"
-        mock_session.status = "waiting"
-        mock_session.name = "w1"
-        mock_session.tunnel_pane = "orchestrator:w1-tunnel"
-        mock_repo.list_sessions.return_value = [mock_session]
-        mock_check.return_value = False  # Tunnel dead
-        mock_reconnect.return_value = True
-
-        asyncio.run(
-            _check_all_tunnels(MagicMock(), "orchestrator", 8093)
-        )
-
-        mock_check.assert_called_once_with("orchestrator", "w1-tunnel", host="user/rdev-vm", remote_port=8093)
-        mock_reconnect.assert_called_once()
-
-    @patch("orchestrator.session.tunnel_monitor._reconnect_tunnel")
-    @patch("orchestrator.session.tunnel_monitor.check_tunnel_alive")
-    @patch("orchestrator.session.tunnel_monitor.sessions_repo")
-    def test_check_all_tunnels_skips_alive(self, mock_repo, mock_check, mock_reconnect):
-        """Should not reconnect when tunnel is alive."""
+    def test_check_all_tunnels_skips_alive(self, mock_repo):
+        """Should not restart when tunnel is alive."""
         from orchestrator.session.tunnel_monitor import _check_all_tunnels
 
         mock_session = MagicMock()
         mock_session.host = "user/rdev-vm"
         mock_session.status = "waiting"
         mock_session.name = "w1"
-        mock_session.tunnel_pane = "orchestrator:w1-tunnel"
+        mock_session.id = "sess-1"
         mock_repo.list_sessions.return_value = [mock_session]
-        mock_check.return_value = True  # Tunnel alive
 
-        asyncio.run(
-            _check_all_tunnels(MagicMock(), "orchestrator", 8093)
-        )
+        mock_tm = MagicMock()
+        mock_tm.is_alive.return_value = True
 
-        mock_reconnect.assert_not_called()
+        asyncio.run(_check_all_tunnels(MagicMock(), mock_tm))
 
-    @patch("orchestrator.session.tunnel_monitor.check_tunnel_alive")
+        mock_tm.is_alive.assert_called_once_with("sess-1")
+        mock_tm.restart_tunnel.assert_not_called()
+
     @patch("orchestrator.session.tunnel_monitor.sessions_repo")
-    def test_check_all_tunnels_parses_tunnel_pane_with_colon(self, mock_repo, mock_check):
-        """Should parse tunnel_pane in 'session:window' format."""
+    def test_check_all_tunnels_restarts_dead(self, mock_repo):
+        """Should restart tunnel via tunnel_manager when dead."""
         from orchestrator.session.tunnel_monitor import _check_all_tunnels
 
+        mock_session = MagicMock()
+        mock_session.host = "user/rdev-vm"
+        mock_session.status = "waiting"
+        mock_session.name = "w1"
+        mock_session.id = "sess-1"
+        mock_repo.list_sessions.return_value = [mock_session]
+
+        mock_tm = MagicMock()
+        mock_tm.is_alive.return_value = False
+        mock_tm.restart_tunnel.return_value = 99999
+
+        asyncio.run(_check_all_tunnels(MagicMock(), mock_tm))
+
+        mock_tm.is_alive.assert_called_once_with("sess-1")
+        mock_tm.restart_tunnel.assert_called_once_with("sess-1", "w1", "user/rdev-vm")
+
+    @patch("orchestrator.session.tunnel_monitor.sessions_repo")
+    def test_check_all_tunnels_updates_db_on_restart(self, mock_repo):
+        """Should update tunnel_pid in DB after successful restart."""
+        from orchestrator.session.tunnel_monitor import _check_all_tunnels
+
+        mock_conn = MagicMock()
         mock_session = MagicMock()
         mock_session.host = "user/rdev-vm"
         mock_session.status = "idle"
         mock_session.name = "w1"
-        mock_session.tunnel_pane = "mysess:mytunnel"
+        mock_session.id = "sess-1"
         mock_repo.list_sessions.return_value = [mock_session]
-        mock_check.return_value = True
 
-        asyncio.run(
-            _check_all_tunnels(MagicMock(), "orchestrator", 8093)
-        )
+        mock_tm = MagicMock()
+        mock_tm.is_alive.return_value = False
+        mock_tm.restart_tunnel.return_value = 12345
 
-        # Should use the parsed session:window, not the default tmux_session
-        mock_check.assert_called_once_with("mysess", "mytunnel", host="user/rdev-vm", remote_port=8093)
+        asyncio.run(_check_all_tunnels(mock_conn, mock_tm))
 
-    @patch("orchestrator.session.tunnel_monitor.check_tunnel_alive")
+        mock_repo.update_session.assert_called_once_with(mock_conn, "sess-1", tunnel_pid=12345)
+
     @patch("orchestrator.session.tunnel_monitor.sessions_repo")
-    def test_check_all_tunnels_parses_tunnel_pane_without_colon(self, mock_repo, mock_check):
-        """Should use default tmux_session when tunnel_pane has no colon."""
+    def test_check_all_tunnels_no_db_update_on_restart_failure(self, mock_repo):
+        """Should not update DB when restart returns None."""
         from orchestrator.session.tunnel_monitor import _check_all_tunnels
 
         mock_session = MagicMock()
         mock_session.host = "user/rdev-vm"
-        mock_session.status = "idle"
+        mock_session.status = "waiting"
         mock_session.name = "w1"
-        mock_session.tunnel_pane = "just-a-window"
+        mock_session.id = "sess-1"
         mock_repo.list_sessions.return_value = [mock_session]
-        mock_check.return_value = True
 
-        asyncio.run(
-            _check_all_tunnels(MagicMock(), "orchestrator", 8093)
-        )
+        mock_tm = MagicMock()
+        mock_tm.is_alive.return_value = False
+        mock_tm.restart_tunnel.return_value = None
 
-        mock_check.assert_called_once_with("orchestrator", "just-a-window", host="user/rdev-vm", remote_port=8093)
+        asyncio.run(_check_all_tunnels(MagicMock(), mock_tm))
+
+        mock_repo.update_session.assert_not_called()
 
 
 # ==============================================================================
-# Integration: reconnect_tunnel_only uses kill_tunnel_processes
+# Integration: reconnect_tunnel_only uses ReverseTunnelManager
 # ==============================================================================
 
 
 class TestReconnectTunnelOnlyKillEscalation:
-    """Verify reconnect_tunnel_only calls kill_tunnel_processes before recreating."""
+    """Verify reconnect_tunnel_only uses tunnel_manager for subprocess-based restart."""
 
-    @patch("orchestrator.session.reconnect.check_tunnel_alive")
-    @patch("orchestrator.session.reconnect.kill_window")
-    @patch("orchestrator.terminal.manager.create_window")
-    @patch("orchestrator.terminal.ssh.setup_rdev_tunnel")
-    @patch("orchestrator.session.reconnect.time.sleep")
-    @patch("orchestrator.session.health.kill_tunnel_processes")
-    def test_kills_stuck_processes_before_recreating(
-        self, mock_kill_procs, mock_sleep, mock_setup, mock_create, mock_kill_win, mock_check, db
-    ):
-        """Should call kill_tunnel_processes before creating new tunnel."""
+    def test_restart_via_tunnel_manager(self, db):
+        """Should call tunnel_manager.restart_tunnel and update DB on success."""
         from orchestrator.session.reconnect import reconnect_tunnel_only
-
-        mock_kill_procs.return_value = 1  # Found and killed 1 stuck process
-        mock_check.return_value = True  # New tunnel works
 
         mock_session = MagicMock()
         mock_session.name = "w1"
         mock_session.host = "user/rdev-vm"
-        mock_session.tunnel_pane = "orchestrator:w1-tunnel"
         mock_session.id = "sess-123"
-        mock_repo = MagicMock()
 
-        result = reconnect_tunnel_only(db, mock_session, "orchestrator", 8093, mock_repo)
+        mock_repo = MagicMock()
+        mock_tm = MagicMock()
+        mock_tm.restart_tunnel.return_value = 55555
+
+        result = reconnect_tunnel_only(db, mock_session, "orchestrator", 8093, mock_repo, tunnel_manager=mock_tm)
 
         assert result is True
-        mock_kill_procs.assert_called_once_with("user/rdev-vm")
-        # kill_tunnel_processes should be called BEFORE create_window
-        # (we verify by checking both were called)
-        mock_create.assert_called_once()
+        mock_tm.restart_tunnel.assert_called_once_with("sess-123", "w1", "user/rdev-vm")
+        mock_repo.update_session.assert_called_once_with(db, "sess-123", tunnel_pid=55555)

@@ -1,18 +1,22 @@
 """SSH tunnel management for rdev workers.
 
-Provides discovery and management of SSH port-forward tunnels that allow
-local access to ports on rdev machines.
-
-Tunnels are discovered via process scanning (ps aux) rather than stored in DB,
-since SSH processes survive server restarts.
+Provides:
+- ReverseTunnelManager: Manages reverse SSH tunnels (-R) as direct subprocesses
+  for the orchestrator API tunnel (port 8093). Replaces the old tmux-based approach.
+- Forward tunnel discovery/management: Discovers SSH port-forward tunnels (-L)
+  via process scanning for user-created tunnels.
 """
+
+from __future__ import annotations
 
 import logging
 import os
 import re
 import signal
 import subprocess
+import threading
 import time
+from dataclasses import dataclass, field
 from typing import Dict, Optional, Tuple
 
 logger = logging.getLogger(__name__)
@@ -244,16 +248,16 @@ def close_tunnel(local_port: int, host: Optional[str] = None) -> Tuple[bool, str
 
 def cleanup_tunnels_for_host(host: str) -> int:
     """Kill all tunnels for a given rdev host.
-    
+
     Args:
         host: rdev host (e.g., "user/rdev-vm")
-        
+
     Returns:
         Number of tunnels closed
     """
     tunnels = get_tunnels_for_host(host)
     closed = 0
-    
+
     for port, info in tunnels.items():
         try:
             os.kill(info["pid"], signal.SIGTERM)
@@ -263,8 +267,472 @@ def cleanup_tunnels_for_host(host: str) -> int:
             pass
         except PermissionError:
             logger.warning("Permission denied killing tunnel pid %d", info["pid"])
-    
+
     if closed > 0:
         invalidate_cache()
-    
+
     return closed
+
+
+# =====================================================================
+# Reverse Tunnel Manager (replaces tmux-based tunnel management)
+# =====================================================================
+
+# Default port used by the reverse tunnel for API access
+DEFAULT_API_PORT = 8093
+
+# Seconds to wait after SIGTERM before escalating to SIGKILL
+_GRACEFUL_TIMEOUT = 3.0
+
+# Directory for tunnel stderr logs
+DEFAULT_LOG_DIR = "/tmp/orchestrator/tunnels"
+
+
+@dataclass
+class _TunnelEntry:
+    """Internal state for a managed reverse tunnel."""
+
+    proc: subprocess.Popen | _AdoptedProcess
+    host: str
+    session_name: str
+    pid: int
+    log_file: object | None = None  # open file handle for stderr
+    started_at: float = field(default_factory=time.time)
+
+
+class _AdoptedProcess:
+    """Minimal stand-in for subprocess.Popen for adopted (orphaned) processes.
+
+    We can't create a real Popen object for a process we didn't start,
+    so this provides the minimal interface needed by ReverseTunnelManager.
+    """
+
+    def __init__(self, pid: int):
+        self.pid = pid
+        self._returncode: int | None = None
+
+    def poll(self) -> int | None:
+        if self._returncode is not None:
+            return self._returncode
+        try:
+            os.kill(self.pid, 0)
+            return None  # still alive
+        except ProcessLookupError:
+            self._returncode = -1
+            return self._returncode
+        except PermissionError:
+            # Can't signal it — assume alive (conservative)
+            return None
+
+    def terminate(self):
+        try:
+            os.kill(self.pid, signal.SIGTERM)
+        except (ProcessLookupError, PermissionError):
+            pass
+
+    def kill(self):
+        try:
+            os.kill(self.pid, signal.SIGKILL)
+        except (ProcessLookupError, PermissionError):
+            pass
+
+    def wait(self, timeout=None):
+        """Best-effort wait — can't waitpid on non-child processes."""
+        if timeout:
+            deadline = time.time() + timeout
+            while time.time() < deadline:
+                try:
+                    os.kill(self.pid, 0)
+                except ProcessLookupError:
+                    self._returncode = -1
+                    return self._returncode
+                except PermissionError:
+                    return None
+                time.sleep(0.2)
+        return self._returncode
+
+
+class ReverseTunnelManager:
+    """Manages SSH reverse tunnels as direct subprocesses.
+
+    Replaces the old approach of typing SSH commands into tmux windows,
+    which was fragile due to shell initialization issues (oh-my-zsh prompts,
+    etc.) and unreliable health checking via terminal output parsing.
+
+    Each tunnel is a direct ``ssh -N -R`` subprocess with:
+    - Deterministic health checking via ``proc.poll()`` (no string parsing)
+    - ``start_new_session=True`` so tunnels survive orchestrator restarts
+    - SIGTERM → SIGKILL escalation for reliable cleanup
+    - Persistent PID storage in DB for cross-restart recovery
+
+    Thread-safe: all dict mutations are protected by a lock.
+    """
+
+    def __init__(
+        self,
+        api_port: int = DEFAULT_API_PORT,
+        log_dir: str = DEFAULT_LOG_DIR,
+    ):
+        self.api_port = api_port
+        self.log_dir = log_dir
+        self._tunnels: dict[str, _TunnelEntry] = {}  # session_id → entry
+        self._lock = threading.Lock()
+
+        # Ensure log directory exists
+        os.makedirs(self.log_dir, exist_ok=True)
+
+    # ------------------------------------------------------------------
+    # Public API
+    # ------------------------------------------------------------------
+
+    def start_tunnel(
+        self,
+        session_id: str,
+        session_name: str,
+        host: str,
+        local_port: int | None = None,
+        remote_port: int | None = None,
+    ) -> int | None:
+        """Start a reverse SSH tunnel for a session.
+
+        Returns the PID on success, None on failure.
+        """
+        local_port = local_port or self.api_port
+        remote_port = remote_port or self.api_port
+
+        # Stop any existing tunnel for this session first
+        self.stop_tunnel(session_id)
+
+        log_path = os.path.join(self.log_dir, f"{session_name}.log")
+        try:
+            log_file = open(log_path, "a")
+        except OSError as e:
+            logger.error("Cannot open tunnel log %s: %s", log_path, e)
+            log_file = None
+
+        cmd = [
+            "ssh",
+            "-o", "StrictHostKeyChecking=no",
+            "-o", "UserKnownHostsFile=/dev/null",
+            "-o", "ServerAliveInterval=30",
+            "-o", "ServerAliveCountMax=3",
+            "-o", "ExitOnForwardFailure=yes",
+            "-N",
+            "-R", f"{remote_port}:127.0.0.1:{local_port}",
+            host,
+        ]
+
+        try:
+            proc = subprocess.Popen(
+                cmd,
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=log_file if log_file else subprocess.DEVNULL,
+                start_new_session=True,  # survive orchestrator restarts
+            )
+        except OSError as e:
+            logger.error("Failed to start tunnel for %s: %s", session_name, e)
+            if log_file:
+                log_file.close()
+            return None
+
+        entry = _TunnelEntry(
+            proc=proc,
+            host=host,
+            session_name=session_name,
+            pid=proc.pid,
+            log_file=log_file,
+        )
+
+        with self._lock:
+            self._tunnels[session_id] = entry
+
+        logger.info(
+            "Started tunnel for %s (host=%s, pid=%d, port=%d→%d)",
+            session_name, host, proc.pid, local_port, remote_port,
+        )
+        return proc.pid
+
+    def stop_tunnel(self, session_id: str) -> bool:
+        """Stop a tunnel with SIGTERM → wait → SIGKILL escalation.
+
+        Returns True if a tunnel was stopped, False if none existed.
+        """
+        with self._lock:
+            entry = self._tunnels.pop(session_id, None)
+
+        if entry is None:
+            return False
+
+        self._kill_entry(entry)
+        logger.info("Stopped tunnel for %s (pid=%d)", entry.session_name, entry.pid)
+        return True
+
+    def restart_tunnel(
+        self,
+        session_id: str,
+        session_name: str,
+        host: str,
+    ) -> int | None:
+        """Stop and restart a tunnel. Returns new PID or None."""
+        self.stop_tunnel(session_id)
+        return self.start_tunnel(session_id, session_name, host)
+
+    def is_alive(self, session_id: str) -> bool:
+        """Fast check: is the tunnel process still running?
+
+        Uses proc.poll() which is instant and deterministic.
+        No string parsing, no heuristics.
+        """
+        with self._lock:
+            entry = self._tunnels.get(session_id)
+
+        if entry is None:
+            return False
+
+        status = entry.proc.poll()
+        if status is not None:
+            # Process exited — log the exit code
+            logger.info(
+                "Tunnel for %s (pid=%d) exited with code %d",
+                entry.session_name, entry.pid, status,
+            )
+            # Clean up the entry
+            self._cleanup_dead_entry(session_id, entry)
+            return False
+
+        return True
+
+    def check_connectivity(self, session_id: str) -> bool:
+        """Definitive check: is the tunnel actually working?
+
+        Two-tier: process alive AND active probe succeeds.
+        """
+        if not self.is_alive(session_id):
+            return False
+
+        with self._lock:
+            entry = self._tunnels.get(session_id)
+        if entry is None:
+            return False
+
+        return probe_tunnel_connectivity(entry.host, self.api_port)
+
+    def get_pid(self, session_id: str) -> int | None:
+        """Get the PID of a tunnel, or None if not managed."""
+        with self._lock:
+            entry = self._tunnels.get(session_id)
+        return entry.pid if entry else None
+
+    def get_host(self, session_id: str) -> str | None:
+        """Get the host of a tunnel, or None if not managed."""
+        with self._lock:
+            entry = self._tunnels.get(session_id)
+        return entry.host if entry else None
+
+    def has_tunnel(self, session_id: str) -> bool:
+        """Check if a tunnel is registered (alive or dead)."""
+        with self._lock:
+            return session_id in self._tunnels
+
+    def list_tunnels(self) -> list[dict]:
+        """List all managed tunnels with their status."""
+        with self._lock:
+            entries = list(self._tunnels.items())
+
+        result = []
+        for sid, entry in entries:
+            alive = entry.proc.poll() is None
+            result.append({
+                "session_id": sid,
+                "session_name": entry.session_name,
+                "host": entry.host,
+                "pid": entry.pid,
+                "alive": alive,
+                "uptime_seconds": time.time() - entry.started_at,
+            })
+        return result
+
+    # ------------------------------------------------------------------
+    # Startup recovery
+    # ------------------------------------------------------------------
+
+    def recover_tunnel(
+        self,
+        session_id: str,
+        session_name: str,
+        host: str,
+        stored_pid: int | None,
+    ) -> int | None:
+        """Recover a tunnel after orchestrator restart.
+
+        If the stored PID is still alive and is actually a tunnel to the
+        right host, adopt it. Otherwise, kill orphans and start fresh.
+
+        Returns the (adopted or new) PID, or None on failure.
+        """
+        if stored_pid and self._try_adopt(session_id, session_name, host, stored_pid):
+            logger.info(
+                "Adopted existing tunnel for %s (pid=%d)", session_name, stored_pid
+            )
+            return stored_pid
+
+        # Stored PID is dead or wrong — clean up any orphans and start fresh
+        self._kill_orphan_tunnels(host)
+        pid = self.start_tunnel(session_id, session_name, host)
+        if pid:
+            logger.info("Started fresh tunnel for %s (pid=%d)", session_name, pid)
+        return pid
+
+    def _try_adopt(
+        self,
+        session_id: str,
+        session_name: str,
+        host: str,
+        pid: int,
+    ) -> bool:
+        """Try to adopt an orphaned tunnel process.
+
+        Validates that the PID is alive AND is actually an SSH tunnel
+        for the given host (prevents PID recycling false positives).
+        """
+        # Check if PID is alive
+        try:
+            os.kill(pid, 0)
+        except (ProcessLookupError, PermissionError):
+            return False
+
+        # Cross-validate: is this PID actually a reverse tunnel for this host?
+        from orchestrator.session.health import find_tunnel_pids
+        tunnel_pids = find_tunnel_pids(host)
+        if pid not in tunnel_pids:
+            logger.warning(
+                "PID %d is alive but not a reverse tunnel for %s (found pids: %s)",
+                pid, host, tunnel_pids,
+            )
+            return False
+
+        entry = _TunnelEntry(
+            proc=_AdoptedProcess(pid),
+            host=host,
+            session_name=session_name,
+            pid=pid,
+            log_file=None,
+        )
+
+        with self._lock:
+            self._tunnels[session_id] = entry
+
+        return True
+
+    def _kill_orphan_tunnels(self, host: str):
+        """Kill any orphaned SSH reverse tunnel processes for a host."""
+        from orchestrator.session.health import find_tunnel_pids
+        pids = find_tunnel_pids(host)
+        for pid in pids:
+            try:
+                os.kill(pid, signal.SIGTERM)
+                logger.info("Sent SIGTERM to orphan tunnel pid %d for %s", pid, host)
+            except (ProcessLookupError, PermissionError):
+                pass
+
+        if pids:
+            time.sleep(1)
+            for pid in pids:
+                try:
+                    os.kill(pid, 0)  # check if still alive
+                    os.kill(pid, signal.SIGKILL)
+                    logger.warning("Sent SIGKILL to stuck orphan pid %d", pid)
+                except (ProcessLookupError, PermissionError):
+                    pass
+
+    # ------------------------------------------------------------------
+    # Shutdown
+    # ------------------------------------------------------------------
+
+    def stop_all(self):
+        """Stop all managed tunnels. Called during graceful shutdown."""
+        with self._lock:
+            session_ids = list(self._tunnels.keys())
+
+        for sid in session_ids:
+            try:
+                self.stop_tunnel(sid)
+            except Exception:
+                logger.exception("Error stopping tunnel for session %s", sid)
+
+        logger.info("All tunnels stopped (%d)", len(session_ids))
+
+    # ------------------------------------------------------------------
+    # Internal helpers
+    # ------------------------------------------------------------------
+
+    def _kill_entry(self, entry: _TunnelEntry):
+        """Kill a tunnel process with SIGTERM → wait → SIGKILL."""
+        pid = entry.pid
+        proc = entry.proc
+
+        # Phase 1: SIGTERM
+        try:
+            if isinstance(proc, _AdoptedProcess):
+                os.kill(pid, signal.SIGTERM)
+            else:
+                proc.terminate()
+        except (ProcessLookupError, PermissionError):
+            pass
+
+        # Phase 2: Wait for graceful exit
+        deadline = time.time() + _GRACEFUL_TIMEOUT
+        while time.time() < deadline:
+            try:
+                os.kill(pid, 0)
+            except ProcessLookupError:
+                break
+            except PermissionError:
+                break
+            time.sleep(0.5)
+        else:
+            # Phase 3: SIGKILL
+            try:
+                if isinstance(proc, _AdoptedProcess):
+                    os.kill(pid, signal.SIGKILL)
+                else:
+                    proc.kill()
+                logger.warning("Sent SIGKILL to stuck tunnel pid %d", pid)
+            except (ProcessLookupError, PermissionError):
+                pass
+
+        # Reap zombie if we have a real Popen
+        if not isinstance(proc, _AdoptedProcess):
+            try:
+                proc.wait(timeout=2)
+            except (subprocess.TimeoutExpired, ChildProcessError):
+                pass
+
+        # Close log file
+        if entry.log_file:
+            try:
+                entry.log_file.close()
+            except Exception:
+                pass
+
+    def _cleanup_dead_entry(self, session_id: str, entry: _TunnelEntry):
+        """Clean up a dead tunnel entry (close log file, remove from dict)."""
+        with self._lock:
+            # Only remove if it's still the same entry (avoid race)
+            current = self._tunnels.get(session_id)
+            if current is entry:
+                del self._tunnels[session_id]
+
+        if entry.log_file:
+            try:
+                entry.log_file.close()
+            except Exception:
+                pass
+
+        # Reap zombie
+        if not isinstance(entry.proc, _AdoptedProcess):
+            try:
+                entry.proc.wait(timeout=1)
+            except (subprocess.TimeoutExpired, ChildProcessError):
+                pass

@@ -56,6 +56,7 @@ class Session:
     work_dir: str | None = None
     tmux_window: str | None = None
     tunnel_pane: str | None = None
+    tunnel_pid: int | None = None
     status: str = "idle"
     takeover_mode: bool = False
     created_at: str = ""

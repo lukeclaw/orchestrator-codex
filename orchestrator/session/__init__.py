@@ -13,7 +13,6 @@ from orchestrator.session.state_machine import (
 
 from orchestrator.session.health import (
     get_screen_session_name,
-    check_tunnel_alive,
     check_claude_process_local,
     check_screen_and_claude_rdev,
     check_claude_process_rdev,
@@ -42,7 +41,6 @@ __all__ = [
     "get_status_value",
     # Health checks
     "get_screen_session_name",
-    "check_tunnel_alive",
     "check_claude_process_local",
     "check_screen_and_claude_rdev",
     "check_claude_process_rdev",
