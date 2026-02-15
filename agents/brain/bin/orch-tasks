@@ -90,7 +90,7 @@ cmd_show() {
 
 cmd_create() {
     [[ "$1" == "-h" || "$1" == "--help" ]] && show_help && exit 0
-    local project_id="" title="" description="" description_stdin="" notes="" notes_stdin="" status="" priority="" parent_id=""
+    local project_id="" title="" description="" description_stdin="" notes="" notes_stdin="" status="" priority="" parent_id="" add_link="" add_link_tag="" clear_links=""
     while [[ $# -gt 0 ]]; do
         case "$1" in
             --project-id) project_id="$2"; shift 2 ;;
@@ -102,6 +102,9 @@ cmd_create() {
             --status) status="$2"; shift 2 ;;
             --priority) priority="$2"; shift 2 ;;
             --parent-id) parent_id="$2"; shift 2 ;;
+            --add-link) add_link="$2"; shift 2 ;;
+            --add-link-tag) add_link_tag="$2"; shift 2 ;;
+            --clear-links) clear_links="1"; shift ;;
             *) echo "Unknown option: $1" >&2; exit 1 ;;
         esac
     done
@@ -135,8 +138,21 @@ cmd_create() {
     [[ -n "$status" ]] && json="$json, \"status\": \"$status\""
     [[ -n "$priority" ]] && json="$json, \"priority\": \"$priority\""
     [[ -n "$parent_id" ]] && json="$json, \"parent_task_id\": \"$parent_id\""
+    if [[ -n "$clear_links" || -n "$add_link" ]]; then
+        local links_json="[]"
+        if [[ -n "$add_link" ]]; then
+            local escaped_link=$(json_encode "$add_link")
+            local new_link="{\"url\": \"$escaped_link\"}"
+            if [[ -n "$add_link_tag" ]]; then
+                local escaped_tag=$(json_encode "$add_link_tag")
+                new_link="{\"url\": \"$escaped_link\", \"tag\": \"$escaped_tag\"}"
+            fi
+            links_json=$(echo "$links_json" | jq -c ". + [$new_link]")
+        fi
+        json="$json, \"links\": $links_json"
+    fi
     json="$json}"
-    
+
     curl -s -X POST "$API_BASE/api/tasks" \
         -H 'Content-Type: application/json' \
         -d "$json" | pp
