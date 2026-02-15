@@ -121,8 +121,10 @@ gh pr create --draft --title "Your PR title" --body "..."
    gh api repos/OWNER/REPO/pulls/N/comments
    gh api repos/OWNER/REPO/issues/N/comments
    ```
-2. **Address each comment** — Make the requested changes
-3. **Respond to comments** — Use `gh` CLI to reply to review threads
+2. **Address each comment** — Evaluate whether the feedback is valid, then make changes if needed
+3. **Respond to comments** — Use `gh` CLI to reply to review threads. Adjust tone based on the reviewer:
+   - **Human reviewers** (priority): Write conversationally — explain your reasoning, acknowledge their point, invite follow-up. They will read and may respond. Always address human reviews first.
+   - **Bot accounts** (`Copilot`, `github-actions[bot]`, `linkedin-svc`, `copilot-pull-request-reviewer[bot]`): Take with a grain of salt — bot suggestions are often not relevant to the PR or not applicable. Only act on feedback that is clearly valid. Keep replies short and factual. Bots won't read your reply.
 4. **Push fixes** — Commit and push (use the rebase pattern)
 5. **Notify the user** — Send a mandatory human interaction notification with the exact comment URL and your full reply text
 
@@ -141,14 +143,10 @@ gh api ... | jq '.[] | select(...)'   # breaks on special chars
 
 ## Before Merging
 
-Check for open questions or unresolved threads from **human** reviewers.
+Check for open questions or unresolved threads from all reviewers (human and bot).
 
-**Known bot accounts to ignore:** `Copilot`, `github-actions[bot]`, `linkedin-svc`, `copilot-pull-request-reviewer[bot]`
-
-If unaddressed human questions exist:
-1. Do NOT merge. Do NOT mark subtask as done.
-2. Send a notification linked to the subtask so the user can follow up.
-3. Keep the subtask as `in_progress`.
+- **Bot comments**: Address valid feedback in code. If already handled or not applicable, leave a brief reply noting why and resolve the thread.
+- **Human comments**: If unaddressed questions remain, do NOT merge. Send a notification linked to the subtask so the user can follow up, and keep the subtask as `in_progress`.
 
 ## Merge
 
