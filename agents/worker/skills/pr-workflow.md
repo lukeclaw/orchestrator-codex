@@ -189,6 +189,8 @@ After merging, mark the subtask as `done`. This is the only time a subtask shoul
 - What is blocking (if anything)
 - Review comment status when addressed (e.g., "Review: @user's naming concern — addressed in commit abc123")
 
+**Update task and subtask notes after each significant action (PR created, review addressed, merged, blocked, etc.).**
+
 ---
 
 ## When Anything Is Unclear
