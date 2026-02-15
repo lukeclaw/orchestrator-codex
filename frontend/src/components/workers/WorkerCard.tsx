@@ -25,66 +25,17 @@ export default function WorkerCard({
 }: Props) {
   const navigate = useNavigate()
   const notify = useNotify()
-  const [preview, setPreview] = useState('')
   const [removing, setRemoving] = useState(false)
   const [actionPending, setActionPending] = useState(false)
   const [tunnels, setTunnels] = useState<Record<string, TunnelInfo>>({})
-  const intervalRef = useRef<ReturnType<typeof setInterval> | undefined>(undefined)
   const tunnelIntervalRef = useRef<ReturnType<typeof setInterval> | undefined>(undefined)
-  const hasLoadedRef = useRef(false)
-  const sessionIdRef = useRef(session.id)  // Track current session.id for race protection
-  const fetchGenRef = useRef(0)  // Generation counter to ignore stale fetches
+  const sessionIdRef = useRef(session.id)
 
   // Check if this is an rdev worker
   const isRdev = session.host.includes('/')
 
   // Update ref when session changes (for interval callbacks to read current value)
   sessionIdRef.current = session.id
-
-  useEffect(() => {
-    // Increment generation - any in-flight fetches from previous session are now stale
-    const currentGen = ++fetchGenRef.current
-    const targetSessionId = session.id
-    
-    hasLoadedRef.current = false
-    setPreview('')  // Clear old preview immediately
-
-    async function fetchPreview() {
-      // Double-check we're still fetching for the right session
-      if (sessionIdRef.current !== targetSessionId || fetchGenRef.current !== currentGen) {
-        return  // Stale - session changed since this fetch/interval was created
-      }
-      
-      try {
-        const data = await api<{ content: string; status: string }>(
-          `/api/sessions/${targetSessionId}/preview`
-        )
-        
-        // Triple-check after await: session might have changed during fetch
-        if (sessionIdRef.current !== targetSessionId || fetchGenRef.current !== currentGen) {
-          return  // Stale response - discard
-        }
-        
-        if (data.content) {
-          setPreview(data.content)
-          hasLoadedRef.current = true
-        } else if (!hasLoadedRef.current) {
-          hasLoadedRef.current = true
-        }
-      } catch {
-        if (sessionIdRef.current === targetSessionId && fetchGenRef.current === currentGen && !hasLoadedRef.current) {
-          hasLoadedRef.current = true
-        }
-      }
-    }
-
-    fetchPreview()
-    intervalRef.current = setInterval(fetchPreview, 5000)
-
-    return () => {
-      clearInterval(intervalRef.current)
-    }
-  }, [session.id])
 
   // Fetch tunnels for rdev workers
   useEffect(() => {
@@ -97,7 +48,7 @@ export default function WorkerCard({
 
     async function fetchTunnels() {
       if (sessionIdRef.current !== targetSessionId) return
-      
+
       try {
         const data = await api<{ tunnels: Record<string, TunnelInfo> }>(
           `/api/sessions/${targetSessionId}/tunnels`
@@ -221,8 +172,8 @@ export default function WorkerCard({
     }
   }
 
-  // Take last ~20 lines for the preview
-  const previewLines = preview ? preview.split('\n').slice(-20).join('\n') : ''
+  // Take last ~20 lines for the preview (from session data, populated by AppContext)
+  const previewLines = session.preview ? session.preview.split('\n').slice(-20).join('\n') : ''
 
   return (
     <div

@@ -4,12 +4,13 @@ export interface Session {
   host: string
   work_dir: string | null
   tmux_window: string | null
-  tunnel_pane: string | null
+  tunnel_pid: number | null
   status: 'idle' | 'working' | 'waiting' | 'paused' | 'error' | 'disconnected' | 'connecting' | 'screen_detached'
   created_at: string
   last_status_changed_at: string | null
   last_viewed_at: string | null
   session_type: 'worker' | 'brain' | 'system'
+  preview?: string
 }
 
 export interface WorkerDetail {
@@ -80,6 +81,18 @@ export interface Task {
   subtask_stats?: SubtaskStats
   created_at: string
   updated_at: string
+}
+
+export interface Rdev {
+  name: string
+  state: string
+  cluster: string
+  created: string
+  last_accessed: string
+  in_use: boolean
+  worker_name?: string
+  worker_status?: string
+  worker_id?: string
 }
 
 export interface ContextItem {

@@ -1,7 +1,5 @@
-import { useState, useEffect, useRef } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import type { Session, Task } from '../../api/types'
-import { api } from '../../api/client'
 import { timeAgo } from '../common/TimeAgo'
 import './WorkerCardCompact.css'
 
@@ -12,35 +10,8 @@ interface Props {
 
 export default function WorkerCardCompact({ session, assignedTask }: Props) {
   const navigate = useNavigate()
-  const [preview, setPreview] = useState('')
-  const intervalRef = useRef<ReturnType<typeof setInterval> | undefined>(undefined)
-  const sessionIdRef = useRef(session.id)
-  const fetchGenRef = useRef(0)
 
-  sessionIdRef.current = session.id
-
-  useEffect(() => {
-    const currentGen = ++fetchGenRef.current
-    const targetId = session.id
-    setPreview('')
-
-    async function fetchPreview() {
-      if (sessionIdRef.current !== targetId || fetchGenRef.current !== currentGen) return
-      try {
-        const data = await api<{ content: string; status: string }>(
-          `/api/sessions/${targetId}/preview`
-        )
-        if (sessionIdRef.current !== targetId || fetchGenRef.current !== currentGen) return
-        if (data.content) setPreview(data.content)
-      } catch { /* ignore */ }
-    }
-
-    fetchPreview()
-    intervalRef.current = setInterval(fetchPreview, 5000)
-    return () => clearInterval(intervalRef.current)
-  }, [session.id])
-
-  const previewLines = preview ? preview.split('\n').slice(-8).join('\n') : ''
+  const previewLines = session.preview ? session.preview.split('\n').slice(-8).join('\n') : ''
 
   return (
     <div

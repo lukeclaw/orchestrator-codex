@@ -1,6 +1,6 @@
 import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from 'react'
 import { useLocation } from 'react-router-dom'
-import type { Session, Project, Task } from '../api/types'
+import type { Session, Project, Task, Rdev } from '../api/types'
 import { api } from '../api/client'
 
 interface AppState {
@@ -8,9 +8,11 @@ interface AppState {
   workers: Session[]
   projects: Project[]
   tasks: Task[]
+  rdevs: Rdev[]
   connected: boolean
   loading: boolean
   refresh: () => void
+  refreshRdevs: (forceRefresh?: boolean) => Promise<void>
   removeSession: (id: string) => void
 }
 
@@ -19,9 +21,11 @@ const AppContext = createContext<AppState>({
   workers: [],
   projects: [],
   tasks: [],
+  rdevs: [],
   connected: false,
   loading: true,
   refresh: () => {},
+  refreshRdevs: async () => {},
   removeSession: () => {},
 })
 
@@ -33,23 +37,36 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [sessions, setSessions] = useState<Session[]>([])
   const [projects, setProjects] = useState<Project[]>([])
   const [tasks, setTasks] = useState<Task[]>([])
+  const [rdevs, setRdevs] = useState<Rdev[]>([])
   const [connected, setConnected] = useState(false)
   const [loading, setLoading] = useState(true)
 
   const fetchAll = useCallback(async () => {
     try {
-      const [s, p, t] = await Promise.all([
-        api<Session[]>('/api/sessions?session_type=worker'),
+      const [s, p, t, r] = await Promise.all([
+        api<Session[]>('/api/sessions?session_type=worker&include_preview=true'),
         api<Project[]>('/api/projects').catch(() => []),
         api<Task[]>('/api/tasks').catch(() => []),
+        api<Rdev[]>('/api/rdevs').catch(() => []),
       ])
       setSessions(s)
       setProjects(p)
       setTasks(t)
+      setRdevs(r)
     } catch (e) {
       console.error('Failed to fetch data:', e)
     } finally {
       setLoading(false)
+    }
+  }, [])
+
+  const refreshRdevs = useCallback(async (forceRefresh = false) => {
+    try {
+      const url = forceRefresh ? '/api/rdevs?refresh=true' : '/api/rdevs'
+      const data = await api<Rdev[]>(url)
+      setRdevs(data)
+    } catch (e) {
+      console.error('Failed to fetch rdevs:', e)
     }
   }, [])
 
@@ -143,7 +160,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   // Focus tracking now handled via WebSocket (see above)
 
   return (
-    <AppContext.Provider value={{ sessions, workers, projects, tasks, connected, loading, refresh: fetchAll, removeSession }}>
+    <AppContext.Provider value={{ sessions, workers, projects, tasks, rdevs, connected, loading, refresh: fetchAll, refreshRdevs, removeSession }}>
       {children}
     </AppContext.Provider>
   )

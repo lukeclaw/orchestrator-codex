@@ -2,6 +2,7 @@ import { useState, useCallback, useEffect } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { useApp } from '../context/AppContext'
 import { api } from '../api/client'
+import type { Rdev } from '../api/types'
 import WorkerCard from '../components/workers/WorkerCard'
 import AddSessionModal from '../components/sessions/AddSessionModal'
 import RdevTable, { RdevSortKey, SortDir } from '../components/rdevs/RdevTable'
@@ -11,27 +12,15 @@ import './WorkersPage.css'
 
 type SortOption = 'last_viewed' | 'last_status_changed' | 'name' | 'status'
 
-interface Rdev {
-  name: string
-  state: string
-  cluster: string
-  created: string
-  last_accessed: string
-  in_use: boolean
-  worker_name?: string
-  worker_status?: string
-  worker_id?: string
-}
-
 const SORT_KEY = 'orchestrator-worker-sort'
 
 export default function WorkersPage() {
-  const { workers, tasks } = useApp()
+  const { workers, tasks, rdevs, refreshRdevs } = useApp()
   const location = useLocation()
-  
+
   // Determine active tab from URL
   const isRdevsPage = location.pathname === '/workers/rdevs'
-  
+
   // Build a map of session_id -> assigned task for quick lookup
   const taskBySession = new Map(
     tasks
@@ -82,9 +71,7 @@ export default function WorkersPage() {
     removeSession(id)
   }, [removeSession])
 
-  // Rdevs tab state
-  const [rdevs, setRdevs] = useState<Rdev[]>([])
-  const [rdevsLoading, setRdevsLoading] = useState(false)
+  // Rdevs tab state (data comes from AppContext, only UI state is local)
   const [rdevsRefreshing, setRdevsRefreshing] = useState(false)
   const [showCreateRdevModal, setShowCreateRdevModal] = useState(false)
   const [rdevStateFilter, setRdevStateFilter] = useState<'' | 'RUNNING' | 'STOPPED'>('')
@@ -92,51 +79,34 @@ export default function WorkersPage() {
   const [rdevSortKey, setRdevSortKey] = useState<RdevSortKey>('name')
   const [rdevSortDir, setRdevSortDir] = useState<SortDir>('asc')
 
-  
-  const fetchRdevs = useCallback(async (forceRefresh = false) => {
-    if (forceRefresh) {
-      setRdevsRefreshing(true)
-    } else {
-      setRdevsLoading(true)
-    }
+  const handleRefreshRdevs = useCallback(async () => {
+    setRdevsRefreshing(true)
     try {
-      const url = forceRefresh ? '/api/rdevs?refresh=true' : '/api/rdevs'
-      const data = await api<Rdev[]>(url)
-      setRdevs(data)
-    } catch (e) {
-      console.error('Failed to fetch rdevs:', e)
+      await refreshRdevs(true)
     } finally {
-      setRdevsLoading(false)
       setRdevsRefreshing(false)
     }
-  }, [])
-
-  // Fetch rdevs on mount to show correct count in toggle link
-  useEffect(() => {
-    if (rdevs.length === 0) {
-      fetchRdevs()
-    }
-  }, [rdevs.length, fetchRdevs])
+  }, [refreshRdevs])
 
   // Auto-refresh when any rdev is in an intermediate state (not RUNNING or STOPPED)
   const hasIntermediateState = rdevs.some(r => r.state !== 'RUNNING' && r.state !== 'STOPPED')
-  
+
   useEffect(() => {
     if (!isRdevsPage || !hasIntermediateState) return
-    
+
     const interval = setInterval(() => {
-      fetchRdevs(true)
+      refreshRdevs(true)
     }, 60000) // 60 seconds
-    
+
     return () => clearInterval(interval)
-  }, [isRdevsPage, hasIntermediateState, fetchRdevs])
+  }, [isRdevsPage, hasIntermediateState, refreshRdevs])
 
   const handleDeleteRdev = async (name: string) => {
     if (!confirm(`Delete rdev "${name}"? This cannot be undone.`)) return
     setRdevActionLoading(name)
     try {
       await api(`/api/rdevs/${encodeURIComponent(name)}`, { method: 'DELETE' })
-      fetchRdevs(true)
+      refreshRdevs(true)
     } catch (e) {
       alert(e instanceof Error ? e.message : 'Failed to delete rdev')
     } finally {
@@ -148,7 +118,7 @@ export default function WorkersPage() {
     setRdevActionLoading(name)
     try {
       await api(`/api/rdevs/${encodeURIComponent(name)}/restart`, { method: 'POST' })
-      fetchRdevs(true)
+      refreshRdevs(true)
     } catch (e) {
       alert(e instanceof Error ? e.message : 'Failed to restart rdev')
     } finally {
@@ -160,7 +130,7 @@ export default function WorkersPage() {
     setRdevActionLoading(name)
     try {
       await api(`/api/rdevs/${encodeURIComponent(name)}/stop`, { method: 'POST' })
-      fetchRdevs(true)
+      refreshRdevs(true)
     } catch (e) {
       alert(e instanceof Error ? e.message : 'Failed to stop rdev')
     } finally {
@@ -170,7 +140,7 @@ export default function WorkersPage() {
 
   const handleCreateRdev = () => {
     setShowCreateRdevModal(false)
-    fetchRdevs(true)
+    refreshRdevs(true)
   }
 
   const handleRdevSort = (key: RdevSortKey) => {
@@ -261,7 +231,7 @@ export default function WorkersPage() {
           <div className="page-header-actions">
             <button
               className="btn btn-icon"
-              onClick={() => fetchRdevs(true)}
+              onClick={handleRefreshRdevs}
               disabled={rdevsRefreshing}
               title="Refresh rdev list"
             >
@@ -309,9 +279,7 @@ export default function WorkersPage() {
         </>
       ) : (
         <>
-          {rdevsLoading ? (
-            <div className="loading-state">Loading rdev instances...</div>
-          ) : filteredRdevs.length > 0 ? (
+          {filteredRdevs.length > 0 ? (
             <RdevTable
               rdevs={filteredRdevs}
               onDelete={handleDeleteRdev}

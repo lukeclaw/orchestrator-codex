@@ -113,20 +113,41 @@ def _serialize_session(s):
     }
 
 
+def _capture_preview(s) -> str:
+    """Capture terminal preview for a session (plain text, ANSI stripped)."""
+    if not s.tmux_window:
+        return ""
+    if ":" in s.tmux_window:
+        tmux_sess, tmux_win = s.tmux_window.split(":", 1)
+    else:
+        tmux_sess, tmux_win = "orchestrator", s.tmux_window
+    try:
+        content = capture_pane_with_escapes(tmux_sess, tmux_win, lines=0)
+        return re.sub(r'\x1b\[[0-9;]*[a-zA-Z]', '', content)
+    except Exception:
+        return ""
+
+
 @router.get("/sessions")
 def list_sessions(
     status: str | None = None,
     session_type: str | None = None,
+    include_preview: bool = False,
     db=Depends(get_db),
 ):
     """List sessions.
-    
+
     Args:
         status: Filter by session status (idle, working, etc.)
         session_type: Filter by session type (worker, brain, system)
+        include_preview: Include terminal preview content for each session
     """
     sessions = repo.list_sessions(db, status=status, session_type=session_type)
-    return [_serialize_session(s) for s in sessions]
+    result = [_serialize_session(s) for s in sessions]
+    if include_preview:
+        for s, data in zip(sessions, result):
+            data["preview"] = _capture_preview(s)
+    return result
 
 
 @router.get("/sessions/{session_id}")
@@ -446,28 +467,7 @@ def session_preview(session_id: str, db=Depends(get_db)):
     s = repo.get_session(db, session_id)
     if s is None:
         raise HTTPException(404, "Session not found")
-
-    if not s.tmux_window:
-        return {"content": "", "status": s.status}
-
-    # Parse tmux target from stored window reference
-    if ":" in s.tmux_window:
-        tmux_sess, tmux_win = s.tmux_window.split(":", 1)
-    else:
-        tmux_sess, tmux_win = "orchestrator", s.tmux_window
-
-    try:
-        # Capture the current visible pane (not scrollback history) so the
-        # preview matches what the live terminal shows.
-        content = capture_pane_with_escapes(tmux_sess, tmux_win, lines=0)
-        # Strip ANSI escape sequences — the preview renders in a <pre> tag,
-        # not a terminal emulator, so it can't interpret them.
-        content = re.sub(r'\x1b\[[0-9;]*[a-zA-Z]', '', content)
-    except Exception:
-        logger.warning("Could not capture preview for session %s", s.name, exc_info=True)
-        content = ""
-
-    return {"content": content, "status": s.status}
+    return {"content": _capture_preview(s), "status": s.status}
 
 
 @router.post("/sessions/{session_id}/pause")
