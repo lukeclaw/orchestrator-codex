@@ -139,14 +139,11 @@ export default function TerminalView({ sessionId, sessionStatus, onUserInput, di
           if (typeof msg.hash === 'number') lastSyncHash = msg.hash
         } else if (msg.type === 'sync') {
           // Drift correction — ground truth pane capture from tmux.
-          // Always applied regardless of scroll state to break deadlocks.
           // Convert bare \n to \r\n (capture-pane uses Unix line endings).
           terminal.write('\x1b[H\x1b[J' + msg.data.replace(/\n/g, '\r\n'))
           if (typeof msg.cursorX === 'number' && typeof msg.cursorY === 'number') {
             terminal.write(`\x1b[${msg.cursorY + 1};${msg.cursorX + 1}H`)
           }
-          terminal.scrollToBottom()
-          userScrolledUp = false
           if (typeof msg.hash === 'number') lastSyncHash = msg.hash
         } else if (msg.type === 'error') {
           terminal.write(`\r\n\x1b[31m${msg.message}\x1b[0m\r\n`)
