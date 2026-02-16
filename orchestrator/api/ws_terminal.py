@@ -152,6 +152,7 @@ async def terminal_websocket(websocket: WebSocket, session_id: str):
     flush_event = asyncio.Event()        # signals that stream_buffer has data
     last_flush_time: float = 0.0         # monotonic time of last successful flush
     sync_requested = False               # set True to trigger an immediate sync
+    sync_in_progress = False             # prevents flusher from sending during sync
 
     # Callback invoked by TmuxControlConnection._read_output for our pane.
     # Subscription is deferred until AFTER initial history is sent so there
@@ -184,7 +185,10 @@ async def terminal_websocket(websocket: WebSocket, session_id: str):
             await flush_event.wait()   # zero-cost when idle
             await asyncio.sleep(0.016) # ~16ms batch window (one frame)
             flush_event.clear()
-            if stream_buffer:
+            # Skip flush while a sync is in progress — the sync will
+            # discard these bytes (they're already in the capture) and
+            # we must not send them after the sync JSON.
+            if stream_buffer and not sync_in_progress:
                 data = bytes(stream_buffer)
                 stream_buffer.clear()
                 try:
@@ -196,28 +200,38 @@ async def terminal_websocket(websocket: WebSocket, session_id: str):
     # --- Helpers for sync with divergence hash ---------------------------------
     async def _send_sync():
         """Capture pane and send a sync message with CRC32 hash."""
-        # Discard any pending stream bytes BEFORE capturing.  The capture
-        # is the ground truth — any bytes already in the buffer are either
-        # reflected in the capture (arrived before it) or are orphaned
-        # fragments of split escape sequences that would render at the
-        # wrong cursor position after the sync resets the screen.
-        stream_buffer.clear()
-        flush_event.clear()
+        nonlocal sync_in_progress
 
-        content, cx, cy = await capture_pane_with_cursor_atomic_async(
-            tmux_sess, tmux_win
-        )
-        if content.endswith('\n'):
-            content = content[:-1]
-        # CRC32 of the plain-text content (strip ANSI for stable hash)
-        content_hash = zlib.crc32(content.encode("utf-8")) & 0xFFFFFFFF
-        await websocket.send_json({
-            "type": "sync",
-            "data": content,
-            "cursorX": cx,
-            "cursorY": cy,
-            "hash": content_hash,
-        })
+        # Block the stream flusher while we capture + send.  Any bytes
+        # that arrive during the capture are already reflected in the
+        # snapshot and must not be flushed after the sync JSON.
+        sync_in_progress = True
+        try:
+            stream_buffer.clear()
+            flush_event.clear()
+
+            content, cx, cy = await capture_pane_with_cursor_atomic_async(
+                tmux_sess, tmux_win
+            )
+
+            # Discard bytes that accumulated during the capture — they
+            # are already included in the snapshot.
+            stream_buffer.clear()
+            flush_event.clear()
+
+            if content.endswith('\n'):
+                content = content[:-1]
+            # CRC32 of the plain-text content (strip ANSI for stable hash)
+            content_hash = zlib.crc32(content.encode("utf-8")) & 0xFFFFFFFF
+            await websocket.send_json({
+                "type": "sync",
+                "data": content,
+                "cursorX": cx,
+                "cursorY": cy,
+                "hash": content_hash,
+            })
+        finally:
+            sync_in_progress = False
 
     # --- Drift correction (background sync) ------------------------------------
     async def drift_correction():

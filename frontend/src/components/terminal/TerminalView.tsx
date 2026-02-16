@@ -128,7 +128,9 @@ export default function TerminalView({ sessionId, sessionStatus, onUserInput, di
           if (msg.alternateScreen) {
             terminal.write('\x1b[?1049h')
           }
-          terminal.write(msg.data)
+          // capture-pane output uses bare \n between lines — convert to
+          // \r\n so xterm.js moves cursor to column 0 on each new line.
+          terminal.write(msg.data.replace(/\n/g, '\r\n'))
           if (typeof msg.cursorX === 'number' && typeof msg.cursorY === 'number') {
             terminal.write(`\x1b[${msg.cursorY + 1};${msg.cursorX + 1}H`)
           }
@@ -138,7 +140,8 @@ export default function TerminalView({ sessionId, sessionStatus, onUserInput, di
         } else if (msg.type === 'sync') {
           // Drift correction — ground truth pane capture from tmux.
           // Always applied regardless of scroll state to break deadlocks.
-          terminal.write('\x1b[H\x1b[J' + msg.data)
+          // Convert bare \n to \r\n (capture-pane uses Unix line endings).
+          terminal.write('\x1b[H\x1b[J' + msg.data.replace(/\n/g, '\r\n'))
           if (typeof msg.cursorX === 'number' && typeof msg.cursorY === 'number') {
             terminal.write(`\x1b[${msg.cursorY + 1};${msg.cursorX + 1}H`)
           }
@@ -161,7 +164,11 @@ export default function TerminalView({ sessionId, sessionStatus, onUserInput, di
     if (!termRef.current) return
 
     const terminal = new Terminal({
-      convertEol: true,
+      // NOTE: convertEol is intentionally NOT set (defaults to false).
+      // Raw PTY bytes from tmux use bare \n for line feed (cursor down,
+      // same column).  convertEol would add \r, breaking TUI apps like
+      // ink that rely on precise cursor positioning.  Sync/history text
+      // messages convert \n → \r\n explicitly before writing.
       fontFamily: "'SF Mono', 'Menlo', 'Monaco', 'Consolas', monospace",
       fontSize: 12,
       lineHeight: 1.2,

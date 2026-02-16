@@ -60,6 +60,36 @@ def _parse_output_line(line: str) -> tuple[str, bytes] | None:
     return pane_id, raw
 
 
+def _strip_tmux_sequences(data: bytes) -> bytes:
+    """Strip tmux-specific escape sequences that standard terminals don't understand.
+
+    Removes ``ESC k <title> ST`` (set window name) sequences.  These are
+    a tmux/screen convention, not part of the VT100/xterm standard.  If
+    forwarded to xterm.js the title text appears as visible characters.
+    """
+    # Fast path: no ESC k in data
+    if b'\x1bk' not in data:
+        return data
+
+    result = bytearray()
+    i = 0
+    n = len(data)
+    while i < n:
+        # Check for ESC k
+        if data[i] == 0x1B and i + 1 < n and data[i + 1] == ord('k'):
+            # Skip until ST (ESC \) or end of data
+            i += 2
+            while i < n:
+                if data[i] == 0x1B and i + 1 < n and data[i + 1] == 0x5C:
+                    i += 2  # skip ESC backslash (ST)
+                    break
+                i += 1
+        else:
+            result.append(data[i])
+            i += 1
+    return bytes(result)
+
+
 async def check_alternate_screen_async(session: str, window: str) -> bool:
     """Return True if the pane is currently in alternate screen buffer mode."""
     target = f"{session}:{window}"
@@ -180,6 +210,11 @@ class TmuxControlConnection:
                     continue
 
                 pane_id, raw_bytes = parsed
+                # Strip tmux-specific sequences (ESC k title ST) that
+                # standard terminal emulators would display as literal text.
+                raw_bytes = _strip_tmux_sequences(raw_bytes)
+                if not raw_bytes:
+                    continue
                 # Snapshot subscriber set under lock, then dispatch outside lock
                 async with self._lock:
                     callbacks = set(self._output_subscribers.get(pane_id, ()))
