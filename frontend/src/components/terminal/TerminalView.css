@@ -138,7 +138,7 @@
 /* Ensure xterm fills its container */
 .terminal-view .xterm {
   height: 100%;
-  padding: 8px 12px;
+  padding: 8px 0 8px 12px;
   box-sizing: border-box;
   background: #0d1117;
 }
@@ -148,4 +148,28 @@
 .terminal-view .xterm-viewport {
   overflow-y: hidden !important;
   background: #0d1117 !important;
+}
+
+/* xterm.js 6.0 custom scrollbar (xterm-scrollable-element) —
+   thin, flush to the right edge, always visible when scrollable. */
+.terminal-view .xterm .xterm-scrollable-element > .scrollbar {
+  width: 8px !important;
+  right: 0 !important;
+}
+
+.terminal-view .xterm .xterm-scrollable-element > .scrollbar > .slider {
+  background: rgba(110, 118, 129, 0.4) !important;
+  border-radius: 4px !important;
+  width: 6px !important;
+  left: 1px !important;
+}
+
+.terminal-view .xterm .xterm-scrollable-element > .scrollbar > .slider:hover {
+  background: rgba(110, 118, 129, 0.7) !important;
+}
+
+/* Keep scrollbar visible (override xterm's auto-fade) */
+.terminal-view .xterm .xterm-scrollable-element > .scrollbar.vertical {
+  opacity: 1 !important;
+  transition: none !important;
 }
