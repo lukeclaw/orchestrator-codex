@@ -204,20 +204,9 @@ def _notify_worker_of_assignment(db, task, request):
         if hasattr(request.app.state, "orchestrator"):
             tmux_session = request.app.state.orchestrator.tmux_session
 
-        # Compose context message
-        parts = [f"New task assigned: {task.title}"]
-        if task.description:
-            parts.append(f"\n{task.description}")
-
-        # Include project context if available
-        if task.project_id:
-            project = projects_repo.get_project(db, task.project_id)
-            if project:
-                parts.append(f"\nProject: {project.name}")
-                if project.description:
-                    parts.append(f"Project context: {project.description[:500]}")
-
-        message = "\n".join(parts)
+        # Keep the notification concise — the worker's system prompt
+        # instructs it to gather full context via CLI commands.
+        message = f"Task assigned: {task.title}. Follow your workflow to review the task and get started."
         send_to_session(session.name, message, tmux_session)
         logger.info("Notified worker %s of task assignment: %s", session.name, task.title)
     except Exception:

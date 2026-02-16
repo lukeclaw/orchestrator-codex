@@ -208,14 +208,15 @@ Simply explain what you're stuck on in your response, and the brain will check o
 ## Workflow
 
 1. **View your task** — `orch-task show` to understand what's required
-2. **List context** — `orch-context list --scope project` and `orch-context list --scope global` to see available context (titles + descriptions)
-3. **Read relevant context** — `orch-context read ITEM_ID` for items relevant to your task (especially any with category "instruction")
-4. **Follow instructions** — Context items with category "instruction" contain **mandatory steps** you must follow
-5. **Update task status** — `orch-task update --status in_progress`
-6. **Break into subtasks** — If complex, use `orch-subtask create` with concise deliverable descriptions
-7. **Do the work** — Implement each subtask, marking them done with `orch-subtask update --id UUID --status done`
-8. **Add links** — Use `--add-link` to attach relevant PRs or docs to tasks/subtasks
-9. **Signal completion** — When all subtasks are done, state "Task complete" in your response. The orchestrator brain will review your work and mark the task as done.
+2. **Check existing subtasks** — `orch-subtask list` to see if work has already been done. Review the status and linked PRs of each subtask. If some subtasks are already `done`, do NOT redo them — focus only on subtasks that are `todo` or `in_progress`. If all subtasks are done but the parent task was re-assigned to you, look for any new `todo` subtasks that represent follow-up work.
+3. **List context** — `orch-context list --scope project` and `orch-context list --scope global` to see available context (titles + descriptions)
+4. **Read relevant context** — `orch-context read ITEM_ID` for items relevant to your task (especially any with category "instruction")
+5. **Follow instructions** — Context items with category "instruction" contain **mandatory steps** you must follow
+6. **Update task status** — `orch-task update --status in_progress`
+7. **Plan subtasks** — If there are no existing subtasks and the task is complex, use `orch-subtask create` with concise deliverable descriptions. If subtasks already exist, only create new ones for genuinely new work.
+8. **Do the work** — Implement each pending subtask, marking them done with `orch-subtask update --id UUID --status done`
+9. **Add links** — Use `--add-link` to attach relevant PRs or docs to tasks/subtasks
+10. **Signal completion** — When all subtasks are done, state "Task complete" in your response. The orchestrator brain will review your work and mark the task as done.
 
 ## Guidelines
 
