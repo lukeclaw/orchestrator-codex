@@ -1,6 +1,4 @@
-import { useState, useEffect } from 'react'
 import { useApp } from '../../context/AppContext'
-import { api } from '../../api/client'
 import SidebarItem from './SidebarItem'
 import {
   IconDashboard,
@@ -22,26 +20,11 @@ interface Props {
 }
 
 export default function Sidebar({ collapsed, onToggle }: Props) {
-  const { workers } = useApp()
-  const [notificationCount, setNotificationCount] = useState(0)
+  const { workers, notificationCount } = useApp()
 
   const activeSessions = workers.filter(
     s => s.status === 'working' || s.status === 'idle'
   ).length
-
-  useEffect(() => {
-    async function fetchCount() {
-      try {
-        const data = await api<{ count: number }>('/api/notifications/count')
-        setNotificationCount(data.count)
-      } catch {
-        // Ignore errors
-      }
-    }
-    fetchCount()
-    const interval = setInterval(fetchCount, 15000) // Refresh every 15s
-    return () => clearInterval(interval)
-  }, [])
 
   return (
     <aside className={`sidebar ${collapsed ? 'collapsed' : ''}`}>

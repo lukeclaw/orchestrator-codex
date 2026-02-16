@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { api } from '../api/client'
+import { useApp } from '../context/AppContext'
 import type { Notification } from '../api/types'
 import { IconBell, IconCheck, IconExternalLink, IconTrash } from '../components/common/Icons'
 import { parseDate } from '../components/common/TimeAgo'
@@ -8,10 +9,12 @@ import './NotificationsPage.css'
 
 export default function NotificationsPage() {
   const navigate = useNavigate()
+  const { refreshNotificationCount } = useApp()
   const [notifications, setNotifications] = useState<Notification[]>([])
   const [loading, setLoading] = useState(true)
   const [filter, setFilter] = useState<'active' | 'archived'>('active')
   const [dismissing, setDismissing] = useState<Set<string>>(new Set())
+  const [expanded, setExpanded] = useState<Set<string>>(new Set())
 
   // 7 days ago for default time filter
   const sevenDaysAgo = new Date()
@@ -47,6 +50,7 @@ export default function NotificationsPage() {
   async function handleDismiss(id: string) {
     try {
       await api(`/api/notifications/${id}/dismiss`, { method: 'POST' })
+      refreshNotificationCount()
       // Start dismiss animation
       setDismissing(prev => new Set(prev).add(id))
       // Remove from list after animation completes
@@ -65,10 +69,11 @@ export default function NotificationsPage() {
 
   async function handleDismissAll() {
     try {
-      await api('/api/notifications/dismiss-all', { 
+      await api('/api/notifications/dismiss-all', {
         method: 'POST',
         body: JSON.stringify({})
       })
+      refreshNotificationCount()
       setNotifications(prev => prev.map(n => ({ ...n, dismissed: true })))
     } catch (err) {
       console.error('Failed to dismiss all notifications:', err)
@@ -177,9 +182,15 @@ export default function NotificationsPage() {
             {notifications.map(n => {
               const typeConfig = getTypeConfig(n.notification_type)
               return (
-                <article 
-                  key={n.id} 
-                  className={`np-card ${n.dismissed ? 'dismissed' : ''} ${dismissing.has(n.id) ? 'dismissing' : ''} ${typeConfig.color}`}
+                <article
+                  key={n.id}
+                  className={`np-card ${n.dismissed ? 'dismissed' : ''} ${dismissing.has(n.id) ? 'dismissing' : ''} ${expanded.has(n.id) ? 'expanded' : ''} ${typeConfig.color}`}
+                  onClick={() => setExpanded(prev => {
+                    const next = new Set(prev)
+                    if (next.has(n.id)) next.delete(n.id); else next.add(n.id)
+                    return next
+                  })}
+                  style={{ cursor: 'pointer' }}
                 >
                   <div className="np-card-indicator" />
                   <div className="np-card-icon">{typeConfig.icon}</div>
@@ -191,9 +202,9 @@ export default function NotificationsPage() {
                         </span>
                         <time className="np-time">{formatTime(n.created_at)}</time>
                       </div>
-                      <p className="np-message" title={n.message}>{n.message}</p>
+                      <p className="np-message" title={expanded.has(n.id) ? undefined : n.message}>{n.message}</p>
                     </div>
-                    <div className="np-card-actions">
+                    <div className="np-card-actions" onClick={e => e.stopPropagation()}>
                       {n.task_id && (
                         <button
                           className="np-link-btn"

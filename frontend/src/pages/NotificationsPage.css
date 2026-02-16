@@ -176,7 +176,7 @@
 .np-card {
   position: relative;
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 12px;
   padding: 12px 16px;
   background: var(--surface);
@@ -250,7 +250,7 @@
   flex: 1;
   min-width: 0;
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 16px;
 }
 
@@ -303,6 +303,12 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.np-card.expanded .np-message {
+  white-space: pre-wrap;
+  overflow: visible;
+  text-overflow: unset;
 }
 
 .np-card-actions {

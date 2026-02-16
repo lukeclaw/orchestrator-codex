@@ -9,10 +9,12 @@ interface AppState {
   projects: Project[]
   tasks: Task[]
   rdevs: Rdev[]
+  notificationCount: number
   connected: boolean
   loading: boolean
   refresh: () => void
   refreshRdevs: (forceRefresh?: boolean) => Promise<void>
+  refreshNotificationCount: () => Promise<void>
   removeSession: (id: string) => void
 }
 
@@ -22,10 +24,12 @@ const AppContext = createContext<AppState>({
   projects: [],
   tasks: [],
   rdevs: [],
+  notificationCount: 0,
   connected: false,
   loading: true,
   refresh: () => {},
   refreshRdevs: async () => {},
+  refreshNotificationCount: async () => {},
   removeSession: () => {},
 })
 
@@ -38,6 +42,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [projects, setProjects] = useState<Project[]>([])
   const [tasks, setTasks] = useState<Task[]>([])
   const [rdevs, setRdevs] = useState<Rdev[]>([])
+  const [notificationCount, setNotificationCount] = useState(0)
   const [connected, setConnected] = useState(false)
   const [loading, setLoading] = useState(true)
 
@@ -57,6 +62,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
       console.error('Failed to fetch data:', e)
     } finally {
       setLoading(false)
+    }
+  }, [])
+
+  const refreshNotificationCount = useCallback(async () => {
+    try {
+      const data = await api<{ count: number }>('/api/notifications/count')
+      setNotificationCount(data.count)
+    } catch {
+      // Ignore errors
     }
   }, [])
 
@@ -121,9 +135,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
   // Initial fetch + polling
   useEffect(() => {
     fetchAll()
-    const interval = setInterval(fetchAll, 10000)
+    refreshNotificationCount()
+    const interval = setInterval(() => { fetchAll(); refreshNotificationCount() }, 10000)
     return () => clearInterval(interval)
-  }, [fetchAll])
+  }, [fetchAll, refreshNotificationCount])
 
   // Periodic health check to detect disconnected workers (every 5 minutes)
   useEffect(() => {
@@ -160,7 +175,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   // Focus tracking now handled via WebSocket (see above)
 
   return (
-    <AppContext.Provider value={{ sessions, workers, projects, tasks, rdevs, connected, loading, refresh: fetchAll, refreshRdevs, removeSession }}>
+    <AppContext.Provider value={{ sessions, workers, projects, tasks, rdevs, notificationCount, connected, loading, refresh: fetchAll, refreshRdevs, refreshNotificationCount, removeSession }}>
       {children}
     </AppContext.Provider>
   )
