@@ -463,7 +463,11 @@ def reconnect_rdev_worker(conn, session, tmux_sess: str, tmux_win: str, api_port
     All successful reconnects set status to 'waiting' for consistency.
     """
     from orchestrator.terminal import ssh
+    from orchestrator.terminal.manager import ensure_window
     from orchestrator.terminal.session import _install_screen_if_needed
+
+    # Ensure the tmux window exists (may have been destroyed)
+    ensure_window(tmux_sess, tmux_win)
 
     remote_tmp_dir = f"/tmp/orchestrator/workers/{session.name}"
     screen_name = get_screen_session_name(session.id)
@@ -700,10 +704,15 @@ def reconnect_local_worker(session, tmux_sess: str, tmux_win: str, api_port: int
     - If session exists: use 'claude -r <id>' to resume
     - If session doesn't exist: use 'claude --session-id <id>' to create new
     """
+    from orchestrator.terminal.manager import ensure_window
+
+    # Ensure the tmux window exists (may have been destroyed)
+    ensure_window(tmux_sess, tmux_win)
+
     # Ensure local configs exist (regenerate from templates if orchestrator restarted)
     api_base = f"http://127.0.0.1:{api_port}"
     _ensure_local_configs_exist(tmp_dir, session.id, api_base)
-    
+
     path_export = get_path_export_command(os.path.join(tmp_dir, "bin"))
     send_keys(tmux_sess, tmux_win, path_export, enter=True)
     time.sleep(0.3)

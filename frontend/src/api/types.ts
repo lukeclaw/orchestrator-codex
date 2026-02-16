@@ -3,7 +3,6 @@ export interface Session {
   name: string
   host: string
   work_dir: string | null
-  tmux_window: string | null
   tunnel_pid: number | null
   status: 'idle' | 'working' | 'waiting' | 'paused' | 'error' | 'disconnected' | 'connecting' | 'screen_detached'
   created_at: string

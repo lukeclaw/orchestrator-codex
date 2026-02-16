@@ -46,7 +46,7 @@ def create_session(
 
     # Persist to DB
     session = sessions_repo.create_session(
-        conn, name=name, host=host, work_dir=work_dir, tmux_window=target
+        conn, name=name, host=host, work_dir=work_dir
     )
     logger.info("Created session: %s (host=%s, path=%s)", name, host, work_dir)
     return session

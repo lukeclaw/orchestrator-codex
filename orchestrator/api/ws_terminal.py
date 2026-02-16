@@ -32,12 +32,9 @@ from orchestrator.terminal.control import (
     resize_async,
     send_keys_async,
 )
-from orchestrator.terminal.manager import ensure_window
+from orchestrator.terminal.manager import ensure_window, tmux_target
 
 logger = logging.getLogger(__name__)
-
-# Tmux session name used by the orchestrator
-TMUX_SESSION = "orchestrator"
 
 # Track last user input time per session (for user activity detection)
 # Key: session_id, Value: timestamp (time.time())
@@ -87,12 +84,12 @@ async def terminal_websocket(websocket: WebSocket, session_id: str):
     """Stream terminal output and relay input for a session."""
     await websocket.accept()
 
-    # Determine the tmux window name — use the session name from DB if possible
-    conn = _get_conn(websocket)
+    # Look up the session name from DB to derive the tmux target
+    db_conn = _get_conn(websocket)
     owns_conn = getattr(websocket.app.state, "conn_factory", None) is not None
     try:
-        row = conn.execute(
-            "SELECT name, tmux_window FROM sessions WHERE id = ?", (session_id,)
+        row = db_conn.execute(
+            "SELECT name FROM sessions WHERE id = ?", (session_id,)
         ).fetchone()
 
         if not row:
@@ -103,28 +100,12 @@ async def terminal_websocket(websocket: WebSocket, session_id: str):
             await websocket.close()
             return
 
-        session_name = row["name"]
-        tmux_window = row["tmux_window"] or session_name
-
-        # Parse tmux target — could be "session:window" or just "window"
-        if ":" in tmux_window:
-            tmux_sess, tmux_win = tmux_window.split(":", 1)
-        else:
-            tmux_sess = TMUX_SESSION
-            tmux_win = tmux_window
+        tmux_sess, tmux_win = tmux_target(row["name"])
 
         # Auto-create tmux session and window if they don't exist
         try:
             target = ensure_window(tmux_sess, tmux_win)
             logger.info("Terminal ready: %s", target)
-
-            # Store the tmux_window back to DB if it was auto-created
-            if not row["tmux_window"]:
-                conn.execute(
-                    "UPDATE sessions SET tmux_window = ? WHERE id = ?",
-                    (f"{tmux_sess}:{tmux_win}", session_id),
-                )
-                conn.commit()
         except Exception as e:
             logger.exception("Failed to create tmux session/window")
             await websocket.send_json({
@@ -135,7 +116,7 @@ async def terminal_websocket(websocket: WebSocket, session_id: str):
             return
     finally:
         if owns_conn:
-            conn.close()
+            db_conn.close()
 
     # Wait for the client to send a resize before capturing initial content.
     # This ensures the tmux pane matches xterm's dimensions.
@@ -235,7 +216,7 @@ async def terminal_websocket(websocket: WebSocket, session_id: str):
 
     # --- Drift correction (background sync) ------------------------------------
     async def drift_correction():
-        nonlocal sync_requested
+        nonlocal sync_requested, pane_id, stream_active
 
         # Early sync: correct any desync from the brief gap between
         # history capture and streaming start.
@@ -251,6 +232,39 @@ async def terminal_websocket(websocket: WebSocket, session_id: str):
             await asyncio.sleep(2)
             if not initial_sent:
                 continue
+
+            # --- Detect pane ID change (window destroyed & recreated) ---
+            try:
+                new_pane_id = await get_pane_id_async(tmux_sess, tmux_win)
+                if new_pane_id and new_pane_id != pane_id:
+                    logger.info(
+                        "Pane ID changed for %s:%s: %s -> %s, re-subscribing",
+                        tmux_sess, tmux_win, pane_id, new_pane_id,
+                    )
+                    # Unsubscribe from old pane
+                    if stream_active and pane_id:
+                        try:
+                            pool = TmuxControlPool.get_instance()
+                            ctrl = await pool.get_connection(tmux_sess)
+                            await ctrl.unsubscribe(pane_id, on_pane_output)
+                        except Exception:
+                            pass
+                    # Subscribe to new pane
+                    pane_id = new_pane_id
+                    try:
+                        pool = TmuxControlPool.get_instance()
+                        ctrl = await pool.get_connection(tmux_sess)
+                        await ctrl.subscribe(pane_id, on_pane_output)
+                        stream_active = True
+                        logger.info(
+                            "Re-subscribed %%output for new pane %s", pane_id,
+                        )
+                    except Exception:
+                        logger.warning("Failed to re-subscribe to new pane %s", pane_id)
+                    # Force a sync to show current content
+                    sync_requested = True
+            except Exception:
+                pass
 
             # Immediate sync requested by snapshot recovery
             if sync_requested:
@@ -377,8 +391,13 @@ async def terminal_websocket(websocket: WebSocket, session_id: str):
         pass
     finally:
         # --- Cleanup ----------------------------------------------------------
-        if stream_active and conn and pane_id:
-            await conn.unsubscribe(pane_id, on_pane_output)
+        if stream_active and pane_id:
+            try:
+                pool = TmuxControlPool.get_instance()
+                ctrl = await pool.get_connection(tmux_sess)
+                await ctrl.unsubscribe(pane_id, on_pane_output)
+            except Exception:
+                pass
         for task in (drift_task, flush_task):
             if task:
                 task.cancel()

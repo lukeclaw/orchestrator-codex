@@ -43,7 +43,7 @@ class TestStatusTransitions:
         mock_session.name = "test-worker"
         mock_session.host = "localhost"
         mock_session.status = "working"
-        mock_session.tmux_window = "orchestrator:test-worker"
+
         mock_repo.get_session.return_value = mock_session
         mock_list_tasks.return_value = []
         
@@ -76,7 +76,7 @@ class TestStatusTransitions:
         mock_session.name = "test-worker"
         mock_session.host = "localhost"
         mock_session.status = "working"
-        mock_session.tmux_window = "orchestrator:test-worker"
+
         mock_repo.get_session.return_value = mock_session
 
         mock_request = MagicMock()
@@ -105,7 +105,7 @@ class TestStatusTransitions:
         mock_session.name = "test-rdev"
         mock_session.host = "user/rdev-vm"
         mock_session.status = "working"
-        mock_session.tmux_window = "orchestrator:test-rdev"
+
         mock_repo.get_session.return_value = mock_session
 
         mock_tm = MagicMock()
@@ -138,7 +138,7 @@ class TestStatusTransitions:
         mock_session.name = "test-rdev"
         mock_session.host = "user/rdev-vm"
         mock_session.status = "working"
-        mock_session.tmux_window = "orchestrator:test-rdev"
+
         mock_repo.get_session.return_value = mock_session
 
         mock_tm = MagicMock()
@@ -170,7 +170,7 @@ class TestStatusTransitions:
         mock_session.name = "test-worker"
         mock_session.host = "localhost"
         mock_session.status = "disconnected"
-        mock_session.tmux_window = "orchestrator:test-worker"
+
         mock_repo.get_session.return_value = mock_session
         
         mock_request = MagicMock()
@@ -197,7 +197,7 @@ class TestStatusTransitions:
         mock_session.name = "test-worker"
         mock_session.host = "localhost"
         mock_session.status = "error"
-        mock_session.tmux_window = "orchestrator:test-worker"
+
         mock_repo.get_session.return_value = mock_session
         
         mock_request = MagicMock()

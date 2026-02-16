@@ -44,7 +44,6 @@ def brain_status(db=Depends(get_db)):
         "running": session.status not in ("disconnected",),
         "session_id": session.id,
         "status": session.status,
-        "tmux_window": session.tmux_window,
     }
 
 
@@ -134,7 +133,6 @@ def start_brain(db=Depends(get_db)):
             sessions_repo.update_session(
                 db, session.id,
                 status="idle",
-                tmux_window=target,
             )
             session_id = session.id
         else:
@@ -144,7 +142,6 @@ def start_brain(db=Depends(get_db)):
                 name=BRAIN_SESSION_NAME,
                 host="local",
                 work_dir=brain_dir,
-                tmux_window=target,
                 session_type="brain",
             )
             session_id = s.id
@@ -226,16 +223,11 @@ def brain_sync(db=Depends(get_db)):
     for s in active_workers:
         parts.append(f"## Worker: {s.name} (status: {s.status}, id: {s.id})")
         # Capture terminal preview
-        preview = "(no tmux window)"
-        if s.tmux_window:
-            if ":" in s.tmux_window:
-                ts, tw = s.tmux_window.split(":", 1)
-            else:
-                ts, tw = "orchestrator", s.tmux_window
-            try:
-                preview = tmux.capture_output(ts, tw, lines=30)
-            except Exception:
-                preview = "(could not capture terminal)"
+        ts, tw = tmux.tmux_target(s.name)
+        try:
+            preview = tmux.capture_output(ts, tw, lines=30)
+        except Exception:
+            preview = "(could not capture terminal)"
         parts.append("```")
         parts.append(preview.rstrip())
         parts.append("```")

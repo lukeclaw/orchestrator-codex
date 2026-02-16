@@ -61,9 +61,9 @@ class FakeWebSocket:
         self._incoming.put_nowait(None)
 
 
-def _make_db_row(name="test", tmux_window="orchestrator:test"):
+def _make_db_row(name="test"):
     """Simulate a sqlite3.Row with dict-like access."""
-    row = {"name": name, "tmux_window": tmux_window, "id": "sess-1"}
+    row = {"name": name, "id": "sess-1"}
     return row
 
 

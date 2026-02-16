@@ -22,6 +22,7 @@ from orchestrator.terminal.manager import (
     ensure_window,
     kill_window,
     send_keys,
+    tmux_target,
 )
 from orchestrator.terminal.ssh import is_rdev_host
 from orchestrator.agents import deploy_worker_scripts, generate_worker_hooks, get_path_export_command, get_worker_prompt
@@ -102,7 +103,7 @@ def _serialize_session(s):
     status_age = _time_ago(s.last_status_changed_at)
     return {
         "id": s.id, "name": s.name, "host": s.host,
-        "work_dir": s.work_dir, "tmux_window": s.tmux_window,
+        "work_dir": s.work_dir,
         "tunnel_pid": s.tunnel_pid,
         "status": s.status, "takeover_mode": s.takeover_mode,
         "created_at": s.created_at,
@@ -115,12 +116,7 @@ def _serialize_session(s):
 
 def _capture_preview(s) -> str:
     """Capture terminal preview for a session (plain text, ANSI stripped)."""
-    if not s.tmux_window:
-        return ""
-    if ":" in s.tmux_window:
-        tmux_sess, tmux_win = s.tmux_window.split(":", 1)
-    else:
-        tmux_sess, tmux_win = "orchestrator", s.tmux_window
+    tmux_sess, tmux_win = tmux_target(s.name)
     try:
         content = capture_pane_with_escapes(tmux_sess, tmux_win, lines=0)
         return re.sub(r'\x1b\[[0-9;]*[a-zA-Z]', '', content)
@@ -183,23 +179,21 @@ def create_session(body: SessionCreate, request: Request, db=Depends(get_db)):
     sanitized_name = _sanitize_worker_name(body.name)
     
     # Create tmux window for the session
-    tmux_session_name = "orchestrator"
-    tmux_window = None
+    tmux_session_name, _ = tmux_target(sanitized_name)
     try:
-        target = ensure_window(tmux_session_name, sanitized_name)
-        tmux_window = target
-        logger.info("Created tmux window for session %s: %s", sanitized_name, target)
+        ensure_window(tmux_session_name, sanitized_name)
+        logger.info("Created tmux window for session %s", sanitized_name)
     except Exception:
         logger.warning("Could not create tmux window for session %s", sanitized_name, exc_info=True)
 
     # Set up tmp directory for CLI scripts and configs
     tmp_dir = os.path.join(WORKER_BASE_DIR, sanitized_name)
     os.makedirs(tmp_dir, exist_ok=True)
-    
+
     # work_dir is where Claude runs - user-specified or defaults
     work_dir = body.work_dir  # Can be None, will be set later based on host
 
-    s = repo.create_session(db, sanitized_name, body.host, work_dir, tmux_window=tmux_window)
+    s = repo.create_session(db, sanitized_name, body.host, work_dir)
 
     if is_rdev_host(body.host):
         # rdev worker — launch full setup in background thread
@@ -299,33 +293,32 @@ def create_session(body: SessionCreate, request: Request, db=Depends(get_db)):
             logger.info("Wrote worker prompt to %s", prompt_file)
 
         # cd to working directory, export PATH, and launch claude with --settings
-        if tmux_window:
-            try:
-                import shlex
-                cmd_parts = []
+        try:
+            import shlex
+            cmd_parts = []
 
-                # cd to work_dir if specified, otherwise stay in current dir
-                if work_dir:
-                    cmd_parts.append(f"cd {work_dir}")
+            # cd to work_dir if specified, otherwise stay in current dir
+            if work_dir:
+                cmd_parts.append(f"cd {work_dir}")
 
-                # Export PATH to include CLI scripts
-                path_export = get_path_export_command(os.path.join(tmp_dir, "bin"))
-                cmd_parts.append(path_export)
+            # Export PATH to include CLI scripts
+            path_export = get_path_export_command(os.path.join(tmp_dir, "bin"))
+            cmd_parts.append(path_export)
 
-                # Build claude command with --settings for hooks
-                settings_file = os.path.join(tmp_dir, "configs", "settings.json")
-                claude_args = [f"--settings {shlex.quote(settings_file)}"]
+            # Build claude command with --settings for hooks
+            settings_file = os.path.join(tmp_dir, "configs", "settings.json")
+            claude_args = [f"--settings {shlex.quote(settings_file)}"]
 
-                if worker_prompt:
-                    claude_args.append(f'--append-system-prompt "$(cat {shlex.quote(prompt_file)})"')
-                
-                cmd_parts.append(f"claude {' '.join(claude_args)}")
-                
-                cmd = " && ".join(cmd_parts)
-                send_keys(tmux_session_name, body.name, cmd, enter=True)
-                logger.info("Launched claude for local worker %s (work_dir=%s)", body.name, work_dir)
-            except Exception:
-                logger.warning("Could not launch claude for local worker %s", body.name, exc_info=True)
+            if worker_prompt:
+                claude_args.append(f'--append-system-prompt "$(cat {shlex.quote(prompt_file)})"')
+
+            cmd_parts.append(f"claude {' '.join(claude_args)}")
+
+            cmd = " && ".join(cmd_parts)
+            send_keys(tmux_session_name, sanitized_name, cmd, enter=True)
+            logger.info("Launched claude for local worker %s (work_dir=%s)", sanitized_name, work_dir)
+        except Exception:
+            logger.warning("Could not launch claude for local worker %s", sanitized_name, exc_info=True)
 
         return {"id": s.id, "name": s.name, "status": s.status}
 
@@ -368,12 +361,10 @@ def delete_session(session_id: str, request: Request, db=Depends(get_db)):
     worker_scripts_dir = os.path.join(WORKER_BASE_DIR, s.name)
     is_rdev = is_rdev_host(s.host)
 
+    tmux_sess, tmux_win = tmux_target(s.name)
+
     # For rdev workers, clean up screen session and remote directory before killing window
-    if is_rdev and s.tmux_window:
-        if ":" in s.tmux_window:
-            tmux_sess, tmux_win = s.tmux_window.split(":", 1)
-        else:
-            tmux_sess, tmux_win = "orchestrator", s.tmux_window
+    if is_rdev:
         try:
             import subprocess
             # Send Escape to stop Claude Code if running
@@ -409,16 +400,11 @@ def delete_session(session_id: str, request: Request, db=Depends(get_db)):
             logger.warning("Could not stop tunnel for session %s", s.name, exc_info=True)
 
     # Kill the tmux window if it exists
-    if s.tmux_window:
-        if ":" in s.tmux_window:
-            tmux_sess, tmux_win = s.tmux_window.split(":", 1)
-        else:
-            tmux_sess, tmux_win = "orchestrator", s.tmux_window
-        try:
-            kill_window(tmux_sess, tmux_win)
-            logger.info("Killed tmux window %s:%s for session %s", tmux_sess, tmux_win, s.name)
-        except Exception:
-            logger.warning("Could not kill tmux window for session %s", s.name, exc_info=True)
+    try:
+        kill_window(tmux_sess, tmux_win)
+        logger.info("Killed tmux window %s:%s for session %s", tmux_sess, tmux_win, s.name)
+    except Exception:
+        logger.warning("Could not kill tmux window for session %s", s.name, exc_info=True)
 
     # Clean up local worker scripts directory
     if os.path.exists(worker_scripts_dir):
@@ -477,13 +463,7 @@ def pause_session(session_id: str, db=Depends(get_db)):
     if s is None:
         raise HTTPException(404, "Session not found")
 
-    if not s.tmux_window:
-        return {"ok": False, "error": "No tmux window attached"}
-
-    if ":" in s.tmux_window:
-        tmux_sess, tmux_win = s.tmux_window.split(":", 1)
-    else:
-        tmux_sess, tmux_win = "orchestrator", s.tmux_window
+    tmux_sess, tmux_win = tmux_target(s.name)
 
     try:
         # Send Escape to pause claude code
@@ -502,13 +482,7 @@ def continue_session(session_id: str, db=Depends(get_db)):
     if s is None:
         raise HTTPException(404, "Session not found")
 
-    if not s.tmux_window:
-        return {"ok": False, "error": "No tmux window attached"}
-
-    if ":" in s.tmux_window:
-        tmux_sess, tmux_win = s.tmux_window.split(":", 1)
-    else:
-        tmux_sess, tmux_win = "orchestrator", s.tmux_window
+    tmux_sess, tmux_win = tmux_target(s.name)
 
     try:
         from orchestrator.terminal.manager import send_keys_literal
@@ -529,14 +503,7 @@ def stop_session(session_id: str, db=Depends(get_db)):
     if s is None:
         raise HTTPException(404, "Session not found")
 
-    if not s.tmux_window:
-        repo.update_session(db, session_id, status="idle")
-        return {"ok": True, "message": "No tmux window, marked as idle"}
-
-    if ":" in s.tmux_window:
-        tmux_sess, tmux_win = s.tmux_window.split(":", 1)
-    else:
-        tmux_sess, tmux_win = "orchestrator", s.tmux_window
+    tmux_sess, tmux_win = tmux_target(s.name)
 
     import time
     try:
@@ -580,13 +547,7 @@ def prepare_session_for_task(session_id: str, db=Depends(get_db)):
     if s.status in disconnected_statuses:
         raise HTTPException(400, f"Session is not connected (status: {s.status})")
 
-    if not s.tmux_window:
-        return {"ok": True, "message": "No tmux window, nothing to prepare"}
-
-    if ":" in s.tmux_window:
-        tmux_sess, tmux_win = s.tmux_window.split(":", 1)
-    else:
-        tmux_sess, tmux_win = "orchestrator", s.tmux_window
+    tmux_sess, tmux_win = tmux_target(s.name)
 
     import time
     try:
@@ -639,13 +600,7 @@ def reconnect_session(session_id: str, request: Request, db=Depends(get_db)):
     if not is_reconnectable(s.status):
         return {"ok": False, "error": f"Session is not in reconnectable state (status: {s.status})"}
 
-    if not s.tmux_window:
-        return {"ok": False, "error": "No tmux window attached"}
-
-    if ":" in s.tmux_window:
-        tmux_sess, tmux_win = s.tmux_window.split(":", 1)
-    else:
-        tmux_sess, tmux_win = "orchestrator", s.tmux_window
+    tmux_sess, tmux_win = tmux_target(s.name)
 
     config = getattr(request.app.state, "config", {})
     api_port = config.get("server", {}).get("port", 8093)
@@ -717,14 +672,7 @@ def health_check_session(session_id: str, request: Request, db=Depends(get_db)):
     if s is None:
         raise HTTPException(404, "Session not found")
 
-    if not s.tmux_window:
-        return {"alive": False, "status": s.status, "reason": "No tmux window"}
-
-    # Parse tmux session and window from stored tmux_window
-    if ":" in s.tmux_window:
-        tmux_sess, tmux_win = s.tmux_window.split(":", 1)
-    else:
-        tmux_sess, tmux_win = "orchestrator", s.tmux_window
+    tmux_sess, tmux_win = tmux_target(s.name)
 
     # Check if rdev or local worker
     if is_rdev_host(s.host):
@@ -851,16 +799,8 @@ def health_check_all_sessions(db=Depends(get_db)):
         if s.status == "connecting":
             continue  # Skip workers currently connecting (setup in progress)
             
-        if not s.tmux_window:
-            continue
-            
         results["checked"] += 1
-
-        # Parse tmux session and window
-        if ":" in s.tmux_window:
-            tmux_sess, tmux_win = s.tmux_window.split(":", 1)
-        else:
-            tmux_sess, tmux_win = "orchestrator", s.tmux_window
+        tmux_sess, tmux_win = tmux_target(s.name)
 
         try:
             if is_rdev_host(s.host):

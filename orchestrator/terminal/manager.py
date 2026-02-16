@@ -8,6 +8,17 @@ from dataclasses import dataclass
 
 logger = logging.getLogger(__name__)
 
+# Default tmux session name used by the orchestrator
+TMUX_SESSION = "orchestrator"
+
+
+def tmux_target(session_name: str) -> tuple[str, str]:
+    """Derive (tmux_session, tmux_window) from a session name.
+
+    The tmux target is always deterministic: ``orchestrator:{session_name}``.
+    """
+    return TMUX_SESSION, session_name
+
 
 @dataclass
 class TmuxWindow:

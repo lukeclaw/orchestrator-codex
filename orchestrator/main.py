@@ -220,7 +220,7 @@ def _handle_add(conn, config: dict, user_input: str):
     try:
         session = create_session(conn, name, host, work_dir, tmux_session)
         console.print(f"[green]Created session:[/green] {session.name} ({session.host})")
-        console.print(f"  tmux target: {session.tmux_window}")
+        console.print(f"  tmux target: orchestrator:{session.name}")
     except Exception as e:
         console.print(f"[red]Failed to create session:[/red] {e}")
 

@@ -167,7 +167,7 @@ class TestHealthCheckAutoReconnectTunnel:
         mock_session.id = "test-session-id"
         mock_session.name = "test-worker"
         mock_session.host = "subs-mt/test-vm"
-        mock_session.tmux_window = "orchestrator:test-worker"
+
         mock_session.status = "waiting"
         mock_repo.get_session.return_value = mock_session
 
@@ -200,7 +200,7 @@ class TestHealthCheckAutoReconnectTunnel:
         mock_session.id = "test-session-id"
         mock_session.name = "test-worker"
         mock_session.host = "subs-mt/test-vm"
-        mock_session.tmux_window = "orchestrator:test-worker"
+
         mock_session.status = "waiting"
         mock_repo.get_session.return_value = mock_session
 

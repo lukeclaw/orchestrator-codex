@@ -57,15 +57,14 @@ def create_session(
     name: str,
     host: str,
     work_dir: str | None = None,
-    tmux_window: str | None = None,
     session_type: str = "worker",
 ) -> Session:
     id = str(uuid.uuid4())
     now = utc_now_iso()
     conn.execute(
-        """INSERT INTO sessions (id, name, host, work_dir, tmux_window, session_type, last_status_changed_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?)""",
-        (id, name, host, work_dir, tmux_window, session_type, now),
+        """INSERT INTO sessions (id, name, host, work_dir, session_type, last_status_changed_at)
+           VALUES (?, ?, ?, ?, ?, ?)""",
+        (id, name, host, work_dir, session_type, now),
     )
     conn.commit()
     return get_session(conn, id)
@@ -76,7 +75,6 @@ def update_session(
     conn: sqlite3.Connection,
     id: str,
     status: str | None = None,
-    tmux_window: str | None = None,
     tunnel_pid: int | None = ...,
     takeover_mode: bool | None = None,
     last_viewed_at: str | None = None,
@@ -89,9 +87,6 @@ def update_session(
         params.append(status)
         sets.append("last_status_changed_at = ?")
         params.append(utc_now_iso())
-    if tmux_window is not None:
-        sets.append("tmux_window = ?")
-        params.append(tmux_window)
     if tunnel_pid is not ...:
         sets.append("tunnel_pid = ?")
         params.append(tunnel_pid)

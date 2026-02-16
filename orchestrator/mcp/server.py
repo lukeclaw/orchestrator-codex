@@ -263,8 +263,8 @@ def create_session(name: str, host: str = "localhost", working_directory: str | 
 
         session_id = str(uuid.uuid4())
         conn.execute(
-            "INSERT INTO sessions (id, name, host, work_dir, tmux_window) VALUES (?, ?, ?, ?, ?)",
-            (session_id, name, host, working_directory, target),
+            "INSERT INTO sessions (id, name, host, work_dir) VALUES (?, ?, ?, ?)",
+            (session_id, name, host, working_directory),
         )
         conn.commit()
         row = conn.execute("SELECT * FROM sessions WHERE id = ?", (session_id,)).fetchone()
