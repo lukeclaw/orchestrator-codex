@@ -463,54 +463,62 @@ export default function TaskDetailPage() {
               )}
             </div>
 
-            {/* Description - inline editable */}
-            {isEditingDesc ? (
-              <div className="tdp-desc-edit">
-                <textarea
-                  value={editDesc}
-                  onChange={e => setEditDesc(e.target.value)}
-                  placeholder="Add a description..."
-                  rows={Math.max(1, (task.description || '').split('\n').length)}
-                  autoFocus
-                  onBlur={() => {
-                    if (editDesc === (task.description || '')) {
-                      setIsEditingDesc(false)
-                    }
-                  }}
-                  onKeyDown={e => {
-                    if (e.key === 'Escape') {
-                      setIsEditingDesc(false)
-                      setEditDesc(task.description || '')
-                    }
-                  }}
-                />
-                <div className="tdp-inline-actions desc-actions">
-                  <button
-                    className="tdp-action-btn save"
-                    onClick={handleDescSave}
-                    disabled={editDesc === (task.description || '')}
-                    title="Save"
-                  >
-                    ✓
-                  </button>
-                  <button
-                    className="tdp-action-btn cancel"
-                    onClick={() => { setIsEditingDesc(false); setEditDesc(task.description || '') }}
-                    title="Discard"
-                  >
-                    ✕
-                  </button>
-                </div>
+            {/* Description Section */}
+            <div className="tdp-desc-section">
+              <div className="tdp-desc-header">
+                <label>Description</label>
+                {isEditingDesc ? (
+                  <div className="tdp-inline-actions">
+                    <button
+                      className="tdp-action-btn save"
+                      onClick={handleDescSave}
+                      disabled={editDesc === (task.description || '')}
+                      title="Save"
+                    >
+                      ✓
+                    </button>
+                    <button
+                      className="tdp-action-btn cancel"
+                      onClick={() => { setIsEditingDesc(false); setEditDesc(task.description || '') }}
+                      title="Discard"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                ) : isEditable && task.description && (
+                  <button className="tdp-edit-btn" onClick={() => setIsEditingDesc(true)}>Edit</button>
+                )}
               </div>
-            ) : (
-              <p 
-                className={`tdp-desc ${isEditable ? 'editable' : ''} ${!task.description ? 'empty' : ''}`}
-                onClick={() => isEditable && setIsEditingDesc(true)}
-                title={isEditable ? 'Click to edit' : undefined}
-              >
-                {task.description || 'Add a description...'}
-              </p>
-            )}
+              {isEditingDesc ? (
+                <div className="tdp-desc-edit">
+                  <textarea
+                    value={editDesc}
+                    onChange={e => setEditDesc(e.target.value)}
+                    placeholder="Add a description (supports markdown)..."
+                    rows={Math.max(3, (task.description || '').split('\n').length)}
+                    autoFocus
+                    onKeyDown={e => {
+                      if (e.key === 'Escape') {
+                        setIsEditingDesc(false)
+                        setEditDesc(task.description || '')
+                      }
+                    }}
+                  />
+                </div>
+              ) : task.description ? (
+                <div className="tdp-desc-content">
+                  <Markdown>{task.description}</Markdown>
+                </div>
+              ) : (
+                <p
+                  className={`tdp-desc-empty ${isEditable ? 'editable' : ''}`}
+                  onClick={() => isEditable && setIsEditingDesc(true)}
+                  title={isEditable ? 'Click to edit' : undefined}
+                >
+                  Add a description...
+                </p>
+              )}
+            </div>
 
             {isWorkerActive && (
               <div className="tdp-worker-active">
