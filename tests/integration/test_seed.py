@@ -8,10 +8,6 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from scripts.seed_db import seed_all
 from orchestrator.state.repositories.config import get_config, list_config
-from orchestrator.state.repositories.templates import (
-    get_prompt_template,
-    list_prompt_templates,
-)
 
 
 def test_seed_populates_config(db):
@@ -30,18 +26,6 @@ def test_seed_populates_config(db):
     cfg = get_config(db, "monitoring.poll_interval_seconds")
     assert cfg is not None
     assert cfg.parsed_value == 5
-
-
-def test_seed_cleans_legacy_prompt_templates(db):
-    """Verify that legacy prompt templates are removed by seed."""
-    seed_all(db)
-    templates = list_prompt_templates(db)
-    # All legacy templates should be deleted
-    assert len(templates) == 0
-
-    # These should not exist (removed)
-    assert get_prompt_template(db, "system_prompt") is None
-    assert get_prompt_template(db, "rebrief") is None
 
 
 def test_seed_idempotent(db):

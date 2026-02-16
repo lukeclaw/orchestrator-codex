@@ -1,11 +1,11 @@
-"""Repository for sessions and worker_capabilities tables."""
+"""Repository for sessions table."""
 
 import sqlite3
 import uuid
 
 from orchestrator.state.db import transaction, with_retry
 from orchestrator.utils import utc_now_iso
-from orchestrator.state.models import Session, WorkerCapability
+from orchestrator.state.models import Session
 
 
 def get_session(conn: sqlite3.Connection, id: str) -> Session | None:
@@ -113,51 +113,6 @@ def delete_session(conn: sqlite3.Connection, id: str) -> bool:
     Uses a single transaction to avoid partial deletes and reduce lock time.
     """
     with transaction(conn):
-        # Clean up all FK references before deleting the session
-        conn.execute("DELETE FROM worker_capabilities WHERE session_id = ?", (id,))
-        conn.execute("DELETE FROM comm_events WHERE session_id = ?", (id,))
-        conn.execute("DELETE FROM session_snapshots WHERE session_id = ?", (id,))
-        conn.execute("DELETE FROM project_workers WHERE session_id = ?", (id,))
         conn.execute("UPDATE tasks SET assigned_session_id = NULL WHERE assigned_session_id = ?", (id,))
         cursor = conn.execute("DELETE FROM sessions WHERE id = ?", (id,))
-    return cursor.rowcount > 0
-
-
-# --- Worker Capabilities ---
-
-def get_capabilities(conn: sqlite3.Connection, session_id: str) -> list[WorkerCapability]:
-    rows = conn.execute(
-        "SELECT * FROM worker_capabilities WHERE session_id = ?", (session_id,)
-    ).fetchall()
-    return [WorkerCapability(**dict(r)) for r in rows]
-
-
-def add_capability(
-    conn: sqlite3.Connection,
-    session_id: str,
-    capability_type: str,
-    capability_value: str,
-) -> WorkerCapability:
-    conn.execute(
-        """INSERT OR IGNORE INTO worker_capabilities
-           (session_id, capability_type, capability_value)
-           VALUES (?, ?, ?)""",
-        (session_id, capability_type, capability_value),
-    )
-    conn.commit()
-    return WorkerCapability(session_id, capability_type, capability_value)
-
-
-def remove_capability(
-    conn: sqlite3.Connection,
-    session_id: str,
-    capability_type: str,
-    capability_value: str,
-) -> bool:
-    cursor = conn.execute(
-        """DELETE FROM worker_capabilities
-           WHERE session_id = ? AND capability_type = ? AND capability_value = ?""",
-        (session_id, capability_type, capability_value),
-    )
-    conn.commit()
     return cursor.rowcount > 0

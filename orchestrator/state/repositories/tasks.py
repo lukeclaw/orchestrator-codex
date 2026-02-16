@@ -1,9 +1,9 @@
-"""Repository for tasks, task_dependencies, and task_requirements tables."""
+"""Repository for tasks table."""
 
 import sqlite3
 import uuid
 
-from orchestrator.state.models import Task, TaskDependency, TaskRequirement
+from orchestrator.state.models import Task
 
 # Explicit column list to avoid loading deprecated columns
 TASK_COLUMNS = "id, project_id, title, description, status, priority, assigned_session_id, created_at, updated_at, parent_task_id, notes, links, task_index"
@@ -148,82 +148,13 @@ def update_task(
 
 
 def delete_task(conn: sqlite3.Connection, id: str) -> bool:
-    """Delete a task and all its subtasks recursively.
-    
-    Also cleans up:
-    - All subtasks (cascading delete)
-    - Task dependencies involving this task or subtasks
-    - Task requirements for this task or subtasks
-    """
+    """Delete a task and all its subtasks recursively."""
     # First, recursively delete all subtasks
     subtasks = list_tasks(conn, parent_task_id=id)
     for subtask in subtasks:
         delete_task(conn, subtask.id)
-    
-    # Clean up dependencies and requirements for this task
-    conn.execute("DELETE FROM task_dependencies WHERE task_id = ? OR depends_on_task_id = ?", (id, id))
-    conn.execute("DELETE FROM task_requirements WHERE task_id = ?", (id,))
-    
+
     # Delete the task itself
     cursor = conn.execute("DELETE FROM tasks WHERE id = ?", (id,))
     conn.commit()
     return cursor.rowcount > 0
-
-
-# --- Dependencies ---
-
-def add_dependency(conn: sqlite3.Connection, task_id: str, depends_on_task_id: str) -> TaskDependency:
-    conn.execute(
-        "INSERT OR IGNORE INTO task_dependencies (task_id, depends_on_task_id) VALUES (?, ?)",
-        (task_id, depends_on_task_id),
-    )
-    conn.commit()
-    return TaskDependency(task_id, depends_on_task_id)
-
-
-def remove_dependency(conn: sqlite3.Connection, task_id: str, depends_on_task_id: str) -> bool:
-    cursor = conn.execute(
-        "DELETE FROM task_dependencies WHERE task_id = ? AND depends_on_task_id = ?",
-        (task_id, depends_on_task_id),
-    )
-    conn.commit()
-    return cursor.rowcount > 0
-
-
-def get_dependencies(conn: sqlite3.Connection, task_id: str) -> list[TaskDependency]:
-    rows = conn.execute(
-        "SELECT * FROM task_dependencies WHERE task_id = ?", (task_id,)
-    ).fetchall()
-    return [TaskDependency(**dict(r)) for r in rows]
-
-
-def get_dependents(conn: sqlite3.Connection, task_id: str) -> list[TaskDependency]:
-    """Get tasks that depend on the given task."""
-    rows = conn.execute(
-        "SELECT * FROM task_dependencies WHERE depends_on_task_id = ?", (task_id,)
-    ).fetchall()
-    return [TaskDependency(**dict(r)) for r in rows]
-
-
-# --- Requirements ---
-
-def add_requirement(
-    conn: sqlite3.Connection,
-    task_id: str,
-    requirement_type: str,
-    requirement_value: str,
-) -> TaskRequirement:
-    conn.execute(
-        """INSERT OR IGNORE INTO task_requirements
-           (task_id, requirement_type, requirement_value) VALUES (?, ?, ?)""",
-        (task_id, requirement_type, requirement_value),
-    )
-    conn.commit()
-    return TaskRequirement(task_id, requirement_type, requirement_value)
-
-
-def get_requirements(conn: sqlite3.Connection, task_id: str) -> list[TaskRequirement]:
-    rows = conn.execute(
-        "SELECT * FROM task_requirements WHERE task_id = ?", (task_id,)
-    ).fetchall()
-    return [TaskRequirement(**dict(r)) for r in rows]

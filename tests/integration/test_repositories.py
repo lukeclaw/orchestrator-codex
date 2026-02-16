@@ -5,7 +5,6 @@ from orchestrator.state.repositories import (
     projects,
     sessions,
     tasks,
-    templates,
 )
 
 
@@ -44,14 +43,14 @@ class TestSessionsRepo:
         assert sessions.delete_session(db, s.id) is True
         assert sessions.get_session(db, s.id) is None
 
-    def test_capabilities(self, db):
-        s = sessions.create_session(db, "cap-test", "host")
-        sessions.add_capability(db, s.id, "language", "python")
-        sessions.add_capability(db, s.id, "language", "typescript")
-        caps = sessions.get_capabilities(db, s.id)
-        assert len(caps) == 2
-        assert sessions.remove_capability(db, s.id, "language", "python") is True
-        assert len(sessions.get_capabilities(db, s.id)) == 1
+    def test_delete_session_cleans_task_assignments(self, db):
+        s = sessions.create_session(db, "del-test", "host")
+        p = projects.create_project(db, "Del Project")
+        t = tasks.create_task(db, p.id, "Assigned task")
+        tasks.update_task(db, t.id, assigned_session_id=s.id)
+        sessions.delete_session(db, s.id)
+        refreshed = tasks.get_task(db, t.id)
+        assert refreshed.assigned_session_id is None
 
 
 # --- Projects ---
@@ -74,13 +73,10 @@ class TestProjectsRepo:
         active = projects.list_projects(db, status="active")
         assert len(active) == 1
 
-    def test_assign_worker(self, db):
-        p = projects.create_project(db, "Worker Test")
-        s = sessions.create_session(db, "pw-worker", "host")
-        projects.assign_worker(db, p.id, s.id)
-        workers = projects.list_project_workers(db, p.id)
-        assert len(workers) == 1
-        assert projects.unassign_worker(db, p.id, s.id) is True
+    def test_delete_project(self, db):
+        p = projects.create_project(db, "Delete Me")
+        assert projects.delete_project(db, p.id) is True
+        assert projects.get_project(db, p.id) is None
 
 
 # --- Tasks ---
@@ -110,39 +106,10 @@ class TestTasksRepo:
         p1_tasks = tasks.list_tasks(db, project_id=p1.id)
         assert len(p1_tasks) == 1
 
-    def test_dependencies(self, db):
-        p = projects.create_project(db, "Dep Project")
-        t1 = tasks.create_task(db, p.id, "First")
-        t2 = tasks.create_task(db, p.id, "Second")
-        tasks.add_dependency(db, t2.id, t1.id)
-
-        deps = tasks.get_dependencies(db, t2.id)
-        assert len(deps) == 1
-        assert deps[0].depends_on_task_id == t1.id
-
-        dependents = tasks.get_dependents(db, t1.id)
-        assert len(dependents) == 1
-
-    def test_requirements(self, db):
-        p = projects.create_project(db, "Req Project")
-        t = tasks.create_task(db, p.id, "Requires Python")
-        tasks.add_requirement(db, t.id, "language", "python")
-        reqs = tasks.get_requirements(db, t.id)
-        assert len(reqs) == 1
-
-
-# --- Templates ---
-
-class TestTemplatesRepo:
-    def test_create_and_get_prompt_template(self, db):
-        t = templates.create_prompt_template(db, "test_tpl", "Hello ${name}", "Test template")
-        assert t.name == "test_tpl"
-        fetched = templates.get_prompt_template(db, "test_tpl")
-        assert fetched.template == "Hello ${name}"
-
-    def test_update_prompt_template_increments_version(self, db):
-        templates.create_prompt_template(db, "versioned", "v1")
-        updated = templates.update_prompt_template(db, "versioned", template="v2")
-        assert updated.version == 2
-        assert updated.template == "v2"
+    def test_delete_task_recursive(self, db):
+        p = projects.create_project(db, "Recursive Del")
+        parent = tasks.create_task(db, p.id, "Parent")
+        child = tasks.create_task(db, p.id, "Child", parent_task_id=parent.id)
+        assert tasks.delete_task(db, parent.id) is True
+        assert tasks.get_task(db, child.id) is None
 

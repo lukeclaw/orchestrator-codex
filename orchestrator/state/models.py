@@ -3,8 +3,7 @@
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass, field
-from datetime import datetime
+from dataclasses import dataclass
 
 
 def generate_task_prefix(name: str) -> str:
@@ -96,55 +95,6 @@ class Task:
 
 
 @dataclass
-class TaskDependency:
-    task_id: str
-    depends_on_task_id: str
-
-
-@dataclass
-class Decision:
-    id: str
-    question: str
-    project_id: str | None = None
-    task_id: str | None = None
-    session_id: str | None = None
-    options: list[str] | None = None
-    context: str | None = None
-    urgency: str = "normal"
-    status: str = "pending"
-    response: str | None = None
-    created_at: str = ""
-    resolved_at: str | None = None
-    resolved_by: str | None = None
-
-    @property
-    def options_list(self) -> list[str]:
-        if self.options is None:
-            return []
-        if isinstance(self.options, list):
-            return self.options
-        try:
-            return json.loads(self.options)
-        except (json.JSONDecodeError, TypeError):
-            return []
-
-
-@dataclass
-class WorkerCapability:
-    session_id: str
-    capability_type: str
-    capability_value: str
-
-
-@dataclass
-class TaskRequirement:
-    task_id: str
-    requirement_type: str
-    requirement_value: str
-
-
-
-@dataclass
 class Config:
     key: str
     value: str
@@ -162,54 +112,6 @@ class Config:
 
 
 @dataclass
-class PromptTemplate:
-    id: str
-    name: str
-    template: str
-    description: str | None = None
-    version: int = 1
-    is_active: bool = True
-    created_at: str = ""
-    updated_at: str = ""
-
-    def __post_init__(self):
-        self.is_active = bool(self.is_active)
-
-
-@dataclass
-class SessionSnapshot:
-    id: str
-    session_id: str
-    task_summary: str | None = None
-    key_decisions: str | None = None
-    file_paths: str | None = None
-    last_known_state: str | None = None
-    created_at: str = ""
-
-
-@dataclass
-class CommEvent:
-    id: str
-    session_id: str
-    channel: str
-    event_type: str
-    details: str | None = None
-    created_at: str = ""
-
-
-@dataclass
-class LearnedPattern:
-    id: str
-    pattern_type: str | None = None
-    pattern_key: str | None = None
-    pattern_value: str | None = None
-    confidence: float | None = None
-    usage_count: int = 0
-    last_used_at: str | None = None
-    created_at: str = ""
-
-
-@dataclass
 class ContextItem:
     id: str
     scope: str = "global"
@@ -222,13 +124,6 @@ class ContextItem:
     metadata: str | None = None
     created_at: str = ""
     updated_at: str = ""
-
-
-@dataclass
-class ProjectWorker:
-    project_id: str
-    session_id: str
-    assigned_at: str = ""
 
 
 @dataclass

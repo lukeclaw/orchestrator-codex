@@ -7,7 +7,6 @@ from orchestrator.state.models import (
     Project,
     Session,
     Task,
-    WorkerCapability,
 )
 
 
@@ -49,10 +48,5 @@ def test_config_parsed_value_string():
 def test_config_parsed_value_boolean():
     c = Config(key="test", value="true")
     assert c.parsed_value is True
-
-
-def test_worker_capability():
-    wc = WorkerCapability(session_id="s1", capability_type="language", capability_value="python")
-    assert wc.session_id == "s1"
 
 
