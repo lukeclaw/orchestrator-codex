@@ -71,9 +71,10 @@ async def lifespan(app: FastAPI):
     app.state.orchestrator = orch
     await orch.start()
 
-    # Start rdev background refresh task
+    # Start rdev background refresh task (skip in test mode — no db_path means in-memory DB)
     from orchestrator.api.routes.rdevs import start_background_refresh, stop_background_refresh
-    start_background_refresh()
+    if db_path:
+        start_background_refresh()
 
     yield
 

@@ -189,11 +189,12 @@ __MRK_END_99999__"""
 class TestSendMarkerCommand:
     """Test the send_marker_command helper."""
 
-    def test_sends_and_parses_command(self):
+    @patch("orchestrator.terminal.markers.time.sleep")
+    def test_sends_and_parses_command(self, _sleep):
         """Should send command and return parsed result."""
         mock_send = MagicMock()
         mock_capture = MagicMock()
-        
+
         # Simulate capture returning output with markers
         def capture_side_effect(sess, win, lines=15):
             # Find the marker from the sent command
@@ -206,15 +207,15 @@ class TestSendMarkerCommand:
 myhost.local
 __CMD_END_{marker_id}__"""
             return ""
-        
+
         mock_capture.side_effect = capture_side_effect
-        
+
         cmd, result = send_marker_command(
             mock_send, mock_capture,
             "orchestrator", "test-worker",
             "hostname"
         )
-        
+
         assert result == "myhost.local"
         mock_send.assert_called_once()
 
