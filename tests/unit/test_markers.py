@@ -77,6 +77,23 @@ __END__"""
         # Should only capture content AFTER the actual __START__ line
         assert result == "myhost.local"
 
+    def test_line_wrapped_end_marker_in_command_echo(self):
+        """End marker on its own line in command echo (terminal wrapping) should be ignored."""
+        # When a long command wraps, the end marker can land on its own line
+        # in the command echo, BEFORE the actual start marker output.
+        output = """$ echo __SCREEN_VFY_START_22848__ && (which screen) && echo YES || echo NO && echo
+__SCREEN_VFY_END_22848__
+__SCREEN_VFY_START_22848__
+/usr/bin/screen
+YES
+__SCREEN_VFY_END_22848__
+[yuqiu@zen-dinosaur voyager-api-premium]$"""
+        result = parse_between_markers(
+            output, "__SCREEN_VFY_START_22848__", "__SCREEN_VFY_END_22848__"
+        )
+        assert result is not None
+        assert "YES" in result
+
 
 class TestParseFirstLine:
     """Test first line extraction."""

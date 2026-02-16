@@ -5,6 +5,7 @@ from __future__ import annotations
 import base64
 import logging
 import os
+import random
 import shlex
 import sqlite3
 import subprocess
@@ -224,11 +225,11 @@ def _wait_for_command_completion(tmux_session: str, window_name: str, timeout: i
 
 def _install_screen_if_needed(tmux_session: str, window_name: str) -> bool:
     """Install screen on rdev if not already installed.
-    
+
     Returns True if screen is available (already installed or successfully installed).
     """
-    from orchestrator.terminal.markers import check_yes_no, wait_for_completion
-    
+    from orchestrator.terminal.markers import check_yes_no
+
     # Check if screen is installed
     result = check_yes_no(
         tmux.send_keys, tmux.capture_output,
@@ -236,26 +237,38 @@ def _install_screen_if_needed(tmux_session: str, window_name: str) -> bool:
         check_command="which screen",
         prefix="SCREEN_CHK"
     )
-    
+
     if result is True:
         logger.info("Screen already installed")
         return True
-    
+
     if result is False:
         logger.info("Screen not found, installing...")
     else:
         logger.warning("Could not determine screen status, attempting install")
-    
-    # Install screen
-    tmux.send_keys(tmux_session, window_name, "sudo yum install screen -y", enter=True)
-    
-    # Wait for installation to complete (poll for up to 60 seconds)
-    if not wait_for_completion(
-        tmux.send_keys, tmux.capture_output,
+
+    # Install screen with an inline done-marker so we know when it finishes.
+    # NOTE: Don't use wait_for_completion() here - it sends a separate marker
+    # command as typeahead that gets consumed by sudo/yum's foreground process,
+    # causing the markers to never appear and a 60s timeout hang.
+    # Instead, chain the marker on the same command line with ";".
+    marker_id = random.randint(10000, 99999)
+    done_marker = f"__INSTALL_DONE_{marker_id}__"
+    tmux.send_keys(
         tmux_session, window_name,
-        timeout=60
-    ):
-        logger.warning("Screen installation may not have completed")
+        f"sudo yum install screen -y; echo {done_marker}",
+        enter=True,
+    )
+
+    # Poll until the done-marker appears on its own line (not in command echo)
+    start_time = time.time()
+    while time.time() - start_time < 60:
+        time.sleep(2)
+        output = tmux.capture_output(tmux_session, window_name, lines=20)
+        if any(line.strip() == done_marker for line in output.splitlines()):
+            break
+    else:
+        logger.warning("Screen installation may not have completed within 60s")
     
     # Verify installation
     verify_result = check_yes_no(

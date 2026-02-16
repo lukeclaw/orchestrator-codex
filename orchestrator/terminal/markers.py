@@ -122,7 +122,7 @@ def parse_between_markers(output: str, start_marker: str, end_marker: str) -> st
     """
     in_section = False
     result_lines = []
-    
+
     for line in output.splitlines():
         stripped = line.strip()
         # Match if the line equals the marker OR if the line is ONLY the marker
@@ -131,14 +131,17 @@ def parse_between_markers(output: str, start_marker: str, end_marker: str) -> st
         if stripped == start_marker or (start_marker in stripped and len(stripped) < len(start_marker) + 5):
             in_section = True
             continue
-        if stripped == end_marker or (end_marker in stripped and len(stripped) < len(end_marker) + 5):
-            break
+        # Only look for end marker AFTER start marker is found. Terminal line
+        # wrapping can place the end marker on its own line within the command
+        # echo (before the actual output), which would cause an early break.
         if in_section:
+            if stripped == end_marker or (end_marker in stripped and len(stripped) < len(end_marker) + 5):
+                break
             result_lines.append(stripped)
-    
+
     if not in_section:
         return None
-    
+
     return "\n".join(result_lines).strip() or None
 
 
