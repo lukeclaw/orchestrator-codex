@@ -60,33 +60,69 @@ def _parse_output_line(line: str) -> tuple[str, bytes] | None:
     return pane_id, raw
 
 
-def _strip_tmux_sequences(data: bytes) -> bytes:
+def _strip_tmux_sequences(data: bytes, state: dict[str, bool] | None = None) -> bytes:
     """Strip tmux-specific escape sequences that standard terminals don't understand.
 
     Removes ``ESC k <title> ST`` (set window name) sequences.  These are
     a tmux/screen convention, not part of the VT100/xterm standard.  If
     forwarded to xterm.js the title text appears as visible characters.
-    """
-    # Fast path: no ESC k in data
-    if b'\x1bk' not in data:
-        return data
 
+    If *state* is provided, stripping is stateful across chunk boundaries.
+    Expected keys in *state*:
+
+    - ``in_title``: currently inside ``ESC k ... ST``
+    - ``pending_esc``: previous chunk ended with ``ESC`` byte
+    """
     result = bytearray()
-    i = 0
-    n = len(data)
-    while i < n:
-        # Check for ESC k
-        if data[i] == 0x1B and i + 1 < n and data[i + 1] == ord('k'):
-            # Skip until ST (ESC \) or end of data
-            i += 2
-            while i < n:
-                if data[i] == 0x1B and i + 1 < n and data[i + 1] == 0x5C:
-                    i += 2  # skip ESC backslash (ST)
-                    break
-                i += 1
+    in_title = False
+    pending_esc = False
+
+    if state is not None:
+        in_title = bool(state.get("in_title", False))
+        pending_esc = bool(state.get("pending_esc", False))
+
+    for b in data:
+        if in_title:
+            if pending_esc:
+                if b == 0x5C:  # ST terminator: ESC \\
+                    in_title = False
+                    pending_esc = False
+                elif b == 0x1B:
+                    # Stay in pending ESC state inside title.
+                    pending_esc = True
+                else:
+                    pending_esc = False
+                continue
+
+            if b == 0x1B:
+                pending_esc = True
+            continue
+
+        # Normal mode
+        if pending_esc:
+            if b == ord('k'):
+                # Enter ESC k title payload mode and drop both bytes.
+                in_title = True
+                pending_esc = False
+                continue
+
+            # Previous ESC was not part of ESC k sequence; emit it.
+            result.append(0x1B)
+            pending_esc = False
+
+        if b == 0x1B:
+            pending_esc = True
         else:
-            result.append(data[i])
-            i += 1
+            result.append(b)
+
+    # In stateless mode, preserve trailing lone ESC exactly as input.
+    if state is None and pending_esc:
+        result.append(0x1B)
+
+    if state is not None:
+        state["in_title"] = in_title
+        state["pending_esc"] = pending_esc
+
     return bytes(result)
 
 
@@ -142,6 +178,8 @@ class TmuxControlConnection:
         self._running = False
         # pane_id -> set of async callbacks  (callback signature: async (bytes) -> None)
         self._output_subscribers: dict[str, set[Callable]] = {}
+        # pane_id -> state for cross-chunk tmux ESC k stripping
+        self._strip_states: dict[str, dict[str, bool]] = {}
         self._lock = asyncio.Lock()
 
     async def start(self) -> bool:
@@ -186,6 +224,9 @@ class TmuxControlConnection:
                 self._process.kill()
             self._process = None
 
+        self._output_subscribers.clear()
+        self._strip_states.clear()
+
         logger.info("Stopped tmux control mode for session %s", self.session)
 
     async def _read_output(self):
@@ -212,7 +253,11 @@ class TmuxControlConnection:
                 pane_id, raw_bytes = parsed
                 # Strip tmux-specific sequences (ESC k title ST) that
                 # standard terminal emulators would display as literal text.
-                raw_bytes = _strip_tmux_sequences(raw_bytes)
+                strip_state = self._strip_states.setdefault(
+                    pane_id,
+                    {"in_title": False, "pending_esc": False},
+                )
+                raw_bytes = _strip_tmux_sequences(raw_bytes, strip_state)
                 if not raw_bytes:
                     continue
                 # Snapshot subscriber set under lock, then dispatch outside lock
@@ -243,6 +288,7 @@ class TmuxControlConnection:
                 subs.discard(callback)
                 if not subs:
                     del self._output_subscribers[pane_id]
+                    self._strip_states.pop(pane_id, None)
 
     # -- command helpers --------------------------------------------------------
 
