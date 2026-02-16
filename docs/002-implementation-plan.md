@@ -1,11 +1,13 @@
-# Implementation Plan: Claude Orchestrator
-
-**Version:** 2.0
-**Author:** Yudong Qiu
-**Date:** February 7, 2026
-**Status:** Ready for Implementation
-
 ---
+title: "Implementation Plan: Claude Orchestrator"
+author: Yudong Qiu
+created: 2026-02-07
+last_modified: 2026-02-08
+status: Approved
+version: "2.0"
+---
+
+# Implementation Plan: Claude Orchestrator
 
 ## Table of Contents
 
@@ -190,8 +192,8 @@ orchestrator/
 │   ├── seed_db.py                 # Populate DB with default config + templates
 │   └── test_auth.py               # Auth testing (exists)
 └── docs/
-    ├── PRD.md
-    └── IMPLEMENTATION.md
+    ├── 001-prd.md
+    └── 002-implementation-plan.md
 ```
 
 ---

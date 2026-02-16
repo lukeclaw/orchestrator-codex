@@ -1,10 +1,14 @@
+---
+title: "Terminal Control Coordination - Feature Evaluation"
+author: Yudong Qiu
+created: 2026-02-10
+last_modified: 2026-02-11
+status: Planning
+---
+
 # Terminal Control Coordination - Feature Evaluation
 
-> **Status**: Planning Phase  
-> **Created**: Feb 10, 2026  
 > **Goal**: Prevent conflicts between user input and background terminal operations
-
----
 
 ## 1. Problem Statement
 

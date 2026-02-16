@@ -1,3 +1,11 @@
+---
+title: "Claude Orchestrator — UI Design Document"
+author: Yudong Qiu
+created: 2026-02-07
+last_modified: 2026-02-07
+status: Approved
+---
+
 # Claude Orchestrator — UI Design Document
 
 ## Vision

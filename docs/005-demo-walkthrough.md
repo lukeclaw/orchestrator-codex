@@ -1,3 +1,11 @@
+---
+title: "Demo Walkthrough"
+author: Yudong Qiu
+created: 2026-02-07
+last_modified: 2026-02-08
+status: Active
+---
+
 # Demo Walkthrough
 
 ## The project

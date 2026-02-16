@@ -1,10 +1,14 @@
+---
+title: "Direct PTY Streaming — Solving Terminal Rendering Once and For All"
+author: Yudong Qiu
+created: 2026-02-16
+last_modified: 2026-02-16
+status: Approved
+---
+
 # Direct PTY Streaming — Solving Terminal Rendering Once and For All
 
-> **Status**: Approved Plan
-> **Created**: Feb 16, 2026
 > **Goal**: Eliminate terminal rendering corruption during Claude Code TUI sessions
-
----
 
 ## 1. Problem Summary
 

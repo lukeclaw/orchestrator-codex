@@ -1,3 +1,11 @@
+---
+title: "E2E Test Screenshot Expectations"
+author: Yudong Qiu
+created: 2026-02-07
+last_modified: 2026-02-07
+status: Active
+---
+
 # E2E Test Screenshot Expectations
 
 This document describes the expected visual state of each screenshot captured during E2E testing.
