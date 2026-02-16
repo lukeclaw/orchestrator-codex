@@ -18,8 +18,9 @@ def test_fresh_migration():
     # 6=task_links, 7=session_type, 8=remove_current_task_id, 9=rename_mp_path_to_work_dir,
     # 10=task_index, 11=priority_to_string, 12=drop_pr_tables, 13=context_description, 14=timestamps,
     # 15=notifications, 16=last_viewed_at, 17=last_status_changed_at, 18=tunnel_pid,
-    # 19=drop_tunnel_pane, 20=drop_skill_templates
-    assert applied == [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]
+    # 19=drop_tunnel_pane, 20=drop_skill_templates, 21=drop_tmux_window,
+    # 22=drop_dead_tables
+    assert applied == [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22]
 
     # Verify key tables exist
     tables = conn.execute(
@@ -28,19 +29,23 @@ def test_fresh_migration():
     table_names = {r["name"] for r in tables}
 
     expected_tables = {
-        "projects", "sessions", "project_workers",
-        "tasks", "task_dependencies",
-        "learned_patterns",
-        "worker_capabilities", "task_requirements",
-        "session_snapshots",
-        "comm_events",
-        "config", "prompt_templates",
+        "projects", "sessions",
+        "tasks", "notifications",
+        "config",
         "context_items",
         "schema_version",
     }
     assert expected_tables.issubset(table_names)
-    # cost_events should have been dropped by migration 002
-    assert "cost_events" not in table_names
+    # These tables should have been dropped by various migrations
+    dropped_tables = {
+        "cost_events", "pull_requests", "pr_dependencies", "skill_templates",
+        "task_dependencies", "task_requirements", "activities",
+        "decisions", "decision_history", "worker_capabilities",
+        "session_snapshots", "comm_events", "learned_patterns",
+        "prompt_templates", "project_workers",
+    }
+    for t in dropped_tables:
+        assert t not in table_names, f"Legacy table {t} should have been dropped"
     conn.close()
 
 
@@ -48,7 +53,7 @@ def test_idempotent_rerun():
     """Running migrations twice should be a no-op the second time."""
     conn = get_memory_connection()
     first = apply_migrations(conn)
-    assert first == [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]
+    assert first == [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22]
 
     second = apply_migrations(conn)
     assert second == []
@@ -59,7 +64,7 @@ def test_current_version_after_migration():
     conn = get_memory_connection()
     assert get_current_version(conn) == 0
     apply_migrations(conn)
-    assert get_current_version(conn) == 20
+    assert get_current_version(conn) == 22
     conn.close()
 
 
@@ -77,7 +82,7 @@ def test_indexes_created():
     conn = get_memory_connection()
     apply_migrations(conn)
     indexes = conn.execute(
-        "SELECT name FROM sqlite_master WHERE type='index' AND name LIKE 'idx_%'"
+        "SELECT name FROM sqlite_master WHERE type='index' AND (name LIKE 'idx_%' OR name LIKE 'ux_%')"
     ).fetchall()
     index_names = {r["name"] for r in indexes}
     assert "idx_tasks_project" in index_names

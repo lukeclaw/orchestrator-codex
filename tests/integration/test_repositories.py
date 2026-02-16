@@ -84,9 +84,9 @@ class TestProjectsRepo:
 class TestTasksRepo:
     def test_create_and_get(self, db):
         p = projects.create_project(db, "Task Project")
-        t = tasks.create_task(db, p.id, "Do something", priority=5)
+        t = tasks.create_task(db, p.id, "Do something", priority="H")
         assert t.title == "Do something"
-        assert t.priority == 5
+        assert t.priority == "H"
         assert t.status == "todo"
 
     def test_update_status_sets_updated_at(self, db):

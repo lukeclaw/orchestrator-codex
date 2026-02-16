@@ -47,16 +47,6 @@ def seed_config(conn):
             config_repo.set_config(conn, key, value, description, category)
 
 
-def seed_prompt_templates(conn):
-    """Seed default LLM prompt templates."""
-    # Remove legacy unused templates (direct SQL since no delete function)
-    conn.execute(
-        "DELETE FROM prompt_templates WHERE name IN (?, ?, ?, ?)",
-        ("system_prompt", "status_query", "task_planning", "rebrief"),
-    )
-    conn.commit()
-    # No prompt templates currently needed - all prompts are stored in files
-
 
 def seed_context(conn):
     """Seed default global context items."""
@@ -142,7 +132,6 @@ Use `rdev list` to discover available rdev sessions before creating workers.""",
 def seed_all(conn):
     """Run all seed functions."""
     seed_config(conn)
-    seed_prompt_templates(conn)
     seed_context(conn)
 
 
