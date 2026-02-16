@@ -233,12 +233,14 @@ class TestSessionDelete:
         rmtree_path = mock_rmtree.call_args[0][0]
         assert "workers" in rmtree_path and "test-worker" in rmtree_path
 
+    @pytest.mark.allow_subprocess
+    @patch('orchestrator.api.routes.sessions.time.sleep')
     @patch('orchestrator.api.routes.sessions.send_keys')
     @patch('orchestrator.api.routes.sessions.kill_window')
     @patch('orchestrator.api.routes.sessions.repo')
     @patch('orchestrator.api.routes.sessions.is_rdev_host')
     def test_delete_rdev_session_exits_claude_and_screen(
-        self, mock_is_rdev, mock_repo, mock_kill_window, mock_send_keys, db
+        self, mock_is_rdev, mock_repo, mock_kill_window, mock_send_keys, mock_sleep, db
     ):
         """Deleting an rdev session should exit Claude and screen before cleanup."""
         from orchestrator.api.routes.sessions import delete_session

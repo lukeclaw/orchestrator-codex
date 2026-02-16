@@ -85,12 +85,13 @@ class TestReconnectTunnelOnly:
 class TestReconnectRdevWorkerTunnelOnlyPath:
     """Test that reconnect_rdev_worker takes the tunnel-only path when appropriate."""
 
+    @patch("orchestrator.terminal.manager.subprocess")
     @patch("orchestrator.session.health.check_worker_ssh_alive", return_value=True)
     @patch("orchestrator.session.health.check_screen_and_claude_rdev")
     @patch("orchestrator.session.reconnect.reconnect_tunnel_only")
     @patch("orchestrator.session.reconnect.time.sleep")
     def test_tunnel_only_path_when_claude_running(
-        self, mock_sleep, mock_tunnel_only, mock_screen_claude, mock_ssh_alive, db
+        self, mock_sleep, mock_tunnel_only, mock_screen_claude, mock_ssh_alive, mock_tmux_subprocess, db
     ):
         """When tunnel dead but SSH/screen/Claude alive, only reconnect tunnel."""
         from orchestrator.session.reconnect import reconnect_rdev_worker
@@ -114,6 +115,7 @@ class TestReconnectRdevWorkerTunnelOnlyPath:
         mock_tunnel_only.assert_called_once()
         mock_repo.update_session.assert_called_with(db, "test-session-id", status="waiting")
 
+    @patch("orchestrator.terminal.manager.subprocess")
     @patch("orchestrator.session.reconnect.check_ssh_alive", return_value=False)
     @patch("orchestrator.session.reconnect.send_keys")
     @patch("orchestrator.terminal.ssh.rdev_connect")
@@ -124,7 +126,7 @@ class TestReconnectRdevWorkerTunnelOnlyPath:
     @patch("orchestrator.session.reconnect.time.sleep")
     def test_full_reconnect_when_ssh_dead(
         self, mock_sleep, mock_tunnel_only, mock_ssh_alive, mock_screen_claude,
-        mock_wait_prompt, mock_rdev_connect, mock_send_keys, mock_check_ssh, db
+        mock_wait_prompt, mock_rdev_connect, mock_send_keys, mock_check_ssh, mock_tmux_subprocess, db
     ):
         """When SSH process is dead, should NOT take tunnel-only path."""
         from orchestrator.session.reconnect import reconnect_rdev_worker

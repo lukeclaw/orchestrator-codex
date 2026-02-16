@@ -20,6 +20,13 @@ import pytest
 
 PROJECT_ROOT = Path(__file__).parent.parent.parent
 
+
+def pytest_collection_modifyitems(items):
+    """Give E2E tests a longer timeout (60s) since they involve server startup and browser interaction."""
+    for item in items:
+        if not item.get_closest_marker("timeout"):
+            item.add_marker(pytest.mark.timeout(60))
+
 # ---------------------------------------------------------------------------
 # Worker Isolation (for pytest-xdist parallel execution)
 # ---------------------------------------------------------------------------

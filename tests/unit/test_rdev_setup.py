@@ -30,10 +30,12 @@ class TestSetupRdevWorker:
         # Tunnel should be cleaned up via tunnel_manager
         mock_tunnel_manager.stop_tunnel.assert_called_once_with("session-id-456")
 
+    @patch("orchestrator.terminal.session._copy_dir_to_rdev_ssh", return_value=True)
+    @patch("orchestrator.terminal.session._install_screen_if_needed", return_value=True)
     @patch("orchestrator.terminal.session.time.sleep")  # Mock sleep to speed up tests
     @patch("orchestrator.terminal.session.tmux")
     @patch("orchestrator.terminal.session.ssh")
-    def test_tunnel_start_failure(self, mock_ssh, mock_tmux, _sleep, db):
+    def test_tunnel_start_failure(self, mock_ssh, mock_tmux, _sleep, _screen, _copy, db):
         seed_all(db)
 
         mock_tunnel_manager = MagicMock()

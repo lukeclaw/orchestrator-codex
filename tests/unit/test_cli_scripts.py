@@ -127,6 +127,7 @@ class TestWorkerCliScripts:
             assert "description_stdin" in content
 
 
+@pytest.mark.allow_subprocess
 class TestJsonEncodeFunction:
     """Tests for the json_encode bash function via actual execution."""
 
@@ -306,6 +307,7 @@ class TestJsonEscapingInScripts:
             assert 'escaped_title=$(json_encode "$title")' in subtask
 
 
+@pytest.mark.allow_subprocess
 class TestJsonEncodeEdgeCases:
     """Integration tests for json_encode handling various edge cases."""
 
