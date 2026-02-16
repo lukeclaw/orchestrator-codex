@@ -336,6 +336,12 @@ def generate_worker_hooks(
         f.write(hook_content)
     os.chmod(hook_script_path, os.stat(hook_script_path).st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
     
+    # Copy safety gate hook (no placeholders needed — it's stateless)
+    src_safety_path = os.path.join(_AGENTS_DIR, "worker", "hooks", "check-command.sh")
+    safety_hook_path = os.path.join(hooks_dir, "check-command.sh")
+    shutil.copy2(src_safety_path, safety_hook_path)
+    os.chmod(safety_hook_path, os.stat(safety_hook_path).st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+    
     # Copy settings.json template and substitute placeholders
     src_settings_path = os.path.join(_AGENTS_DIR, "worker", "settings.json")
     dst_settings_path = os.path.join(worker_dir, "settings.json")
@@ -344,6 +350,7 @@ def generate_worker_hooks(
         settings_content = f.read()
     
     settings_content = settings_content.replace("{{HOOK_SCRIPT_PATH}}", hook_script_path)
+    settings_content = settings_content.replace("{{SAFETY_HOOK_PATH}}", safety_hook_path)
     
     with open(dst_settings_path, "w") as f:
         f.write(settings_content)

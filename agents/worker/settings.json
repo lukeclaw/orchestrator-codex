@@ -20,7 +20,10 @@
   "hooks": {
     "SessionStart": [{"matcher": "", "hooks": [{"type": "command", "command": "{{HOOK_SCRIPT_PATH}}"}]}],
     "UserPromptSubmit": [{"matcher": "", "hooks": [{"type": "command", "command": "{{HOOK_SCRIPT_PATH}}"}]}],
-    "PreToolUse": [{"matcher": "", "hooks": [{"type": "command", "command": "{{HOOK_SCRIPT_PATH}}"}]}],
+    "PreToolUse": [
+      {"matcher": "Bash", "hooks": [{"type": "command", "command": "{{SAFETY_HOOK_PATH}}"}]},
+      {"matcher": "", "hooks": [{"type": "command", "command": "{{HOOK_SCRIPT_PATH}}"}]}
+    ],
     "Stop": [{"matcher": "", "hooks": [{"type": "command", "command": "{{HOOK_SCRIPT_PATH}}"}]}],
     "Notification": [{"matcher": "", "hooks": [{"type": "command", "command": "{{HOOK_SCRIPT_PATH}}"}]}],
     "SessionEnd": [{"matcher": "", "hooks": [{"type": "command", "command": "{{HOOK_SCRIPT_PATH}}"}]}]

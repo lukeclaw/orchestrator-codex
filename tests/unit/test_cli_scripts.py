@@ -494,6 +494,32 @@ class TestWorkerHooksGeneration:
             assert expected_hook_path in content
             assert "{{HOOK_SCRIPT_PATH}}" not in content, "Placeholder should be substituted"
 
+    def test_generate_worker_hooks_deploys_safety_hook(self):
+        """Verify check-command.sh safety hook is deployed and executable."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            configs_dir = os.path.join(tmpdir, "configs")
+            os.makedirs(configs_dir)
+            generate_worker_hooks(configs_dir, "session-123", "http://localhost:8093")
+            
+            safety_path = os.path.join(configs_dir, "hooks", "check-command.sh")
+            assert os.path.exists(safety_path), "check-command.sh should be deployed"
+            assert os.access(safety_path, os.X_OK), "check-command.sh should be executable"
+
+    def test_generate_worker_hooks_substitutes_safety_hook_path_in_settings(self):
+        """Verify safety hook path is substituted in settings.json."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            configs_dir = os.path.join(tmpdir, "configs")
+            os.makedirs(configs_dir)
+            generate_worker_hooks(configs_dir, "session-123", "http://localhost:8093")
+            
+            settings_path = os.path.join(configs_dir, "settings.json")
+            with open(settings_path) as f:
+                content = f.read()
+            
+            expected_safety_path = os.path.join(configs_dir, "hooks", "check-command.sh")
+            assert expected_safety_path in content
+            assert "{{SAFETY_HOOK_PATH}}" not in content, "Placeholder should be substituted"
+
     def test_generate_worker_hooks_overwrites_existing(self):
         """Verify regeneration overwrites existing files."""
         with tempfile.TemporaryDirectory() as tmpdir:
