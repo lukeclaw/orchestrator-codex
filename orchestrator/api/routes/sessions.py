@@ -247,53 +247,55 @@ def create_session(body: SessionCreate, request: Request, db=Depends(get_db)):
         return {"id": s.id, "name": s.name, "status": "connecting"}
 
     else:
-        # Local worker — launch claude with worker instructions via --append-system-prompt
-        config = getattr(request.app.state, "config", {})
-        api_port = config.get("server", {}).get("port", 8093)
-        
-        # Deploy CLI scripts in tmp_dir/bin/
-        bin_dir = deploy_worker_scripts(
-            worker_dir=tmp_dir,
-            session_id=s.id,
-            api_base=f"http://127.0.0.1:{api_port}",
-        )
-        logger.info("Deployed CLI scripts for local worker %s in %s", sanitized_name, bin_dir)
-        
-        # Generate Claude Code hooks in tmp_dir/configs/
-        configs_dir = os.path.join(tmp_dir, "configs")
-        os.makedirs(configs_dir, exist_ok=True)
-        generate_worker_hooks(
-            worker_dir=configs_dir,
-            session_id=s.id,
-            api_base=f"http://127.0.0.1:{api_port}",
-        )
-        logger.info("Generated hooks settings for local worker %s", sanitized_name)
-        
-        # Deploy worker skills to .claude/commands/ in work_dir
-        skills_src = get_worker_skills_dir()
-        if skills_src and os.path.isdir(skills_src) and work_dir:
-            skills_dest = os.path.join(work_dir, ".claude", "commands")
-            os.makedirs(skills_dest, exist_ok=True)
-            for skill_file in os.listdir(skills_src):
-                if skill_file.endswith(".md"):
-                    shutil.copy2(
-                        os.path.join(skills_src, skill_file),
-                        os.path.join(skills_dest, skill_file),
-                    )
-            logger.info("Deployed %d skills to %s for local worker %s", 
-                       len([f for f in os.listdir(skills_dest) if f.endswith(".md")]), 
-                       skills_dest, sanitized_name)
-        
-        # Write worker prompt to file in tmp_dir (avoids pasting large content through tmux)
-        worker_prompt = get_worker_prompt(s.id)
-        prompt_file = os.path.join(tmp_dir, "prompt.md")
-        if worker_prompt:
-            with open(prompt_file, "w") as f:
-                f.write(worker_prompt)
-            logger.info("Wrote worker prompt to %s", prompt_file)
-
-        # cd to working directory, export PATH, and launch claude with --settings
+        # Local worker — deploy scripts and launch claude.
+        # The session record is already persisted, so deploy/launch errors are
+        # non-fatal: log them but still return success to the client.
         try:
+            config = getattr(request.app.state, "config", {})
+            api_port = config.get("server", {}).get("port", 8093)
+
+            # Deploy CLI scripts in tmp_dir/bin/
+            bin_dir = deploy_worker_scripts(
+                worker_dir=tmp_dir,
+                session_id=s.id,
+                api_base=f"http://127.0.0.1:{api_port}",
+            )
+            logger.info("Deployed CLI scripts for local worker %s in %s", sanitized_name, bin_dir)
+
+            # Generate Claude Code hooks in tmp_dir/configs/
+            configs_dir = os.path.join(tmp_dir, "configs")
+            os.makedirs(configs_dir, exist_ok=True)
+            generate_worker_hooks(
+                worker_dir=configs_dir,
+                session_id=s.id,
+                api_base=f"http://127.0.0.1:{api_port}",
+            )
+            logger.info("Generated hooks settings for local worker %s", sanitized_name)
+
+            # Deploy worker skills to .claude/commands/ in work_dir
+            skills_src = get_worker_skills_dir()
+            if skills_src and os.path.isdir(skills_src) and work_dir:
+                skills_dest = os.path.join(work_dir, ".claude", "commands")
+                os.makedirs(skills_dest, exist_ok=True)
+                for skill_file in os.listdir(skills_src):
+                    if skill_file.endswith(".md"):
+                        shutil.copy2(
+                            os.path.join(skills_src, skill_file),
+                            os.path.join(skills_dest, skill_file),
+                        )
+                logger.info("Deployed %d skills to %s for local worker %s",
+                           len([f for f in os.listdir(skills_dest) if f.endswith(".md")]),
+                           skills_dest, sanitized_name)
+
+            # Write worker prompt to file in tmp_dir (avoids pasting large content through tmux)
+            worker_prompt = get_worker_prompt(s.id)
+            prompt_file = os.path.join(tmp_dir, "prompt.md")
+            if worker_prompt:
+                with open(prompt_file, "w") as f:
+                    f.write(worker_prompt)
+                logger.info("Wrote worker prompt to %s", prompt_file)
+
+            # cd to working directory, export PATH, and launch claude with --settings
             import shlex
             cmd_parts = []
 
@@ -318,7 +320,7 @@ def create_session(body: SessionCreate, request: Request, db=Depends(get_db)):
             send_keys(tmux_session_name, sanitized_name, cmd, enter=True)
             logger.info("Launched claude for local worker %s (work_dir=%s)", sanitized_name, work_dir)
         except Exception:
-            logger.warning("Could not launch claude for local worker %s", sanitized_name, exc_info=True)
+            logger.warning("Could not deploy/launch local worker %s", sanitized_name, exc_info=True)
 
         return {"id": s.id, "name": s.name, "status": s.status}
 

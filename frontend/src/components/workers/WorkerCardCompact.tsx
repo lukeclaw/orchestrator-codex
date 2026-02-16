@@ -16,6 +16,8 @@ export default function WorkerCardCompact({ session, assignedTask }: Props) {
   return (
     <div
       className={`wcc-card ${session.status}`}
+      data-testid="worker-card"
+      data-session-id={session.id}
       onClick={() => navigate(`/workers/${session.id}`)}
     >
       <div className="wcc-header">

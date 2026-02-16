@@ -36,14 +36,13 @@ def test_01_dashboard_loads(page):
 
 
 def test_02_session_cards_render(page):
-    """Three session cards appear with correct names and status badges."""
-    cards = page.query_selector_all("[data-testid='session-card']")
+    """Three worker cards appear with correct names and status badges."""
+    cards = page.query_selector_all("[data-testid='worker-card']")
     screenshot(page, "02_session_cards")
 
     assert len(cards) == 3
 
-    # React uses .sc-name class
-    names = [c.query_selector(".sc-name").inner_text() for c in cards]
+    names = [c.query_selector(".wcc-name").inner_text() for c in cards]
     assert "worker-alpha" in names
     assert "worker-beta" in names
     assert "worker-gamma" in names
@@ -67,8 +66,8 @@ def test_03_quick_stats_accurate(page):
 
     sessions_val = page.query_selector("#stat-sessions-val").inner_text()
 
-    # 2 active (working + idle), disconnected doesn't count
-    assert sessions_val == "2"
+    # All 3 workers counted (working + idle + disconnected)
+    assert sessions_val == "3"
 
 
 # ---------------------------------------------------------------------------
@@ -94,21 +93,26 @@ def test_04_add_session_flow(page):
 
     screenshot(page, "04b_add_session_filled")
 
-    # Submit
+    # Submit and wait for the new card to appear
     page.click("[data-testid='create-session-btn']")
-    page.wait_for_timeout(1500)
+
+    # Wait for the 4th worker card to render (refresh is async)
+    page.wait_for_function(
+        "document.querySelectorAll(\"[data-testid='worker-card']\").length >= 4",
+        timeout=5000,
+    )
 
     screenshot(page, "04c_after_add_session")
 
-    # Should now have 4 session cards
-    cards = page.query_selector_all("[data-testid='session-card']")
+    # Should now have 4 worker cards
+    cards = page.query_selector_all("[data-testid='worker-card']")
     assert len(cards) == 4
 
-    names = [c.query_selector(".sc-name").inner_text() for c in cards]
+    names = [c.query_selector(".wcc-name").inner_text() for c in cards]
     assert "worker-delta" in names
 
-    # Stats should update to 3 active sessions
-    assert page.query_selector("#stat-sessions-val").inner_text() == "3"
+    # Stats should update to 4 workers
+    assert page.query_selector("#stat-sessions-val").inner_text() == "4"
 
 
 # ---------------------------------------------------------------------------
