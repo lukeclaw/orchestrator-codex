@@ -142,7 +142,7 @@
   box-sizing: border-box;
 }
 
-/* Allow xterm.js internal scrolling for scrollback history */
+/* Hide native scrollbar — xterm.js handles scrolling internally */
 .terminal-view .xterm-viewport {
-  overflow-y: auto !important;
+  overflow-y: hidden !important;
 }
