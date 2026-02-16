@@ -173,3 +173,8 @@
   opacity: 1 !important;
   transition: none !important;
 }
+
+/* Hide scrollbar entirely when scrollback is disabled (rdev + screen) */
+.terminal-view.no-scrollbar .xterm .xterm-scrollable-element > .scrollbar {
+  display: none !important;
+}

@@ -239,6 +239,14 @@ export default function TerminalView({ sessionId, sessionStatus, onUserInput, di
       textarea.addEventListener('blur', handleBlur)
     }
 
+    // Block mouse wheel scroll when scrollback is disabled (rdev + screen)
+    const wheelHandler = disableScrollback
+      ? (e: WheelEvent) => { e.preventDefault(); e.stopPropagation() }
+      : null
+    if (wheelHandler && termRef.current) {
+      termRef.current.addEventListener('wheel', wheelHandler, { passive: false })
+    }
+
     // Handle resize
     let resizeTimeout: ReturnType<typeof setTimeout>
     const observer = new ResizeObserver(() => {
@@ -270,6 +278,9 @@ export default function TerminalView({ sessionId, sessionStatus, onUserInput, di
       if (textarea) {
         textarea.removeEventListener('focus', handleFocus)
         textarea.removeEventListener('blur', handleBlur)
+      }
+      if (wheelHandler && termRef.current) {
+        termRef.current.removeEventListener('wheel', wheelHandler)
       }
       wsRef.current?.close()
       terminal.dispose()
@@ -306,7 +317,7 @@ export default function TerminalView({ sessionId, sessionStatus, onUserInput, di
 
   return (
     <div className={containerClasses}>
-      <div className="terminal-view" ref={termRef} data-testid="terminal-view" />
+      <div className={`terminal-view${disableScrollback ? ' no-scrollbar' : ''}`} ref={termRef} data-testid="terminal-view" />
       {showOverlay && (
         <div className="terminal-overlay">
           <div className="terminal-overlay-content">
