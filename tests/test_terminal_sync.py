@@ -3,6 +3,10 @@
 Tests the WebSocket terminal protocol, flow control, batching, and
 conditional sync logic. Uses mocked tmux operations so no live tmux
 session is needed.
+
+Tests use ``TERMINAL_STREAM_MODE="control-mode"`` to exercise the
+%output fallback path.  Pipe-pane streaming is tested in
+``test_pty_stream.py``.
 """
 
 from __future__ import annotations
@@ -17,6 +21,18 @@ from orchestrator.api.ws_terminal import (
     SNAPSHOT_RECOVERY_THRESHOLD,
     terminal_websocket,
 )
+
+# Force control-mode for all tests in this file
+_CONTROL_MODE_PATCH = patch(
+    "orchestrator.api.ws_terminal.TERMINAL_STREAM_MODE", "control-mode"
+)
+
+@pytest.fixture(autouse=True)
+def _force_control_mode():
+    """Force control-mode streaming for all tests in this module."""
+    with _CONTROL_MODE_PATCH:
+        yield
+
 
 # ---------------------------------------------------------------------------
 # Helpers

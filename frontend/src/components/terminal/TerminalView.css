@@ -140,9 +140,12 @@
   height: 100%;
   padding: 8px 12px;
   box-sizing: border-box;
+  background: #0d1117;
 }
 
-/* Hide native scrollbar — xterm.js handles scrolling internally */
+/* Match viewport background to terminal theme so padding and canvas
+   have identical color — eliminates the visible seam at the edges. */
 .terminal-view .xterm-viewport {
   overflow-y: hidden !important;
+  background: #0d1117 !important;
 }

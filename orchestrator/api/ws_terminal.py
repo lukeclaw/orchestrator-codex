@@ -11,6 +11,15 @@ Two frame types coexist on the same WebSocket:
 Server → Client binary:  raw PTY bytes (write directly to xterm.js)
 Server → Client JSON:    {"type": "sync"|"history"|"error", ...}
 Client → Server JSON:    {"type": "input"|"resize"|"request_history"|"request_sync", ...}
+
+Streaming modes
+---------------
+* **pipe-pane** (default): Raw PTY bytes via ``tmux pipe-pane -O`` — no octal
+  encoding, no line-level fragmentation.  Eliminates TUI frame tearing.
+* **control-mode** (fallback): ``%output`` notifications via tmux control mode.
+  Used when pipe-pane is unavailable (tmux < 2.6, pipe-pane startup failure).
+
+Set ``TERMINAL_STREAM_MODE=control-mode`` env var to force the legacy path.
 """
 
 from __future__ import annotations
@@ -33,6 +42,11 @@ from orchestrator.terminal.control import (
     send_keys_async,
 )
 from orchestrator.terminal.manager import ensure_window, tmux_target
+from orchestrator.terminal.pty_stream import (
+    TERMINAL_STREAM_MODE,
+    PtyStreamPool,
+    suppress_control_mode_output,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -122,33 +136,27 @@ async def terminal_websocket(websocket: WebSocket, session_id: str):
     # This ensures the tmux pane matches xterm's dimensions.
     initial_sent = False
 
-    # --- Resolve pane ID for %output streaming --------------------------------
+    # --- Resolve pane ID for streaming ----------------------------------------
     pane_id = await get_pane_id_async(tmux_sess, tmux_win)
     stream_active = False
-    conn = None  # TmuxControlConnection (set when streaming)
+    # Which streaming mode is active for this connection
+    using_pipe_pane = False
     drift_task: asyncio.Task | None = None
 
     # --- Stream batching & flow control state ---------------------------------
-    stream_buffer = bytearray()          # accumulates %output bytes
+    stream_buffer = bytearray()          # accumulates stream bytes
     flush_event = asyncio.Event()        # signals that stream_buffer has data
     last_flush_time: float = 0.0         # monotonic time of last successful flush
     sync_requested = False               # set True to trigger an immediate sync
     sync_in_progress = False             # prevents flusher from sending during sync
 
-    # Callback invoked by TmuxControlConnection._read_output for our pane.
-    # Subscription is deferred until AFTER initial history is sent so there
-    # is no startup gap to buffer across.
-    #
+    # --- Callback for stream data (used by both pipe-pane and %output) --------
     # NEVER drops bytes.  If the buffer grows too large (client can't keep
     # up), we discard the stale buffer and request a full sync instead.
-    async def on_pane_output(raw_bytes: bytes) -> None:
+    async def on_stream_data(raw_bytes: bytes) -> None:
         nonlocal sync_requested
         stream_buffer.extend(raw_bytes)
         if len(stream_buffer) > SNAPSHOT_RECOVERY_THRESHOLD:
-            # Buffer has grown too large — the client can't keep up.
-            # Discard the stale incremental stream and request a fresh
-            # full-screen snapshot.  This is the terminal-safe equivalent
-            # of "I've fallen behind, just show me the current state."
             stream_buffer.clear()
             flush_event.clear()
             sync_requested = True
@@ -166,15 +174,12 @@ async def terminal_websocket(websocket: WebSocket, session_id: str):
             await flush_event.wait()   # zero-cost when idle
             await asyncio.sleep(0.016) # ~16ms batch window (one frame)
             flush_event.clear()
-            # Skip flush while a sync is in progress — the sync will
-            # discard these bytes (they're already in the capture) and
-            # we must not send them after the sync JSON.
             if stream_buffer and not sync_in_progress:
                 data = bytes(stream_buffer)
                 stream_buffer.clear()
                 try:
                     await websocket.send_bytes(data)
-                    last_flush_time = asyncio.get_event_loop().time()
+                    last_flush_time = asyncio.get_running_loop().time()
                 except Exception:
                     break  # WebSocket closed
 
@@ -183,9 +188,6 @@ async def terminal_websocket(websocket: WebSocket, session_id: str):
         """Capture pane and send a sync message with CRC32 hash."""
         nonlocal sync_in_progress
 
-        # Block the stream flusher while we capture + send.  Any bytes
-        # that arrive during the capture are already reflected in the
-        # snapshot and must not be flushed after the sync JSON.
         sync_in_progress = True
         try:
             stream_buffer.clear()
@@ -195,14 +197,11 @@ async def terminal_websocket(websocket: WebSocket, session_id: str):
                 tmux_sess, tmux_win
             )
 
-            # Discard bytes that accumulated during the capture — they
-            # are already included in the snapshot.
             stream_buffer.clear()
             flush_event.clear()
 
             if content.endswith('\n'):
                 content = content[:-1]
-            # CRC32 of the plain-text content (strip ANSI for stable hash)
             content_hash = zlib.crc32(content.encode("utf-8")) & 0xFFFFFFFF
             await websocket.send_json({
                 "type": "sync",
@@ -214,9 +213,76 @@ async def terminal_websocket(websocket: WebSocket, session_id: str):
         finally:
             sync_in_progress = False
 
+    # --- Streaming: subscribe (pipe-pane with fallback to %output) ------------
+    async def _start_streaming() -> None:
+        """Start output streaming for the resolved pane.
+
+        Tries pipe-pane first (if enabled), falls back to %output on failure.
+        """
+        nonlocal stream_active, using_pipe_pane
+
+        if not pane_id or stream_active:
+            return
+
+        # Try pipe-pane mode first
+        if TERMINAL_STREAM_MODE == "pipe-pane":
+            pty_pool = PtyStreamPool.get_instance()
+            success = await pty_pool.subscribe(
+                pane_id, tmux_sess, tmux_win, on_stream_data
+            )
+            if success:
+                stream_active = True
+                using_pipe_pane = True
+                # Suppress unused %output processing (tmux >= 3.2)
+                await suppress_control_mode_output(tmux_sess)
+                logger.info(
+                    "Streaming via pipe-pane for pane %s (session %s)",
+                    pane_id, tmux_sess,
+                )
+                return
+            else:
+                logger.warning(
+                    "pipe-pane failed for pane %s, falling back to %%output",
+                    pane_id,
+                )
+
+        # Fallback: %output control mode
+        pool = TmuxControlPool.get_instance()
+        conn = await pool.get_connection(tmux_sess)
+        await conn.subscribe(pane_id, on_stream_data)
+        stream_active = True
+        using_pipe_pane = False
+        logger.info(
+            "Streaming via %%output for pane %s (session %s)",
+            pane_id, tmux_sess,
+        )
+
+    async def _stop_streaming() -> None:
+        """Stop output streaming and clean up."""
+        nonlocal stream_active
+
+        if not stream_active or not pane_id:
+            return
+
+        if using_pipe_pane:
+            try:
+                pty_pool = PtyStreamPool.get_instance()
+                await pty_pool.unsubscribe(pane_id, on_stream_data)
+            except Exception:
+                pass
+        else:
+            try:
+                pool = TmuxControlPool.get_instance()
+                ctrl = await pool.get_connection(tmux_sess)
+                await ctrl.unsubscribe(pane_id, on_stream_data)
+            except Exception:
+                pass
+
+        stream_active = False
+
     # --- Drift correction (background sync) ------------------------------------
     async def drift_correction():
-        nonlocal sync_requested, pane_id, stream_active
+        nonlocal sync_requested, pane_id
 
         # Early sync: correct any desync from the brief gap between
         # history capture and streaming start.
@@ -227,7 +293,7 @@ async def terminal_websocket(websocket: WebSocket, session_id: str):
             except Exception:
                 pass
 
-        # Regular interval
+        # Regular interval — 2s during initial rollout for quick recovery
         while True:
             await asyncio.sleep(2)
             if not initial_sent:
@@ -241,27 +307,9 @@ async def terminal_websocket(websocket: WebSocket, session_id: str):
                         "Pane ID changed for %s:%s: %s -> %s, re-subscribing",
                         tmux_sess, tmux_win, pane_id, new_pane_id,
                     )
-                    # Unsubscribe from old pane
-                    if stream_active and pane_id:
-                        try:
-                            pool = TmuxControlPool.get_instance()
-                            ctrl = await pool.get_connection(tmux_sess)
-                            await ctrl.unsubscribe(pane_id, on_pane_output)
-                        except Exception:
-                            pass
-                    # Subscribe to new pane
+                    await _stop_streaming()
                     pane_id = new_pane_id
-                    try:
-                        pool = TmuxControlPool.get_instance()
-                        ctrl = await pool.get_connection(tmux_sess)
-                        await ctrl.subscribe(pane_id, on_pane_output)
-                        stream_active = True
-                        logger.info(
-                            "Re-subscribed %%output for new pane %s", pane_id,
-                        )
-                    except Exception:
-                        logger.warning("Failed to re-subscribe to new pane %s", pane_id)
-                    # Force a sync to show current content
+                    await _start_streaming()
                     sync_requested = True
             except Exception:
                 pass
@@ -275,14 +323,8 @@ async def terminal_websocket(websocket: WebSocket, session_id: str):
                     pass
                 continue
 
-            # Skip sync if stream was successfully flushed recently —
-            # the client is getting real-time updates and a sync would
-            # only cause a disruptive full-screen redraw.
-            # NOTE: we check last_flush_time (when bytes were *sent* to
-            # the client), NOT when bytes *arrived* from tmux.  This way,
-            # if the buffer is growing without flushing (snapshot recovery
-            # pending), sync still fires.
-            now = asyncio.get_event_loop().time()
+            # Skip sync if stream was successfully flushed recently
+            now = asyncio.get_running_loop().time()
             if last_flush_time > 0 and (now - last_flush_time) < 2.0:
                 continue
 
@@ -327,7 +369,6 @@ async def terminal_websocket(websocket: WebSocket, session_id: str):
                     tmux_sess, tmux_win, msg.get("data", "")
                 ))
             elif msg.get("type") == "request_sync":
-                # Client detected divergence — force immediate sync
                 sync_requested = True
             elif msg.get("type") == "request_history":
                 scrollback = msg.get("lines", 1000)
@@ -373,31 +414,16 @@ async def terminal_websocket(websocket: WebSocket, session_id: str):
                     })
                     initial_sent = True
 
-                    # Subscribe to %output NOW — after history is sent.
-                    # This eliminates the startup gap entirely: the history
-                    # capture is the ground truth, and any %output events from
-                    # this point forward are incremental updates on top of it.
-                    if pane_id and not stream_active:
-                        pool = TmuxControlPool.get_instance()
-                        conn = await pool.get_connection(tmux_sess)
-                        await conn.subscribe(pane_id, on_pane_output)
-                        stream_active = True
+                    # Start streaming NOW — after history is sent.
+                    await _start_streaming()
+                    if stream_active:
                         flush_task = asyncio.create_task(stream_flusher())
-                        logger.info(
-                            "Streaming %%output for pane %s (session %s)",
-                            pane_id, tmux_sess,
-                        )
+
     except WebSocketDisconnect:
         pass
     finally:
         # --- Cleanup ----------------------------------------------------------
-        if stream_active and pane_id:
-            try:
-                pool = TmuxControlPool.get_instance()
-                ctrl = await pool.get_connection(tmux_sess)
-                await ctrl.unsubscribe(pane_id, on_pane_output)
-            except Exception:
-                pass
+        await _stop_streaming()
         for task in (drift_task, flush_task):
             if task:
                 task.cancel()
