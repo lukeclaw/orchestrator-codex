@@ -1,74 +1,41 @@
 ---
 name: screenshot-gh-upload
-description: Capture screenshots via Playwright MCP and upload to GitHub for PR descriptions. Use for UI changes and visual documentation.
+description: Capture screenshots via Playwright MCP and upload to GitHub for PR descriptions.
 ---
 
 # Screenshot & GitHub Upload
 
-Capture screenshots via Playwright MCP and host them for use in PR descriptions or comments.
+## Step 1: Capture screenshot
 
-## When to Use
-- UI changes that benefit from visual documentation
-- Before/after comparisons
-- Bug reproduction evidence
-
----
-
-## Procedure
-
-### Step 1: Ensure Chromium is installed
-
+Use Playwright MCP: `browser_navigate` → `browser_take_screenshot`. If Chromium is missing:
 ```bash
 npx playwright install chromium
 ```
 
-If Chrome is not found at `/opt/google/chrome/chrome`, create the symlink:
-```bash
-sudo mkdir -p /opt/google/chrome
-sudo ln -sf ~/.cache/ms-playwright/chromium-*/chrome-linux64/chrome /opt/google/chrome/chrome
-```
+## Step 2: Upload via GitHub Contents API
 
-### Step 2: Capture screenshot via Playwright MCP
-
-Use the Playwright MCP tools:
-
-1. **Navigate** to the target URL:
-   - Use `browser_navigate` with the URL you want to capture
-
-2. **Take screenshot**:
-   - Use `browser_take_screenshot` to save the image
-   - Save to a descriptive filename (e.g., `feature-before.png`, `dashboard-new-ui.png`)
-
-### Step 3: Host via GitHub draft release
-
-GitHub draft releases provide stable URLs that don't expire.
+Uses a **dedicated screenshots repo** (e.g., `OWNER/screenshots`) to avoid bloating the working repo. The Contents API (`PUT /repos/{owner}/{repo}/contents/{path}`) is more reliable than release assets which often 404.
 
 ```bash
-# Create draft release (one-time per repo, can reuse)
-gh release create screenshot-assets --draft --title "Screenshots" --notes "Screenshot hosting for PRs"
+SCREENSHOT_REPO="linkedin-sandbox/yuqiu-screenshots"
+FILENAME="screenshot.png"
+IMG_PATH="$(date +%Y-%m)/${FILENAME}"  # organize by month
 
-# Upload screenshot
-gh release upload screenshot-assets screenshot.png --clobber
+# Get existing file SHA if overwriting
+EXISTING_SHA=$(gh api "repos/${SCREENSHOT_REPO}/contents/${IMG_PATH}" -q .sha 2>/dev/null || echo "")
+SHA_ARG=""
+[ -n "${EXISTING_SHA}" ] && SHA_ARG="-f sha=${EXISTING_SHA}"
 
-# Get the stable URL
-gh release view screenshot-assets --json assets --jq '.assets[] | select(.name=="screenshot.png") | .url'
+# Upload
+gh api --method PUT "repos/${SCREENSHOT_REPO}/contents/${IMG_PATH}" \
+  -f message="screenshot ${FILENAME}" \
+  -f content="$(base64 < "${FILENAME}")" \
+  ${SHA_ARG}
 ```
 
-### Step 4: Use in PR
+## Step 3: Use in PR
 
-Insert the URL in your PR description or comment:
-
+Use the `html_url` from the API response with `?raw=true` appended:
 ```markdown
-## Screenshots
-
-![Feature Screenshot](https://github.com/OWNER/REPO/releases/download/screenshot-assets/screenshot.png)
+![Screenshot](https://github.com/linkedin-sandbox/yuqiu-screenshots/blob/main/2026-02/screenshot.png?raw=true)
 ```
-
----
-
-## Important Notes
-
-- **Avoid `raw.githubusercontent.com` URLs** — These include temporary tokens that expire
-- **Draft releases are stable** — The URL won't change and doesn't require authentication to view
-- **Reuse the draft release** — Upload multiple screenshots to the same release with `--clobber` to overwrite
-- **Descriptive filenames** — Use meaningful names since they appear in the URL
