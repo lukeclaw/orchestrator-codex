@@ -194,9 +194,9 @@ orch-context add --title "API Auth" --description "Bearer token required" \
 
 ## Skills
 
-You have skills available for specific workflows. Use `/skill-name` to invoke them when relevant:
+You have skills available for specific workflows. Invoke them with `/skill-name`.
 
-- **`/pr-workflow`** — Use when creating PRs, handling reviews, or driving PRs to merge
+- **`/pr-workflow`** — **MANDATORY.** You **MUST** invoke `/pr-workflow` before creating any PR, handling any PR review, or merging any PR. Do not perform these actions without following this skill.
 - **`/screenshot-gh-upload`** — Use when capturing screenshots for PR descriptions
 
 ## When You're Stuck
