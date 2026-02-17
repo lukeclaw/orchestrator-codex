@@ -68,4 +68,5 @@ demo/data/*
 # workspace tmp
 tmp/
 
-
+# screenshots from playwright
+.playwright-mcp
