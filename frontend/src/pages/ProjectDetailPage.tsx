@@ -18,7 +18,7 @@ export default function ProjectDetailPage() {
   const navigate = useNavigate()
   
   // Use shared state from AppContext for sessions, tasks, projects
-  const { sessions, tasks: allTasks, projects, refresh, removeSession } = useApp()
+  const { sessions, tasks: allTasks, projects, refresh, removeSession, smartPastePayload, setSmartPastePayload } = useApp()
   
   // Derive data from shared state
   const project = projects.find(p => p.id === id) || null
@@ -32,6 +32,7 @@ export default function ProjectDetailPage() {
   const [selectedContext, setSelectedContext] = useState<ContextItem | null>(null)
   const [showNewContext, setShowNewContext] = useState(false)
   const [showEditProject, setShowEditProject] = useState(false)
+  const [pasteInitialContent, setPasteInitialContent] = useState<{ title?: string; content?: string; description?: string; category?: string } | undefined>(undefined)
 
   // Load context items (not in shared state)
   const loadContext = useCallback(async () => {
@@ -45,6 +46,15 @@ export default function ProjectDetailPage() {
   }, [id])
 
   useEffect(() => { loadContext() }, [loadContext])
+
+  // Smart Paste: when Header sets a payload, open ContextModal pre-filled
+  useEffect(() => {
+    if (smartPastePayload) {
+      setPasteInitialContent(smartPastePayload)
+      setShowNewContext(true)
+      setSmartPastePayload(null)
+    }
+  }, [smartPastePayload, setSmartPastePayload])
 
   async function createTask(body: { project_id: string; title: string; description?: string; priority?: string }) {
     await api('/api/tasks', { method: 'POST', body: JSON.stringify(body) })
@@ -234,9 +244,11 @@ export default function ProjectDetailPage() {
         context={selectedContext}
         projectId={id}
         isNew={showNewContext}
+        initialContent={pasteInitialContent}
         onClose={() => {
           setSelectedContext(null)
           setShowNewContext(false)
+          setPasteInitialContent(undefined)
         }}
         onSave={async (body) => {
           if (body.id) {

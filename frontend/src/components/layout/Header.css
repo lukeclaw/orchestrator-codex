@@ -58,6 +58,37 @@
   color: var(--text-muted);
 }
 
+.smart-paste-btn {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  background: none;
+  border: 1px solid var(--border-subtle);
+  color: var(--text-secondary);
+  font-size: 11px;
+  padding: 3px 10px;
+  border-radius: var(--radius);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+  margin-right: 10px;
+}
+
+.smart-paste-btn:hover:not(:disabled) {
+  background: var(--surface);
+  color: var(--text);
+  border-color: var(--border);
+}
+
+.smart-paste-btn:active:not(:disabled) {
+  background: var(--border-subtle);
+}
+
+.smart-paste-btn.disabled,
+.smart-paste-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
 .header-notifications {
   position: relative;
   background: none;

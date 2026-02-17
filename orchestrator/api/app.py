@@ -71,6 +71,14 @@ async def lifespan(app: FastAPI):
     app.state.orchestrator = orch
     await orch.start()
 
+    # Clean up old images if data/images/ exceeds size cap
+    try:
+        from orchestrator.api.routes.paste import get_images_dir, cleanup_images
+        images_dir = get_images_dir()
+        cleanup_images(images_dir)
+    except Exception:
+        logger.exception("Image cleanup failed (non-fatal)")
+
     # Start rdev background refresh task (skip in test mode — no db_path means in-memory DB)
     from orchestrator.api.routes.rdevs import start_background_refresh, stop_background_refresh
     if db_path:
@@ -159,6 +167,7 @@ def create_app(
         brain,
         context,
         notifications,
+        paste,
         projects,
         rdevs,
         sessions,
@@ -174,6 +183,7 @@ def create_app(
     app.include_router(notifications.router, prefix="/api", tags=["notifications"])
     app.include_router(settings.router, prefix="/api", tags=["settings"])
     app.include_router(brain.router, prefix="/api", tags=["brain"])
+    app.include_router(paste.router, prefix="/api", tags=["paste"])
 
     # WebSocket
     from orchestrator.api.websocket import websocket_endpoint
@@ -182,6 +192,14 @@ def create_app(
     # Terminal WebSocket
     from orchestrator.api.ws_terminal import terminal_websocket
     app.add_api_websocket_route("/ws/terminal/{session_id}", terminal_websocket)
+
+    # Static mount for saved images (data/images/)
+    try:
+        from orchestrator.api.routes.paste import get_images_dir
+        images_dir = get_images_dir()
+        app.mount("/api/images", StaticFiles(directory=str(images_dir)), name="images")
+    except Exception:
+        logger.warning("Could not mount /api/images static files")
 
     # Dashboard route
     from orchestrator.api.routes.dashboard import router as dashboard_router

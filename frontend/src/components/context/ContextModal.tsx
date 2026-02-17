@@ -6,11 +6,19 @@ import type { ContextItem, Project } from '../../api/types'
 import { parseDate } from '../common/TimeAgo'
 import './ContextModal.css'
 
+interface InitialContent {
+  title?: string
+  content?: string
+  description?: string
+  category?: string
+}
+
 interface Props {
   context: ContextItem | null
   projectId?: string
   projects?: Project[]
   isNew?: boolean
+  initialContent?: InitialContent
   onClose: () => void
   onSave: (body: Partial<ContextItem> & { title: string; content: string }) => Promise<unknown>
   onDelete?: (id: string) => Promise<unknown>
@@ -25,7 +33,7 @@ const CATEGORY_OPTIONS = [
   { value: 'note', label: 'Note', className: 'cm-cat-note' },
 ]
 
-export default function ContextModal({ context, projectId, projects = [], isNew, onClose, onSave, onDelete }: Props) {
+export default function ContextModal({ context, projectId, projects = [], isNew, initialContent, onClose, onSave, onDelete }: Props) {
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
   const [content, setContent] = useState('')
@@ -74,10 +82,10 @@ export default function ContextModal({ context, projectId, projects = [], isNew,
       initializedContextId.current = context.id
       initializedAsNew.current = false
     } else if (isNew && !initializedAsNew.current) {
-      setTitle('')
-      setDescription('')
-      setContent('')
-      setCategory('')
+      setTitle(initialContent?.title || '')
+      setDescription(initialContent?.description || '')
+      setContent(initialContent?.content || '')
+      setCategory(initialContent?.category || '')
       setScope(projectId ? 'project' : 'global')
       setSelectedProjectId(projectId || null)
       setViewMode('preview')

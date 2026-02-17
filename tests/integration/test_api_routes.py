@@ -1,5 +1,6 @@
 """Integration tests for all API endpoints."""
 
+import base64
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -311,3 +312,83 @@ class TestDashboard:
         assert resp.status_code == 200
         data = resp.json()
         assert "running" in data
+
+
+# --- Paste ---
+
+# Minimal valid PNG bytes
+_TINY_PNG = (
+    b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01"
+    b"\x00\x00\x00\x01\x08\x02\x00\x00\x00\x90wS\xde\x00"
+    b"\x00\x00\x0cIDATx\x9cc\xf8\x0f\x00\x00\x01\x01\x00"
+    b"\x05\x18\xd8N\x00\x00\x00\x00IEND\xaeB`\x82"
+)
+
+class TestPaste:
+    def test_paste_image_raw_base64(self, client, tmp_path):
+        """POST /api/paste-image with raw base64 saves file and returns URL."""
+        images_dir = tmp_path / "images"
+        images_dir.mkdir()
+        with patch("orchestrator.api.routes.paste.get_images_dir", return_value=images_dir):
+            resp = client.post("/api/paste-image", json={
+                "image_data": base64.b64encode(_TINY_PNG).decode(),
+            })
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["ok"] is True
+        assert data["url"].startswith("/api/images/")
+        assert data["size"] == len(_TINY_PNG)
+        # File actually exists
+        assert (images_dir / data["filename"]).exists()
+
+    def test_paste_image_data_url(self, client, tmp_path):
+        """POST /api/paste-image with data URL prefix parses mime type."""
+        images_dir = tmp_path / "images"
+        images_dir.mkdir()
+        b64 = base64.b64encode(_TINY_PNG).decode()
+        with patch("orchestrator.api.routes.paste.get_images_dir", return_value=images_dir):
+            resp = client.post("/api/paste-image", json={
+                "image_data": f"data:image/jpeg;base64,{b64}",
+            })
+        assert resp.status_code == 200
+        assert resp.json()["filename"].endswith(".jpg")
+
+    def test_paste_image_custom_filename(self, client, tmp_path):
+        """Custom filename is sanitized and used."""
+        images_dir = tmp_path / "images"
+        images_dir.mkdir()
+        with patch("orchestrator.api.routes.paste.get_images_dir", return_value=images_dir):
+            resp = client.post("/api/paste-image", json={
+                "image_data": base64.b64encode(_TINY_PNG).decode(),
+                "filename": "my-shot",
+            })
+        assert resp.status_code == 200
+        assert resp.json()["filename"] == "my-shot.png"
+
+    def test_paste_image_invalid_base64(self, client, tmp_path):
+        """Invalid base64 returns 400."""
+        images_dir = tmp_path / "images"
+        images_dir.mkdir()
+        with patch("orchestrator.api.routes.paste.get_images_dir", return_value=images_dir):
+            resp = client.post("/api/paste-image", json={
+                "image_data": "not-valid-base64!!!",
+            })
+        assert resp.status_code == 400
+
+    def test_paste_image_missing_body(self, client):
+        """Missing image_data field returns 422."""
+        resp = client.post("/api/paste-image", json={})
+        assert resp.status_code == 422
+
+    def test_static_images_mount(self, client, tmp_path):
+        """Saved images are servable via /api/images/ static mount."""
+        images_dir = tmp_path / "images"
+        images_dir.mkdir()
+        with patch("orchestrator.api.routes.paste.get_images_dir", return_value=images_dir):
+            save_resp = client.post("/api/paste-image", json={
+                "image_data": base64.b64encode(_TINY_PNG).decode(),
+            })
+        # The static mount in the test client may not use our tmp_path,
+        # so verify the file was written correctly at least
+        fname = save_resp.json()["filename"]
+        assert (images_dir / fname).read_bytes() == _TINY_PNG

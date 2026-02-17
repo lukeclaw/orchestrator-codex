@@ -207,3 +207,36 @@ def test_12_auto_sync_timer(page):
     # When brain is not running, shows "brain not running" message
     timer_text = timer.inner_text()
     assert "brain not running" in timer_text.lower() or "auto-sync" in timer_text.lower()
+
+
+# ---------------------------------------------------------------------------
+# 13. Smart Paste button
+# ---------------------------------------------------------------------------
+
+
+def test_13_smart_paste_disabled_on_dashboard(page):
+    """Smart Paste button is disabled on the main dashboard page."""
+    screenshot(page, "13a_paste_dashboard")
+
+    paste_btn = page.query_selector(".smart-paste-btn")
+    assert paste_btn is not None
+    assert paste_btn.is_disabled()
+    assert "disabled" in (paste_btn.get_attribute("class") or "")
+
+
+def test_14_smart_paste_enabled_on_worker_page(page):
+    """Smart Paste button becomes enabled on a worker detail page."""
+    # Navigate to worker-alpha detail page
+    card = page.query_selector("[data-session-id='s1']")
+    assert card is not None
+    card.click()
+    page.wait_for_timeout(1500)
+
+    screenshot(page, "14_paste_worker_page")
+
+    assert "/workers/s1" in page.url
+
+    paste_btn = page.query_selector(".smart-paste-btn")
+    assert paste_btn is not None
+    assert not paste_btn.is_disabled()
+    assert "disabled" not in (paste_btn.get_attribute("class") or "")

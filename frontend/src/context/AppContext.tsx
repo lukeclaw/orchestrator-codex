@@ -3,6 +3,13 @@ import { useLocation } from 'react-router-dom'
 import type { Session, Project, Task, Rdev } from '../api/types'
 import { api } from '../api/client'
 
+export interface SmartPastePayload {
+  title?: string
+  content?: string
+  description?: string
+  category?: string
+}
+
 interface AppState {
   sessions: Session[]
   workers: Session[]
@@ -12,6 +19,8 @@ interface AppState {
   notificationCount: number
   connected: boolean
   loading: boolean
+  smartPastePayload: SmartPastePayload | null
+  setSmartPastePayload: (payload: SmartPastePayload | null) => void
   refresh: () => void
   refreshRdevs: (forceRefresh?: boolean) => Promise<void>
   refreshNotificationCount: () => Promise<void>
@@ -27,6 +36,8 @@ const AppContext = createContext<AppState>({
   notificationCount: 0,
   connected: false,
   loading: true,
+  smartPastePayload: null,
+  setSmartPastePayload: () => {},
   refresh: () => {},
   refreshRdevs: async () => {},
   refreshNotificationCount: async () => {},
@@ -45,6 +56,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [notificationCount, setNotificationCount] = useState(0)
   const [connected, setConnected] = useState(false)
   const [loading, setLoading] = useState(true)
+  const [smartPastePayload, setSmartPastePayload] = useState<SmartPastePayload | null>(null)
 
   const fetchAll = useCallback(async () => {
     try {
@@ -175,7 +187,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   // Focus tracking now handled via WebSocket (see above)
 
   return (
-    <AppContext.Provider value={{ sessions, workers, projects, tasks, rdevs, notificationCount, connected, loading, refresh: fetchAll, refreshRdevs, refreshNotificationCount, removeSession }}>
+    <AppContext.Provider value={{ sessions, workers, projects, tasks, rdevs, notificationCount, connected, loading, smartPastePayload, setSmartPastePayload, refresh: fetchAll, refreshRdevs, refreshNotificationCount, removeSession }}>
       {children}
     </AppContext.Provider>
   )
