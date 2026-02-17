@@ -38,16 +38,15 @@ export default function Header() {
   // --- Worker page: paste to terminal ---
   const pasteToWorker = useCallback(async (sessionId: string, result: PasteResult) => {
     if (result.type === 'image') {
-      // Save image, then inject URL into terminal
-      const res = await api<{ ok: boolean; url: string; filename: string }>(
-        '/api/paste-image',
+      // Save image to worker tmp dir (scp'd for rdev), inject file path into terminal
+      const res = await api<{ ok: boolean; file_path: string; filename: string }>(
+        `/api/sessions/${sessionId}/paste-image`,
         { method: 'POST', body: JSON.stringify({ image_data: result.imageData }) },
       )
       if (res.ok) {
-        const fullUrl = `http://localhost:8093${res.url}`
         await api(`/api/sessions/${sessionId}/send`, {
           method: 'POST',
-          body: JSON.stringify({ message: fullUrl }),
+          body: JSON.stringify({ message: res.file_path }),
         })
         notify(`Image pasted: ${res.filename}`, 'success')
       }

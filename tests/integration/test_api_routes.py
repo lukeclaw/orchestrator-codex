@@ -392,3 +392,106 @@ class TestPaste:
         # so verify the file was written correctly at least
         fname = save_resp.json()["filename"]
         assert (images_dir / fname).read_bytes() == _TINY_PNG
+
+
+# --- Session paste-image ---
+
+class TestSessionPasteImage:
+    """Tests for POST /api/sessions/{session_id}/paste-image."""
+
+    def _create_session(self, client, name="img-w1", host="localhost"):
+        with patch("orchestrator.api.routes.sessions.ensure_window", return_value=f"orchestrator:{name}"):
+            resp = client.post("/api/sessions", json={"name": name, "host": host})
+        return resp.json()["id"]
+
+    def test_paste_image_local_worker(self, client, tmp_path):
+        """Local worker: saves file locally, returns file_path."""
+        sid = self._create_session(client)
+        b64 = base64.b64encode(_TINY_PNG).decode()
+
+        with patch("orchestrator.terminal.file_sync.get_worker_tmp_dir",
+                    return_value=str(tmp_path)):
+            resp = client.post(f"/api/sessions/{sid}/paste-image", json={
+                "image_data": b64,
+            })
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["ok"] is True
+        assert data["file_path"].startswith(str(tmp_path))
+        assert data["file_path"].endswith(".png")
+        assert data["size"] == len(_TINY_PNG)
+        # File actually written
+        from pathlib import Path
+        assert Path(data["file_path"]).exists()
+        assert Path(data["file_path"]).read_bytes() == _TINY_PNG
+
+    def test_paste_image_rdev_worker_syncs(self, client, tmp_path):
+        """Rdev worker: saves locally and scp's to remote."""
+        sid = self._create_session(client, name="rdev-img", host="user/rdev-vm")
+
+        b64 = base64.b64encode(_TINY_PNG).decode()
+
+        with patch("orchestrator.terminal.file_sync.get_worker_tmp_dir",
+                    return_value=str(tmp_path)):
+            with patch("orchestrator.terminal.file_sync.sync_file_to_remote",
+                        return_value=True) as mock_sync:
+                resp = client.post(f"/api/sessions/{sid}/paste-image", json={
+                    "image_data": b64,
+                })
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["ok"] is True
+
+        # sync_file_to_remote was called with matching local and remote paths
+        mock_sync.assert_called_once()
+        call_args = mock_sync.call_args
+        assert call_args[0][0] == data["file_path"]  # local_path
+        assert call_args[0][1] == "user/rdev-vm"       # host
+        assert call_args[0][2] == data["file_path"]  # remote_path == local_path
+
+    def test_paste_image_rdev_sync_failure(self, client, tmp_path):
+        """Rdev sync failure returns 502."""
+        sid = self._create_session(client, name="rdev-fail", host="user/rdev-vm")
+
+        b64 = base64.b64encode(_TINY_PNG).decode()
+
+        with patch("orchestrator.terminal.file_sync.get_worker_tmp_dir",
+                    return_value=str(tmp_path)):
+            with patch("orchestrator.terminal.file_sync.sync_file_to_remote",
+                        return_value=False):
+                resp = client.post(f"/api/sessions/{sid}/paste-image", json={
+                    "image_data": b64,
+                })
+
+        assert resp.status_code == 502
+
+    def test_paste_image_data_url_prefix(self, client, tmp_path):
+        """Data URL prefix is parsed correctly."""
+        sid = self._create_session(client, name="img-du")
+        b64 = base64.b64encode(_TINY_PNG).decode()
+
+        with patch("orchestrator.terminal.file_sync.get_worker_tmp_dir",
+                    return_value=str(tmp_path)):
+            resp = client.post(f"/api/sessions/{sid}/paste-image", json={
+                "image_data": f"data:image/jpeg;base64,{b64}",
+            })
+
+        assert resp.status_code == 200
+        assert resp.json()["filename"].endswith(".jpg")
+
+    def test_paste_image_invalid_base64(self, client):
+        """Invalid base64 returns 400."""
+        sid = self._create_session(client, name="img-bad")
+        resp = client.post(f"/api/sessions/{sid}/paste-image", json={
+            "image_data": "not-valid!!!",
+        })
+        assert resp.status_code == 400
+
+    def test_paste_image_session_not_found(self, client):
+        """Unknown session returns 404."""
+        resp = client.post("/api/sessions/nonexistent/paste-image", json={
+            "image_data": base64.b64encode(_TINY_PNG).decode(),
+        })
+        assert resp.status_code == 404

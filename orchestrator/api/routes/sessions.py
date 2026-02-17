@@ -452,6 +452,81 @@ def send_message(session_id: str, body: SendMessage, request: Request, db=Depend
     return {"ok": True, "session": s.name}
 
 
+class PasteImageBody(BaseModel):
+    image_data: str  # base64-encoded image (with or without data URL prefix)
+
+
+@router.post("/sessions/{session_id}/paste-image")
+def paste_image_to_session(session_id: str, body: PasteImageBody, db=Depends(get_db)):
+    """Save a clipboard image to the worker's tmp dir and return the file path.
+
+    For rdev workers the file is also scp'd to the remote host so Claude Code
+    on the remote machine can read it as a local file.
+    """
+    import base64
+    import uuid
+    from datetime import datetime
+
+    from orchestrator.terminal.file_sync import get_worker_tmp_dir, sync_file_to_remote
+
+    s = repo.get_session(db, session_id)
+    if s is None:
+        raise HTTPException(404, "Session not found")
+
+    # --- decode image --------------------------------------------------
+    raw_data = body.image_data
+    file_ext = "png"
+
+    if raw_data.startswith("data:"):
+        try:
+            header, raw_data = raw_data.split(",", 1)
+            mime_part = header.split(";")[0]
+            if "/" in mime_part:
+                mime_type = mime_part.split("/")[1]
+                ext_map = {"png": "png", "jpeg": "jpg", "jpg": "jpg", "gif": "gif", "webp": "webp"}
+                file_ext = ext_map.get(mime_type, "png")
+        except ValueError:
+            pass
+
+    try:
+        image_bytes = base64.b64decode(raw_data, validate=True)
+    except Exception as e:
+        raise HTTPException(400, f"Invalid base64 image data: {e}")
+
+    # --- save locally --------------------------------------------------
+    tmp_dir = get_worker_tmp_dir(s.name)
+    os.makedirs(tmp_dir, exist_ok=True)
+
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    short_id = uuid.uuid4().hex[:6]
+    fname = f"clipboard_{timestamp}_{short_id}.{file_ext}"
+    local_path = os.path.join(tmp_dir, fname)
+
+    try:
+        with open(local_path, "wb") as f:
+            f.write(image_bytes)
+        logger.info("Saved worker image to %s (%d bytes)", local_path, len(image_bytes))
+    except Exception as e:
+        logger.exception("Failed to save worker image")
+        raise HTTPException(500, f"Failed to save image: {e}")
+
+    # --- sync to rdev if needed ----------------------------------------
+    # The remote path is identical to the local path so Claude Code sees the
+    # same absolute path regardless of where it runs.
+    if is_rdev_host(s.host):
+        remote_path = local_path  # same absolute path on remote
+        ok = sync_file_to_remote(local_path, s.host, remote_path)
+        if not ok:
+            raise HTTPException(502, "Failed to sync image to remote worker")
+
+    return {
+        "ok": True,
+        "file_path": local_path,
+        "filename": fname,
+        "size": len(image_bytes),
+    }
+
+
 @router.get("/sessions/{session_id}/preview")
 def session_preview(session_id: str, db=Depends(get_db)):
     """Return a plain-text terminal snapshot for a worker session."""
