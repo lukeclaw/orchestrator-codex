@@ -44,9 +44,11 @@ export default function Header() {
         { method: 'POST', body: JSON.stringify({ image_data: result.imageData }) },
       )
       if (res.ok) {
-        await api(`/api/sessions/${sessionId}/send`, {
+        // Use /type (no Enter) so the path is inserted into the input buffer
+        // just like the brain's WebSocket injection — works mid-message.
+        await api(`/api/sessions/${sessionId}/type`, {
           method: 'POST',
-          body: JSON.stringify({ message: res.file_path }),
+          body: JSON.stringify({ text: res.file_path }),
         })
         notify(`Image pasted: ${res.filename}`, 'success')
       }

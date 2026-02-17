@@ -116,6 +116,22 @@ class TestSessions:
         assert resp.status_code == 200
         mock_tm.stop_tunnel.assert_called_once_with(sid)
 
+    def test_type_text_no_enter(self, client):
+        """POST /sessions/{id}/type injects text via send_keys_literal without Enter."""
+        with patch("orchestrator.api.routes.sessions.ensure_window", return_value="orchestrator:tw"):
+            create = client.post("/api/sessions", json={"name": "tw", "host": "localhost"})
+        sid = create.json()["id"]
+
+        with patch("orchestrator.terminal.manager.send_keys_literal", return_value=True) as mock_lit:
+            resp = client.post(f"/api/sessions/{sid}/type", json={"text": "/tmp/img.png"})
+
+        assert resp.status_code == 200
+        mock_lit.assert_called_once_with("orchestrator", "tw", "/tmp/img.png")
+
+    def test_type_text_not_found(self, client):
+        resp = client.post("/api/sessions/nonexistent/type", json={"text": "hi"})
+        assert resp.status_code == 404
+
 
 # --- Projects ---
 

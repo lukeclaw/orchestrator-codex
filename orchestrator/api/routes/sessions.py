@@ -452,6 +452,32 @@ def send_message(session_id: str, body: SendMessage, request: Request, db=Depend
     return {"ok": True, "session": s.name}
 
 
+class TypeText(BaseModel):
+    text: str
+
+
+@router.post("/sessions/{session_id}/type")
+def type_text(session_id: str, body: TypeText, request: Request, db=Depends(get_db)):
+    """Inject text into the terminal without pressing Enter.
+
+    Unlike ``/send`` (which submits a complete message), this simply types
+    the text into the terminal buffer — matching the brain's WebSocket-based
+    paste behaviour so that images can be inserted mid-message.
+    """
+    s = repo.get_session(db, session_id)
+    if s is None:
+        raise HTTPException(404, "Session not found")
+
+    from orchestrator.terminal.manager import send_keys_literal
+    config = getattr(request.app.state, "config", {})
+    tmux_session = config.get("tmux", {}).get("session_name", "orchestrator")
+
+    success = send_keys_literal(tmux_session, s.name, body.text)
+    if not success:
+        raise HTTPException(500, "Failed to type text")
+    return {"ok": True, "session": s.name}
+
+
 class PasteImageBody(BaseModel):
     image_data: str  # base64-encoded image (with or without data URL prefix)
 
