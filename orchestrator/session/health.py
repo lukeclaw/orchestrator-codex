@@ -118,48 +118,108 @@ def get_screen_session_name(session_id: str) -> str:
     return f"claude-{session_id}"
 
 
-def check_worker_ssh_alive(tmux_sess: str, tmux_win: str, host: str) -> bool:
-    """Check if the worker SSH session is still connected to rdev.
-    
-    This verifies the SSH connection by checking for a running `rdev ssh` process
-    that contains the host name and --non-tmux flag. This is more reliable than
-    checking tmux window content which may have stale output in scrollback.
-    
-    Args:
-        tmux_sess: tmux session name (unused, kept for API compatibility)
-        tmux_win: tmux window name (unused, kept for API compatibility)
-        host: The rdev host (e.g., "subs-mt/sleepy-franklin")
-        
-    Returns:
-        True if rdev SSH process is running, False otherwise
+def _get_pane_pid(tmux_sess: str, tmux_win: str) -> int | None:
+    """Get the PID of the shell running in a tmux pane.
+
+    Returns the pane PID or None if the pane doesn't exist.
     """
     try:
-        # Extract rdev VM name from host (e.g., "subs-mt/sleepy-franklin" -> "sleepy-franklin")
-        rdev_vm_name = host.split('/')[-1] if '/' in host else host
-        
-        # Check for a process with "rdev", the host name, and "--non-tmux" all in command line
-        # This is the actual `rdev ssh <host> --non-tmux` process
         result = subprocess.run(
-            ["bash", "-c", f"ps aux | grep -E 'rdev.*{rdev_vm_name}.*--non-tmux' | grep -v grep"],
+            ["tmux", "display-message", "-t", f"{tmux_sess}:{tmux_win}", "-p", "#{pane_pid}"],
             capture_output=True,
             text=True,
-            timeout=5
+            timeout=5,
         )
-        
         if result.returncode == 0 and result.stdout.strip():
-            logger.info("Worker SSH check: found rdev process for %s", rdev_vm_name)
-            logger.debug("Worker SSH check process: %s", result.stdout.strip()[:200])
-            return True
-        
-        logger.info("Worker SSH check: no rdev process found for %s", rdev_vm_name)
+            return int(result.stdout.strip())
+    except (subprocess.TimeoutExpired, ValueError):
+        pass
+    except Exception as e:
+        logger.debug("Failed to get pane PID for %s:%s: %s", tmux_sess, tmux_win, e)
+    return None
+
+
+def _has_ssh_in_process_tree(root_pid: int) -> bool:
+    """Check if there is an active ``ssh`` process descended from *root_pid*.
+
+    Builds a parent→children map from ``ps -eo pid,ppid,comm`` and performs a
+    BFS from *root_pid*.  Returns True as soon as any descendant's command
+    name contains ``ssh``.
+    """
+    try:
+        result = subprocess.run(
+            ["ps", "-eo", "pid,ppid,comm"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        if result.returncode != 0:
+            return False
+
+        children: dict[int, list[int]] = {}
+        commands: dict[int, str] = {}
+        for line in result.stdout.strip().split("\n")[1:]:  # skip header
+            parts = line.split(None, 2)
+            if len(parts) < 3:
+                continue
+            try:
+                pid = int(parts[0])
+                ppid = int(parts[1])
+            except ValueError:
+                continue
+            comm = parts[2].strip()
+            children.setdefault(ppid, []).append(pid)
+            commands[pid] = comm
+
+        # BFS from root_pid
+        queue = children.get(root_pid, [])
+        while queue:
+            pid = queue.pop(0)
+            comm = commands.get(pid, "")
+            if "ssh" in comm:
+                return True
+            queue.extend(children.get(pid, []))
+
         return False
-        
     except subprocess.TimeoutExpired:
-        logger.warning("Worker SSH check: timeout checking for rdev process")
         return False
     except Exception as e:
-        logger.warning("Worker SSH check error for %s: %s", host, e)
+        logger.debug("_has_ssh_in_process_tree error: %s", e)
         return False
+
+
+def check_worker_ssh_alive(tmux_sess: str, tmux_win: str, host: str) -> bool:
+    """Check if the worker SSH session is still connected to rdev.
+
+    Scoped to the specific tmux pane for this worker — avoids false positives
+    from other terminals that may have their own ``rdev ssh`` to the same host
+    (e.g. for auth handling).
+
+    The check works by:
+    1. Getting the pane PID (the shell process running in the tmux pane).
+    2. Walking the process tree from that PID to look for an ``ssh`` descendant.
+       When connected, the tree is: shell → rdev (python) → ssh.
+       When disconnected, ``ssh`` (and often ``rdev``) are gone.
+
+    Args:
+        tmux_sess: tmux session name
+        tmux_win: tmux window name
+        host: The rdev host (e.g., "subs-mt/sleepy-franklin")
+
+    Returns:
+        True if the pane's process tree contains an active ssh process.
+    """
+    pane_pid = _get_pane_pid(tmux_sess, tmux_win)
+    if pane_pid is None:
+        logger.info("Worker SSH check: cannot get pane PID for %s:%s", tmux_sess, tmux_win)
+        return False
+
+    has_ssh = _has_ssh_in_process_tree(pane_pid)
+    if has_ssh:
+        logger.info("Worker SSH check: ssh descendant found under pane %d for %s", pane_pid, host)
+    else:
+        logger.info("Worker SSH check: no ssh descendant under pane %d for %s", pane_pid, host)
+    return has_ssh
 
 
 def probe_tunnel_connectivity(host: str, remote_port: int = DEFAULT_API_PORT, timeout: int = 8) -> bool:
