@@ -14,6 +14,7 @@ import pytest
 from orchestrator.agents import (
     deploy_brain_scripts,
     deploy_worker_scripts,
+    generate_brain_hooks,
     generate_worker_hooks,
     BRAIN_SCRIPT_NAMES,
     WORKER_SCRIPT_NAMES,
@@ -519,6 +520,44 @@ class TestWorkerHooksGeneration:
             expected_safety_path = os.path.join(configs_dir, "hooks", "check-command.sh")
             assert expected_safety_path in content
             assert "{{SAFETY_HOOK_PATH}}" not in content, "Placeholder should be substituted"
+
+class TestBrainHooksGeneration:
+    """Tests for brain hook deployment."""
+
+    def test_generate_brain_hooks_deploys_safety_hook(self):
+        """Verify check-command.sh safety hook is deployed and executable."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            generate_brain_hooks(tmpdir)
+            
+            safety_path = os.path.join(tmpdir, "hooks", "check-command.sh")
+            assert os.path.exists(safety_path), "check-command.sh should be deployed"
+            assert os.access(safety_path, os.X_OK), "check-command.sh should be executable"
+
+    def test_generate_brain_hooks_deploys_inject_focus(self):
+        """Verify inject-focus.sh hook is deployed and executable."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            generate_brain_hooks(tmpdir)
+            
+            hook_path = os.path.join(tmpdir, "hooks", "inject-focus.sh")
+            assert os.path.exists(hook_path), "inject-focus.sh should be deployed"
+            assert os.access(hook_path, os.X_OK), "inject-focus.sh should be executable"
+
+    def test_generate_brain_hooks_substitutes_placeholders(self):
+        """Verify all placeholders are substituted in settings.json."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            settings_path = generate_brain_hooks(tmpdir)
+            
+            with open(settings_path) as f:
+                content = f.read()
+            
+            assert "{{SAFETY_HOOK_PATH}}" not in content
+            assert "{{INJECT_FOCUS_PATH}}" not in content
+            assert os.path.join(tmpdir, "hooks", "check-command.sh") in content
+            assert os.path.join(tmpdir, "hooks", "inject-focus.sh") in content
+
+
+class TestWorkerHooksOverwrite:
+    """Tests for worker hook overwrite behavior."""
 
     def test_generate_worker_hooks_overwrites_existing(self):
         """Verify regeneration overwrites existing files."""

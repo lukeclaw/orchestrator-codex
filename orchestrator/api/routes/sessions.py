@@ -309,7 +309,10 @@ def create_session(body: SessionCreate, request: Request, db=Depends(get_db)):
 
             # Build claude command with --settings for hooks
             settings_file = os.path.join(tmp_dir, "configs", "settings.json")
-            claude_args = [f"--settings {shlex.quote(settings_file)}"]
+            claude_args = [
+                "--dangerously-skip-permissions",
+                f"--settings {shlex.quote(settings_file)}",
+            ]
 
             if worker_prompt:
                 claude_args.append(f'--append-system-prompt "$(cat {shlex.quote(prompt_file)})"')

@@ -5,7 +5,7 @@
 # and checking whether it outputs a block decision or not.
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-HOOK="$SCRIPT_DIR/../../agents/worker/hooks/check-command.sh"
+HOOK="$SCRIPT_DIR/../../agents/shared/hooks/check-command.sh"
 
 if [ ! -f "$HOOK" ]; then
     echo "ERROR: check-command.sh not found at $HOOK"

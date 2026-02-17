@@ -149,7 +149,7 @@ def start_brain(db=Depends(get_db)):
         # Launch Claude Code with hooks settings
         import time
         time.sleep(0.5)
-        tmux.send_keys(TMUX_SESSION, BRAIN_SESSION_NAME, f"claude --settings {settings_path}")
+        tmux.send_keys(TMUX_SESSION, BRAIN_SESSION_NAME, f"claude --dangerously-skip-permissions --settings {settings_path}")
         sessions_repo.update_session(db, session_id, status="working")
 
         logger.info("Orchestrator brain started in %s", target)

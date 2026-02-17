@@ -11,6 +11,7 @@ import stat
 
 # Path to the agents directory (relative to this file)
 _AGENTS_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "agents"))
+_SHARED_HOOKS_DIR = os.path.join(_AGENTS_DIR, "shared", "hooks")
 
 # Script names for iteration
 WORKER_SCRIPT_NAMES = ["orch-task", "orch-subtask", "orch-worker", "orch-context", "orch-notify", "orch-tunnel"]
@@ -336,8 +337,8 @@ def generate_worker_hooks(
         f.write(hook_content)
     os.chmod(hook_script_path, os.stat(hook_script_path).st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
     
-    # Copy safety gate hook (no placeholders needed — it's stateless)
-    src_safety_path = os.path.join(_AGENTS_DIR, "worker", "hooks", "check-command.sh")
+    # Copy safety gate hook from shared location (stateless, agent-agnostic)
+    src_safety_path = os.path.join(_SHARED_HOOKS_DIR, "check-command.sh")
     safety_hook_path = os.path.join(hooks_dir, "check-command.sh")
     shutil.copy2(src_safety_path, safety_hook_path)
     os.chmod(safety_hook_path, os.stat(safety_hook_path).st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
@@ -371,21 +372,35 @@ def generate_brain_hooks(
     Returns:
         Path to the settings.json file
     """
-    # Deploy hook script
+    # Deploy hook scripts
     hooks_dir = os.path.join(brain_dir, "hooks")
     os.makedirs(hooks_dir, exist_ok=True)
     
     src_hook_path = os.path.join(_AGENTS_DIR, "brain", "hooks", "inject-focus.sh")
-    dst_hook_path = os.path.join(hooks_dir, "inject-focus.sh")
-    shutil.copy2(src_hook_path, dst_hook_path)
-    os.chmod(dst_hook_path, os.stat(dst_hook_path).st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+    inject_hook_path = os.path.join(hooks_dir, "inject-focus.sh")
+    shutil.copy2(src_hook_path, inject_hook_path)
+    os.chmod(inject_hook_path, os.stat(inject_hook_path).st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
     
-    # Copy settings.json template to .claude/settings.json
+    # Copy safety gate hook from shared location (stateless, agent-agnostic)
+    src_safety_path = os.path.join(_SHARED_HOOKS_DIR, "check-command.sh")
+    safety_hook_path = os.path.join(hooks_dir, "check-command.sh")
+    shutil.copy2(src_safety_path, safety_hook_path)
+    os.chmod(safety_hook_path, os.stat(safety_hook_path).st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+    
+    # Copy settings.json template and substitute placeholders
     claude_dir = os.path.join(brain_dir, ".claude")
     os.makedirs(claude_dir, exist_ok=True)
     
     src_settings_path = os.path.join(_AGENTS_DIR, "brain", "settings.json")
     settings_path = os.path.join(claude_dir, "settings.json")
-    shutil.copy2(src_settings_path, settings_path)
+    
+    with open(src_settings_path) as f:
+        settings_content = f.read()
+    
+    settings_content = settings_content.replace("{{INJECT_FOCUS_PATH}}", inject_hook_path)
+    settings_content = settings_content.replace("{{SAFETY_HOOK_PATH}}", safety_hook_path)
+    
+    with open(settings_path, "w") as f:
+        f.write(settings_content)
     
     return settings_path

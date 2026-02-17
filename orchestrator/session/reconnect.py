@@ -729,6 +729,7 @@ def reconnect_local_worker(session, tmux_sess: str, tmux_win: str, api_port: int
     settings_file = os.path.join(tmp_dir, "configs", "settings.json")
     claude_args = [
         session_arg,
+        "--dangerously-skip-permissions",
         f"--settings {shlex.quote(settings_file)}",
     ]
 
