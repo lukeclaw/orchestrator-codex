@@ -158,8 +158,16 @@ gh api repos/OWNER/REPO/pulls/N/comments --jq '.[].user.login'
 gh api ... | jq '.[] | select(...)'   # breaks on special chars
 ```
 
-**Shell safety for PR bodies:** Never use `-f body="..."` or `--body "..."` with double quotes when the body contains `!` (e.g., `![img](...)`). Bash history expansion turns `!` into `\!`. Use a single-quoted heredoc (`<<'EOF'`) which prevents all shell expansion. For `gh api` PATCH, write JSON to a temp file with `--input`:
+**Shell safety for PR bodies:** Bash history expansion corrupts the ! character inside double-quoted strings, breaking markdown image syntax. Never pass PR bodies containing images via double-quoted -f or --body arguments. Instead:
 ```bash
+# For gh pr create: single-quoted heredoc delimiter prevents all shell expansion
+gh pr create --draft --title "Title" --body "$(cat <<'EOF'
+## Testing Done
+![Screenshot](https://...)
+EOF
+)"
+
+# For gh api PATCH: write JSON to a temp file
 cat > /tmp/pr-body.json <<'ENDJSON'
 {"body": "## Testing Done\n![Screenshot](https://...)"}
 ENDJSON
