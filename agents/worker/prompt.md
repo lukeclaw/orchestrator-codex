@@ -120,11 +120,10 @@ Use notifications to inform the user about **non-blocking but valuable informati
 
 **MANDATORY — Human Interaction Notifications:**
 **Whenever you interact with another human** (reply to PR review comments, respond to issues, post comments, etc.), you **MUST** send a notification containing:
-1. **Task context** — What task this is for
-2. **Link** — Direct URL to the exact comment/interaction
-3. **Full message** — The complete text you sent to the other human
+1. **Summary** — Brief description of what you did
+2. **Link** — Direct URL to the exact comment/interaction (use `#discussion_r{ID}` or `#issuecomment-{ID}` fragment for precise linking)
 
-This lets the user stay informed about all external communications happening on their behalf.
+For `pr_comment` notifications with a GitHub PR link, the script auto-fetches the PR title, reviewer comment, and your reply from the GitHub API — no need to include those in the message.
 
 **When NOT to use notifications:**
 - Routine status updates (use `orch-task update --status` instead)
@@ -140,6 +139,10 @@ orch-notify "Found potential memory issue in cache module" --type warning
 
 # With external link
 orch-notify "Docs page needs update" --type info --link "https://example.com/docs"
+
+# PR comment notification — link to the exact comment and metadata is auto-fetched from GitHub
+orch-notify "Replied to reviewer about retry logic" --type pr_comment \
+  --link "https://github.com/org/repo/pull/123#discussion_r456"
 ```
 
 **Use sparingly** for general notifications, but **always notify for human interactions** — the user needs visibility into all external communications.

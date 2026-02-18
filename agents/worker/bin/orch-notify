@@ -17,6 +17,10 @@ show_help() {
     echo "  orch-notify \"Found potential issue in config\" --type warning"
     echo "  orch-notify \"PR #123 merged with comments\" --type pr_comment --link \"https://github.com/...\""
     echo ""
+    echo "  # PR comment with auto-enrichment (fetches PR title, reviewer comment, and reply from GitHub):"
+    echo "  orch-notify \"Replied to reviewer about error handling\" --type pr_comment \\"
+    echo "    --link \"https://github.com/org/repo/pull/123#discussion_r456\""
+    echo ""
     echo "  # Multi-line message (e.g., for PR comment replies):"
     echo "  orch-notify \"[Task: Fix auth] Replied to reviewer\" --type pr_comment --link \"URL\" --message-stdin <<'EOF'"
     echo "  Full text of my reply to the reviewer goes here."
@@ -26,6 +30,8 @@ show_help() {
     echo "Guidelines:"
     echo "  - Use sparingly for valuable information that doesn't block your work"
     echo "  - ALWAYS notify when replying to PR comments or interacting with humans"
+    echo "  - For pr_comment notifications with a GitHub PR link, metadata (PR title, reviewer"
+    echo "    comment, your reply) is auto-extracted from the GitHub API"
     echo "  - Good: PR merged but reviewer left a question, found issue but proceeded safely"
     echo "  - Bad: Routine progress updates, status changes (use orch-task update instead)"
 }
@@ -93,6 +99,59 @@ fi
 
 if [[ -n "$LINK_URL" ]]; then
     json="$json, \"link_url\": \"$LINK_URL\""
+fi
+
+# Auto-enrich metadata for pr_comment notifications from GitHub API
+# Parses the --link URL to fetch PR title, reviewer comment, and reply
+if [[ "$NOTIFY_TYPE" == "pr_comment" && -n "$LINK_URL" ]]; then
+    ENRICHED_METADATA=""
+
+    # Parse GitHub PR URL: https://github.com/OWNER/REPO/pull/NUMBER[#fragment]
+    if [[ "$LINK_URL" =~ github\.com/([^/]+)/([^/]+)/pull/([0-9]+) ]] && command -v gh &>/dev/null; then
+        gh_owner="${BASH_REMATCH[1]}"
+        gh_repo="${BASH_REMATCH[2]}"
+        gh_pr_num="${BASH_REMATCH[3]}"
+        gh_fragment=""
+        if [[ "$LINK_URL" =~ \#(.+)$ ]]; then
+            gh_fragment="${BASH_REMATCH[1]}"
+        fi
+
+        # Fetch PR title
+        pr_title=$(gh api "repos/$gh_owner/$gh_repo/pulls/$gh_pr_num" --jq '.title' 2>/dev/null) || true
+
+        reviewer_comment=""
+        reply_text=""
+
+        if [[ -n "$pr_title" ]]; then
+            # Extract comment data based on URL fragment type
+            if [[ "$gh_fragment" =~ ^discussion_r([0-9]+)$ ]]; then
+                # Review comment (inline code comment) — has threading via in_reply_to_id
+                comment_id="${BASH_REMATCH[1]}"
+                reply_text=$(gh api "repos/$gh_owner/$gh_repo/pulls/comments/$comment_id" --jq '.body' 2>/dev/null) || true
+                parent_id=$(gh api "repos/$gh_owner/$gh_repo/pulls/comments/$comment_id" --jq '.in_reply_to_id' 2>/dev/null) || true
+                if [[ -n "$parent_id" && "$parent_id" != "null" ]]; then
+                    reviewer_comment=$(gh api "repos/$gh_owner/$gh_repo/pulls/comments/$parent_id" --jq '.body' 2>/dev/null) || true
+                fi
+            elif [[ "$gh_fragment" =~ ^issuecomment-([0-9]+)$ ]]; then
+                # Issue comment (PR-level comment) — no threading, just fetch the body
+                comment_id="${BASH_REMATCH[1]}"
+                reply_text=$(gh api "repos/$gh_owner/$gh_repo/issues/comments/$comment_id" --jq '.body' 2>/dev/null) || true
+            fi
+
+            # Build metadata JSON with proper escaping via jq
+            ENRICHED_METADATA=$(jq -n \
+                --arg title "$pr_title" \
+                --arg rc "$reviewer_comment" \
+                --arg reply "$reply_text" \
+                '{pr_title: $title}
+                 + (if $rc != "" then {reviewer_comment: $rc} else {} end)
+                 + (if $reply != "" then {reply: $reply} else {} end)' 2>/dev/null) || true
+        fi
+    fi
+
+    if [[ -n "$ENRICHED_METADATA" ]]; then
+        json="$json, \"metadata\": $ENRICHED_METADATA"
+    fi
 fi
 
 json="$json}"

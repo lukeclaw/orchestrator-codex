@@ -201,8 +201,35 @@ export default function NotificationsPage() {
                           {typeConfig.label}
                         </span>
                         <time className="np-time">{formatTime(n.created_at)}</time>
+                        {n.metadata?.pr_title && (
+                          <span className="np-pr-title">{n.metadata.pr_title}</span>
+                        )}
                       </div>
-                      <p className="np-message" title={expanded.has(n.id) ? undefined : n.message}>{n.message}</p>
+                      {expanded.has(n.id) && n.notification_type === 'pr_comment' && n.metadata ? (
+                        <div className="np-pr-thread">
+                          {n.metadata.pr_title && n.link_url && (
+                            <a href={n.link_url} target="_blank" rel="noopener noreferrer" className="np-pr-thread-title">
+                              {n.metadata.pr_title}
+                            </a>
+                          )}
+                          {n.metadata.reviewer_comment && (
+                            <div className="np-comment-bubble reviewer">
+                              <div className="np-comment-author reviewer">Reviewer</div>
+                              <div className="np-comment-body">{n.metadata.reviewer_comment}</div>
+                            </div>
+                          )}
+                          {n.metadata.reply && (
+                            <div className="np-comment-bubble reply">
+                              <div className="np-comment-author reply">Your Reply</div>
+                              <div className="np-comment-body">{n.metadata.reply}</div>
+                            </div>
+                          )}
+                        </div>
+                      ) : (
+                        <p className="np-message" title={expanded.has(n.id) ? undefined : (n.metadata?.reply || n.message)}>
+                          {!expanded.has(n.id) && n.metadata?.reply ? n.metadata.reply : n.message}
+                        </p>
+                      )}
                     </div>
                     <div className="np-card-actions" onClick={e => e.stopPropagation()}>
                       {n.task_id && (

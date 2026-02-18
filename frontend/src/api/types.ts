@@ -108,6 +108,12 @@ export interface ContextItem {
   updated_at: string
 }
 
+export interface PrCommentMetadata {
+  pr_title?: string
+  reviewer_comment?: string
+  reply?: string
+}
+
 export interface Notification {
   id: string
   task_id: string | null
@@ -115,6 +121,7 @@ export interface Notification {
   message: string
   notification_type: 'info' | 'pr_comment' | 'warning'
   link_url: string | null
+  metadata: PrCommentMetadata | null
   created_at: string
   dismissed: boolean
   dismissed_at: string | null

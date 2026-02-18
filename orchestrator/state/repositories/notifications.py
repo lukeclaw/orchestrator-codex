@@ -66,12 +66,13 @@ def create_notification(
     session_id: str | None = None,
     notification_type: str = "info",
     link_url: str | None = None,
+    metadata: str | None = None,
 ) -> Notification:
     id = str(uuid.uuid4())
     conn.execute(
-        """INSERT INTO notifications (id, task_id, session_id, message, notification_type, link_url)
-           VALUES (?, ?, ?, ?, ?, ?)""",
-        (id, task_id, session_id, message, notification_type, link_url),
+        """INSERT INTO notifications (id, task_id, session_id, message, notification_type, link_url, metadata)
+           VALUES (?, ?, ?, ?, ?, ?, ?)""",
+        (id, task_id, session_id, message, notification_type, link_url, metadata),
     )
     conn.commit()
     return get_notification(conn, id)

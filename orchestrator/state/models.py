@@ -134,6 +134,7 @@ class Notification:
     session_id: str | None = None
     notification_type: str = "info"  # info, pr_comment, warning
     link_url: str | None = None
+    metadata: str | None = None
     created_at: str = ""
     dismissed: bool = False
     dismissed_at: str | None = None

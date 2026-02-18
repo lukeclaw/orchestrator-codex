@@ -1,5 +1,7 @@
 """Notifications CRUD API."""
 
+import json
+
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
@@ -15,6 +17,7 @@ class NotificationCreate(BaseModel):
     session_id: str | None = None
     notification_type: str = "info"
     link_url: str | None = None
+    metadata: dict | None = None
 
 
 class DismissAllRequest(BaseModel):
@@ -23,6 +26,12 @@ class DismissAllRequest(BaseModel):
 
 
 def _serialize(n):
+    metadata = None
+    if n.metadata:
+        try:
+            metadata = json.loads(n.metadata)
+        except (json.JSONDecodeError, TypeError):
+            metadata = None
     return {
         "id": n.id,
         "task_id": n.task_id,
@@ -30,6 +39,7 @@ def _serialize(n):
         "message": n.message,
         "notification_type": n.notification_type,
         "link_url": n.link_url,
+        "metadata": metadata,
         "created_at": n.created_at,
         "dismissed": n.dismissed,
         "dismissed_at": n.dismissed_at,
@@ -86,6 +96,7 @@ def create_notification(body: NotificationCreate, db=Depends(get_db)):
             session_id=body.session_id,
             notification_type=body.notification_type,
             link_url=body.link_url,
+            metadata=json.dumps(body.metadata) if body.metadata else None,
         )
         return _serialize(n)
     except Exception as e:
