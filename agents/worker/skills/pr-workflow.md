@@ -106,8 +106,15 @@ git fetch origin $BRANCH && git rebase origin/$BRANCH && git push -u origin $BRA
 # Check if a PR template exists
 cat .github/PULL_REQUEST_TEMPLATE.md 2>/dev/null || cat .github/pull_request_template.md 2>/dev/null || echo "No template found"
 
-# Create draft PR (fill in template fields)
-gh pr create --draft --title "Your PR title" --body "..."
+# Create draft PR — use single-quoted heredoc to avoid shell escaping issues with ! in markdown
+gh pr create --draft --title "Your PR title" --body "$(cat <<'EOF'
+## Summary
+...
+
+## Testing Done
+...
+EOF
+)"
 ```
 
 **Immediately after creating**, attach the PR link to your subtask. Keep subtask as `in_progress` — it's not done until merged.
@@ -149,6 +156,14 @@ gh api repos/OWNER/REPO/pulls/N/comments --jq '.[].user.login'
 
 # Bad: piping to external jq or python3
 gh api ... | jq '.[] | select(...)'   # breaks on special chars
+```
+
+**Shell safety for PR bodies:** Never use `-f body="..."` or `--body "..."` with double quotes when the body contains `!` (e.g., `![img](...)`). Bash history expansion turns `!` into `\!`. Use a single-quoted heredoc (`<<'EOF'`) which prevents all shell expansion. For `gh api` PATCH, write JSON to a temp file with `--input`:
+```bash
+cat > /tmp/pr-body.json <<'ENDJSON'
+{"body": "## Testing Done\n![Screenshot](https://...)"}
+ENDJSON
+gh api --method PATCH repos/OWNER/REPO/pulls/N --input /tmp/pr-body.json
 ```
 
 ---

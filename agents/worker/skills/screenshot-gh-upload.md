@@ -39,3 +39,5 @@ Use the `html_url` from the API response with `?raw=true` appended:
 ```markdown
 ![Screenshot](https://github.com/linkedin-sandbox/yuqiu-screenshots/blob/main/2026-02/screenshot.png?raw=true)
 ```
+
+**Shell safety:** `!` in `![...]()` triggers bash history expansion inside double quotes. When embedding in a PR body, always use a single-quoted heredoc delimiter (`<<'EOF'`) — see the `/pr-workflow` skill's `gh api` usage section for patterns.
