@@ -141,13 +141,17 @@ else
     
     ok=$(echo "$result" | jq -r '.ok // false')
     existing=$(echo "$result" | jq -r '.existing // false')
+    actual_local_port=$(echo "$result" | jq -r '.local_port // empty')
     
     if [[ "$ok" == "true" ]]; then
         echo ""
+        if [[ -n "$actual_local_port" && "$actual_local_port" != "$PORT" ]]; then
+            echo "Note: Port $PORT was occupied on the user's machine. Using port $actual_local_port instead."
+        fi
         if [[ "$existing" == "true" ]]; then
-            echo "Tunnel already exists. User can access localhost:$PORT to reach this rdev's port $PORT."
+            echo "Tunnel already exists. User can access localhost:${actual_local_port:-$PORT} to reach this rdev's port $PORT."
         else
-            echo "Tunnel created. User can now access localhost:$PORT to reach this rdev's port $PORT."
+            echo "Tunnel created. User can now access localhost:${actual_local_port:-$PORT} to reach this rdev's port $PORT."
         fi
     else
         error=$(echo "$result" | jq -r '.detail // .error // "Unknown error"')

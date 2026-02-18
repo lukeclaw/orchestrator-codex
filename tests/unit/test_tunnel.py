@@ -235,13 +235,84 @@ class TestIsProcessAlive:
             assert tunnel.is_process_alive(12345) is False
 
 
+class TestIsPortAvailable:
+    """Tests for is_port_available()."""
+
+    def test_port_free(self):
+        """Should return True when lsof reports no listeners."""
+        with patch("orchestrator.session.tunnel.subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(stdout="", returncode=1)
+            assert tunnel.is_port_available(4200) is True
+
+    def test_port_occupied(self):
+        """Should return False when lsof reports a listener."""
+        with patch("orchestrator.session.tunnel.subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(stdout="12345\n", returncode=0)
+            assert tunnel.is_port_available(4200) is False
+
+    def test_lsof_timeout_falls_back_to_socket(self):
+        """Should fall back to socket bind when lsof times out."""
+        import subprocess as sp
+        with patch("orchestrator.session.tunnel.subprocess.run") as mock_run, \
+             patch("orchestrator.session.tunnel.socket.socket") as mock_socket:
+            mock_run.side_effect = sp.TimeoutExpired("lsof", 3)
+            mock_sock_inst = MagicMock()
+            mock_socket.return_value.__enter__ = MagicMock(return_value=mock_sock_inst)
+            mock_socket.return_value.__exit__ = MagicMock(return_value=False)
+            mock_sock_inst.bind.return_value = None  # bind succeeds
+            assert tunnel.is_port_available(4200) is True
+
+    def test_lsof_missing_falls_back_to_socket(self):
+        """Should fall back to socket bind when lsof is not installed."""
+        with patch("orchestrator.session.tunnel.subprocess.run") as mock_run, \
+             patch("orchestrator.session.tunnel.socket.socket") as mock_socket:
+            mock_run.side_effect = OSError("lsof not found")
+            mock_sock_inst = MagicMock()
+            mock_socket.return_value.__enter__ = MagicMock(return_value=mock_sock_inst)
+            mock_socket.return_value.__exit__ = MagicMock(return_value=False)
+            mock_sock_inst.bind.side_effect = OSError("Address in use")
+            assert tunnel.is_port_available(4200) is False
+
+
+class TestFindAvailablePort:
+    """Tests for find_available_port()."""
+
+    def test_returns_preferred_if_available(self):
+        """Should return the preferred port if it's free."""
+        with patch.object(tunnel, "is_port_available", return_value=True):
+            assert tunnel.find_available_port(4200) == 4200
+
+    def test_skips_occupied_ports(self):
+        """Should skip occupied ports and return the next free one."""
+        # 4200 occupied, 4201 occupied, 4202 free
+        with patch.object(tunnel, "is_port_available", side_effect=[False, False, True]):
+            assert tunnel.find_available_port(4200) == 4202
+
+    def test_skips_reserved_ports(self):
+        """Should skip reserved ports."""
+        # Start searching from 8093 (reserved), 8094 should be checked next
+        with patch.object(tunnel, "is_port_available", return_value=True):
+            assert tunnel.find_available_port(8093) == 8094
+
+    def test_returns_none_when_all_occupied(self):
+        """Should return None when no port is available."""
+        with patch.object(tunnel, "is_port_available", return_value=False):
+            assert tunnel.find_available_port(4200, max_attempts=5) is None
+
+    def test_stops_at_65535(self):
+        """Should not exceed port 65535."""
+        with patch.object(tunnel, "is_port_available", return_value=False):
+            assert tunnel.find_available_port(65530, max_attempts=100) is None
+
+
 class TestCreateTunnel:
     """Tests for create_tunnel()."""
 
     def test_creates_new_tunnel(self):
         """Should spawn SSH process for new tunnel."""
         with patch("subprocess.run") as mock_run, \
-             patch("subprocess.Popen") as mock_popen:
+             patch("subprocess.Popen") as mock_popen, \
+             patch.object(tunnel, "is_port_available", return_value=True):
             # No existing tunnels
             mock_run.return_value = MagicMock(stdout="", returncode=0)
             
@@ -283,20 +354,41 @@ yuqiu    12345   0.0  0.0 408628368   1234 s000  S+   10:00AM   0:00.01 ssh -N -
             assert result["existing"] is True
             assert result["pid"] == 12345
 
-    def test_rejects_port_used_by_different_host(self):
-        """Should reject if port is already tunneled to different host."""
-        ps_output = """USER       PID  %CPU %MEM      VSZ    RSS   TT  STAT STARTED      TIME COMMAND
-yuqiu    12345   0.0  0.0 408628368   1234 s000  S+   10:00AM   0:00.01 ssh -N -L 4200:localhost:4200 other/host
-"""
+    def test_auto_finds_port_when_occupied(self):
+        """Should auto-find a new port when the requested one is occupied."""
         with patch("subprocess.run") as mock_run, \
-             patch("os.kill") as mock_kill:
-            mock_run.return_value = MagicMock(stdout=ps_output, returncode=0)
-            mock_kill.return_value = None  # Process is alive
+             patch("subprocess.Popen") as mock_popen, \
+             patch.object(tunnel, "is_port_available", side_effect=[False, True]):
+            # No existing SSH tunnels
+            mock_run.return_value = MagicMock(stdout="", returncode=0)
+            
+            mock_proc = MagicMock()
+            mock_proc.pid = 99999
+            mock_proc.poll.return_value = None
+            mock_popen.return_value = mock_proc
+            
+            success, result = tunnel.create_tunnel("user/rdev-vm", 4200)
+            
+            assert success is True
+            # local_port should be 4201 (4200 was occupied, search starts at 4201)
+            assert result["local_port"] == 4201
+            assert result["remote_port"] == 4200
+            
+            # Verify SSH command uses the new port
+            call_args = mock_popen.call_args[0][0]
+            assert "4201:localhost:4200" in call_args
+
+    def test_fails_when_no_port_available(self):
+        """Should fail when no available port can be found."""
+        with patch("subprocess.run") as mock_run, \
+             patch.object(tunnel, "is_port_available", return_value=False), \
+             patch.object(tunnel, "find_available_port", return_value=None):
+            mock_run.return_value = MagicMock(stdout="", returncode=0)
             
             success, result = tunnel.create_tunnel("user/rdev-vm", 4200)
             
             assert success is False
-            assert "already tunneled" in result["error"]
+            assert "occupied" in result["error"]
 
     def test_validates_port_range(self):
         """Should reject invalid port numbers."""
@@ -324,7 +416,8 @@ yuqiu    12345   0.0  0.0 408628368   1234 s000  S+   10:00AM   0:00.01 ssh -N -
     def test_handles_ssh_failure(self):
         """Should handle SSH process failing to start."""
         with patch("subprocess.run") as mock_run, \
-             patch("subprocess.Popen") as mock_popen:
+             patch("subprocess.Popen") as mock_popen, \
+             patch.object(tunnel, "is_port_available", return_value=True):
             mock_run.return_value = MagicMock(stdout="", returncode=0)
             
             # Mock SSH process that fails immediately
@@ -342,7 +435,8 @@ yuqiu    12345   0.0  0.0 408628368   1234 s000  S+   10:00AM   0:00.01 ssh -N -
     def test_custom_local_port(self):
         """Should support custom local port different from remote port."""
         with patch("subprocess.run") as mock_run, \
-             patch("subprocess.Popen") as mock_popen:
+             patch("subprocess.Popen") as mock_popen, \
+             patch.object(tunnel, "is_port_available", return_value=True):
             mock_run.return_value = MagicMock(stdout="", returncode=0)
             
             mock_proc = MagicMock()

@@ -152,7 +152,7 @@ orch-notify "Replied to reviewer about retry logic" --type pr_comment \
 When you start a dev server or any service that listens on a port, the user cannot access it directly because you're running on a remote rdev. Use `orch-tunnel` to request SSH port forwarding so the user can access it from their local machine.
 
 ```bash
-# Forward user's localhost:4200 to this rdev's port 4200
+# Forward user's localhost to this rdev's port 4200
 orch-tunnel 4200
 
 # Close a tunnel when no longer needed
@@ -161,6 +161,8 @@ orch-tunnel 4200 --close
 # List active tunnels for this session
 orch-tunnel --list
 ```
+
+**Read the output carefully** — if the requested port is already occupied on the user's machine, the orchestrator will automatically assign a different local port. Always use the port shown in the output when telling the user which URL to visit (e.g., `localhost:4201` instead of `localhost:4200`).
 
 ### Project Context (`orch-context`)
 

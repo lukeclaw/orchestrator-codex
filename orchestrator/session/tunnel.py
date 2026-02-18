@@ -13,6 +13,7 @@ import logging
 import os
 import re
 import signal
+import socket
 import subprocess
 import threading
 import time
@@ -33,6 +34,50 @@ RESERVED_PORTS = {8093}
 def get_reserved_ports() -> set:
     """Get the set of reserved ports that cannot be used for forward tunnels."""
     return RESERVED_PORTS.copy()
+
+
+def is_port_available(port: int) -> bool:
+    """Check if a local port is available using lsof.
+    
+    Uses lsof to check if any process is listening on the given TCP port.
+    Falls back to a socket bind check if lsof is not available.
+    """
+    try:
+        result = subprocess.run(
+            ["lsof", f"-iTCP:{port}", "-sTCP:LISTEN", "-t"],
+            capture_output=True, text=True, timeout=3,
+        )
+        # lsof -t outputs PIDs of listeners; empty = port is free
+        return result.stdout.strip() == ""
+    except (subprocess.TimeoutExpired, OSError):
+        # lsof not available or timed out — fall back to socket bind
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                s.bind(("127.0.0.1", port))
+                return True
+        except OSError:
+            return False
+
+
+def find_available_port(preferred: int, max_attempts: int = 100) -> Optional[int]:
+    """Find an available port, starting from preferred and incrementing.
+    
+    Args:
+        preferred: The preferred port to start searching from.
+        max_attempts: Maximum number of ports to try.
+        
+    Returns:
+        An available port number, or None if no port found.
+    """
+    for offset in range(max_attempts):
+        candidate = preferred + offset
+        if candidate > 65535:
+            break
+        if candidate in RESERVED_PORTS:
+            continue
+        if is_port_available(candidate):
+            return candidate
+    return None
 
 
 def discover_active_tunnels(force_refresh: bool = False) -> Dict[int, dict]:
@@ -146,6 +191,9 @@ def is_process_alive(pid: int) -> bool:
 def create_tunnel(host: str, remote_port: int, local_port: Optional[int] = None) -> Tuple[bool, dict]:
     """Create an SSH port-forward tunnel.
     
+    If the requested local port is occupied, automatically finds the next
+    available port. The actual local port used is returned in the result dict.
+    
     Args:
         host: rdev host to tunnel to
         remote_port: Port on remote host
@@ -156,7 +204,8 @@ def create_tunnel(host: str, remote_port: int, local_port: Optional[int] = None)
         info contains: {"local_port", "remote_port", "pid", "host"} on success
         or {"error": str} on failure
     """
-    local_port = local_port or remote_port
+    requested_port = local_port or remote_port
+    local_port = requested_port
     
     # Validate port range
     if not (1 <= local_port <= 65535) or not (1 <= remote_port <= 65535):
@@ -166,11 +215,11 @@ def create_tunnel(host: str, remote_port: int, local_port: Optional[int] = None)
     if local_port in RESERVED_PORTS:
         return False, {"error": f"Port {local_port} is reserved for orchestrator internal use (reverse tunnel)"}
     
-    # Check if port already in use
+    # Check if an existing SSH tunnel already covers this exact request
     existing = find_tunnel_by_port(local_port)
     if existing:
         if is_process_alive(existing["pid"]):
-            if existing["host"] == host:
+            if existing["host"] == host and existing["remote_port"] == remote_port:
                 # Same host, same port - tunnel already exists
                 return True, {
                     "local_port": local_port,
@@ -179,8 +228,14 @@ def create_tunnel(host: str, remote_port: int, local_port: Optional[int] = None)
                     "host": host,
                     "existing": True,
                 }
-            else:
-                return False, {"error": f"Port {local_port} already tunneled to {existing['host']}"}
+    
+    # Check if the local port is actually available (any process, not just SSH tunnels)
+    if not is_port_available(local_port):
+        new_port = find_available_port(local_port + 1)
+        if new_port is None:
+            return False, {"error": f"Port {local_port} is occupied and no available port found nearby"}
+        logger.info("Port %d is occupied, using %d instead", local_port, new_port)
+        local_port = new_port
     
     # Spawn SSH tunnel in background
     try:
