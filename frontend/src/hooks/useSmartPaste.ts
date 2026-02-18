@@ -53,7 +53,34 @@ export function useSmartPaste() {
     return { type, text: text.trim() }
   }, [])
 
-  return { readClipboard }
+  /**
+   * Lightweight probe: returns true if the clipboard contains an image or a URL.
+   * Used to decide whether to enable/disable a "paste as link" button.
+   * Returns true on permission errors so the button stays enabled as a fallback.
+   */
+  const peekClipboardForLink = useCallback(async (): Promise<boolean> => {
+    try {
+      const items = await navigator.clipboard.read()
+      for (const item of items) {
+        if (item.types.some(t => t.startsWith('image/'))) return true
+      }
+    } catch {
+      // clipboard.read() may not be available; fall through to text
+    }
+
+    try {
+      const text = await navigator.clipboard.readText()
+      const trimmed = text.trim()
+      if (!trimmed) return false
+      return !trimmed.includes('\n') && /^https?:\/\/\S+$/i.test(trimmed)
+    } catch {
+      // Can't read clipboard (permission denied) — assume valid so we don't
+      // permanently disable the button; validation on click will catch it.
+      return true
+    }
+  }, [])
+
+  return { readClipboard, peekClipboardForLink }
 }
 
 function blobToBase64(blob: Blob): Promise<string> {

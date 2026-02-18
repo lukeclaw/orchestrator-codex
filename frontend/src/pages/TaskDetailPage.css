@@ -139,8 +139,19 @@
   border-radius: 4px;
 }
 
-.tdp-edit-btn:hover {
+.tdp-edit-btn:hover:not(:disabled) {
   background: rgba(88, 166, 255, 0.1);
+}
+
+.tdp-edit-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.tdp-header-btn-group {
+  display: flex;
+  align-items: center;
+  gap: 4px;
 }
 
 /* Header Card */

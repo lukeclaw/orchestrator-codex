@@ -1,8 +1,9 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import { api } from '../api/client'
 import { useNotify } from '../context/NotificationContext'
 import { useApp } from '../context/AppContext'
+import { useSmartPaste } from '../hooks/useSmartPaste'
 import TerminalView from '../components/terminal/TerminalView'
 import { IconArrowLeft, IconPause, IconPlay, IconStop, IconRefresh, IconTrash, IconSync, IconBrain } from '../components/common/Icons'
 import ConfirmPopover from '../components/common/ConfirmPopover'
@@ -19,9 +20,12 @@ export default function SessionDetailPage() {
   const tasks = allTasks.filter(t => t.assigned_session_id === id)
   const isRdev = session?.host?.includes('/') ?? false
   
+  const { readClipboard } = useSmartPaste()
+
   // Local state for page-specific data
   const [error, setError] = useState('')
   const [actionPending, setActionPending] = useState(false)
+  const [pasting, setPasting] = useState(false)
 
   // Record that user viewed this session
   useEffect(() => {
@@ -144,6 +148,41 @@ export default function SessionDetailPage() {
       setActionPending(false)
     }
   }
+
+  const handlePaste = useCallback(async () => {
+    if (!id || pasting) return
+    setPasting(true)
+    try {
+      const result = await readClipboard()
+      if (result.type === 'image') {
+        const res = await api<{ ok: boolean; file_path: string; filename: string }>(
+          `/api/sessions/${id}/paste-image`,
+          { method: 'POST', body: JSON.stringify({ image_data: result.imageData }) },
+        )
+        if (res.ok) {
+          await api(`/api/sessions/${id}/type`, {
+            method: 'POST',
+            body: JSON.stringify({ text: res.file_path }),
+          })
+          notify(`Image pasted: ${res.filename}`, 'success')
+        }
+      } else {
+        await api(`/api/sessions/${id}/send`, {
+          method: 'POST',
+          body: JSON.stringify({ message: result.text }),
+        })
+        notify('Text pasted to terminal', 'success')
+      }
+    } catch (e) {
+      if (e instanceof Error && e.name === 'NotAllowedError') {
+        notify('Clipboard access denied. Please allow clipboard permissions.', 'error')
+      } else {
+        notify(e instanceof Error ? e.message : 'Failed to paste', 'error')
+      }
+    } finally {
+      setPasting(false)
+    }
+  }, [id, pasting, readClipboard, notify])
 
   if (error) {
     return (
@@ -280,6 +319,20 @@ export default function SessionDetailPage() {
           ) : (
             <span className="sd-task-empty">No task assigned</span>
           )}
+        </div>
+        <div className="sd-footer-right">
+          <button
+            className="sd-paste-btn"
+            onClick={handlePaste}
+            disabled={pasting}
+            title={pasting ? 'Pasting...' : 'Paste clipboard to terminal'}
+          >
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2" />
+              <rect x="8" y="2" width="8" height="4" rx="1" ry="1" />
+            </svg>
+            <span>{pasting ? 'Pasting...' : 'Paste'}</span>
+          </button>
         </div>
       </div>
     </div>

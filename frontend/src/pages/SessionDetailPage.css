@@ -257,6 +257,40 @@
   font-style: italic;
 }
 
+.sd-footer-right {
+  display: flex;
+  align-items: center;
+}
+
+.sd-paste-btn {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  background: none;
+  border: 1px solid var(--border-subtle);
+  color: var(--text-secondary);
+  font-size: 11px;
+  padding: 3px 10px;
+  border-radius: var(--radius);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+
+.sd-paste-btn:hover:not(:disabled) {
+  background: var(--surface-hover, var(--bg));
+  color: var(--text);
+  border-color: var(--border);
+}
+
+.sd-paste-btn:active:not(:disabled) {
+  background: var(--border-subtle);
+}
+
+.sd-paste-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
 
 .error-page {
   text-align: center;

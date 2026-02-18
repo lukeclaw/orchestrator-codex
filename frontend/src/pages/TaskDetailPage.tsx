@@ -1,7 +1,9 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useParams, Link, useNavigate } from 'react-router-dom'
 import { useApp } from '../context/AppContext'
+import { useNotify } from '../context/NotificationContext'
 import { api } from '../api/client'
+import { useSmartPaste } from '../hooks/useSmartPaste'
 import type { Task, TaskLink, Notification } from '../api/types'
 import { IconArrowLeft, IconPause, IconPlay, IconStop, IconRefresh } from '../components/common/Icons'
 import { timeAgo, parseDate } from '../components/common/TimeAgo'
@@ -27,6 +29,8 @@ export default function TaskDetailPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
   const { tasks, sessions, projects, refresh } = useApp()
+  const notify = useNotify()
+  const { readClipboard, peekClipboardForLink } = useSmartPaste()
 
   const task = tasks.find(t => t.id === id) || null
   const project = task ? projects.find(p => p.id === task.project_id) : null
@@ -61,6 +65,16 @@ export default function TaskDetailPage() {
   const [showAssignModal, setShowAssignModal] = useState(false)
   const [workerPreview, setWorkerPreview] = useState('')
   const [workerActionPending, setWorkerActionPending] = useState(false)
+  const [pasting, setPasting] = useState(false)
+  const [clipboardValid, setClipboardValid] = useState(false)
+
+  // Check clipboard on focus to enable/disable paste button
+  useEffect(() => {
+    const check = () => { peekClipboardForLink().then(setClipboardValid) }
+    check()
+    window.addEventListener('focus', check)
+    return () => window.removeEventListener('focus', check)
+  }, [peekClipboardForLink])
 
   // Reset all editing states when navigating to a different task
   useEffect(() => {
@@ -320,6 +334,42 @@ export default function TaskDetailPage() {
       console.error('Failed to dismiss notification:', err)
     }
   }
+
+  const handlePasteToLinks = useCallback(async () => {
+    if (!task || pasting) return
+    setPasting(true)
+    try {
+      const result = await readClipboard()
+      let newLink: TaskLink
+
+      if (result.type === 'image') {
+        const res = await api<{ ok: boolean; url: string; filename: string }>(
+          '/api/paste-image',
+          { method: 'POST', body: JSON.stringify({ image_data: result.imageData }) },
+        )
+        if (!res.ok) return
+        newLink = { url: `http://localhost:8093${res.url}`, tag: 'Image' }
+      } else if (result.type === 'url') {
+        newLink = { url: result.text! }
+      } else {
+        notify('Clipboard does not contain an image or URL', 'warning')
+        return
+      }
+
+      const updatedLinks = [...(task.links || []), newLink]
+      setLinks(updatedLinks)
+      await handleSaveField('links', updatedLinks)
+      notify('Link added from clipboard', 'success')
+    } catch (e) {
+      if (e instanceof Error && e.name === 'NotAllowedError') {
+        notify('Clipboard access denied. Please allow clipboard permissions.', 'error')
+      } else {
+        notify(e instanceof Error ? e.message : 'Failed to paste', 'error')
+      }
+    } finally {
+      setPasting(false)
+    }
+  }, [task, pasting, readClipboard, notify, handleSaveField])
 
   async function handleWorkerPauseOrContinue(e: React.MouseEvent) {
     e.stopPropagation()
@@ -668,7 +718,17 @@ export default function TaskDetailPage() {
             <div className="tdp-card-header">
               <h3>Links {links.length > 0 && <span className="count">({links.length})</span>}</h3>
               {isEditable && !showAddLink && !editingLinkUrl && (
-                <button className="tdp-edit-btn" onClick={() => setShowAddLink(true)}>+ Add</button>
+                <div className="tdp-header-btn-group">
+                  <button className="tdp-edit-btn" onClick={() => setShowAddLink(true)}>+ Add</button>
+                  <button
+                    className="tdp-edit-btn"
+                    onClick={handlePasteToLinks}
+                    disabled={pasting || !clipboardValid}
+                    title={clipboardValid ? 'Paste image or URL from clipboard' : 'Clipboard does not contain an image or URL'}
+                  >
+                    {pasting ? 'Pasting...' : 'Paste'}
+                  </button>
+                </div>
               )}
             </div>
             {showAddLink && (
