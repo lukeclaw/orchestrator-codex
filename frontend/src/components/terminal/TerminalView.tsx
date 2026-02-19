@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
+import { WebLinksAddon } from '@xterm/addon-web-links'
 import '@xterm/xterm/css/xterm.css'
 import './TerminalView.css'
 
@@ -198,7 +199,11 @@ export default function TerminalView({ sessionId, sessionStatus, onUserInput, di
     })
 
     const fitAddon = new FitAddon()
+    const webLinksAddon = new WebLinksAddon((_event, uri) => {
+      window.open(uri, '_blank', 'noopener')
+    })
     terminal.loadAddon(fitAddon)
+    terminal.loadAddon(webLinksAddon)
     terminal.open(termRef.current)
 
     requestAnimationFrame(() => {
