@@ -257,6 +257,32 @@
   font-style: italic;
 }
 
+/* Tunnel badges */
+.sd-tunnels {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.sd-tunnel-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 6px;
+  background: rgba(139, 92, 246, 0.15);
+  color: #a78bfa;
+  border-radius: 4px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  text-decoration: none;
+  transition: background 0.15s;
+}
+
+.sd-tunnel-badge:hover {
+  background: rgba(139, 92, 246, 0.3);
+  color: #c4b5fd;
+}
+
 .sd-footer-right {
   display: flex;
   align-items: center;

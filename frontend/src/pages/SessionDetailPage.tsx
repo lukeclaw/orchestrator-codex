@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import { api } from '../api/client'
 import { useNotify } from '../context/NotificationContext'
@@ -8,6 +8,12 @@ import TerminalView from '../components/terminal/TerminalView'
 import { IconArrowLeft, IconPause, IconPlay, IconStop, IconRefresh, IconTrash, IconSync, IconBrain } from '../components/common/Icons'
 import ConfirmPopover from '../components/common/ConfirmPopover'
 import './SessionDetailPage.css'
+
+interface TunnelInfo {
+  remote_port: number
+  pid: number
+  host: string
+}
 
 export default function SessionDetailPage() {
   const { id } = useParams<{ id: string }>()
@@ -22,6 +28,10 @@ export default function SessionDetailPage() {
   
   const { readClipboard } = useSmartPaste()
 
+  // Tunnel state for rdev workers
+  const [tunnels, setTunnels] = useState<Record<string, TunnelInfo>>({})
+  const tunnelIntervalRef = useRef<ReturnType<typeof setInterval> | undefined>(undefined)
+
   // Local state for page-specific data
   const [error, setError] = useState('')
   const [actionPending, setActionPending] = useState(false)
@@ -33,6 +43,34 @@ export default function SessionDetailPage() {
       api(`/api/sessions/${id}/viewed`, { method: 'POST' }).catch(() => {})
     }
   }, [id])
+
+  // Fetch tunnels for rdev workers
+  useEffect(() => {
+    if (!isRdev || !id) {
+      setTunnels({})
+      return
+    }
+
+    const targetSessionId = id
+
+    async function fetchTunnels() {
+      try {
+        const data = await api<{ tunnels: Record<string, TunnelInfo> }>(
+          `/api/sessions/${targetSessionId}/tunnels`
+        )
+        setTunnels(data.tunnels || {})
+      } catch {
+        // Silently ignore tunnel fetch errors
+      }
+    }
+
+    fetchTunnels()
+    tunnelIntervalRef.current = setInterval(fetchTunnels, 10000)
+
+    return () => {
+      clearInterval(tunnelIntervalRef.current)
+    }
+  }, [id, isRdev])
 
   async function handlePauseOrContinue() {
     if (!id || actionPending) return
@@ -318,6 +356,22 @@ export default function SessionDetailPage() {
             </Link>
           ) : (
             <span className="sd-task-empty">No task assigned</span>
+          )}
+          {Object.keys(tunnels).length > 0 && (
+            <div className="sd-tunnels">
+              {Object.entries(tunnels).map(([port]) => (
+                <a
+                  key={port}
+                  href={`http://localhost:${port}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="sd-tunnel-badge"
+                  title={`Port forwarding: localhost:${port} → rdev:${port}`}
+                >
+                  :{port}
+                </a>
+              ))}
+            </div>
           )}
         </div>
         <div className="sd-footer-right">
