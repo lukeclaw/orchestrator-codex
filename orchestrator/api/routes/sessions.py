@@ -111,6 +111,7 @@ def _serialize_session(s):
         "status_age": status_age,  # Human-readable: "5m ago", "2h ago"
         "session_type": s.session_type,
         "last_viewed_at": s.last_viewed_at,
+        "auto_reconnect": s.auto_reconnect,
     }
 
 
@@ -163,6 +164,64 @@ def record_session_viewed(session_id: str, db=Depends(get_db)):
         raise HTTPException(404, "Session not found")
     repo.update_session(db, session_id, last_viewed_at=datetime.now(timezone.utc).isoformat())
     return {"ok": True}
+
+
+@router.post("/sessions/{session_id}/auto-reconnect")
+def toggle_auto_reconnect(session_id: str, request: Request, db=Depends(get_db)):
+    """Toggle auto-reconnect for a worker session.
+
+    When enabled, immediately triggers reconnect if the worker is currently
+    disconnected. Future disconnects are handled by the periodic health check.
+    """
+    s = repo.get_session(db, session_id)
+    if s is None:
+        raise HTTPException(404, "Session not found")
+    new_value = not s.auto_reconnect
+    repo.update_session(db, session_id, auto_reconnect=new_value)
+
+    # If enabling and worker is currently in a reconnectable state, reconnect now
+    if new_value and is_reconnectable(s.status):
+        tmux_sess, tmux_win = tmux_target(s.name)
+        config = getattr(request.app.state, "config", {})
+        api_port = config.get("server", {}).get("port", 8093)
+        tmp_dir = os.path.join(WORKER_BASE_DIR, s.name)
+
+        repo.update_session(db, session_id, status="connecting")
+
+        if is_rdev_host(s.host):
+            db_path = getattr(request.app.state, "db_path", None)
+            tunnel_manager = getattr(request.app.state, "tunnel_manager", None)
+
+            def _bg_reconnect():
+                from orchestrator.state.db import get_connection
+                bg_conn = get_connection(db_path) if db_path else db
+                try:
+                    reconnect_rdev_worker(
+                        bg_conn, s, tmux_sess, tmux_win, api_port, tmp_dir, repo,
+                        tunnel_manager=tunnel_manager,
+                    )
+                    logger.info("Auto-reconnect (toggle): %s reconnected", s.name)
+                except Exception:
+                    logger.exception("Auto-reconnect (toggle) failed for %s", s.name)
+                    try:
+                        repo.update_session(bg_conn, s.id, status="disconnected")
+                    except Exception:
+                        pass
+                finally:
+                    if db_path and bg_conn is not db:
+                        bg_conn.close()
+
+            thread = threading.Thread(target=_bg_reconnect, daemon=True)
+            thread.start()
+        else:
+            try:
+                reconnect_local_worker(s, tmux_sess, tmux_win, api_port, tmp_dir)
+                repo.update_session(db, session_id, status="waiting")
+            except Exception:
+                logger.exception("Auto-reconnect (toggle) failed for local worker %s", s.name)
+                repo.update_session(db, session_id, status="disconnected")
+
+    return {"ok": True, "auto_reconnect": new_value}
 
 
 def _sanitize_worker_name(name: str) -> str:
@@ -878,33 +937,41 @@ def health_check_session(session_id: str, request: Request, db=Depends(get_db)):
 
 
 @router.post("/sessions/health-check-all")
-def health_check_all_sessions(db=Depends(get_db)):
+def health_check_all_sessions(request: Request, db=Depends(get_db)):
     """Run health check on all active worker sessions.
-    
+
     For rdev workers with screen sessions:
     - Checks both screen session and Claude process
     - Sets screen_detached if SSH fails but screen may be running
     - Sets error if screen exists but Claude crashed
-    
+
     For local workers:
     - Uses ps | grep to check Claude process
-    
+
     Updates worker status automatically.
-    
+    If a worker has auto_reconnect enabled and is found disconnected,
+    automatically triggers reconnection.
+
     Returns:
-        {"checked": int, "disconnected": list[str], "screen_detached": list[str], 
-         "error": list[str], "alive": list[str]}
+        {"checked": int, "disconnected": list[str], "screen_detached": list[str],
+         "error": list[str], "alive": list[str], "auto_reconnected": list[str]}
     """
     sessions = repo.list_sessions(db, session_type="worker")
-    
-    results = {"checked": 0, "disconnected": [], "screen_detached": [], "error": [], "alive": [], "skipped_active": []}
-    
+
+    results = {"checked": 0, "disconnected": [], "screen_detached": [], "error": [], "alive": [], "skipped_active": [], "auto_reconnected": []}
+
+    # Collect workers that need auto-reconnect
+    auto_reconnect_candidates = []
+
     for s in sessions:
         if s.status == "disconnected":
-            continue  # Skip already disconnected workers
+            # Already disconnected - check if auto-reconnect should kick in
+            if s.auto_reconnect:
+                auto_reconnect_candidates.append(s)
+            continue
         if s.status == "connecting":
             continue  # Skip workers currently connecting (setup in progress)
-            
+
         results["checked"] += 1
         tmux_sess, tmux_win = tmux_target(s.name)
 
@@ -912,7 +979,7 @@ def health_check_all_sessions(db=Depends(get_db)):
             if is_rdev_host(s.host):
                 # Use detailed screen check for rdev workers - pass tmux info to check worker SSH
                 screen_status, reason = check_screen_and_claude_rdev(s.host, s.id, tmux_sess, tmux_win)
-                
+
                 if screen_status == "alive":
                     results["alive"].append(s.name)
                 elif screen_status == "screen_detached":
@@ -920,29 +987,86 @@ def health_check_all_sessions(db=Depends(get_db)):
                         repo.update_session(db, s.id, status="screen_detached")
                         logger.info("Health check: %s marked as screen_detached (%s)", s.name, reason)
                     results["screen_detached"].append(s.name)
+                    if s.auto_reconnect:
+                        auto_reconnect_candidates.append(s)
                 elif screen_status == "screen_only":
                     if s.status != "error":
                         repo.update_session(db, s.id, status="error")
                         logger.info("Health check: %s marked as error - Claude crashed (%s)", s.name, reason)
                     results["error"].append(s.name)
+                    if s.auto_reconnect:
+                        auto_reconnect_candidates.append(s)
                 else:  # dead
                     repo.update_session(db, s.id, status="disconnected")
                     results["disconnected"].append(s.name)
                     logger.info("Health check: %s marked as disconnected (%s)", s.name, reason)
+                    if s.auto_reconnect:
+                        auto_reconnect_candidates.append(s)
             else:
                 alive, reason = check_claude_process_local(s.id)
-                
+
                 if not alive:
                     repo.update_session(db, s.id, status="disconnected")
                     results["disconnected"].append(s.name)
                     logger.info("Health check: %s marked as disconnected (%s)", s.name, reason)
+                    if s.auto_reconnect:
+                        auto_reconnect_candidates.append(s)
                 else:
                     results["alive"].append(s.name)
         except Exception as e:
             # Can't check - assume alive for now
             logger.warning("Health check failed for %s: %s", s.name, e)
             results["alive"].append(s.name)
-    
+
+    # Auto-reconnect workers that have the flag enabled
+    if auto_reconnect_candidates:
+        config = getattr(request.app.state, "config", {})
+        api_port = config.get("server", {}).get("port", 8093)
+        db_path = getattr(request.app.state, "db_path", None)
+        tunnel_manager = getattr(request.app.state, "tunnel_manager", None)
+
+        for s in auto_reconnect_candidates:
+            logger.info("Auto-reconnect: triggering reconnect for %s", s.name)
+            tmux_sess, tmux_win = tmux_target(s.name)
+            tmp_dir = os.path.join(WORKER_BASE_DIR, s.name)
+
+            try:
+                repo.update_session(db, s.id, status="connecting")
+
+                if is_rdev_host(s.host):
+                    def _bg_reconnect(session=s, ts=tmux_sess, tw=tmux_win):
+                        from orchestrator.state.db import get_connection
+                        bg_conn = get_connection(db_path) if db_path else db
+                        try:
+                            reconnect_rdev_worker(
+                                bg_conn, session, ts, tw, api_port, tmp_dir, repo,
+                                tunnel_manager=tunnel_manager,
+                            )
+                            logger.info("Auto-reconnect: %s reconnected", session.name)
+                        except Exception:
+                            logger.exception("Auto-reconnect failed for %s", session.name)
+                            try:
+                                repo.update_session(bg_conn, session.id, status="disconnected")
+                            except Exception:
+                                pass
+                        finally:
+                            if db_path and bg_conn is not db:
+                                bg_conn.close()
+
+                    thread = threading.Thread(target=_bg_reconnect, daemon=True)
+                    thread.start()
+                else:
+                    try:
+                        reconnect_local_worker(s, tmux_sess, tmux_win, api_port, tmp_dir)
+                        repo.update_session(db, s.id, status="waiting")
+                    except Exception:
+                        logger.exception("Auto-reconnect failed for local worker %s", s.name)
+                        repo.update_session(db, s.id, status="disconnected")
+
+                results["auto_reconnected"].append(s.name)
+            except Exception as e:
+                logger.warning("Auto-reconnect: failed to start reconnect for %s: %s", s.name, e)
+
     return results
 
 

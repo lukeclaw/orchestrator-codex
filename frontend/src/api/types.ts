@@ -10,6 +10,7 @@ export interface Session {
   last_viewed_at: string | null
   session_type: 'worker' | 'brain' | 'system'
   preview?: string
+  auto_reconnect: boolean
 }
 
 export interface WorkerDetail {

@@ -156,9 +156,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const healthCheck = async () => {
       try {
-        const result = await api<{ disconnected: string[] }>('/api/sessions/health-check-all', { method: 'POST' })
-        if (result.disconnected && result.disconnected.length > 0) {
-          // Refresh data if any workers were marked disconnected
+        const result = await api<{ disconnected: string[]; auto_reconnected: string[] }>('/api/sessions/health-check-all', { method: 'POST' })
+        if ((result.disconnected && result.disconnected.length > 0) ||
+            (result.auto_reconnected && result.auto_reconnected.length > 0)) {
+          // Refresh data if any workers were marked disconnected or auto-reconnected
           fetchAll()
         }
       } catch {

@@ -78,6 +78,7 @@ def update_session(
     tunnel_pid: int | None = ...,
     takeover_mode: bool | None = None,
     last_viewed_at: str | None = None,
+    auto_reconnect: bool | None = None,
 ) -> Session | None:
     sets = []
     params = []
@@ -96,6 +97,9 @@ def update_session(
     if last_viewed_at is not None:
         sets.append("last_viewed_at = ?")
         params.append(last_viewed_at)
+    if auto_reconnect is not None:
+        sets.append("auto_reconnect = ?")
+        params.append(auto_reconnect)
     if not sets:
         return get_session(conn, id)
     params.append(id)

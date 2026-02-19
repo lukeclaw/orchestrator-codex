@@ -60,9 +60,11 @@ class Session:
     last_status_changed_at: str | None = None
     session_type: str = "worker"  # "worker" | "brain" | "system"
     last_viewed_at: str | None = None
+    auto_reconnect: bool = False
 
     def __post_init__(self):
         self.takeover_mode = bool(self.takeover_mode)
+        self.auto_reconnect = bool(self.auto_reconnect)
 
 
 @dataclass

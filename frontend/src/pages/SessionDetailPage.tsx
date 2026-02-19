@@ -115,6 +115,20 @@ export default function SessionDetailPage() {
     }
   }
 
+  async function handleToggleAutoReconnect() {
+    if (!id) return
+    try {
+      const result = await api<{ ok: boolean; auto_reconnect: boolean }>(
+        `/api/sessions/${id}/auto-reconnect`,
+        { method: 'POST' }
+      )
+      refresh()
+      notify(`Auto-reconnect ${result.auto_reconnect ? 'enabled' : 'disabled'}`, 'success')
+    } catch (e) {
+      notify(e instanceof Error ? e.message : 'Failed to toggle auto-reconnect', 'error')
+    }
+  }
+
   async function handleHealthCheck() {
     if (!id || actionPending) return
     setActionPending(true)
@@ -375,6 +389,19 @@ export default function SessionDetailPage() {
           )}
         </div>
         <div className="sd-footer-right">
+          {/* Auto-reconnect toggle — a worker setting, not an action */}
+          <label className="sd-auto-reconnect-toggle" title="When enabled, automatically reconnect this worker if it disconnects">
+            <span className="sd-auto-reconnect-label">Auto-reconnect</span>
+            <button
+              className={`sd-toggle-switch ${session.auto_reconnect ? 'on' : ''}`}
+              onClick={handleToggleAutoReconnect}
+              role="switch"
+              aria-checked={session.auto_reconnect}
+            >
+              <span className="sd-toggle-knob" />
+            </button>
+          </label>
+          <span className="sd-footer-divider" />
           <button
             className="sd-paste-btn"
             onClick={handlePaste}
