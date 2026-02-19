@@ -71,6 +71,10 @@ select:focus {
   background: var(--text-muted);
 }
 
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
 /* Layout — legacy class for backwards compat */
 .app-layout {
   display: flex;
@@ -330,6 +334,7 @@ select:focus {
   display: flex;
   flex-direction: column;
   box-shadow: var(--shadow-lg);
+  overflow: hidden;
 }
 
 .modal-wide {
