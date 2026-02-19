@@ -22,8 +22,8 @@ interface Props {
 export default function Sidebar({ collapsed, onToggle }: Props) {
   const { workers, notificationCount } = useApp()
 
-  const activeSessions = workers.filter(
-    s => s.status === 'working' || s.status === 'idle'
+  const waitingWorkers = workers.filter(
+    s => s.status === 'waiting'
   ).length
 
   return (
@@ -50,7 +50,7 @@ export default function Sidebar({ collapsed, onToggle }: Props) {
         <SidebarItem to="/" icon={<IconDashboard size={18} />} label="Dashboard" collapsed={collapsed} shortcut="D" />
         <SidebarItem to="/projects" icon={<IconProjects size={18} />} label="Projects" collapsed={collapsed} shortcut="P" />
         <SidebarItem to="/tasks" icon={<IconTasks size={18} />} label="Tasks" collapsed={collapsed} shortcut="T" />
-        <SidebarItem to="/workers" icon={<IconSessions size={18} />} label="Workers" badge={activeSessions} collapsed={collapsed} shortcut="W" />
+        <SidebarItem to="/workers" icon={<IconSessions size={18} />} label="Workers" badge={waitingWorkers} badgeVariant="warning" collapsed={collapsed} shortcut="W" />
         <SidebarItem to="/context" icon={<IconContext size={18} />} label="Context" collapsed={collapsed} shortcut="K" />
         <SidebarItem to="/notifications" icon={<IconBell size={18} />} label="Notifications" badge={notificationCount} badgeVariant="warning" collapsed={collapsed} shortcut="N" />
       </nav>
