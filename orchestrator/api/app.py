@@ -164,6 +164,7 @@ def create_app(
 
     # Register routes
     from orchestrator.api.routes import (
+        backup,
         brain,
         context,
         notifications,
@@ -175,6 +176,7 @@ def create_app(
         tasks,
     )
 
+    app.include_router(backup.router, prefix="/api", tags=["backup"])
     app.include_router(sessions.router, prefix="/api", tags=["sessions"])
     app.include_router(rdevs.router, prefix="/api", tags=["rdevs"])
     app.include_router(projects.router, prefix="/api", tags=["projects"])

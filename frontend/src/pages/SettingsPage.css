@@ -99,3 +99,105 @@
 .settings-page .btn {
   margin-top: 12px;
 }
+
+/* Backup section */
+.backup-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.backup-actions .btn {
+  margin-top: 0;
+}
+
+.backup-password-set {
+  color: var(--green);
+  font-size: 12px;
+  font-weight: 400;
+}
+
+.backup-result {
+  margin-top: 12px;
+  padding: 10px 14px;
+  border-radius: var(--radius);
+  font-size: 13px;
+}
+
+.backup-result.success {
+  background: rgba(63,185,80,0.1);
+  color: var(--green);
+  border: 1px solid rgba(63,185,80,0.3);
+}
+
+.backup-result.error {
+  background: rgba(248,81,73,0.1);
+  color: var(--red);
+  border: 1px solid rgba(248,81,73,0.3);
+}
+
+.backup-last-run {
+  margin-top: 10px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.backup-status {
+  font-size: 11px;
+  padding: 1px 8px;
+  border-radius: 10px;
+  font-weight: 500;
+}
+
+.backup-status.success {
+  background: rgba(63,185,80,0.12);
+  color: var(--green);
+}
+
+.backup-status.error {
+  background: rgba(248,81,73,0.12);
+  color: var(--red);
+}
+
+.backup-list-section {
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.backup-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.backup-entry {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  background: var(--bg);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius);
+  font-size: 13px;
+}
+
+.backup-filename {
+  font-family: var(--font-mono, monospace);
+  font-size: 12px;
+  color: var(--text-primary);
+}
+
+.backup-meta {
+  display: flex;
+  gap: 12px;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.backup-size {
+  color: var(--text-muted);
+}
