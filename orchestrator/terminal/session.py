@@ -176,10 +176,17 @@ def send_to_session(
         max_enter_retries: Max attempts to press Enter if message appears stuck (default: 3)
         retry_delay: Seconds between Enter retries (default: 2.0)
     """
-    # Send message content in literal mode (no special key interpretation)
-    if not tmux.send_keys_literal(tmux_session, name, message):
-        return False
-    
+    # Send message content using bracketed paste (preferred) or literal mode (fallback).
+    # Bracketed paste wraps text in ESC[200~ … ESC[201~ so Claude Code's Ink TUI
+    # inserts the text as-is instead of interpreting each \n as Ctrl-J (newline).
+    if not tmux.paste_to_pane(tmux_session, name, message):
+        logger.warning("paste_to_pane failed, falling back to send_keys_literal")
+        if not tmux.send_keys_literal(tmux_session, name, message):
+            return False
+
+    # Brief delay so the TUI finishes processing the pasted text before Enter.
+    time.sleep(0.3)
+
     # Send Enter and verify it was submitted
     for attempt in range(max_enter_retries):
         if not tmux.send_keys(tmux_session, name, "", enter=True):

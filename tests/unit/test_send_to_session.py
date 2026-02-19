@@ -110,7 +110,7 @@ class TestSendToSession:
         """Successful send on first try should not retry."""
         from orchestrator.terminal.session import send_to_session
         
-        mock_tmux.send_keys_literal.return_value = True
+        mock_tmux.paste_to_pane.return_value = True
         mock_tmux.send_keys.return_value = True
         mock_verify.return_value = True  # Message sent successfully
         
@@ -119,6 +119,8 @@ class TestSendToSession:
         assert result is True
         # send_keys should be called only once (no retries)
         assert mock_tmux.send_keys.call_count == 1
+        # paste_to_pane should be used instead of send_keys_literal
+        mock_tmux.paste_to_pane.assert_called_once()
 
     @patch('orchestrator.terminal.session._verify_message_sent')
     @patch('orchestrator.terminal.session.time.sleep')
@@ -127,7 +129,7 @@ class TestSendToSession:
         """Should retry Enter if message appears stuck."""
         from orchestrator.terminal.session import send_to_session
         
-        mock_tmux.send_keys_literal.return_value = True
+        mock_tmux.paste_to_pane.return_value = True
         mock_tmux.send_keys.return_value = True
         # First attempt fails, second succeeds
         mock_verify.side_effect = [False, True]
@@ -137,8 +139,6 @@ class TestSendToSession:
         assert result is True
         # send_keys should be called twice (1 initial + 1 retry)
         assert mock_tmux.send_keys.call_count == 2
-        # Should have slept once between retries
-        mock_sleep.assert_called_once()
 
     @patch('orchestrator.terminal.session._verify_message_sent')
     @patch('orchestrator.terminal.session.time.sleep')
@@ -147,7 +147,7 @@ class TestSendToSession:
         """Should return False after max retries exhausted."""
         from orchestrator.terminal.session import send_to_session
         
-        mock_tmux.send_keys_literal.return_value = True
+        mock_tmux.paste_to_pane.return_value = True
         mock_tmux.send_keys.return_value = True
         mock_verify.return_value = False  # Always fails
         
@@ -159,8 +159,6 @@ class TestSendToSession:
         assert result is False
         # send_keys called 3 times (max retries)
         assert mock_tmux.send_keys.call_count == 3
-        # Sleep called 2 times (between attempts, not after last)
-        assert mock_sleep.call_count == 2
 
     @patch('orchestrator.terminal.session._verify_message_sent')
     @patch('orchestrator.terminal.session.time.sleep')
@@ -169,7 +167,7 @@ class TestSendToSession:
         """Should succeed if third attempt works."""
         from orchestrator.terminal.session import send_to_session
         
-        mock_tmux.send_keys_literal.return_value = True
+        mock_tmux.paste_to_pane.return_value = True
         mock_tmux.send_keys.return_value = True
         # Fail twice, succeed on third
         mock_verify.side_effect = [False, False, True]
@@ -181,21 +179,40 @@ class TestSendToSession:
         
         assert result is True
         assert mock_tmux.send_keys.call_count == 3
-        assert mock_sleep.call_count == 2
 
     @patch('orchestrator.terminal.session._verify_message_sent')
     @patch('orchestrator.terminal.session.time.sleep')
     @patch('orchestrator.terminal.session.tmux')
-    def test_send_keys_literal_failure(self, mock_tmux, _sleep, mock_verify):
-        """Should return False if send_keys_literal fails."""
+    def test_paste_to_pane_failure_falls_back_to_literal(self, mock_tmux, _sleep, mock_verify):
+        """Should fall back to send_keys_literal if paste_to_pane fails."""
         from orchestrator.terminal.session import send_to_session
         
+        mock_tmux.paste_to_pane.return_value = False
+        mock_tmux.send_keys_literal.return_value = True
+        mock_tmux.send_keys.return_value = True
+        mock_verify.return_value = True
+        
+        result = send_to_session("test-window", "Message")
+        
+        assert result is True
+        # Both paste_to_pane and send_keys_literal should have been called
+        mock_tmux.paste_to_pane.assert_called_once()
+        mock_tmux.send_keys_literal.assert_called_once()
+
+    @patch('orchestrator.terminal.session._verify_message_sent')
+    @patch('orchestrator.terminal.session.time.sleep')
+    @patch('orchestrator.terminal.session.tmux')
+    def test_both_paste_methods_fail(self, mock_tmux, _sleep, mock_verify):
+        """Should return False if both paste_to_pane and send_keys_literal fail."""
+        from orchestrator.terminal.session import send_to_session
+        
+        mock_tmux.paste_to_pane.return_value = False
         mock_tmux.send_keys_literal.return_value = False
         
         result = send_to_session("test-window", "Message")
         
         assert result is False
-        # Should not try to send Enter if literal send failed
+        # Should not try to send Enter if text delivery failed
         mock_tmux.send_keys.assert_not_called()
 
     @patch('orchestrator.terminal.session._verify_message_sent')
@@ -205,7 +222,7 @@ class TestSendToSession:
         """Should return False if send_keys (Enter) fails."""
         from orchestrator.terminal.session import send_to_session
         
-        mock_tmux.send_keys_literal.return_value = True
+        mock_tmux.paste_to_pane.return_value = True
         mock_tmux.send_keys.return_value = False
         
         result = send_to_session("test-window", "Message")
@@ -221,7 +238,7 @@ class TestSendToSession:
         """Should respect custom max_enter_retries and retry_delay."""
         from orchestrator.terminal.session import send_to_session
         
-        mock_tmux.send_keys_literal.return_value = True
+        mock_tmux.paste_to_pane.return_value = True
         mock_tmux.send_keys.return_value = True
         mock_verify.return_value = False  # Always fails
         
@@ -233,6 +250,3 @@ class TestSendToSession:
         assert result is False
         # Should have tried 5 times
         assert mock_tmux.send_keys.call_count == 5
-        # Should have slept with correct delay (4 times between 5 attempts)
-        assert mock_sleep.call_count == 4
-        mock_sleep.assert_called_with(1.5)

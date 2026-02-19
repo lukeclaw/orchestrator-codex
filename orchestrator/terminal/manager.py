@@ -185,6 +185,58 @@ def send_keys_literal(session_name: str, window_name: str, text: str) -> bool:
     return False
 
 
+def paste_to_pane(session_name: str, window_name: str, text: str) -> bool:
+    """Paste text into a tmux pane using the paste buffer.
+
+    Uses tmux ``set-buffer`` + ``paste-buffer -p`` which wraps the text in
+    bracketed-paste sequences (``ESC[200~`` … ``ESC[201~``) when the
+    application has enabled bracketed-paste mode.  This is far more reliable
+    than :func:`send_keys_literal` for TUI apps like Claude Code / Ink
+    because:
+
+    * Embedded newlines (``0x0A``) are NOT interpreted as Ctrl-J (newline
+      command) — they arrive as part of a paste payload.
+    * The entire text is delivered in one atomic write to the PTY.
+    * The application can clearly distinguish pasted content from typed
+      keystrokes.
+
+    Falls back to ``paste-buffer`` without ``-p`` on older tmux versions
+    that lack the flag.
+    """
+    target = f"{session_name}:{window_name}"
+
+    # 1. Load text into a named paste buffer (unique name avoids races)
+    import uuid
+    buf_name = f"orch-{uuid.uuid4().hex[:8]}"
+    result = _run_tmux("set-buffer", "-b", buf_name, "--", text, check=False)
+    if result.returncode != 0:
+        logger.warning("Failed to set tmux buffer: %s", result.stderr)
+        return False
+
+    # 2. Paste the buffer into the target pane.
+    #    -d  deletes the buffer after pasting (cleanup).
+    #    -p  forces bracketed-paste control codes (tmux ≥ 3.3).
+    result = _run_tmux(
+        "paste-buffer", "-d", "-p", "-b", buf_name, "-t", target,
+        check=False,
+    )
+    if result.returncode != 0:
+        # Retry without -p for older tmux versions
+        logger.debug("paste-buffer -p failed, retrying without -p: %s", result.stderr)
+        # Re-set the buffer (it may have been deleted by the failed attempt)
+        _run_tmux("set-buffer", "-b", buf_name, "--", text, check=False)
+        result = _run_tmux(
+            "paste-buffer", "-d", "-b", buf_name, "-t", target,
+            check=False,
+        )
+        if result.returncode != 0:
+            logger.warning("Failed to paste buffer to %s: %s", target, result.stderr)
+            return False
+
+    logger.debug("Pasted %d chars to %s via paste-buffer", len(text), target)
+    return True
+
+
 def capture_pane_with_escapes(session_name: str, window_name: str, lines: int = 0) -> str:
     """Capture pane content including ANSI escape sequences.
 
