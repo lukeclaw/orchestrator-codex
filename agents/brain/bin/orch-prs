@@ -1,0 +1,207 @@
+#!/bin/bash
+# orch-prs: Bulk PR status checker via GitHub GraphQL API
+#
+# Batches multiple PR status checks into a single API call and classifies
+# each PR into an action state that tells agents exactly what to do.
+#
+# Standalone script — only requires `gh` and `jq`.
+
+set -euo pipefail
+
+show_help() {
+    cat <<'EOF'
+Usage: orch-prs [--repo org/repo] [--stats] <pr-number> [pr-number ...]
+
+Batch-check PR statuses via a single GraphQL call and classify each PR
+into an action state.
+
+Options:
+  --repo org/repo   Explicit repo (required if not in a git checkout)
+  --stats           Output action state counts instead of full PR list
+  -h, --help        Show this help message
+
+Action states (priority order):
+  merged             PR is merged — task is complete
+  closed             PR was closed without merging
+  draft              PR is still a draft
+  merge_conflicts    PR has merge conflicts — needs rebase
+  ci_failing         CI checks are failing — needs fix
+  changes_requested  Reviewer requested changes — needs update
+  ready_to_merge     Approved + CI passing + mergeable — merge it
+  review_pending     Open PR awaiting review or CI
+
+Examples:
+  orch-prs 123 124 125                        # Auto-detect repo from cwd
+  orch-prs --repo org/repo 123 124 125        # Explicit repo
+  orch-prs --stats 123 124 125                # Summary counts only
+EOF
+}
+
+# --- Arg parsing ---
+REPO=""
+STATS=false
+PR_NUMBERS=()
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --repo)
+            REPO="$2"
+            shift 2
+            ;;
+        --stats)
+            STATS=true
+            shift
+            ;;
+        -h|--help)
+            show_help
+            exit 0
+            ;;
+        *)
+            if [[ "$1" =~ ^[0-9]+$ ]]; then
+                PR_NUMBERS+=("$1")
+            else
+                echo "Error: unexpected argument '$1'" >&2
+                show_help
+                exit 1
+            fi
+            shift
+            ;;
+    esac
+done
+
+# --- Validation ---
+if ! command -v gh &>/dev/null; then
+    echo "Error: 'gh' CLI is required but not found in PATH" >&2
+    exit 1
+fi
+
+if ! command -v jq &>/dev/null; then
+    echo "Error: 'jq' is required but not found in PATH" >&2
+    exit 1
+fi
+
+if [[ ${#PR_NUMBERS[@]} -eq 0 ]]; then
+    echo "Error: at least one PR number is required" >&2
+    show_help
+    exit 1
+fi
+
+# --- Repo resolution ---
+if [[ -z "$REPO" ]]; then
+    REPO=$(gh repo view --json nameWithOwner --jq .nameWithOwner 2>/dev/null || true)
+    if [[ -z "$REPO" ]]; then
+        echo "Error: could not detect repo. Use --repo org/repo or run from a git checkout." >&2
+        exit 1
+    fi
+fi
+
+OWNER="${REPO%%/*}"
+NAME="${REPO##*/}"
+
+# --- Build and execute GraphQL queries (chunked at 50) ---
+CHUNK_SIZE=50
+ALL_RESULTS="[]"
+
+for ((i=0; i<${#PR_NUMBERS[@]}; i+=CHUNK_SIZE)); do
+    chunk=("${PR_NUMBERS[@]:i:CHUNK_SIZE}")
+
+    # Build aliased fields
+    FIELDS=""
+    for num in "${chunk[@]}"; do
+        FIELDS+="    pr${num}: pullRequest(number: ${num}) {
+      number
+      title
+      state
+      isDraft
+      mergeable
+      updatedAt
+      url
+      reviewDecision
+      commits(last: 1) {
+        nodes {
+          commit {
+            statusCheckRollup {
+              state
+            }
+          }
+        }
+      }
+    }
+"
+    done
+
+    QUERY="query(\$owner: String!, \$repo: String!) {
+  repository(owner: \$owner, name: \$repo) {
+${FIELDS}  }
+}"
+
+    # Execute
+    RAW=$(gh api graphql \
+        -f query="$QUERY" \
+        -f owner="$OWNER" \
+        -f repo="$NAME" 2>&1) || {
+        echo "Error: GraphQL query failed" >&2
+        echo "$RAW" >&2
+        exit 1
+    }
+
+    # Flatten and classify with jq
+    CHUNK_RESULT=$(echo "$RAW" | jq --arg repo "$REPO" '
+        [.data.repository | to_entries[] | select(.value != null) | .value] |
+        map({
+            number: .number,
+            title: .title,
+            state: .state,
+            draft: .isDraft,
+            ci: (.commits.nodes[0].commit.statusCheckRollup.state // "PENDING"),
+            reviews: (.reviewDecision // "NONE"),
+            mergeable: (.mergeable // "UNKNOWN"),
+            updated: .updatedAt,
+            url: .url,
+            action: (
+                if .state == "MERGED" then "merged"
+                elif .state == "CLOSED" then "closed"
+                elif .isDraft == true then "draft"
+                elif .mergeable == "CONFLICTING" then "merge_conflicts"
+                elif (.commits.nodes[0].commit.statusCheckRollup.state // "PENDING") == "FAILURE"
+                  or (.commits.nodes[0].commit.statusCheckRollup.state // "PENDING") == "ERROR"
+                  then "ci_failing"
+                elif (.reviewDecision // "NONE") == "CHANGES_REQUESTED" then "changes_requested"
+                elif (.reviewDecision // "NONE") == "APPROVED"
+                  and ((.commits.nodes[0].commit.statusCheckRollup.state // "PENDING") == "SUCCESS")
+                  and (.mergeable == "MERGEABLE")
+                  then "ready_to_merge"
+                else "review_pending"
+                end
+            )
+        })
+    ')
+
+    # Warn about null results (PR not found)
+    for num in "${chunk[@]}"; do
+        found=$(echo "$RAW" | jq -r ".data.repository.pr${num} // \"null\"")
+        if [[ "$found" == "null" ]]; then
+            echo "Warning: PR #${num} not found in ${REPO}" >&2
+        fi
+    done
+
+    # Merge into ALL_RESULTS
+    ALL_RESULTS=$(echo "$ALL_RESULTS" "$CHUNK_RESULT" | jq -s '.[0] + .[1]')
+done
+
+# --- Output ---
+if [[ "$STATS" == true ]]; then
+    echo "$ALL_RESULTS" | jq '{
+        total: length,
+        merged:            [.[] | select(.action == "merged")]            | length,
+        closed:            [.[] | select(.action == "closed")]            | length,
+        draft:             [.[] | select(.action == "draft")]             | length,
+        merge_conflicts:   [.[] | select(.action == "merge_conflicts")]   | length,
+        ci_failing:        [.[] | select(.action == "ci_failing")]        | length,
+        changes_requested: [.[] | select(.action == "changes_requested")] | length,
+        ready_to_merge:    [.[] | select(.action == "ready_to_merge")]    | length,
+        review_pending:    [.[] | select(.action == "review_pending")]    | length
+    }'
+else
+    echo "$ALL_RESULTS" | jq .
+fi

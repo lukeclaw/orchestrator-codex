@@ -29,6 +29,13 @@ gh pr list --author @me --state closed --limit 5
 
 If `gh` commands fail with auth errors: **STOP and wait for help.**
 
+**Batch-check multiple PRs:** When reconciling several open PRs, use `orch-prs` to check them all at once:
+```bash
+# Batch-check all open PRs at once (auto-detects repo from cwd)
+orch-prs 101 102 103
+```
+The output includes an `action` field per PR (e.g., `merged`, `ci_failing`, `changes_requested`, `ready_to_merge`, `review_pending`) so you know exactly what to do for each.
+
 **Reconcile stale subtask state:** For each `in_progress` subtask with a PR link, check if its PR is already merged. If so, mark the subtask `done` immediately — this prevents redundant work from stale state left by previous sessions.
 
 ---

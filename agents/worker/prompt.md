@@ -164,6 +164,20 @@ orch-tunnel --list
 
 **Read the output carefully** — if the requested port is already occupied on the user's machine, the orchestrator will automatically assign a different local port. Always use the port shown in the output when telling the user which URL to visit (e.g., `localhost:4201` instead of `localhost:4200`).
 
+### Bulk PR Status (`orch-prs`)
+
+Batch-check multiple PR statuses in a single call instead of running `gh pr view` per PR.
+
+```bash
+# Check multiple PRs at once (auto-detects repo from cwd)
+orch-prs 101 102 103
+
+# Summary counts only
+orch-prs --stats 101 102 103
+```
+
+Each PR in the JSON output includes an `action` field: `merged`, `closed`, `draft`, `merge_conflicts`, `ci_failing`, `changes_requested`, `ready_to_merge`, or `review_pending`.
+
 ### Project Context (`orch-context`)
 
 Read project context before starting work. Use a **2-step lookup** to save context window:

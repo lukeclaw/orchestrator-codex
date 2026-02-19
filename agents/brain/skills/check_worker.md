@@ -136,22 +136,24 @@ Identify the task ID and deliverables:
 
 ### Step B: Verify PR status (for coding tasks)
 
-If the task involves code changes, check the PR:
+If the task involves code changes, batch-check all PRs at once with `orch-prs`:
 ```bash
-gh pr view <pr-number> --repo <repo> --json state,mergeable,reviews,statusCheckRollup,comments
+# Collect PR numbers from all workers being checked, then batch per repo
+orch-prs --repo <owner/repo> <pr1> <pr2> <pr3> ...
 ```
 
-**PR is NOT complete if ANY of these are true:**
-- `state` is not "MERGED" → PR still needs to be merged
-- `mergeable` is "CONFLICTING" → Has merge conflicts to resolve
-- `reviews` has "CHANGES_REQUESTED" → Reviewer requested changes
-- `statusCheckRollup` has failing checks → CI is failing
-- `comments` has unresolved threads → Comments need to be addressed
+Each PR in the output has an `action` field. Map it to your decision:
 
-If any of the above are true:
-```
-orch-send <worker-id> "PR is not ready to merge yet. Please check: [specific issue]. Address it and try again."
-```
+| Action | Brain decision |
+|--------|---------------|
+| `merged` | Task complete → proceed to Step D |
+| `ready_to_merge` | Tell worker to merge: `orch-send <worker-id> "PR is approved, CI passing, and mergeable. Please merge it now."` |
+| `ci_failing` | Tell worker to fix CI: `orch-send <worker-id> "PR CI is failing. Please investigate and fix."` |
+| `changes_requested` | Tell worker to address reviews: `orch-send <worker-id> "PR has changes requested. Please address the review comments."` |
+| `merge_conflicts` | Tell worker to rebase: `orch-send <worker-id> "PR has merge conflicts. Please rebase onto the base branch."` |
+| `review_pending` | PR not complete — worker stays alive, waiting for review |
+| `draft` | PR not complete — worker stays alive, still in draft |
+| `closed` | PR was closed — investigate why, may need a new PR |
 
 ### Step C: Verify other deliverables
 

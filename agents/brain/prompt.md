@@ -52,6 +52,7 @@ All tools are in PATH. Run `<tool> --help` for full options.
 | `orch-ctx` | list, read, create, update, delete context items |
 | `orch-send` | send message to a worker |
 | `orch-notifications` | list, dismiss, delete notifications |
+| `orch-prs` | batch check PR statuses — `orch-prs --repo org/repo 123 124 125` |
 
 ### Key Commands
 
