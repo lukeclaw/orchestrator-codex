@@ -10,6 +10,7 @@ show_help() {
     echo "Options:"
     echo "  --type TYPE             Notification type (info|pr_comment|warning), default: info"
     echo "  --link URL              Optional external link (e.g., PR URL)"
+    echo "  --subtask-id ID         Link notification to a subtask instead of the parent task"
     echo "  --message-stdin         Read additional message content from stdin (for multi-line messages)"
     echo ""
     echo "Examples:"
@@ -20,6 +21,9 @@ show_help() {
     echo "  # PR comment with auto-enrichment (fetches PR title, reviewer comment, and reply from GitHub):"
     echo "  orch-notify \"Replied to reviewer about error handling\" --type pr_comment \\"
     echo "    --link \"https://github.com/org/repo/pull/123#discussion_r456\""
+    echo ""
+    echo "  # Link notification to a specific subtask:"
+    echo "  orch-notify \"Rate limiting PR merged\" --subtask-id SUBTASK_UUID --link \"https://github.com/...\""
     echo ""
     echo "  # Multi-line message (e.g., for PR comment replies):"
     echo "  orch-notify \"[Task: Fix auth] Replied to reviewer\" --type pr_comment --link \"URL\" --message-stdin <<'EOF'"
@@ -44,6 +48,7 @@ fi
 MESSAGE=""
 NOTIFY_TYPE="info"
 LINK_URL=""
+SUBTASK_ID=""
 MESSAGE_STDIN=false
 
 MESSAGE="$1"
@@ -57,6 +62,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         --link)
             LINK_URL="$2"
+            shift 2
+            ;;
+        --subtask-id)
+            SUBTASK_ID="$2"
             shift 2
             ;;
         --message-stdin)
@@ -93,7 +102,10 @@ load_task_info "$FORCE_REFRESH"
 escaped_message=$(json_encode "$MESSAGE")
 json="{\"message\": \"$escaped_message\", \"session_id\": \"$SESSION_ID\", \"notification_type\": \"$NOTIFY_TYPE\""
 
-if [[ -n "$TASK_ID" && "$TASK_ID" != "null" ]]; then
+# If --subtask-id provided, use it as the task_id so the notification links to the subtask
+if [[ -n "$SUBTASK_ID" ]]; then
+    json="$json, \"task_id\": \"$SUBTASK_ID\""
+elif [[ -n "$TASK_ID" && "$TASK_ID" != "null" ]]; then
     json="$json, \"task_id\": \"$TASK_ID\""
 fi
 

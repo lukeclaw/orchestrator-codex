@@ -140,6 +140,10 @@ orch-notify "Found potential memory issue in cache module" --type warning
 # With external link
 orch-notify "Docs page needs update" --type info --link "https://example.com/docs"
 
+# Link notification to a specific subtask (dashboard "View Task" will go to the subtask)
+orch-notify "Rate limiting PR merged" --subtask-id SUBTASK_UUID \
+  --link "https://github.com/org/repo/pull/789"
+
 # PR comment notification — link to the exact comment and metadata is auto-fetched from GitHub
 orch-notify "Replied to reviewer about retry logic" --type pr_comment \
   --link "https://github.com/org/repo/pull/123#discussion_r456"
