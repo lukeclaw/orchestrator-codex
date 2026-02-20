@@ -83,21 +83,24 @@ class TestReconnectTunnelOnly:
 
 
 class TestReconnectRdevWorkerTunnelOnlyPath:
-    """Test that reconnect_rdev_worker takes the tunnel-only path when appropriate."""
+    """Test that reconnect_rdev_worker takes the tunnel-only path when appropriate.
+
+    Updated for the sequential pipeline design where Step 1 checks TUI + SSH
+    non-intrusively and returns early if everything is alive.
+    """
 
     @patch("orchestrator.terminal.manager.subprocess")
+    @patch("orchestrator.session.reconnect.check_tui_running_in_pane", return_value=True)
     @patch("orchestrator.session.health.check_worker_ssh_alive", return_value=True)
     @patch("orchestrator.session.health.check_screen_and_claude_rdev")
-    @patch("orchestrator.session.reconnect.reconnect_tunnel_only")
     @patch("orchestrator.session.reconnect.time.sleep")
     def test_tunnel_only_path_when_claude_running(
-        self, mock_sleep, mock_tunnel_only, mock_screen_claude, mock_ssh_alive, mock_tmux_subprocess, db
+        self, mock_sleep, mock_screen_claude, mock_ssh_alive, mock_tui, mock_tmux_subprocess, db
     ):
-        """When tunnel dead but SSH/screen/Claude alive, only reconnect tunnel."""
+        """When TUI active + SSH alive + remote alive, only fix tunnel and return."""
         from orchestrator.session.reconnect import reconnect_rdev_worker
 
         mock_screen_claude.return_value = ("alive", "Screen session exists and Claude is running")
-        mock_tunnel_only.return_value = True
 
         mock_session = MagicMock()
         mock_session.name = "test-worker"
@@ -111,28 +114,25 @@ class TestReconnectRdevWorkerTunnelOnlyPath:
 
         reconnect_rdev_worker(db, mock_session, "orchestrator", "test-worker", 8093, "/tmp", mock_repo, tunnel_manager=mock_tm)
 
-        mock_tm.is_alive.assert_called_with("test-session-id")
-        mock_tunnel_only.assert_called_once()
-        mock_repo.update_session.assert_called_with(db, "test-session-id", status="waiting")
+        # Step 1 detects TUI+SSH alive, subprocess confirms "alive" → _ensure_tunnel called
+        mock_tm.restart_tunnel.assert_called_once()
+        mock_repo.update_session.assert_any_call(db, "test-session-id", status="waiting")
 
     @patch("orchestrator.terminal.manager.subprocess")
-    @patch("orchestrator.session.reconnect.check_ssh_alive", return_value=False)
+    @patch("orchestrator.session.reconnect.check_tui_running_in_pane", return_value=False)
     @patch("orchestrator.session.reconnect.send_keys")
+    @patch("orchestrator.session.reconnect.kill_window")
     @patch("orchestrator.terminal.ssh.rdev_connect")
     @patch("orchestrator.terminal.ssh.wait_for_prompt", return_value=False)
-    @patch("orchestrator.session.health.check_screen_and_claude_rdev")
-    @patch("orchestrator.session.health.check_worker_ssh_alive")
-    @patch("orchestrator.session.reconnect.reconnect_tunnel_only")
+    @patch("orchestrator.session.health.check_worker_ssh_alive", return_value=False)
     @patch("orchestrator.session.reconnect.time.sleep")
     def test_full_reconnect_when_ssh_dead(
-        self, mock_sleep, mock_tunnel_only, mock_ssh_alive, mock_screen_claude,
-        mock_wait_prompt, mock_rdev_connect, mock_send_keys, mock_check_ssh, mock_tmux_subprocess, db
+        self, mock_sleep, mock_ssh_alive,
+        mock_wait_prompt, mock_rdev_connect, mock_kill_window, mock_send_keys,
+        mock_tui, mock_tmux_subprocess, db
     ):
-        """When SSH process is dead, should NOT take tunnel-only path."""
+        """When SSH process is dead (no TUI), should go through full pipeline."""
         from orchestrator.session.reconnect import reconnect_rdev_worker
-
-        mock_screen_claude.return_value = ("dead", "No screen session found")
-        mock_ssh_alive.return_value = False
 
         mock_session = MagicMock()
         mock_session.name = "test-worker"
@@ -146,8 +146,6 @@ class TestReconnectRdevWorkerTunnelOnlyPath:
 
         with pytest.raises(RuntimeError, match="Timed out waiting for shell prompt"):
             reconnect_rdev_worker(db, mock_session, "orchestrator", "test-worker", 8093, "/tmp", mock_repo, tunnel_manager=mock_tm)
-
-        mock_tunnel_only.assert_not_called()
 
 
 class TestHealthCheckAutoReconnectTunnel:

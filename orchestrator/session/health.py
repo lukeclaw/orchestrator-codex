@@ -188,6 +188,30 @@ def _has_ssh_in_process_tree(root_pid: int) -> bool:
         return False
 
 
+def check_tui_running_in_pane(tmux_sess: str, tmux_win: str) -> bool:
+    """Check if the tmux pane is in alternate screen buffer mode (TUI running).
+
+    This is a tmux QUERY (display-message), NOT send-keys.
+    Completely non-intrusive. Safe to call anytime.
+
+    Claude Code (built on Ink/React) and GNU Screen both use the alternate
+    screen buffer, so ``#{alternate_on}`` == "1" means a TUI is active and
+    we must not send shell commands to the pane.
+    """
+    try:
+        target = f"{tmux_sess}:{tmux_win}"
+        result = subprocess.run(
+            ["tmux", "display-message", "-p", "-t", target, "#{alternate_on}"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        return result.stdout.strip() == "1"
+    except (subprocess.TimeoutExpired, Exception) as e:
+        logger.debug("check_tui_running_in_pane(%s:%s) error: %s", tmux_sess, tmux_win, e)
+        return False
+
+
 def check_worker_ssh_alive(tmux_sess: str, tmux_win: str, host: str) -> bool:
     """Check if the worker SSH session is still connected to rdev.
 

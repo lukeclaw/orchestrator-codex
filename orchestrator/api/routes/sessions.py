@@ -32,8 +32,8 @@ from orchestrator.session import (
     get_screen_session_name,
     check_claude_process_local,
     check_screen_and_claude_rdev,
-    check_ssh_alive,
     check_screen_exists_via_tmux,
+    cleanup_reconnect_lock,
     reconnect_rdev_worker,
     reconnect_local_worker,
 )
@@ -490,6 +490,9 @@ def delete_session(session_id: str, request: Request, db=Depends(get_db)):
 
     # Note: work_dir is NOT cleaned up - it's the user's working directory
     # Only tmp_dir (worker_scripts_dir) is cleaned up above
+
+    # Clean up per-session reconnect lock
+    cleanup_reconnect_lock(session_id)
 
     repo.delete_session(db, session_id)
     return {"ok": True}
