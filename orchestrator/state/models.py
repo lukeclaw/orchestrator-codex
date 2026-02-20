@@ -61,6 +61,7 @@ class Session:
     session_type: str = "worker"  # "worker" | "brain" | "system"
     last_viewed_at: str | None = None
     auto_reconnect: bool = False
+    claude_session_id: str | None = None
 
     def __post_init__(self):
         self.takeover_mode = bool(self.takeover_mode)

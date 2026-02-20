@@ -56,6 +56,7 @@ class SessionCreate(BaseModel):
 class SessionUpdate(BaseModel):
     status: str | None = None
     takeover_mode: bool | None = None
+    claude_session_id: str | None = None
 
 
 class SendMessage(BaseModel):
@@ -371,6 +372,7 @@ def create_session(body: SessionCreate, request: Request, db=Depends(get_db)):
             claude_args = [
                 "--dangerously-skip-permissions",
                 f"--settings {shlex.quote(settings_file)}",
+                f"--session-id {s.id}",
             ]
 
             if worker_prompt:
@@ -398,6 +400,7 @@ def update_session(session_id: str, body: SessionUpdate, db=Depends(get_db)):
         db, session_id,
         status=body.status,
         takeover_mode=body.takeover_mode,
+        claude_session_id=body.claude_session_id,
     )
     
     # Publish event for WebSocket broadcast if status changed

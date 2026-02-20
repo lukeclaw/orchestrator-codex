@@ -198,15 +198,21 @@ def _check_claude_session_exists_local(session_id: str) -> bool:
     return exists
 
 
-def _get_claude_session_arg(session_id: str, session_exists: bool) -> str:
+def _get_claude_session_arg(session_id: str, session_exists: bool, has_tracked_id: bool = False) -> str:
     """Get the appropriate Claude CLI argument based on session existence.
 
     Returns:
-        '-r <id>' if session exists (resume)
-        '--session-id <id>' if session doesn't exist (create new)
+        '-r <id>' if session exists (resume specific conversation)
+        '-c' if tracked ID's session file is gone (resume most recent)
+        '--session-id <id>' if no tracked ID and session doesn't exist (create new)
     """
     if session_exists:
         return f"-r {session_id}"
+    elif has_tracked_id:
+        # Tracked session file is gone (cleaned up or stale). Fall back to
+        # most-recent conversation, which is more likely correct than creating
+        # a brand-new session with a random ID.
+        return "-c"
     else:
         return f"--session-id {session_id}"
 
@@ -237,9 +243,12 @@ def _launch_claude_in_screen(
         tmux_sess, tmux_win, session.id, remote_tmp_dir
     )
 
-    # Check if Claude session exists on remote to choose the right launch command
-    session_exists = _check_claude_session_exists_remote(session.host, session.id)
-    session_arg = _get_claude_session_arg(session.id, session_exists)
+    # Use Claude's tracked session ID if available, otherwise orchestrator ID
+    target_id = session.claude_session_id or session.id
+    has_tracked_id = session.claude_session_id is not None
+
+    session_exists = _check_claude_session_exists_remote(session.host, target_id)
+    session_arg = _get_claude_session_arg(target_id, session_exists, has_tracked_id)
     logger.info("Reconnect %s: Claude session exists=%s, using arg: %s", session.name, session_exists, session_arg)
 
     # Launch Claude with skills from the remote .claude directory
@@ -652,9 +661,12 @@ def reconnect_local_worker(session, tmux_sess: str, tmux_win: str, api_port: int
             safe_send_keys(tmux_sess, tmux_win, f"cd {shlex.quote(session.work_dir)}", enter=True)
             time.sleep(0.3)
 
-        # Check if Claude session exists locally to choose the right launch command
-        session_exists = _check_claude_session_exists_local(session.id)
-        session_arg = _get_claude_session_arg(session.id, session_exists)
+        # Use Claude's tracked session ID if available, otherwise orchestrator ID
+        target_id = session.claude_session_id or session.id
+        has_tracked_id = session.claude_session_id is not None
+
+        session_exists = _check_claude_session_exists_local(target_id)
+        session_arg = _get_claude_session_arg(target_id, session_exists, has_tracked_id)
         logger.info("Reconnect local %s: Claude session exists=%s, using arg: %s", session.name, session_exists, session_arg)
 
         settings_file = os.path.join(tmp_dir, "configs", "settings.json")

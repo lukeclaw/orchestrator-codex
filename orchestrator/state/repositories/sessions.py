@@ -62,9 +62,9 @@ def create_session(
     id = str(uuid.uuid4())
     now = utc_now_iso()
     conn.execute(
-        """INSERT INTO sessions (id, name, host, work_dir, session_type, last_status_changed_at)
-           VALUES (?, ?, ?, ?, ?, ?)""",
-        (id, name, host, work_dir, session_type, now),
+        """INSERT INTO sessions (id, name, host, work_dir, session_type, last_status_changed_at, claude_session_id)
+           VALUES (?, ?, ?, ?, ?, ?, ?)""",
+        (id, name, host, work_dir, session_type, now, id),
     )
     conn.commit()
     return get_session(conn, id)
@@ -79,6 +79,7 @@ def update_session(
     takeover_mode: bool | None = None,
     last_viewed_at: str | None = None,
     auto_reconnect: bool | None = None,
+    claude_session_id: str | None = None,
 ) -> Session | None:
     sets = []
     params = []
@@ -100,6 +101,9 @@ def update_session(
     if auto_reconnect is not None:
         sets.append("auto_reconnect = ?")
         params.append(auto_reconnect)
+    if claude_session_id is not None:
+        sets.append("claude_session_id = ?")
+        params.append(claude_session_id)
     if not sets:
         return get_session(conn, id)
     params.append(id)
