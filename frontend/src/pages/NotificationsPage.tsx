@@ -214,13 +214,23 @@ export default function NotificationsPage() {
                           )}
                           {n.metadata.reviewer_comment && (
                             <div className="np-comment-bubble reviewer">
-                              <div className="np-comment-author reviewer">Reviewer</div>
+                              <div className="np-comment-author reviewer">
+                                <span>{n.metadata.reviewer_name || 'Reviewer'}</span>
+                                {n.metadata.reviewer_commented_at && (
+                                  <time className="np-comment-time">{formatTime(n.metadata.reviewer_commented_at)}</time>
+                                )}
+                              </div>
                               <div className="np-comment-body">{n.metadata.reviewer_comment}</div>
                             </div>
                           )}
                           {n.metadata.reply && (
                             <div className="np-comment-bubble reply">
-                              <div className="np-comment-author reply">Your Reply</div>
+                              <div className="np-comment-author reply">
+                                <span>{n.metadata.reply_author || 'Your Reply'}</span>
+                                {n.metadata.reply_commented_at && (
+                                  <time className="np-comment-time">{formatTime(n.metadata.reply_commented_at)}</time>
+                                )}
+                              </div>
                               <div className="np-comment-body">{n.metadata.reply}</div>
                             </div>
                           )}

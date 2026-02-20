@@ -132,32 +132,59 @@ if [[ "$NOTIFY_TYPE" == "pr_comment" && -n "$LINK_URL" ]]; then
         pr_title=$(gh api "repos/$gh_owner/$gh_repo/pulls/$gh_pr_num" --jq '.title' 2>/dev/null) || true
 
         reviewer_comment=""
+        reviewer_name=""
+        reviewer_commented_at=""
         reply_text=""
+        reply_author=""
+        reply_commented_at=""
 
         if [[ -n "$pr_title" ]]; then
             # Extract comment data based on URL fragment type
             if [[ "$gh_fragment" =~ ^discussion_r([0-9]+)$ ]]; then
                 # Review comment (inline code comment) — has threading via in_reply_to_id
                 comment_id="${BASH_REMATCH[1]}"
-                reply_text=$(gh api "repos/$gh_owner/$gh_repo/pulls/comments/$comment_id" --jq '.body' 2>/dev/null) || true
-                parent_id=$(gh api "repos/$gh_owner/$gh_repo/pulls/comments/$comment_id" --jq '.in_reply_to_id' 2>/dev/null) || true
-                if [[ -n "$parent_id" && "$parent_id" != "null" ]]; then
-                    reviewer_comment=$(gh api "repos/$gh_owner/$gh_repo/pulls/comments/$parent_id" --jq '.body' 2>/dev/null) || true
+                reply_json=$(gh api "repos/$gh_owner/$gh_repo/pulls/comments/$comment_id" 2>/dev/null) || true
+                if [[ -n "$reply_json" ]]; then
+                    reply_text=$(echo "$reply_json" | jq -r '.body // ""') || true
+                    reply_author=$(echo "$reply_json" | jq -r 'if .user.name and .user.name != "" then "\(.user.name) (\(.user.login))" else .user.login // "" end') || true
+                    reply_commented_at=$(echo "$reply_json" | jq -r '.created_at // ""') || true
+                    parent_id=$(echo "$reply_json" | jq -r '.in_reply_to_id // ""') || true
+                    if [[ -n "$parent_id" && "$parent_id" != "null" && "$parent_id" != "" ]]; then
+                        reviewer_json=$(gh api "repos/$gh_owner/$gh_repo/pulls/comments/$parent_id" 2>/dev/null) || true
+                        if [[ -n "$reviewer_json" ]]; then
+                            reviewer_comment=$(echo "$reviewer_json" | jq -r '.body // ""') || true
+                            reviewer_name=$(echo "$reviewer_json" | jq -r 'if .user.name and .user.name != "" then "\(.user.name) (\(.user.login))" else .user.login // "" end') || true
+                            reviewer_commented_at=$(echo "$reviewer_json" | jq -r '.created_at // ""') || true
+                        fi
+                    fi
                 fi
             elif [[ "$gh_fragment" =~ ^issuecomment-([0-9]+)$ ]]; then
                 # Issue comment (PR-level comment) — no threading, just fetch the body
                 comment_id="${BASH_REMATCH[1]}"
-                reply_text=$(gh api "repos/$gh_owner/$gh_repo/issues/comments/$comment_id" --jq '.body' 2>/dev/null) || true
+                reply_json=$(gh api "repos/$gh_owner/$gh_repo/issues/comments/$comment_id" 2>/dev/null) || true
+                if [[ -n "$reply_json" ]]; then
+                    reply_text=$(echo "$reply_json" | jq -r '.body // ""') || true
+                    reply_author=$(echo "$reply_json" | jq -r 'if .user.name and .user.name != "" then "\(.user.name) (\(.user.login))" else .user.login // "" end') || true
+                    reply_commented_at=$(echo "$reply_json" | jq -r '.created_at // ""') || true
+                fi
             fi
 
             # Build metadata JSON with proper escaping via jq
             ENRICHED_METADATA=$(jq -n \
                 --arg title "$pr_title" \
                 --arg rc "$reviewer_comment" \
+                --arg rn "$reviewer_name" \
+                --arg rca "$reviewer_commented_at" \
                 --arg reply "$reply_text" \
+                --arg ra "$reply_author" \
+                --arg rpca "$reply_commented_at" \
                 '{pr_title: $title}
                  + (if $rc != "" then {reviewer_comment: $rc} else {} end)
-                 + (if $reply != "" then {reply: $reply} else {} end)' 2>/dev/null) || true
+                 + (if $rn != "" then {reviewer_name: $rn} else {} end)
+                 + (if $rca != "" then {reviewer_commented_at: $rca} else {} end)
+                 + (if $reply != "" then {reply: $reply} else {} end)
+                 + (if $ra != "" then {reply_author: $ra} else {} end)
+                 + (if $rpca != "" then {reply_commented_at: $rpca} else {} end)' 2>/dev/null) || true
         fi
     fi
 

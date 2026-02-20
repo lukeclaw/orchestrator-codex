@@ -112,7 +112,11 @@ export interface ContextItem {
 export interface PrCommentMetadata {
   pr_title?: string
   reviewer_comment?: string
+  reviewer_name?: string
+  reviewer_commented_at?: string
   reply?: string
+  reply_author?: string
+  reply_commented_at?: string
 }
 
 export interface Notification {
