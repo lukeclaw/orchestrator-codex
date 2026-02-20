@@ -14,10 +14,11 @@ case "$EVENT" in
         if [ "$SOURCE" = "startup" ]; then
             STATUS="idle"
         elif [ -n "$CLAUDE_SID" ]; then
-            # /clear, /compact, /resume — report claude_session_id only (no status change)
+            # /clear, /compact, /resume — update claude_session_id and restore idle status
+            # (SessionEnd fires first and briefly sets "disconnected"; correct it here)
             curl -s -X PATCH "$API_BASE/api/sessions/$SESSION_ID" \
                 -H 'Content-Type: application/json' \
-                -d "{\"claude_session_id\": \"$CLAUDE_SID\"}" > /dev/null 2>&1
+                -d "{\"status\": \"idle\", \"claude_session_id\": \"$CLAUDE_SID\"}" > /dev/null 2>&1
             exit 0
         else
             exit 0
