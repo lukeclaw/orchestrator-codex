@@ -50,6 +50,9 @@ export default function DashboardPage() {
     <>
       <StatsBar />
 
+      {/* Recent Activity */}
+      <RecentActivity workers={workers} tasks={tasks} />
+
       {/* Active Projects */}
       <section className="dashboard-projects panel">
         <div className="panel-header">
@@ -71,9 +74,6 @@ export default function DashboardPage() {
           <p className="empty-state">No active projects.</p>
         )}
       </section>
-
-      {/* Recent Activity */}
-      <RecentActivity workers={workers} tasks={tasks} />
 
       {/* Workers */}
       <section className="panel" data-testid="sessions-panel">

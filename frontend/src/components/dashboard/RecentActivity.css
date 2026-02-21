@@ -1,0 +1,52 @@
+.recent-activity {
+  margin-bottom: 16px;
+}
+
+.ra-list {
+  padding: 4px 0;
+}
+
+.ra-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 16px;
+  font-size: 12px;
+  transition: background 0.1s;
+}
+
+.ra-item:hover {
+  background: var(--surface-hover);
+}
+
+.ra-icon {
+  width: 16px;
+  text-align: center;
+  font-size: 10px;
+  flex-shrink: 0;
+}
+
+.ra-icon-done { color: var(--green); }
+.ra-icon-error { color: var(--red); }
+.ra-icon-warn { color: var(--yellow); }
+.ra-icon-info { color: var(--accent); }
+
+.ra-text {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--text-secondary);
+  text-decoration: none;
+}
+
+a.ra-text:hover {
+  color: var(--text-primary);
+}
+
+.ra-time {
+  flex-shrink: 0;
+  font-size: 11px;
+  color: var(--text-muted);
+}
