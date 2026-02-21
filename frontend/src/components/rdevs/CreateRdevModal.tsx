@@ -13,7 +13,6 @@ export default function CreateRdevModal({ open, onClose, onCreate }: Props) {
   const [mpName, setMpName] = useState('')
   const [rdevName, setRdevName] = useState('')
   const [branch, setBranch] = useState('')
-  const [creating, setCreating] = useState(false)
   const [error, setError] = useState('')
 
   useEffect(() => {
@@ -32,31 +31,25 @@ export default function CreateRdevModal({ open, onClose, onCreate }: Props) {
       return
     }
 
-    setError('')
-    setCreating(true)
-
-    try {
-      const payload: Record<string, string> = {
-        mp_name: mpName.trim(),
-      }
-      if (rdevName.trim()) {
-        payload.rdev_name = rdevName.trim()
-      }
-      if (branch.trim()) {
-        payload.branch = branch.trim()
-      }
-
-      await api('/api/rdevs', {
-        method: 'POST',
-        body: JSON.stringify(payload),
-      })
-
-      onCreate()
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to create rdev')
-    } finally {
-      setCreating(false)
+    const payload: Record<string, string> = {
+      mp_name: mpName.trim(),
     }
+    if (rdevName.trim()) {
+      payload.rdev_name = rdevName.trim()
+    }
+    if (branch.trim()) {
+      payload.branch = branch.trim()
+    }
+
+    // Fire request (backend returns 202 immediately) and close modal
+    api('/api/rdevs', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }).catch(() => {
+      // Errors are logged server-side; nothing to show since modal is already closed
+    })
+
+    onCreate()
   }
 
   return (
@@ -123,16 +116,15 @@ export default function CreateRdevModal({ open, onClose, onCreate }: Props) {
             type="button"
             className="btn btn-secondary"
             onClick={onClose}
-            disabled={creating}
           >
             Cancel
           </button>
           <button
             type="submit"
             className="btn btn-primary"
-            disabled={creating || !mpName.trim()}
+            disabled={!mpName.trim()}
           >
-            {creating ? 'Creating...' : 'Create Rdev'}
+            Create Rdev
           </button>
         </div>
       </form>

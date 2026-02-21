@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from 'react'
+import { useState, useCallback, useEffect, useRef } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { useApp } from '../context/AppContext'
 import { api } from '../api/client'
@@ -8,6 +8,7 @@ import AddSessionModal from '../components/sessions/AddSessionModal'
 import RdevTable, { RdevSortKey, SortDir } from '../components/rdevs/RdevTable'
 import CreateRdevModal from '../components/rdevs/CreateRdevModal'
 import { IconRefresh } from '../components/common/Icons'
+import { useNotify } from '../context/NotificationContext'
 import './WorkersPage.css'
 
 type SortOption = 'last_viewed' | 'last_status_changed' | 'name' | 'status'
@@ -138,9 +139,23 @@ export default function WorkersPage() {
     }
   }
 
+  const createRefreshTimers = useRef<ReturnType<typeof setTimeout>[]>([])
+  const notify = useNotify()
+
   const handleCreateRdev = () => {
     setShowCreateRdevModal(false)
-    refreshRdevs(true)
+    notify('Rdev creation started — it may take 1-2 min to appear.', 'info')
+
+    // Clear any previous pending timers
+    createRefreshTimers.current.forEach(clearTimeout)
+    createRefreshTimers.current = []
+
+    // Schedule refreshes at 10s, 30s, and 60s to catch the new rdev
+    for (const delay of [10_000, 30_000, 60_000]) {
+      createRefreshTimers.current.push(
+        setTimeout(() => refreshRdevs(true), delay)
+      )
+    }
   }
 
   const handleRdevSort = (key: RdevSortKey) => {

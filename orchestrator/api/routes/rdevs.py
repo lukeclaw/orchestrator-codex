@@ -179,12 +179,39 @@ def list_rdevs(refresh: bool = False, db=Depends(get_db)):
     return result
 
 
-@router.post("/rdevs", status_code=201)
-def create_rdev(body: RdevCreate):
+def _run_create_rdev(cmd: list[str], rdev_full_name: str) -> None:
+    """Run rdev create in a background thread. Logs result and invalidates cache."""
+    global _rdev_cache
+    try:
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=120,  # 2 minute timeout for create
+        )
+
+        if result.returncode != 0:
+            error_msg = result.stderr.strip() or result.stdout.strip() or "Unknown error"
+            logger.error("rdev create failed: %s", error_msg)
+        else:
+            created_name = result.stdout.strip() or rdev_full_name
+            logger.info("Created rdev: %s", created_name)
+
+    except subprocess.TimeoutExpired:
+        logger.error("rdev create timed out for %s", rdev_full_name)
+    except Exception:
+        logger.exception("rdev create failed for %s", rdev_full_name)
+    finally:
+        # Invalidate cache so next list refresh picks up the new rdev
+        _rdev_cache["timestamp"] = 0
+
+
+@router.post("/rdevs", status_code=202)
+async def create_rdev(body: RdevCreate):
     """Create a new rdev instance.
     
-    Runs `rdev create <mp_name>/<rdev_name>` synchronously.
-    This may take ~30 seconds to complete.
+    Kicks off `rdev create` in the background and returns immediately.
+    The rdev will appear in the list once creation completes (~30-120s).
     """
     # Build rdev name
     if body.rdev_name:
@@ -199,36 +226,11 @@ def create_rdev(body: RdevCreate):
     if body.flavor:
         cmd.extend(["--flavor", body.flavor])
     
-    try:
-        logger.info("Creating rdev: %s", " ".join(cmd))
-        result = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            timeout=120,  # 2 minute timeout for create
-        )
-        
-        if result.returncode != 0:
-            error_msg = result.stderr.strip() or result.stdout.strip() or "Unknown error"
-            logger.error("rdev create failed: %s", error_msg)
-            raise HTTPException(400, f"Failed to create rdev: {error_msg}")
-        
-        # Invalidate cache so next list shows the new rdev
-        global _rdev_cache
-        _rdev_cache["timestamp"] = 0
-        
-        created_name = result.stdout.strip() or rdev_full_name
-        logger.info("Created rdev: %s", created_name)
-        return {"ok": True, "name": created_name}
-        
-    except subprocess.TimeoutExpired:
-        logger.error("rdev create timed out for %s", rdev_full_name)
-        raise HTTPException(504, "rdev create timed out (>2 minutes)")
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.exception("rdev create failed")
-        raise HTTPException(500, f"Failed to create rdev: {str(e)}")
+    logger.info("Creating rdev (background): %s", " ".join(cmd))
+    loop = asyncio.get_event_loop()
+    loop.run_in_executor(None, _run_create_rdev, cmd, rdev_full_name)
+    
+    return {"ok": True, "status": "creating", "name": rdev_full_name}
 
 
 @router.delete("/rdevs/{rdev_name:path}")

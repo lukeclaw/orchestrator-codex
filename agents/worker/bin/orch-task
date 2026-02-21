@@ -6,7 +6,7 @@ show_help() {
     echo "Usage: orch-task <command> [options]"
     echo ""
     echo "Commands:"
-    echo "  show [--refresh]              Show task details"
+    echo "  show                          Show task details"
     echo "  update [options]              Update task"
     echo ""
     echo "Update Options:"
@@ -17,12 +17,8 @@ show_help() {
     echo "  --add-link-tag TAG            Tag for the link (e.g., PR, DOC, ISSUE)"
     echo "  --clear-links                 Remove all links (can combine with --add-link to replace)"
     echo ""
-    echo "Options:"
-    echo "  --refresh                     Force refresh task info from API"
-    echo ""
     echo "Examples:"
     echo "  orch-task show"
-    echo "  orch-task show --refresh"
     echo "  orch-task update --status in_progress"
     echo "  orch-task update --status blocked"
     echo "  orch-task update --notes \"Found issue in auth module\""
@@ -33,13 +29,13 @@ show_help() {
 
 cmd_show() {
     [[ "$1" == "-h" || "$1" == "--help" ]] && show_help && exit 0
-    load_task_info "$FORCE_REFRESH" || exit 1
+    load_task_info || exit 1
     curl -s "$API_BASE/api/tasks/$TASK_ID" | jq .
 }
 
 cmd_update() {
     [[ "$1" == "-h" || "$1" == "--help" ]] && show_help && exit 0
-    load_task_info "$FORCE_REFRESH" || exit 1
+    load_task_info || exit 1
     
     local status="" notes="" notes_stdin="" add_link="" add_link_tag="" clear_links=""
     while [[ $# -gt 0 ]]; do

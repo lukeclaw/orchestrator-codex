@@ -17,7 +17,6 @@ show_help() {
     echo "  global                    Shared context across all projects"
     echo ""
     echo "Options:"
-    echo "  --refresh                 Force refresh task info from API"
     echo ""
     echo "Add options:"
     echo "  --title TITLE             Title for the context item (required)"
@@ -83,7 +82,7 @@ cmd_list() {
     
     case "$scope" in
         project)
-            load_task_info "$FORCE_REFRESH" || exit 1
+            load_task_info || exit 1
             curl -s "$API_BASE/api/context?project_id=$PROJECT_ID" | jq '.[] | {id: .id, title: .title, description: .description, category: .category}'
             ;;
         global)
@@ -111,7 +110,7 @@ cmd_read() {
 }
 
 cmd_tasks() {
-    load_task_info "$FORCE_REFRESH" || exit 1
+    load_task_info || exit 1
     curl -s "$API_BASE/api/tasks?project_id=$PROJECT_ID" | jq .
 }
 
@@ -168,7 +167,7 @@ cmd_add() {
     fi
     
     # Load task info to get project_id
-    load_task_info "$FORCE_REFRESH" || exit 1
+    load_task_info || exit 1
     
     # Build JSON payload
     local json_payload

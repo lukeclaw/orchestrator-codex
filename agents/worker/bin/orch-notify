@@ -96,7 +96,7 @@ $STDIN_CONTENT"
     fi
 fi
 
-load_task_info "$FORCE_REFRESH"
+load_task_info
 # Note: We don't exit on failure - notification can be created without task_id
 
 escaped_message=$(json_encode "$MESSAGE")
