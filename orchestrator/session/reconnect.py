@@ -587,12 +587,12 @@ def reconnect_rdev_worker(conn, session, tmux_sess: str, tmux_win: str, api_port
 
         # ── Step 6: Act on findings ───────────────────────────────────────
         if screen_exists and claude_running:
-            safe_send_keys(tmux_sess, tmux_win, f"screen -r {screen_name}", enter=True)
+            safe_send_keys(tmux_sess, tmux_win, f"screen -rd {screen_name}", enter=True)
             repo.update_session(conn, session.id, status="waiting")
             logger.info("Reconnect %s: SUCCESS — reattached to screen with Claude", session.name)
 
         elif screen_exists and not claude_running:
-            safe_send_keys(tmux_sess, tmux_win, f"screen -r {screen_name}", enter=True)
+            safe_send_keys(tmux_sess, tmux_win, f"screen -rd {screen_name}", enter=True)
             time.sleep(1)
             _launch_claude_in_screen(
                 tmux_sess, tmux_win, session, tmp_dir, remote_tmp_dir, repo, conn,
