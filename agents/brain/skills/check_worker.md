@@ -1,270 +1,206 @@
 ---
 name: check_worker
-description: Check waiting workers and handle low-risk actions. Use when workers are stuck in "waiting" status.
+description: Review all workers, produce a status summary table with suggested actions, and let the user approve which to execute.
 ---
 
-# Check Waiting Workers
+# Check Workers
 
-Handle workers in "waiting" status with low-risk actions to move tasks forward.
+Scan all workers, produce a concise status table with suggested actions, and batch-execute after user confirmation.
 
 ## Usage
-- `/check_worker` — Check first waiting worker, propose action, wait for confirmation
-- `/check_worker <worker-id>` — Check a specific worker by ID
-- `/check_worker auto` — Automatically process ALL waiting workers
+- `/check_worker` — Scan all workers, show summary table, wait for user to approve actions
+- `/check_worker <worker-id>` — Check a specific worker (same table format, one row)
+- `/check_worker auto` — Scan all and execute suggested actions without confirmation
 
 ---
 
 ## Procedure
 
-### Step 1: Get waiting workers
+### Step 1: Gather data
+
 ```bash
-orch-workers list --status waiting
+orch-workers list
+orch-tasks list --exclude-status done
 ```
 
-If no waiting workers, report "No workers in waiting status" and stop.
+If there are zero non-idle workers, report "All workers idle — nothing to check" and stop.
 
-Each worker has:
-- `status_age` — Human-readable duration like "5m ago", "2h ago", "1d ago"
-- `last_status_changed_at` — ISO timestamp (if you need exact time)
+**Specific worker mode:** If a worker ID was provided, run the commands above but only process that single worker. Still show the one-row table and wait for confirmation.
 
-Use `status_age` to prioritize:
-- **Recently waiting (<5m):** May still be processing, consider skipping
-- **Waiting 5-30m:** Good candidate for nudge
-- **Waiting >30m:** Likely stuck, prioritize checking these first
+### Step 2: Capture terminal for each non-idle worker
 
-### Step 2: Select worker(s) to process
-
-**Default mode (no args):** Pick only the FIRST waiting worker from the list.
-
-**Specific worker mode (`<worker-id>` arg):** Check the specified worker directly:
-```bash
-orch-workers show <worker-id>
-```
-Skip Step 1 if a specific worker ID is provided — go straight to checking that worker.
-
-**Auto mode (`auto` arg):** Process ALL waiting workers sequentially.
-
-### Step 3: Capture terminal state FIRST (before any external commands)
+For every worker whose status is NOT idle, capture the last 50 lines:
 ```bash
 tmux capture-pane -p -t orchestrator:<worker-name> -S -50
 ```
 
-**⚡ IMPORTANT:** Read the terminal output to understand what the worker is doing. This is the fastest way to determine the situation — no external API calls needed.
+Read each terminal output to understand the situation. This is the fastest way — no external API calls needed for most workers.
 
-### Step 4: Quick triage — Is worker claiming completion?
+### Step 3: Triage each worker
 
-Scan the terminal output for **completion signals**:
+For each worker, apply the [Triage Rules](#triage-rules) below to determine a one-line **situation** and **suggested action**. Workers claiming completion require the [Slow Path](#slow-path-completion-verification) (external verification via orch-prs).
+
+Batch PR checks whenever possible:
+```bash
+orch-prs --repo <owner/repo> <pr1> <pr2> <pr3> ...
+```
+
+### Step 4: Present the summary table
+
+Format all results as a numbered table. Example:
+
+```
+## Worker Status Report
+
+| # | Worker | Task | Status | Age | Situation | Suggested Action |
+|---|--------|------|--------|-----|-----------|-----------------|
+| 1 | api-worker | PERP-7: Fix dashboard perf | waiting | 15m | Idle at prompt | Send "continue" |
+| 2 | ui-worker | PERP-12: Update settings UI | working | 5m | Writing tests | — |
+| 3 | rdev-worker | PERP-3: Rename API package | waiting | 3h | PR #254 awaiting review | Nudge to check PR |
+| 4 | data-worker | PERP-9: Memory reduction | waiting | 10m | PR #261 merged, task complete | Mark done + stop |
+| 5 | test-worker | — | idle | 1d | No task assigned | (available) |
+
+Proposed actions: #1, #3, #4
+Approve? (all / 1,3 / none / skip 4)
+```
+
+Rules for the table:
+- Include ALL workers (idle, working, waiting, etc.) for a complete picture
+- Workers with status "working" get a dash (—) as action — they are progressing
+- Idle workers with no task get "(available)" — informational only
+- Only workers with an actual suggested action get a row number in "Proposed actions"
+
+### Step 5: Execute approved actions
+
+Wait for user response, then execute:
+- **"all"** or **"yes"** — Execute all proposed actions
+- **"1,3"** (comma-separated numbers) — Execute only those numbered actions
+- **"none"** — Do nothing
+- **"skip 4"** — Execute all proposed EXCEPT #4
+
+For each executed action, verify it worked. Wait 3 seconds then check:
+```bash
+orch-workers show <worker-id> | jq '.status'
+```
+
+If status is still "waiting" after sending a message, the Enter key may not have registered:
+```bash
+tmux send-keys -t orchestrator:<worker-name> Enter
+```
+
+### Step 6: Print recap
+
+```
+Done. 2 of 3 actions executed.
+  #1 api-worker: sent "continue" → now working
+  #3 rdev-worker: nudged to check PR → now working
+  #4 data-worker: skipped by user
+```
+
+Include recommended follow-ups with timing, e.g., "Nudge rdev-worker again in 2h if still waiting for review."
+
+---
+
+## Triage Rules
+
+### Quick check: Is worker claiming completion?
+
+Scan terminal output for completion signals:
 - "PR merged", "PR has been merged", "Successfully merged"
-- "Task complete", "Task done", "All done"
-- "Deliverable ready", "Doc published"
+- "Task complete", "Task done", "All done", "Deliverable ready"
 - Worker explicitly says it finished
 
-**If NO completion signals → Go to [Fast Path](#fast-path-worker-still-working)** (most common)
+No completion signals → **Fast Path**. Completion signals → **Slow Path**.
 
-**If completion signals found → Go to [Slow Path](#slow-path-verify-completion)** (requires verification)
+### Fast Path (no external calls needed)
 
----
+Determine situation and action from status_age and terminal context:
 
-## Fast Path: Worker Still Working
+| Condition | Situation | Suggested Action |
+|-----------|-----------|-----------------|
+| Waiting <2m | Just entered waiting | — (skip, avoid double-nudge) |
+| Waiting 2m-2h, at prompt | Idle at prompt | Send "continue" |
+| Context exhaustion (0%) | Context limit reached | Send "continue" (triggers auto-compact) |
+| PR review wait >2h | PR awaiting review (Xh) | Nudge: "Check PR status, address comments if any, merge if approved" |
+| PR review wait <2h | PR awaiting review (Xm) | — (reviews take time) |
+| Just checked PR | PR checked recently, pending | — (check again in 2-4h) |
+| Needs info you can look up | Needs info: ... | Look it up and relay |
+| Needs info you cannot find | Needs human: ... | — (leave for user) |
+| Blocked by auth | Blocked by auth/permissions | — (leave for user) |
+| Needs decision, >90% confident | Asking: ... | Suggest answer with reasoning |
+| Needs decision, <90% confident | Needs human decision: ... | — (leave for user) |
 
-This is the **quick path** — no external API calls needed. Just decide if we should nudge.
+### Slow Path: Completion Verification
 
-### Check `status_age` and terminal context:
+For workers claiming completion, verify externally before suggesting "Mark done".
 
-**Case 1: Recently waiting (<2m)**
-- Action: **Skip** — avoid double-nudging
-- Worker may still be processing
-
-**Case 2: Waiting 2m-2h, at prompt**
-- Worker finished a step, sitting at prompt
-- Action: `orch-send <worker-id> "continue"`
-
-**Case 3: Context exhaustion (0%)**
-- Claude shows context limit warning
-- Action: `orch-send <worker-id> "continue"` (triggers auto-compact)
-- Do NOT stop or recreate the worker
-
-**Case 4: Waiting for PR reviews (>2h)**
-- Terminal shows worker is waiting for PR approval/merge
-- **⚠️ DO NOT STOP THE WORKER** — must stay alive for review cycle
-- If **>2h**: Nudge to check PR status
-  - `orch-send <worker-id> "Check PR status. If there are review comments, address them. If approved, merge."`
-- If **<2h**: Skip — PR reviews take time
-- **Recommended follow-up:** "Nudge again in 2h if still waiting"
-
-**Case 4b: Worker just checked PR, still waiting**
-- Terminal shows worker already checked PR recently
-- **⚠️ DO NOT STOP** — even if "idle", must stay alive
-- Action: **Skip** (no action needed)
-- **Recommended follow-up:** "Check again in 2-4h"
-
-**Case 5: Missing info**
-- Worker needs information you can look up
-- Use your tools (jarvis, confluence, jira) to find the info
-- Relay via: `orch-send <worker-id> "<the information>"`
-- If you cannot find the info: Skip, leave for human
-
-**Case 6: Blocked by auth**
-- Action: Skip, leave for human to handle
-
-**Case 7: Need decision**
-- Worker asking which approach to take
-- Only act if you have >90% confidence
-- If confident: `orch-send <worker-id> "Use approach X because..."`
-- If not confident: Skip, leave for human
-
-**After fast path → Go to [Shared Steps](#shared-steps-after-fast-or-slow-path)**
-
----
-
-## Slow Path: Verify Completion
-
-**Only enter this path if worker claims task is done or PR is merged.**
-
-This path is slower because it requires external verification, but it's necessary to ensure quality.
-
-### Step A: Get task details
+**Step A:** Get task details and identify deliverables:
 ```bash
 orch-tasks list --assigned <worker-id> --format json | jq '.[0]'
 ```
 
-Identify the task ID and deliverables:
-- Design doc? → Must be shared/published
-- POC? → Must be working and demo-able
-- Bug fix? → Must be verified fixed
-- Code change? → Default = **PR merged**
-
-### Step B: Verify PR status (for coding tasks)
-
-If the task involves code changes, batch-check all PRs at once with `orch-prs`:
+**Step B:** For coding tasks, check PR status:
 ```bash
-# Collect PR numbers from all workers being checked, then batch per repo
-orch-prs --repo <owner/repo> <pr1> <pr2> <pr3> ...
+orch-prs --repo <owner/repo> <pr-numbers>
 ```
 
-Each PR in the output has an `action` field. Map it to your decision:
+Map PR action to table entry:
 
-| Action | Brain decision |
-|--------|---------------|
-| `merged` | Task complete → proceed to Step D |
-| `ready_to_merge` | Tell worker to merge: `orch-send <worker-id> "PR is approved, CI passing, and mergeable. Please merge it now."` |
-| `ci_failing` | Tell worker to fix CI: `orch-send <worker-id> "PR CI is failing. Please investigate and fix."` |
-| `changes_requested` | Tell worker to address reviews: `orch-send <worker-id> "PR has changes requested. Please address the review comments."` |
-| `merge_conflicts` | Tell worker to rebase: `orch-send <worker-id> "PR has merge conflicts. Please rebase onto the base branch."` |
-| `review_pending` | PR not complete — worker stays alive, waiting for review |
-| `draft` | PR not complete — worker stays alive, still in draft |
-| `closed` | PR was closed — investigate why, may need a new PR |
+| PR action | Situation | Suggested Action |
+|-----------|-----------|-----------------|
+| merged | PR merged, all checks passed | Mark done + stop worker |
+| ready_to_merge | PR approved, CI green | Tell worker to merge now |
+| ci_failing | CI failing on PR | Tell worker to fix CI |
+| changes_requested | Review changes requested | Tell worker to address reviews |
+| merge_conflicts | PR has merge conflicts | Tell worker to rebase |
+| review_pending | PR awaiting review | — (wait for review) |
+| draft | PR still in draft | — (still working) |
+| closed | PR was closed | Investigate (may need new PR) |
 
-### Step C: Verify other deliverables
+**Step C:** For non-PR deliverables, note what needs verification in the Situation column.
 
-For non-PR deliverables:
-- **Design doc:** Verify the doc exists and is shared (check the link)
-- **JIRA ticket:** Verify it's updated with resolution
-- **Investigation:** Verify findings are documented
+### Executing "Mark done + stop" Actions
 
-### Step D: Mandatory notification before marking done
+When the user approves a "Mark done + stop" action, execute these steps in order:
 
-**You MUST send a notification to the user before marking any task as done.**
-
-Use the `orch-notifications` CLI:
+1. Send a completion notification:
 ```bash
 orch-notifications create \
   --message "<completion-summary-with-verification>" \
   --task-id "<task-id>" \
   --type "task_completion_review" \
-  --link "<pr-url-if-applicable>"
+  --link "<pr-url>"
 ```
 
-The notification message should include:
-1. **Task:** Brief description of what was done
-2. **PR link:** (if coding task) Direct link to the PR
-3. **Verification:** Brief explanation of how you verified completion
-   - "PR merged, CI passed, no open comments"
-   - "Design doc shared at <link>, reviewed by team"
-   - "Bug fix verified: <test that confirms fix>"
+The notification message must include the task description, PR link (if applicable), and verification details (PR state, CI status, review status, comments resolved).
 
-**Example notification message:**
+2. Mark task done and stop worker:
+```bash
+orch-tasks update <task-id> --status done
+orch-workers stop <worker-id>
 ```
-📋 Task Ready for Completion
-
-Task: Rename customizationApi to chameleonPremiumApi
-Worker: api-worker
-
-PR: https://github.com/org/repo/pull/456
-
-Verification:
-✓ PR state: MERGED
-✓ CI checks: All passed
-✓ Reviews: Approved by @reviewer
-✓ Comments: All resolved
-
-Reply 'yes' to mark as done and stop worker.
-```
-
-### Step E: Wait for user acknowledgment
-
-**DO NOT proceed until the user acknowledges the notification.**
-
-After sending the notification:
-1. Tell the user: "I've sent a notification for your review. Please check the dashboard and approve before I mark the task as done."
-2. Wait for user response (they will say "yes", "approved", "go ahead", etc.)
-3. Only then execute:
-   ```bash
-   orch-tasks update <task-id> --status done
-   orch-workers stop <worker-id>
-   ```
 
 ---
 
-## Shared Steps (after Fast or Slow Path)
+## Auto Mode
 
-### Step 5: Propose or execute action
-
-**Default mode:** Present your analysis and proposed action to the user:
-```
-## Worker: <name> (<id>)
-**Situation:** <brief description of what you see>
-**Proposed action:** <the command you would run>
-
-Proceed? (yes/no/skip)
-```
-Wait for user confirmation before executing. If user says "skip", move on without action.
-
-**Auto mode:** Execute the action immediately, then verify and continue to next worker.
-
-### Step 6: Verify action worked (after execution)
-Wait 3 seconds, then check worker status:
-```bash
-orch-workers show <worker-id> | jq '.status'
-```
-
-If status is not "working", the Enter key may not have registered. Resend:
-```bash
-tmux send-keys -t orchestrator:<worker-name> Enter
-```
+When called with "auto":
+1. Follow Steps 1-4 as normal (gather, capture, triage, print table)
+2. Print the summary table for visibility
+3. Execute ALL suggested actions immediately — no confirmation wait
+4. Print the recap
 
 ---
 
 ## Key Rules
-- **⚡ Terminal-first approach** — read terminal output BEFORE running external commands (gh, jarvis, etc.). Most checks don't need verification.
-- **Fast path = no external calls** — if worker isn't claiming completion, just check `status_age` and decide to nudge or skip
-- **Default action is "continue"** — never stop or delete workers unless task is done
-- **Never guess GitHub URLs** — copy PR URLs exactly from worker output or `gh pr view --json url`. Never construct URLs from memory.
-- **⚠️ NEVER stop a worker waiting for PR review** — worker must stay alive to address reviewer comments when they arrive. "Waiting for reviewer" is NOT a reason to stop. Only stop when PR is MERGED.
-- **Check task deliverables first** — if task specifies a deliverable (doc, POC, etc.), use that; otherwise default to PR merged
-- **PR created ≠ done** — worker must stay alive until PR is MERGED with all checks passing
-- **PR waiting for review ≠ done** — worker stays alive, will address comments when reviews come in
-- **PR with open comments ≠ done** — reviewer comments must be addressed
-- **PR with failing CI ≠ done** — CI must pass
-- **PR with conflicts ≠ done** — conflicts must be resolved
-- **Always notify before marking done** — user must acknowledge completion
-- **Act on facts only** — if unsure about a decision, do NOT take action
-- **You have more tools than workers** — use captain MCP tools (LIX, jarvis, confluence, jira) to relay info workers can't access
-- **For special keys** (up/down arrow to select options): use `tmux send-keys -t orchestrator:<name> Up` or `Down`
 
-## Output
-Provide a brief summary:
-- Workers checked and actions taken (or proposed)
-- Workers skipped and why (left for human)
-- **Notifications sent** for task completion reviews
-- **Recommended follow-ups** with timing (e.g., "Worker X: nudge again in 2h if still waiting for PR review")
+- **Terminal-first** — read terminal output BEFORE running external commands
+- **Fast path = no external calls** — if worker is not claiming completion, just check status_age and decide
+- **Default nudge is "continue"** — never stop or delete workers unless task is verified done
+- **Never guess GitHub URLs** — copy exactly from worker output or use gh pr view
+- **NEVER stop a worker waiting for PR review** — must stay alive for the review cycle
+- **PR created is not done** — worker stays alive until PR is MERGED with all checks passing
+- **Always notify before marking done** — send completion notification with verification details
+- **Act on facts only** — if unsure, put "Needs human" in the table rather than guessing
+- **Batch PR checks** — collect all PR numbers from terminal output and check per-repo in one call
+- **For special keys** (up/down arrow to select options): suggest tmux send-keys Up or Down as the action
