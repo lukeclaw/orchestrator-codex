@@ -1030,7 +1030,24 @@ def health_check_all_sessions(request: Request, db=Depends(get_db)):
                 auto_reconnect_candidates.append(s)
             continue
         if s.status == "connecting":
-            continue  # Skip workers currently connecting (setup in progress)
+            # Check if connecting for too long (stuck setup thread)
+            if s.last_status_changed_at:
+                from datetime import datetime, timezone
+                try:
+                    ts = s.last_status_changed_at.replace("Z", "+00:00")
+                    dt = datetime.fromisoformat(ts)
+                    if dt.tzinfo is None:
+                        dt = dt.astimezone()
+                    elapsed = (datetime.now(timezone.utc) - dt.astimezone(timezone.utc)).total_seconds()
+                    if elapsed > 600:  # 10 minutes
+                        repo.update_session(db, s.id, status="disconnected")
+                        logger.warning("Health check: %s stuck in connecting for %dm, marking disconnected", s.name, int(elapsed // 60))
+                        results["disconnected"].append(s.name)
+                        if s.auto_reconnect:
+                            auto_reconnect_candidates.append(s)
+                except Exception:
+                    pass
+            continue  # Skip further checks for connecting workers
 
         results["checked"] += 1
         tmux_sess, tmux_win = tmux_target(s.name)
