@@ -36,9 +36,6 @@ export default function TaskCard({ task, onClick }: Props) {
             subtasks
           </span>
         )}
-        {task.links && task.links.length > 0 && (
-          <span className="tc-links">{task.links.length} link{task.links.length !== 1 ? 's' : ''}</span>
-        )}
         <span className="tc-time">{timeAgo(task.created_at)}</span>
       </div>
     </div>
