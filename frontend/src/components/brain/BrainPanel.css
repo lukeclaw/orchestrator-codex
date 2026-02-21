@@ -139,8 +139,8 @@
   50% { opacity: 0.5; }
 }
 
-/* Paste image button */
-.bp-paste-image-btn {
+/* Stop icon button */
+.bp-stop-btn {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -155,13 +155,13 @@
   transition: background 0.15s, color 0.15s, border-color 0.15s;
 }
 
-.bp-paste-image-btn:hover {
-  background: var(--surface-hover);
-  color: var(--text-primary);
-  border-color: var(--border);
+.bp-stop-btn:hover {
+  background: rgba(248, 81, 73, 0.1);
+  color: var(--red);
+  border-color: var(--red);
 }
 
-.bp-paste-image-btn:disabled {
+.bp-stop-btn:disabled {
   opacity: 0.5;
   cursor: not-allowed;
 }
@@ -173,4 +173,45 @@
   flex-direction: column;
   min-height: 0;
   overflow: hidden;
+}
+
+/* Footer */
+.bp-footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  min-height: 44px;
+  box-sizing: border-box;
+  padding: 8px 12px;
+  border-top: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.bp-footer-paste-btn {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  background: none;
+  border: 1px solid var(--border-subtle);
+  color: var(--text-secondary);
+  font-size: 11px;
+  padding: 3px 10px;
+  border-radius: var(--radius);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+
+.bp-footer-paste-btn:hover:not(:disabled) {
+  background: var(--surface-hover, var(--bg));
+  color: var(--text);
+  border-color: var(--border);
+}
+
+.bp-footer-paste-btn:active:not(:disabled) {
+  background: var(--border-subtle);
+}
+
+.bp-footer-paste-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
 }

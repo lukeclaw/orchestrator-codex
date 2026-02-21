@@ -82,6 +82,8 @@
 }
 
 .sidebar-footer {
+  min-height: 44px;
+  box-sizing: border-box;
   padding: 5px 8px;
   border-top: 1px solid var(--border);
 }

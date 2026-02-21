@@ -3,7 +3,7 @@ import { api } from '../../api/client'
 import { useNotify } from '../../context/NotificationContext'
 import BrainTerminal from './BrainTerminal'
 import type { BrainStatus } from './BrainTerminal'
-import { IconChevronLeft, IconChevronRight, IconImage } from '../common/Icons'
+import { IconChevronLeft, IconChevronRight, IconImage, IconStop } from '../common/Icons'
 import ConfirmPopover from '../common/ConfirmPopover'
 import './BrainPanel.css'
 
@@ -199,16 +199,6 @@ export default function BrainPanel({
           )}
         </div>
         <div className="bp-header-right">
-          {isRunning && (
-            <button
-              className="bp-paste-image-btn"
-              onClick={handlePasteImage}
-              disabled={pastingImage}
-              title="Paste image from clipboard"
-            >
-              <IconImage size={14} />
-            </button>
-          )}
           {isRunning ? (
             <ConfirmPopover
               message="Stop the brain?"
@@ -218,11 +208,12 @@ export default function BrainPanel({
             >
               {({ onClick }) => (
                 <button
-                  className="btn btn-danger btn-sm"
+                  className="bp-stop-btn"
                   onClick={onClick}
                   disabled={stopping}
+                  title="Stop brain"
                 >
-                  {stopping ? 'Stopping...' : 'Stop'}
+                  <IconStop size={14} />
                 </button>
               )}
             </ConfirmPopover>
@@ -248,6 +239,20 @@ export default function BrainPanel({
           onTerminalInputRef={(fn: (text: string) => void) => { terminalInputRef.current = fn }}
         />
       </div>
+
+      {isRunning && (
+        <div className="bp-footer">
+          <button
+            className="bp-footer-paste-btn"
+            onClick={handlePasteImage}
+            disabled={pastingImage}
+            title="Paste image from clipboard"
+          >
+            <IconImage size={12} />
+            <span>{pastingImage ? 'Pasting...' : 'Paste'}</span>
+          </button>
+        </div>
+      )}
     </div>
   )
 }
