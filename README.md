@@ -19,8 +19,9 @@ Open http://localhost:8094 — you'll see 3 projects, 5 workers, and ~15 tasks p
 
 - Python 3.11+
 - Node.js 20+
-- tmux 3.x
-- uv (Python package manager)
+- tmux 3.x (`brew install tmux`)
+- [uv](https://docs.astral.sh/uv/) (Python package manager)
+- Rust toolchain + Tauri CLI (only for macOS app builds): `cargo install tauri-cli`
 
 ### 1. Backend
 
@@ -55,26 +56,65 @@ yarn dev
 - **Frontend Dev Server**: http://localhost:5173 (hot reload, proxies to backend)
 - **Backend API**: http://localhost:8093/api
 
+## macOS App
+
+The orchestrator is packaged as a native macOS app using Tauri. The `.app` bundle is fully self-contained — it includes Python, all dependencies, tmux, and the built frontend.
+
+### Building the App
+
+```bash
+# Full build (frontend + PyInstaller sidecar + Tauri app)
+./scripts/build_app.sh
+
+# Skip frontend rebuild if unchanged
+./scripts/build_app.sh --skip-frontend
+```
+
+Output:
+- `src-tauri/target/release/bundle/macos/ClaudeOrchestrator.app`
+- `src-tauri/target/release/bundle/dmg/ClaudeOrchestrator_*.dmg`
+
+### App Behavior
+
+- **Close button / Cmd+W** — Hides the window. The app stays in the dock and the server keeps running.
+- **Click dock icon** — Restores the window.
+- **Cmd+Q / Quit from dock** — Fully quits the app and stops the server.
+
 ## Development
 
-### Running Both Servers
+### Browser-Only (no Tauri)
 
-**Terminal 1 — Backend:**
+**Terminal 1 — Backend with auto-reload:**
 ```bash
-cd orchestrator
 uv run uvicorn orchestrator.api.app:create_app --factory --reload --port 8093
 ```
 
-**Terminal 2 — Frontend:**
+**Terminal 2 — Frontend with HMR:**
 ```bash
-cd orchestrator/frontend
-yarn dev
+cd frontend && npm run dev
 ```
+
+Open http://localhost:5173. Vite proxies API/WS calls to the backend on :8093.
+
+### With Tauri Window
+
+To develop inside the native Tauri window (for testing dock behavior, window events, etc.):
+
+**Terminal 1 — Backend with auto-reload:**
+```bash
+uv run uvicorn orchestrator.api.app:create_app --factory --reload --port 8093
+```
+
+**Terminal 2 — Tauri + Vite:**
+```bash
+cargo tauri dev
+```
+
+In dev mode, Tauri opens the Vite dev server directly and does **not** spawn the bundled sidecar. The production app and dev workflow are fully isolated.
 
 ### CLI Mode
 
 ```bash
-cd orchestrator
 uv run orchestrator
 ```
 
@@ -99,6 +139,14 @@ orchestrator/
 │       ├── pages/           # Dashboard, Workers, Projects, etc.
 │       ├── components/      # Reusable UI components
 │       └── context/         # AppContext (state management)
+├── src-tauri/               # Tauri shell (Rust)
+│   ├── src/lib.rs           # App setup, sidecar lifecycle, window events
+│   ├── tauri.conf.json      # Bundle config, CSP, dev/prod URLs
+│   └── loading.html         # Splash screen during server startup
+├── scripts/
+│   ├── build_sidecar.py     # Builds PyInstaller onedir bundle
+│   └── build_app.sh         # Full production build script
+├── orchestrator.spec        # PyInstaller spec (onedir mode)
 ├── prompts/                 # CLAUDE.md templates for brain & workers
 └── data/                    # SQLite DB & logs (gitignored)
 ```

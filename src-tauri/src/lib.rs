@@ -89,6 +89,14 @@ pub fn run() {
             child: Mutex::new(None),
         })
         .setup(|app| {
+            // In dev mode (cargo tauri dev), don't spawn the sidecar.
+            // The user runs the Python server separately with --reload:
+            //   uv run uvicorn orchestrator.api.app:create_app --factory --reload --port 8093
+            if cfg!(debug_assertions) {
+                eprintln!("[tauri] Dev mode — skipping sidecar (run Python server manually)");
+                return Ok(());
+            }
+
             let app_handle = app.handle().clone();
             let sidecar_path = resolve_sidecar_path();
             eprintln!("[tauri] Sidecar path: {}", sidecar_path.display());
