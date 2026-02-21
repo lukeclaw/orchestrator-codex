@@ -17,14 +17,11 @@ router = APIRouter()
 
 
 def get_images_dir() -> Path:
-    """Return the persistent images directory (data/images/)."""
-    from orchestrator.main import PROJECT_ROOT, load_config
-    config = load_config()
-    db_path = config.get("database", {}).get("path", "data/orchestrator.db")
-    data_dir = PROJECT_ROOT / Path(db_path).parent
-    images_dir = data_dir / "images"
-    images_dir.mkdir(parents=True, exist_ok=True)
-    return images_dir
+    """Return the persistent images directory."""
+    from orchestrator import paths
+    img_dir = paths.images_dir()
+    img_dir.mkdir(parents=True, exist_ok=True)
+    return img_dir
 
 
 def save_image(image_data: str, filename: Optional[str] = None) -> dict:

@@ -188,6 +188,12 @@ class TmuxControlConnection:
             return True
 
         try:
+            import shutil
+            tmux_path = shutil.which("tmux")
+            logger.info(
+                "Starting tmux control mode for session %s (tmux=%s)",
+                self.session, tmux_path,
+            )
             self._process = await asyncio.create_subprocess_exec(
                 "tmux", "-C", "attach-session", "-t", self.session,
                 stdin=asyncio.subprocess.PIPE,
@@ -195,7 +201,10 @@ class TmuxControlConnection:
                 stderr=asyncio.subprocess.PIPE,
             )
             self._running = True
-            logger.info("Started tmux control mode for session %s", self.session)
+            logger.info(
+                "Started tmux control mode for session %s (pid=%s)",
+                self.session, self._process.pid,
+            )
 
             self._reader_task = asyncio.create_task(self._read_output())
             return True
@@ -305,6 +314,13 @@ class TmuxControlConnection:
     async def send_keys(self, target: str, keys: str) -> bool:
         """Send keys to *target* (e.g. ``session:window``) via control mode."""
         if not self.is_alive:
+            logger.warning(
+                "send_keys: control connection not alive for session %s "
+                "(process=%s, returncode=%s)",
+                self.session,
+                self._process is not None,
+                self._process.returncode if self._process else "N/A",
+            )
             return False
 
         try:
@@ -391,8 +407,12 @@ async def send_keys_async(session: str, window: str, keys: str) -> bool:
     if await conn.send_keys(target, keys):
         return True
     # First attempt failed — get_connection will replace the dead conn
+    logger.warning("send_keys first attempt failed for %s, retrying with fresh connection", target)
     conn = await pool.get_connection(session)
-    return await conn.send_keys(target, keys)
+    result = await conn.send_keys(target, keys)
+    if not result:
+        logger.error("send_keys retry also failed for %s", target)
+    return result
 
 
 async def resize_async(session: str, window: str, cols: int, rows: int) -> bool:

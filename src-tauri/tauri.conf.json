@@ -1,0 +1,49 @@
+{
+  "$schema": "https://raw.githubusercontent.com/nicehash/tauri/refs/heads/dev/crates/tauri-schema-generator/schemas/config.schema.json",
+  "productName": "ClaudeOrchestrator",
+  "version": "0.1.0",
+  "identifier": "com.orchestrator.claude",
+  "build": {
+    "frontendDist": "./loading"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "Claude Orchestrator",
+        "width": 1280,
+        "height": 800,
+        "minWidth": 800,
+        "minHeight": 600
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self' 'unsafe-inline' 'unsafe-eval'; connect-src http://127.0.0.1:8093 ws://127.0.0.1:8093 http://localhost:8093 ws://localhost:8093; img-src http://127.0.0.1:8093 http://localhost:8093 data: blob:; font-src data:; style-src 'self' 'unsafe-inline'"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["dmg", "app"],
+    "icon": [
+      "icons/icon.icns",
+      "icons/icon.png"
+    ],
+    "externalBin": [
+      "binaries/orchestrator-server"
+    ],
+    "macOS": {
+      "minimumSystemVersion": "13.0"
+    },
+    "createUpdaterArtifacts": true
+  },
+  "plugins": {
+    "shell": {
+      "open": true
+    },
+    "updater": {
+      "pubkey": "REPLACE_WITH_GENERATED_PUBLIC_KEY",
+      "endpoints": [
+        "https://github.com/USER/REPO/releases/latest/download/latest.json"
+      ]
+    }
+  }
+}

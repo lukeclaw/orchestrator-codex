@@ -5,18 +5,16 @@ or a static /assets/* file falls through to here and gets index.html
 so that React Router can handle client-side routing.
 """
 
-from pathlib import Path
-
 from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse
 
-router = APIRouter()
+from orchestrator import paths
 
-DIST_DIR = Path(__file__).parent.parent.parent / "web" / "dist"
+router = APIRouter()
 
 
 def _serve_spa() -> HTMLResponse:
-    dist_index = DIST_DIR / "index.html"
+    dist_index = paths.web_dist_dir() / "index.html"
     if dist_index.exists():
         return HTMLResponse(dist_index.read_text())
     return HTMLResponse(

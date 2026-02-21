@@ -1,0 +1,1 @@
+{"default":{"identifier":"default","description":"Default capabilities for Claude Orchestrator","local":true,"windows":["main"],"permissions":["core:default",{"identifier":"shell:allow-spawn","allow":[{"name":"binaries/orchestrator-server","sidecar":true}]},"shell:allow-open","shell:allow-kill","shell:allow-stdin-write","process:default","opener:default","updater:default"]}}

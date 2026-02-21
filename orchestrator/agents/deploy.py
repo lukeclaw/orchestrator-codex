@@ -9,8 +9,10 @@ import os
 import shutil
 import stat
 
-# Path to the agents directory (relative to this file)
-_AGENTS_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "agents"))
+from orchestrator import paths
+
+# Path to the agents directory (resolved via paths module for dev/packaged compat)
+_AGENTS_DIR = str(paths.agents_dir())
 _SHARED_HOOKS_DIR = os.path.join(_AGENTS_DIR, "shared", "hooks")
 
 # Script names for iteration

@@ -13,11 +13,11 @@ from pathlib import Path
 
 from mcp.server.fastmcp import FastMCP
 
-# Resolve DB path — either from env or from config.yaml
+# Resolve DB path — either from env or via centralized paths module
 _DB_PATH = os.environ.get("ORCHESTRATOR_DB")
 if not _DB_PATH:
-    _project_root = Path(__file__).parent.parent.parent
-    _DB_PATH = str(_project_root / "data" / "orchestrator.db")
+    from orchestrator import paths
+    _DB_PATH = str(paths.db_path())
 
 mcp = FastMCP("orchestrator", instructions=(
     "Project management tools for the Claude Orchestrator. "

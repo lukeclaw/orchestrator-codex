@@ -200,7 +200,16 @@ export default function TerminalView({ sessionId, sessionStatus, onUserInput, di
 
     const fitAddon = new FitAddon()
     const webLinksAddon = new WebLinksAddon((_event, uri) => {
-      window.open(uri, '_blank', 'noopener')
+      // Use backend endpoint to open in system browser (window.open doesn't
+      // work reliably inside a Tauri webview)
+      fetch('/api/open-url', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: uri }),
+      }).catch(() => {
+        // Fallback: try window.open in case we're running outside the app
+        window.open(uri, '_blank', 'noopener')
+      })
     })
     terminal.loadAddon(fitAddon)
     terminal.loadAddon(webLinksAddon)

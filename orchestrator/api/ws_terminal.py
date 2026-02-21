@@ -365,9 +365,23 @@ async def terminal_websocket(websocket: WebSocket, session_id: str):
 
             if msg.get("type") == "input":
                 record_user_input(session_id)
-                asyncio.create_task(send_keys_async(
-                    tmux_sess, tmux_win, msg.get("data", "")
-                ))
+
+                async def _send_input(data: str):
+                    ok = await send_keys_async(tmux_sess, tmux_win, data)
+                    if not ok:
+                        logger.error(
+                            "send_keys failed for %s:%s (data_len=%d)",
+                            tmux_sess, tmux_win, len(data),
+                        )
+                        try:
+                            await websocket.send_json({
+                                "type": "error",
+                                "message": "Failed to send input to terminal",
+                            })
+                        except Exception:
+                            pass
+
+                asyncio.create_task(_send_input(msg.get("data", "")))
             elif msg.get("type") == "request_sync":
                 sync_requested = True
             elif msg.get("type") == "request_history":

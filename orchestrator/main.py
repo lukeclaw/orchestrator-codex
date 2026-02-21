@@ -11,19 +11,23 @@ import yaml
 from rich.console import Console
 from rich.table import Table
 
+from orchestrator import paths
 from orchestrator.state.db import get_connection
 from orchestrator.state.migrations.runner import apply_migrations
 
 console = Console()
 
-# Resolve project root (the directory containing pyproject.toml)
-PROJECT_ROOT = Path(__file__).parent.parent
+# Backwards compat: other modules may import PROJECT_ROOT from here
+PROJECT_ROOT = paths.project_root()
 
 
 def load_config(config_path: Path | None = None) -> dict:
     """Load bootstrap config from YAML."""
     if config_path is None:
-        config_path = PROJECT_ROOT / "config.yaml"
+        config_path = paths.config_path()
+        # Fall back to project-root config.yaml if data-dir copy doesn't exist yet
+        if not config_path.exists():
+            config_path = paths.default_config_path()
     if not config_path.exists():
         console.print(f"[red]Config not found: {config_path}[/red]")
         sys.exit(1)
@@ -35,13 +39,12 @@ def setup_logging(config: dict):
     """Configure logging from bootstrap config."""
     log_cfg = config.get("logging", {})
     level = getattr(logging, log_cfg.get("level", "INFO").upper(), logging.INFO)
-    log_file = log_cfg.get("file")
 
     handlers: list[logging.Handler] = [logging.StreamHandler()]
-    if log_file:
-        log_path = PROJECT_ROOT / log_file
-        log_path.parent.mkdir(parents=True, exist_ok=True)
-        handlers.append(logging.FileHandler(str(log_path)))
+
+    lp = paths.log_path()
+    lp.parent.mkdir(parents=True, exist_ok=True)
+    handlers.append(logging.FileHandler(str(lp)))
 
     logging.basicConfig(
         level=level,
@@ -52,8 +55,9 @@ def setup_logging(config: dict):
 
 def init_db(config: dict):
     """Initialize the database: open connection, run migrations."""
-    db_path = PROJECT_ROOT / config["database"]["path"]
-    conn = get_connection(db_path)
+    resolved = paths.db_path()
+    resolved.parent.mkdir(parents=True, exist_ok=True)
+    conn = get_connection(str(resolved))
     applied = apply_migrations(conn)
     if applied:
         console.print(f"[green]Applied migrations: {applied}[/green]")

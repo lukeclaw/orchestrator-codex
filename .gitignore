@@ -70,3 +70,13 @@ tmp/
 
 # screenshots from playwright
 .playwright-mcp
+
+# Tauri / Rust
+src-tauri/target/
+src-tauri/binaries/orchestrator-server*
+!src-tauri/binaries/.gitkeep
+
+# PyInstaller
+*.spec.bak
+orchestrator-server
+orchestrator-server.pkg

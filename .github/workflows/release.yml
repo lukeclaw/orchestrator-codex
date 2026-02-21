@@ -1,0 +1,80 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Install Python dependencies
+        run: |
+          uv sync
+          uv pip install pyinstaller
+
+      - name: Build React frontend
+        run: |
+          cd frontend
+          npm ci
+          npm run build
+
+      - name: Build PyInstaller sidecar
+        run: |
+          uv run python -m PyInstaller orchestrator.spec --clean --noconfirm
+          TRIPLE="aarch64-apple-darwin"
+          # Also build for x86_64 if on ARM (universal not supported by PyInstaller)
+          cp dist/orchestrator-server "src-tauri/binaries/orchestrator-server-${TRIPLE}"
+          chmod +x "src-tauri/binaries/orchestrator-server-${TRIPLE}"
+
+      - name: Install Tauri CLI
+        run: cargo install tauri-cli
+
+      - name: Build Tauri app
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          projectPath: '.'
+          tauriScript: cargo tauri
+          tagName: ${{ github.ref_name }}
+          releaseName: 'Claude Orchestrator ${{ github.ref_name }}'
+          releaseBody: |
+            See the assets below to download and install.
+
+            **Installation:** Download the `.dmg` file, open it, and drag Claude Orchestrator to Applications.
+
+            **Prerequisite:** [tmux](https://github.com/tmux/tmux) must be installed (`brew install tmux`).
+          releaseDraft: false
+          prerelease: false
