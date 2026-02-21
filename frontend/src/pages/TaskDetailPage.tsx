@@ -56,6 +56,7 @@ export default function TaskDetailPage() {
   const [editLinkUrl, setEditLinkUrl] = useState('')
   const [editLinkTag, setEditLinkTag] = useState('')
   const [subtasksExpanded, setSubtasksExpanded] = useState(true)
+  const [subtaskFilter, setSubtaskFilter] = useState<string>('all')
   const [notesExpanded, setNotesExpanded] = useState(true)
   const [showAddSubtask, setShowAddSubtask] = useState(false)
   const [newSubtaskTitle, setNewSubtaskTitle] = useState('')
@@ -432,6 +433,7 @@ export default function TaskDetailPage() {
   const activeSubtasks = subtasks.filter(st => st.status === 'in_progress').length
   const blockedSubtasks = subtasks.filter(st => st.status === 'blocked').length
   const totalSubtasks = subtasks.length
+  const filteredSubtasks = subtaskFilter === 'all' ? subtasks : subtasks.filter(st => st.status === subtaskFilter)
 
   return (
     <div className="task-detail-page">
@@ -742,7 +744,13 @@ export default function TaskDetailPage() {
               </div>
             )}
             {links.length === 0 && !showAddLink ? (
-              <p className="tdp-desc empty">No links attached</p>
+              <div className="tdp-links-empty">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
+                  <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
+                </svg>
+                <span>No links yet</span>
+              </div>
             ) : (
               <div className="tdp-links">
                 {links.map(link => (
@@ -835,29 +843,54 @@ export default function TaskDetailPage() {
               </div>
             )}
             {subtasksExpanded && subtasks.length > 0 && (
-              <div className="tdp-subtasks-list">
-                {subtasks.map(st => (
-                  <div key={st.id} className="tdp-subtask-row">
-                    <Link to={`/tasks/${st.id}`} className="tdp-subtask-item">
-                      <span className={`subtask-status status-${st.status}`} />
-                      <span className="subtask-key">{st.task_key}</span>
-                      <span className="subtask-title">{st.title}</span>
-                    </Link>
-                    {st.links && st.links.length > 0 && (
-                      <a
-                        href={st.links[0].url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="subtask-link-btn"
-                        onClick={e => e.stopPropagation()}
-                        title={st.links.length > 1 ? `${st.links[0].url} (+${st.links.length - 1} more)` : st.links[0].url}
+              <>
+                {subtasks.length > 1 && (
+                  <div className="tdp-subtask-filters">
+                    {[
+                      { value: 'all', label: 'All', count: totalSubtasks },
+                      { value: 'todo', label: 'To Do', count: subtasks.filter(st => st.status === 'todo').length },
+                      { value: 'in_progress', label: 'Active', count: activeSubtasks },
+                      { value: 'done', label: 'Done', count: doneSubtasks },
+                      { value: 'blocked', label: 'Blocked', count: blockedSubtasks },
+                    ].filter(f => f.value === 'all' || f.count > 0).map(f => (
+                      <button
+                        key={f.value}
+                        className={`tdp-subtask-filter-pill ${f.value !== 'all' ? `status-${f.value}` : ''} ${subtaskFilter === f.value ? 'active' : ''}`}
+                        onClick={() => setSubtaskFilter(f.value)}
                       >
-                        ↗{st.links.length > 1 && <span className="link-more">...</span>}
-                      </a>
-                    )}
+                        {f.label}
+                        <span className="pill-count">{f.count}</span>
+                      </button>
+                    ))}
                   </div>
-                ))}
-              </div>
+                )}
+                <div className="tdp-subtasks-list">
+                  {filteredSubtasks.map(st => (
+                    <div key={st.id} className="tdp-subtask-row">
+                      <Link to={`/tasks/${st.id}`} className="tdp-subtask-item">
+                        <span className={`subtask-status status-${st.status}`} />
+                        <span className="subtask-key">{st.task_key}</span>
+                        <span className="subtask-title">{st.title}</span>
+                      </Link>
+                      {st.links && st.links.length > 0 && (
+                        <a
+                          href={st.links[0].url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="subtask-link-btn"
+                          onClick={e => e.stopPropagation()}
+                          title={st.links.length > 1 ? `${st.links[0].url} (+${st.links.length - 1} more)` : st.links[0].url}
+                        >
+                          ↗{st.links.length > 1 && <span className="link-more">...</span>}
+                        </a>
+                      )}
+                    </div>
+                  ))}
+                  {filteredSubtasks.length === 0 && (
+                    <p className="tdp-empty-text">No {formatStatus(subtaskFilter).toLowerCase()} subtasks</p>
+                  )}
+                </div>
+              </>
             )}
             {subtasksExpanded && subtasks.length === 0 && !showAddSubtask && (
               <p className="tdp-empty-text">No subtasks yet</p>
