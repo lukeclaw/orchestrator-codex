@@ -2,8 +2,8 @@
 title: "Claude Orchestrator — UI Design Document"
 author: Yudong Qiu
 created: 2026-02-07
-last_modified: 2026-02-07
-status: Approved
+last_modified: 2026-02-21
+status: Implemented
 ---
 
 # Claude Orchestrator — UI Design Document
@@ -16,24 +16,46 @@ A modern, dark-themed dashboard for managing multiple Claude Code sessions worki
 
 ## Information Architecture
 
-### Sidebar Navigation (persistent, collapsible)
+### Three-Column Layout
+
+The app uses a persistent three-column layout:
 
 ```
-[Logo] Claude Orchestrator
-─────────────────────────────
-📊  Dashboard                    ← Overview / home
-📁  Projects                     ← Project list + detail
-🖥️  Sessions                     ← Session list + terminals
-📋  Tasks                        ← Task board (kanban or table)
-⚡  Decisions                    ← Decision queue
-💬  Chat                         ← LLM brain conversation
-📜  Activity                     ← Full event log
-⚙️  Settings                     ← Config, templates, keys
-─────────────────────────────
-[Connection status dot] Connected
+┌─────────────┬──────────────────────────────────┬──────────────────────┐
+│  Sidebar    │  Main Content                    │  Brain Panel         │
+│  (220px /   │  (flex: 1)                       │  (resizable)         │
+│   56px)     │                                  │                      │
+│             │  ┌─ Header ───────────────────┐  │  ┌─ Header ───────┐ │
+│  Dashboard  │  │ tmux attach...   ● Live    │  │  │ Brain [Working]│ │
+│  Projects   │  ├────────────────────────────┤  │  ├────────────────┤ │
+│  Tasks      │  │                            │  │  │                │ │
+│  Workers 8  │  │  Page Content              │  │  │  Claude Code   │ │
+│  Context    │  │  (scrollable)              │  │  │  Terminal      │ │
+│  Notifs     │  │                            │  │  │  (xterm.js)    │ │
+│             │  │                            │  │  │                │ │
+│  ─────────  │  │                            │  │  │                │ │
+│  Settings   │  │                            │  │  │         Paste  │ │
+└─────────────┴──────────────────────────────────┴──────────────────────┘
 ```
 
-The sidebar is 56px collapsed (icons only) or 220px expanded. It remembers state in localStorage. Each item shows a count badge when relevant (e.g., Decisions shows pending count, Tasks shows in-progress count).
+- **Sidebar**: 220px expanded, 56px collapsed (icons only). State persisted in localStorage. Each item has a keyboard shortcut (D, P, T, W, K, N). Shows count badges when relevant (Workers shows waiting count, Notifications shows unread count).
+- **Main content**: Header (40px) with tmux command (click-to-copy) and WebSocket connection status. Below is the scrollable page content.
+- **Brain panel**: Resizable right panel with a live Claude Code terminal (the orchestrator brain). Has start/stop controls, paste button for sending commands. Collapsible.
+
+### Sidebar Navigation
+
+```
+[Logo] Orchestrator
+─────────────────────────────
+  Dashboard           (D)     ← Overview / home
+  Projects            (P)     ← Project list + detail
+  Tasks               (T)     ← Task table with filters
+  Workers        [8]  (W)     ← Worker list + terminals (badge = waiting count)
+  Context             (K)     ← Context items management
+  Notifications  [3]  (N)     ← Notification feed (badge = unread count)
+─────────────────────────────
+  Settings                    ← Config management
+```
 
 ---
 
@@ -41,406 +63,214 @@ The sidebar is 56px collapsed (icons only) or 220px expanded. It remembers state
 
 ### 1. Dashboard (Home)
 
-The landing page. At-a-glance overview of everything happening.
+The landing page. At-a-glance overview of everything happening. Layout order: Stats → Recent Activity → Active Projects → Workers.
 
 ```
 ┌──────────────────────────────────────────────────────────────────────┐
-│  STATS ROW                                                          │
-│  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐ │
-│  │ 3        │ │ 2        │ │ 5        │ │ 2        │ │ 1        │ │
-│  │ Sessions │ │ Projects │ │ Tasks    │ │ Decisions│ │ Open PRs │ │
-│  │ (2 busy) │ │ (active) │ │ (3 todo) │ │ (pending)│ │          │ │
-│  └──────────┘ └──────────┘ └──────────┘ └──────────┘ └──────────┘ │
+│  STATS ROW (compact, horizontal)                                     │
+│  ┌───────────────────┐ ┌──────────────┐ ┌────────────────────────┐  │
+│  │ 11  WORKERS       │ │ 11  PROJECTS │ │ 75  IN-PROGRESS TASKS  │  │
+│  │     8 waiting ·   │ │              │ │     253 done · 96 todo │  │
+│  │     2 offline     │ │              │ │                        │  │
+│  └───────────────────┘ └──────────────┘ └────────────────────────┘  │
 │                                                                      │
-│  ┌─ Active Projects ─────────────────────────────────────────────┐  │
-│  │  project-alpha                    3 tasks · 2 workers · 75%   │  │
-│  │  ████████████████████████░░░░░░░░                             │  │
-│  │  project-beta                     2 tasks · 1 worker  · 20%   │  │
-│  │  █████░░░░░░░░░░░░░░░░░░░░░░░░░░                             │  │
-│  └───────────────────────────────────────────────────────────────┘  │
+│  ┌─ Recent Activity ──────────────────────────────────────────────┐  │
+│  │  ✓ PENP-7 completed — Improve dashboard performance    2h ago  │  │
+│  │  ⏸ 8 workers waiting for input                        41m ago  │  │
+│  │  ✓ PENP-7-2 completed — Increase Trino query timeout  14h ago  │  │
+│  │  ✓ OC-1-22 completed — Remove dead setOmsPlan()       15h ago  │  │
+│  │  ✕ quirky-eagle disconnected                           16h ago  │  │
+│  │  → MQ-4 picked up by quirky-eagle                      1d ago  │  │
+│  └────────────────────────────────────────────────────────────────┘  │
 │                                                                      │
-│  ┌─ Sessions ──────────────┐  ┌─ Pending Decisions ──────────────┐  │
-│  │  ● worker-alpha WORKING │  │  ⚠ HIGH: Refactor auth module?   │  │
-│  │    /src/project-a       │  │    [Yes, refactor] [No, proceed] │  │
-│  │    Task: Implement OAuth│  │                                  │  │
-│  │                         │  │  🔴 CRITICAL: PR #42 conflicts   │  │
-│  │  ● worker-beta  IDLE    │  │    [Approve] [Dismiss]           │  │
-│  │    /src/project-b       │  │                                  │  │
-│  │                         │  │                                  │  │
-│  │  ○ worker-gamma DISCONN │  │                                  │  │
-│  └─────────────────────────┘  └──────────────────────────────────┘  │
+│  ┌─ Active Projects ──────────────────────────── [+ New Project] ─┐  │
+│  │  NAME          TASKS  SUBTASKS  PROGRESS  WORKERS     UPDATED  │  │
+│  │  ● sdui prem     1      0       ██░ 0/1  sdui_fli..   2d ago  │  │
+│  │  ● Prem Hub      1      4       ███ 3/5  —             2d ago  │  │
+│  │  ● Lix Clean     2     91       █░░ 1/93 subs-mt..    3d ago  │  │
+│  │  ░░░░░░░░░░░░░░░ (fade gradient when more rows below) ░░░░░░  │  │
+│  └────────────────────────────────────────────────────────────────┘  │
 │                                                                      │
-│  ┌─ Recent Activity ────────────────────────────────────────────┐   │
-│  │  10:32  session.connected    worker-alpha → localhost         │   │
-│  │  10:31  pr.created           #42 Add user auth               │   │
-│  │  10:30  task.started         Implement OAuth flow             │   │
-│  └──────────────────────────────────────────────────────────────┘   │
+│  ┌─ Workers ──────────────────────────────────── [+ Add Worker] ──┐  │
+│  │  ┌────────────────┐  ┌────────────────┐  ┌────────────────┐   │  │
+│  │  │ subs-backend_  │  │ prem-eng-port_ │  │ prem-eng-port_ │   │  │
+│  │  │ happy-einstein │  │ robust-valley  │  │ fuzzy-kumquat  │   │  │
+│  │  │ [Waiting]      │  │ [Waiting]      │  │ [Waiting]      │   │  │
+│  │  │ > preview...   │  │ > preview...   │  │ > preview...   │   │  │
+│  │  │ PENP-7  2h ago │  │ OC-2   37m ago │  │ PENP-5  2h ago │   │  │
+│  │  └────────────────┘  └────────────────┘  └────────────────┘   │  │
+│  │  ... (3-column auto-fill grid, 300px min)                      │  │
+│  └────────────────────────────────────────────────────────────────┘  │
 └──────────────────────────────────────────────────────────────────────┘
 ```
 
-**Key behaviors:**
-- Stats cards are clickable — navigate to the relevant page
-- Project bars show completion % (tasks done / total tasks)
-- Sessions are clickable — navigate to session detail with terminal
-- Decisions are actionable inline — respond without leaving the page
-- Activity is a live-updating feed
+**Stats bar:**
+- 3 cards in a compact horizontal strip (number + label side by side, not stacked)
+- Workers card turns yellow/warning when workers need attention (waiting or offline)
+- Each card is a link to its respective page
+- Subtitles show actionable breakdowns (e.g., "8 waiting · 2 offline", "253 done · 96 todo")
+
+**Recent Activity:**
+- Derived from existing task and worker data — no separate API call
+- Task events (completed, picked up) from the last 7 days
+- Worker status events (waiting, disconnected, working) from the last 24 hours
+- Similar worker events are grouped (e.g., "8 workers waiting for input" instead of 8 separate lines)
+- Capped at 8 items, sorted by most recent. Hidden when empty
+- Each item is clickable (links to task or worker detail)
+
+**Active Projects table:**
+- Sortable columns: Name, Tasks, Subtasks, Progress, Workers, Updated
+- Status and Created columns hidden on dashboard (redundant since all are "Active")
+- Progress bar has color-coded segments: green (done), blue (active), red (blocked)
+- Workers column shows colored tags matching worker status
+- Max height 300px with scroll + fade gradient overlay when overflowing
+- Section header "Active Projects" links to /projects
+
+**Workers grid:**
+- 3-column auto-fill grid (min 300px per card)
+- Sorted by last_viewed_at (most recently viewed first)
+- Each card shows: status dot, split name (dimmed prefix + bold suffix), status badge, terminal preview (last 8 lines), assigned task with key + footer timestamp
+- Card border color matches worker status
+- RDEV badge hidden when ALL workers are on rdevs (adds no info)
+- Clicking a card navigates to /workers/:id
 
 ---
 
 ### 2. Projects Page
 
-Two-level: project list → project detail.
+Two views: card view (default) and table view, with status filter.
 
-#### 2a. Project List
-
-```
-┌──────────────────────────────────────────────────────────────────────┐
-│  Projects                                          [+ New Project]   │
-│                                                                      │
-│  ┌─────────────────────────────────────────────────────────────────┐│
-│  │ project-alpha                          Status: Active            ││
-│  │ OAuth integration for the main app     Target: Feb 15            ││
-│  │ Workers: worker-alpha, worker-beta     Tasks: 2/5 done           ││
-│  │ ████████████████░░░░░░░░░░░░░░░░░░░░  40%                       ││
-│  └─────────────────────────────────────────────────────────────────┘│
-│  ┌─────────────────────────────────────────────────────────────────┐│
-│  │ project-beta                           Status: Active            ││
-│  │ Improve test coverage                  Target: Feb 20            ││
-│  │ Workers: worker-gamma                  Tasks: 0/3 done           ││
-│  │ ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  0%                        ││
-│  └─────────────────────────────────────────────────────────────────┘│
-└──────────────────────────────────────────────────────────────────────┘
-```
-
-#### 2b. Project Detail
-
-Clicking a project opens its detail view. This is the main workspace for managing a project.
+#### Card View
 
 ```
 ┌──────────────────────────────────────────────────────────────────────┐
-│  ← Projects / project-alpha                      [Edit] [Archive]    │
-│  OAuth integration for the main app                                  │
-│                                                                      │
-│  ┌─ Info ───────┐  ┌─ Workers ──────────────────────────────────┐   │
-│  │ Status: Active│  │ worker-alpha  WORKING  /src/project-a     │   │
-│  │ Target: Feb 15│  │ worker-beta   IDLE     /src/project-b     │   │
-│  │ Created: 3d   │  │                          [+ Assign Worker] │   │
-│  └──────────────┘  └───────────────────────────────────────────┘   │
-│                                                                      │
-│  ┌─ Tasks ──────────────────────────────────────── [+ New Task] ──┐ │
-│  │                                                                 │ │
-│  │  TODO            IN PROGRESS         DONE          BLOCKED      │ │
-│  │  ┌───────────┐  ┌───────────────┐   ┌──────────┐  ┌─────────┐ │ │
-│  │  │ Write     │  │ Implement     │   │ Set up   │  │ Deploy  │ │ │
-│  │  │ tests     │  │ OAuth flow    │   │ CI/CD    │  │ to stg  │ │ │
-│  │  │ P:2       │  │ → worker-alpha│   │          │  │ ⚠ d1    │ │ │
-│  │  │           │  │ P:1           │   │          │  │         │ │ │
-│  │  └───────────┘  └───────────────┘   └──────────┘  └─────────┘ │ │
-│  │  ┌───────────┐                                                  │ │
-│  │  │ Add error │                                                  │ │
-│  │  │ handling  │                                                  │ │
-│  │  │ P:3       │                                                  │ │
-│  │  └───────────┘                                                  │ │
-│  └─────────────────────────────────────────────────────────────────┘ │
-│                                                                      │
-│  ┌─ Pull Requests ──────────────────────────────────────────────┐   │
-│  │  #42  Add user auth       OPEN       worker-alpha            │   │
-│  │  #38  Setup CI pipeline   MERGED     worker-beta             │   │
-│  └──────────────────────────────────────────────────────────────┘   │
-│                                                                      │
-│  ┌─ Decisions ──────────────────────────────────────────────────┐   │
-│  │  ⚠ Refactor auth module before OAuth?                        │   │
-│  │    [Yes, refactor first] [No, add OAuth directly] [Dismiss]  │   │
-│  └──────────────────────────────────────────────────────────────┘   │
-└──────────────────────────────────────────────────────────────────────┘
-```
-
-**Key behaviors:**
-- Task board is a kanban view with 4 columns: TODO, IN PROGRESS, DONE, BLOCKED
-- Tasks show priority (P:N), assigned worker, and blocking decision
-- Tasks can be dragged between columns (updates status via API)
-- Clicking a task opens a detail panel (slide-over) with description, dependencies, requirements
-- Workers section shows assigned sessions with live status
-- "Assign Worker" opens a picker of available sessions
-- Decisions scoped to this project are shown inline
-
----
-
-### 3. Sessions Page
-
-List of all sessions + click into terminal detail.
-
-#### 3a. Session List
-
-```
-┌──────────────────────────────────────────────────────────────────────┐
-│  Sessions                                        [+ Add Session]     │
+│  Projects          [Table | Cards]              [+ New Project]       │
+│  Status: [All ▼]                                                     │
 │                                                                      │
 │  ┌─────────────────────────────────────────────────────────────────┐│
-│  │  ● worker-alpha          WORKING        localhost               ││
-│  │    /src/project-a        Task: Implement OAuth flow             ││
-│  │    Project: project-alpha                   Last active: 2m ago ││
+│  │ project-name                          [active]        [Edit ✎] ││
+│  │ Project description text...                                     ││
+│  │ Tasks 2/5  ██████████░░░░░░░░░░  Subtasks 15/21                ││
+│  │ worker-alpha worker-beta                           3d ago       ││
 │  └─────────────────────────────────────────────────────────────────┘│
-│  ┌─────────────────────────────────────────────────────────────────┐│
-│  │  ● worker-beta           IDLE           localhost               ││
-│  │    /src/project-b        No task assigned                       ││
-│  │    Project: project-alpha                   Last active: 5m ago ││
-│  └─────────────────────────────────────────────────────────────────┘│
-│  ┌─────────────────────────────────────────────────────────────────┐│
-│  │  ○ worker-gamma          DISCONNECTED   rdev1.example.com      ││
-│  │    —                     No task assigned                       ││
-│  │    Project: project-beta                    Last active: 1h ago ││
-│  └─────────────────────────────────────────────────────────────────┘│
-└──────────────────────────────────────────────────────────────────────┘
-```
-
-#### 3b. Session Detail (Terminal View)
-
-Full-screen terminal with session info sidebar.
-
-```
-┌──────────────────────────────────────────────────────────────────────┐
-│  ← Sessions / worker-alpha                                           │
-│                                                                      │
-│  ┌─ Sidebar (300px) ──┐  ┌─ Terminal ────────────────────────────┐  │
-│  │                     │  │ ● Connected                           │  │
-│  │  worker-alpha       │  │                                      │  │
-│  │  ● WORKING          │  │  $ claude                            │  │
-│  │                     │  │  > Implementing OAuth flow...        │  │
-│  │  Host: localhost    │  │  Reading src/auth.py                 │  │
-│  │  Path: /src/proj-a  │  │  Writing src/oauth.py               │  │
-│  │  Created: 3d ago    │  │  ...                                 │  │
-│  │  Active: 2m ago     │  │                                      │  │
-│  │                     │  │                                      │  │
-│  │  ─── Task ───       │  │                                      │  │
-│  │  Implement OAuth    │  │                                      │  │
-│  │  Status: in_progress│  │                                      │  │
-│  │  Priority: 1        │  │                                      │  │
-│  │                     │  │                                      │  │
-│  │  ─── Project ───    │  │                                      │  │
-│  │  project-alpha      │  │                                      │  │
-│  │                     │  │                                      │  │
-│  │  ─── PRs ───        │  │                                      │  │
-│  │  #42 Add user auth  │  │                                      │  │
-│  │                     │  │                                      │  │
-│  │  ─── Activity ───   │  │                                      │  │
-│  │  10:32 connected    │  │                                      │  │
-│  │  10:31 pr.created   │  │                                      │  │
-│  │  10:30 task.started │  │                                      │  │
-│  │                     │  │                                      │  │
-│  │  [Send Message]     │  │                                      │  │
-│  │  [Remove Session]   │  ├──────────────────────────────────────┤  │
-│  │                     │  │ Send message to worker-alpha...  [⏎] │  │
-│  └─────────────────────┘  └──────────────────────────────────────┘  │
-└──────────────────────────────────────────────────────────────────────┘
-```
-
-**Key behaviors:**
-- Terminal (xterm.js) fills the main area, fully interactive (read/write)
-- Sidebar shows session context: info, current task, project, PRs, recent activity
-- "Send Message" types directly into the terminal via tmux send-keys
-- Message input bar at bottom of terminal for quick messages
-- Sidebar is collapsible for full-width terminal
-
----
-
-### 4. Tasks Page
-
-Global task view — filterable table or board view across all projects.
-
-```
-┌──────────────────────────────────────────────────────────────────────┐
-│  Tasks                    [Board View | Table View]   [+ New Task]   │
-│  Filter: [All Projects ▼] [All Statuses ▼] [All Workers ▼]          │
-│                                                                      │
-│  TABLE VIEW:                                                         │
-│  ┌──────┬────────────────────┬──────────┬─────────┬─────────┬─────┐ │
-│  │ Pri  │ Title              │ Project  │ Status  │ Worker  │ PR  │ │
-│  ├──────┼────────────────────┼──────────┼─────────┼─────────┼─────┤ │
-│  │ 1    │ Implement OAuth    │ alpha    │ 🔵 WIP │ w-alpha │ #42 │ │
-│  │ 2    │ Write tests        │ alpha    │ ○ TODO │ —       │ —   │ │
-│  │ 3    │ Add error handling │ alpha    │ ○ TODO │ —       │ —   │ │
-│  │ 1    │ Deploy to staging  │ alpha    │ 🟡 BLOCKED│ —    │ —   │ │
-│  │      │                    │          │   ⚠ d1  │         │     │ │
-│  │ 1    │ Increase coverage  │ beta     │ ○ TODO │ —       │ —   │ │
-│  └──────┴────────────────────┴──────────┴─────────┴─────────┴─────┘ │
-└──────────────────────────────────────────────────────────────────────┘
-```
-
-**Key behaviors:**
-- Toggle between Board (kanban) and Table views
-- Table is sortable by any column
-- Clicking a task row opens a slide-over detail panel with:
-  - Full description
-  - Dependencies (what it depends on / what depends on it)
-  - Requirements (capabilities needed)
-  - Assigned worker
-  - Blocking decision (with inline respond)
-  - Associated PRs
-- Bulk actions: assign to worker, change status, change priority
-
----
-
-### 5. Decisions Page
-
-Full decision queue with history.
-
-```
-┌──────────────────────────────────────────────────────────────────────┐
-│  Decisions                                [Pending | History]        │
-│                                                                      │
-│  PENDING (2)                                                         │
-│  ┌─────────────────────────────────────────────────────────────────┐│
-│  │ 🔴 CRITICAL                                           just now  ││
-│  │ PR #42 has merge conflicts. How should we resolve?              ││
-│  │ Session: worker-beta · Project: project-alpha                   ││
-│  │ Context: Conflicts in src/auth.py and src/config.py             ││
-│  │                                                                 ││
-│  │ [Approve]  [Dismiss]                        [Type response...] ││
-│  └─────────────────────────────────────────────────────────────────┘│
-│  ┌─────────────────────────────────────────────────────────────────┐│
-│  │ ⚠ HIGH                                               2m ago    ││
-│  │ Should we refactor the auth module before adding OAuth?         ││
-│  │ Session: worker-alpha · Project: project-alpha                  ││
-│  │                                                                 ││
-│  │ [Yes, refactor first]  [No, add OAuth directly]  [Dismiss]     ││
-│  └─────────────────────────────────────────────────────────────────┘│
-│                                                                      │
-│  HISTORY                                                             │
-│  ┌─────────────────────────────────────────────────────────────────┐│
-│  │ ✓ NORMAL                                    responded · 1d ago  ││
-│  │ Use JWT or session tokens for auth?                             ││
-│  │ Response: "JWT — stateless, easier to scale"                    ││
-│  └─────────────────────────────────────────────────────────────────┘│
-└──────────────────────────────────────────────────────────────────────┘
-```
-
-**Key behaviors:**
-- Pending decisions sorted by urgency (critical first)
-- Each decision shows full context: session, project, task, context text
-- Options rendered as buttons, plus a free-text input for custom responses
-- History tab shows resolved/dismissed decisions with the response given
-- Decision responses can optionally include "was_helpful" feedback
-
----
-
-### 6. Chat Page
-
-Full-screen conversation with the LLM orchestrator brain.
-
-```
-┌──────────────────────────────────────────────────────────────────────┐
-│  Chat                                              [Clear History]   │
-│                                                                      │
-│  ┌──────────────────────────────────────────────────────────────┐   │
-│  │                                                              │   │
-│  │  ORCHESTRATOR                                                │   │
-│  │  ┌─────────────────────────────────────────────────┐        │   │
-│  │  │ Welcome! I'm managing 3 sessions across 2       │        │   │
-│  │  │ projects. worker-alpha is implementing OAuth,   │        │   │
-│  │  │ worker-beta is idle. 2 decisions need attention. │        │   │
-│  │  └─────────────────────────────────────────────────┘        │   │
-│  │                                                              │   │
-│  │                                         YOU                  │   │
-│  │        ┌─────────────────────────────────────────┐          │   │
-│  │        │ Assign worker-beta to the "write tests" │          │   │
-│  │        │ task on project-alpha                    │          │   │
-│  │        └─────────────────────────────────────────┘          │   │
-│  │                                                              │   │
-│  │  ORCHESTRATOR                                                │   │
-│  │  ┌─────────────────────────────────────────────────┐        │   │
-│  │  │ I'll assign worker-beta to "Write tests" on     │        │   │
-│  │  │ project-alpha.                                   │        │   │
-│  │  │                                                  │        │   │
-│  │  │ ┌─ Proposed Action ─────────────────────────┐   │        │   │
-│  │  │ │ assign_task                                │   │        │   │
-│  │  │ │ Task: Write tests → worker-beta            │   │        │   │
-│  │  │ │ [Approve] [Reject]                         │   │        │   │
-│  │  │ └───────────────────────────────────────────┘   │        │   │
-│  │  └─────────────────────────────────────────────────┘        │   │
-│  │                                                              │   │
-│  └──────────────────────────────────────────────────────────────┘   │
-│                                                                      │
-│  ┌──────────────────────────────────────────────────── [Send] ──┐   │
-│  │ Ask the orchestrator...                                      │   │
-│  └──────────────────────────────────────────────────────────────┘   │
-└──────────────────────────────────────────────────────────────────────┘
-```
-
-**Key behaviors:**
-- Chat shows LLM responses with proposed actions rendered as interactive cards
-- Action cards have [Approve] / [Reject] buttons (respect approval_policy config)
-- Approved actions execute immediately, result shown inline
-- Chat context includes system state (the brain uses context_selector to assemble relevant info)
-- Supports markdown rendering in responses
-- "Clear History" resets conversation
-
----
-
-### 7. Activity Page
-
-Full event log with filters.
-
-```
-┌──────────────────────────────────────────────────────────────────────┐
-│  Activity                                                            │
-│  Filter: [All Types ▼] [All Sessions ▼] [All Projects ▼] [Search]   │
-│                                                                      │
-│  TODAY                                                               │
-│  10:32 AM  session.connected    worker-alpha   localhost             │
-│  10:31 AM  pr.created           worker-beta    #42 Add user auth    │
-│  10:30 AM  task.started         worker-alpha   Implement OAuth flow │
-│  10:28 AM  decision.created     worker-alpha   Refactor auth?       │
-│  10:25 AM  session.state_changed worker-alpha  idle → working       │
-│                                                                      │
-│  YESTERDAY                                                           │
 │  ...                                                                 │
 └──────────────────────────────────────────────────────────────────────┘
 ```
 
-**Key behaviors:**
-- Filterable by event type, session, project
-- Live updates via WebSocket
-- Grouped by day
-- Clicking an activity row expands to show full event_data JSON
-- Search across event data
+#### Table View
 
----
+Same sortable table as the dashboard but with all columns (including Status and Created).
 
-### 8. Settings Page
+#### Project Detail
 
-Configuration management.
+Clicking a project opens its detail view with task management.
 
 ```
 ┌──────────────────────────────────────────────────────────────────────┐
-│  Settings                                                            │
+│  ← Projects / project-name                       [Edit] [Archive]    │
+│  Description text...                                                 │
 │                                                                      │
-│  [General] [Approval Policies] [Context Weights] [Templates]        │
+│  ┌─ Tasks ──────────────────────────────────────── [+ New Task] ──┐ │
+│  │  KEY    TITLE              STATUS    WORKER        UPDATED      │ │
+│  │  OC-1   Clean up APIs      in_prog   zen-dinosaur   2d ago     │ │
+│  │  OC-2   Clean up backend   in_prog   happy-einst    1d ago     │ │
+│  └─────────────────────────────────────────────────────────────────┘ │
 │                                                                      │
-│  GENERAL                                                             │
-│  ┌─────────────────────────────────────────────────────────────────┐│
-│  │  Autonomy Mode        [Advisory ▼]                              ││
-│  │  Monitor Interval     [5] seconds                               ││
-│  │  Heartbeat Timeout    [120] seconds                             ││
-│  │  Context Token Budget [8000] tokens                             ││
-│  └─────────────────────────────────────────────────────────────────┘│
-│                                                                      │
-│  APPROVAL POLICIES                                                   │
-│  ┌─────────────────────────────────────────────────────────────────┐│
-│  │  Send Message         [✓] Require approval                      ││
-│  │  Assign Task          [✓] Require approval                      ││
-│  │  Create Task          [ ] Require approval                      ││
-│  │  Rebrief Session      [✓] Require approval                      ││
-│  │  Alert User           [ ] Require approval                      ││
-│  └─────────────────────────────────────────────────────────────────┘│
-│                                                                      │
-│  API KEY                                                             │
-│  ┌─────────────────────────────────────────────────────────────────┐│
-│  │  Source: Claude Code Keychain    Status: ✓ Valid                 ││
-│  │  [Test Connection]                                              ││
-│  └─────────────────────────────────────────────────────────────────┘│
+│  ┌─ Workers ──────────────────────────────────────────────────────┐  │
+│  │  worker-cards for assigned workers                             │  │
+│  └────────────────────────────────────────────────────────────────┘  │
 └──────────────────────────────────────────────────────────────────────┘
 ```
+
+---
+
+### 3. Tasks Page
+
+Global task view — filterable and sortable table across all projects.
+
+```
+┌──────────────────────────────────────────────────────────────────────┐
+│  Tasks                                              [+ New Task]     │
+│  Filter: [All Projects ▼] [All Statuses ▼]                          │
+│                                                                      │
+│  ┌──────┬─────────────────────┬──────────┬──────────┬────────┬────┐ │
+│  │ KEY  │ Title               │ Project  │ Status   │ Worker │ PR │ │
+│  ├──────┼─────────────────────┼──────────┼──────────┼────────┼────┤ │
+│  │ OC-1 │ Clean up APIs       │ OMS      │ in_prog  │ zen-d  │ —  │ │
+│  │ OC-2 │ Clean up backend    │ OMS      │ in_prog  │ happy  │ —  │ │
+│  │ MQ-4 │ Filter training data│ Magic Q  │ in_prog  │ quirky │ —  │ │
+│  └──────┴─────────────────────┴──────────┴──────────┴────────┴────┘ │
+└──────────────────────────────────────────────────────────────────────┘
+```
+
+Clicking a task row navigates to the Task Detail page showing full description, subtasks, assigned worker, and project context.
+
+---
+
+### 4. Workers Page
+
+List of all workers with status overview. Includes an "Rdevs" tab for managing remote dev boxes.
+
+```
+┌──────────────────────────────────────────────────────────────────────┐
+│  Workers                   [Workers | Rdevs]     [+ Add Worker]      │
+│                                                                      │
+│  ┌─────────────────────────────────────────────────────────────────┐│
+│  │  ● subs-backend_happy-einstein   WAITING      rdev/host        ││
+│  │    > terminal preview...                                        ││
+│  │    Task: OC-2 Clean up backend              Last active: 37m   ││
+│  └─────────────────────────────────────────────────────────────────┘│
+│  ...                                                                 │
+└──────────────────────────────────────────────────────────────────────┘
+```
+
+#### Worker Detail (Session Detail)
+
+Full terminal view with session info sidebar.
+
+```
+┌──────────────────────────────────────────────────────────────────────┐
+│  ← Workers / happy-einstein                                          │
+│                                                                      │
+│  ┌─ Sidebar (300px) ──┐  ┌─ Terminal ────────────────────────────┐  │
+│  │                     │  │                                      │  │
+│  │  happy-einstein     │  │  $ claude                            │  │
+│  │  ● WAITING          │  │  > Working on task...                │  │
+│  │                     │  │  Reading src/auth.py                 │  │
+│  │  Host: rdev/host    │  │  ...                                 │  │
+│  │  Created: 3d ago    │  │                                      │  │
+│  │  Active: 2m ago     │  │                                      │  │
+│  │                     │  │                                      │  │
+│  │  ─── Task ───       │  │                                      │  │
+│  │  OC-2 Clean up APIs │  │                                      │  │
+│  │  Status: in_progress│  │                                      │  │
+│  │                     │  │                                      │  │
+│  │  ─── Project ───    │  │                                      │  │
+│  │  OMS cleanup        │  │                                      │  │
+│  │                     │  │                                      │  │
+│  │  [Send Message]     │  ├──────────────────────────────────────┤  │
+│  │  [Remove Worker]    │  │ Send message to worker...        [⏎] │  │
+│  └─────────────────────┘  └──────────────────────────────────────┘  │
+└──────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+### 5. Context Page
+
+Manage context items (documents, guidelines, specs) that get injected into worker prompts.
+
+---
+
+### 6. Notifications Page
+
+Notification feed showing system events, worker alerts, and brain messages.
+
+---
+
+### 7. Settings Page
+
+Configuration management for brain settings, worker defaults, and system preferences.
 
 ---
 
@@ -449,72 +279,80 @@ Configuration management.
 ```
 src/
 ├── main.tsx
-├── App.tsx                      ← Layout shell with sidebar + content area
+├── App.tsx                      ← Router with AppLayout shell
 ├── api/
 │   ├── client.ts                ← Typed fetch wrapper
 │   └── types.ts                 ← All TypeScript interfaces
 ├── hooks/
-│   ├── useWebSocket.ts          ← Auto-reconnecting WS, triggers refetch
-│   ├── useSessions.ts           ← Sessions CRUD + polling
-│   ├── useProjects.ts           ← Projects CRUD + polling
-│   ├── useTasks.ts              ← Tasks CRUD + polling
-│   ├── useDecisions.ts          ← Decisions CRUD + polling
-│   ├── useActivities.ts         ← Activity log + polling
-│   └── useChat.ts               ← Chat message state + send
+│   ├── useBackup.ts             ← Backup functionality
+│   ├── useBrainPanelState.ts    ← Brain panel resize/collapse state
+│   ├── useContextItems.ts       ← Context items CRUD
+│   ├── useProjects.ts           ← Projects CRUD
+│   ├── useSettings.ts           ← Settings management
+│   ├── useSidebarState.ts       ← Sidebar collapse state (localStorage)
+│   └── useSmartPaste.ts         ← Image + long text paste support
 ├── context/
-│   └── AppContext.tsx            ← Global state: connection, quick stats
+│   └── AppContext.tsx            ← Global state: workers, projects, tasks,
+│                                   connection status, WebSocket auto-reconnect
 ├── layouts/
-│   └── AppLayout.tsx            ← Sidebar + header + content slot
+│   └── AppLayout.tsx            ← Three-column: Sidebar | Content | Brain
 ├── pages/
-│   ├── DashboardPage.tsx        ← Overview with stats, projects, sessions
-│   ├── ProjectsPage.tsx         ← Project list
-│   ├── ProjectDetailPage.tsx    ← Single project: tasks board, workers, PRs
-│   ├── SessionsPage.tsx         ← Session list
+│   ├── DashboardPage.tsx        ← Stats + activity + projects + workers
+│   ├── ProjectsPage.tsx         ← Project list (card/table views + filter)
+│   ├── ProjectDetailPage.tsx    ← Single project: tasks, workers, description
+│   ├── TasksPage.tsx            ← Global task table with filters
+│   ├── TaskDetailPage.tsx       ← Task detail: description, subtasks, worker
+│   ├── WorkersPage.tsx          ← Worker list + Rdevs tab
 │   ├── SessionDetailPage.tsx    ← Terminal + sidebar info
-│   ├── TasksPage.tsx            ← Global task table/board
-│   ├── DecisionsPage.tsx        ← Decision queue + history
-│   ├── ChatPage.tsx             ← Full LLM chat
-│   ├── ActivityPage.tsx         ← Event log
+│   ├── ContextPage.tsx          ← Context items management
+│   ├── NotificationsPage.tsx    ← Notification feed
 │   └── SettingsPage.tsx         ← Config management
 ├── components/
+│   ├── layout/
+│   │   ├── Header.tsx           ← Tmux command (click-to-copy) + connection dot
+│   │   └── StatsBar.tsx         ← Compact stats strip with breakdowns
 │   ├── sidebar/
-│   │   ├── Sidebar.tsx          ← Navigation sidebar
+│   │   ├── Sidebar.tsx          ← Navigation with keyboard shortcuts
 │   │   └── SidebarItem.tsx      ← Nav item with icon + badge
+│   ├── brain/
+│   │   ├── BrainPanel.tsx       ← Resizable right panel
+│   │   └── BrainTerminal.tsx    ← xterm.js terminal for brain
+│   ├── dashboard/
+│   │   ├── RecentActivity.tsx   ← Activity feed derived from tasks/workers
+│   │   └── RecentActivity.css
 │   ├── projects/
-│   │   ├── ProjectCard.tsx      ← Project summary card
-│   │   ├── ProjectForm.tsx      ← Create/edit project modal
-│   │   └── WorkerPicker.tsx     ← Assign worker to project
+│   │   ├── ProjectCard.tsx      ← Project summary card (card view)
+│   │   ├── ProjectsTable.tsx    ← Sortable table with hiddenColumns support
+│   │   ├── ProjectForm.tsx      ← Create project modal
+│   │   └── ProjectEditModal.tsx ← Edit project modal
 │   ├── tasks/
-│   │   ├── TaskBoard.tsx        ← Kanban board (4 columns)
-│   │   ├── TaskColumn.tsx       ← Single kanban column
-│   │   ├── TaskCard.tsx         ← Task card in kanban/table
-│   │   ├── TaskDetail.tsx       ← Slide-over task detail panel
+│   │   ├── TaskBoard.tsx        ← Kanban board view
+│   │   ├── TaskCard.tsx         ← Task card in board/table
 │   │   ├── TaskForm.tsx         ← Create/edit task modal
 │   │   └── TaskTable.tsx        ← Table view of tasks
+│   ├── workers/
+│   │   ├── WorkerCard.tsx       ← Full worker card (workers page)
+│   │   └── WorkerCardCompact.tsx← Compact card (dashboard) with terminal preview
 │   ├── sessions/
-│   │   ├── SessionCard.tsx      ← Session summary card
-│   │   ├── SessionForm.tsx      ← Add session modal
-│   │   └── SessionInfo.tsx      ← Session detail sidebar panel
-│   ├── decisions/
-│   │   ├── DecisionCard.tsx     ← Pending decision with action buttons
-│   │   └── DecisionHistory.tsx  ← Resolved decision display
-│   ├── activity/
-│   │   └── ActivityFeed.tsx     ← Activity timeline
-│   ├── chat/
-│   │   ├── ChatPanel.tsx        ← Message list + input
-│   │   ├── ChatMessage.tsx      ← Single message bubble
-│   │   └── ActionCard.tsx       ← Proposed action with approve/reject
+│   │   └── AddSessionModal.tsx  ← Add worker modal
+│   ├── rdevs/
+│   │   ├── RdevTable.tsx        ← Rdev management table
+│   │   └── CreateRdevModal.tsx  ← Create rdev modal
 │   ├── terminal/
 │   │   └── TerminalView.tsx     ← xterm.js terminal component
+│   ├── context/
+│   │   └── ContextModal.tsx     ← Context item editor
 │   └── common/
 │       ├── Modal.tsx
-│       ├── SlideOver.tsx        ← Right-panel slide-over for details
-│       ├── StatusBadge.tsx
-│       ├── UrgencyTag.tsx
-│       ├── ProgressBar.tsx
-│       ├── EmptyState.tsx
-│       ├── TimeAgo.tsx
-│       └── FilterBar.tsx        ← Reusable filter dropdowns
+│       ├── ConfirmPopover.tsx
+│       ├── ErrorBoundary.tsx
+│       ├── FilterBar.tsx        ← Reusable filter dropdowns
+│       ├── Icons.tsx            ← SVG icon components
+│       ├── Markdown.tsx         ← Markdown renderer
+│       ├── NotificationToast.tsx← Toast notifications
+│       ├── SmartPastePopup.tsx  ← Paste detection UI
+│       ├── TagDropdown.tsx      ← Tag picker dropdown
+│       └── TimeAgo.tsx          ← Relative time formatting
 └── styles/
     ├── variables.css            ← CSS custom properties (dark theme)
     └── global.css               ← Reset, typography, common classes
@@ -528,12 +366,13 @@ src/
 /                           → DashboardPage
 /projects                   → ProjectsPage
 /projects/:id               → ProjectDetailPage
-/sessions                   → SessionsPage
-/sessions/:id               → SessionDetailPage (terminal)
 /tasks                      → TasksPage
-/decisions                  → DecisionsPage
-/chat                       → ChatPage
-/activity                   → ActivityPage
+/tasks/:id                  → TaskDetailPage
+/workers                    → WorkersPage
+/workers/rdevs              → WorkersPage (rdevs tab)
+/workers/:id                → SessionDetailPage (terminal)
+/context                    → ContextPage
+/notifications              → NotificationsPage
 /settings                   → SettingsPage
 ```
 
@@ -543,44 +382,21 @@ src/
 
 1. **Data-driven, not mocked.** Every piece of UI maps to a real API endpoint and database entity. No placeholder data.
 
-2. **Context-rich.** Each entity shows its relationships — a session card shows its project, task, and recent activity. A task card shows its worker, blocking decision, and PR.
+2. **Context-rich.** Each entity shows its relationships — a worker card shows its project, task, and terminal preview. A task shows its worker, project, and subtasks.
 
-3. **Actionable inline.** Decisions can be responded to from anywhere they appear (dashboard, project detail, decisions page). Tasks can be reassigned without navigating away.
+3. **Actionable inline.** Tasks can be reassigned, workers can be messaged, projects can be created — all without deep navigation.
 
-4. **Real-time.** WebSocket pushes trigger re-renders. Session status, decision counts, and activity feeds update live.
+4. **Real-time.** WebSocket pushes trigger re-renders. Worker status, task progress, and activity feeds update live.
 
-5. **Progressive disclosure.** List pages show summaries; clicking reveals full detail in slide-overs or dedicated pages. Terminal view is the deepest level of drill-down.
+5. **Progressive disclosure.** List pages show summaries; clicking reveals full detail in dedicated pages. Terminal view is the deepest level of drill-down.
 
-6. **Keyboard-friendly.** Global shortcuts: `G D` → Dashboard, `G P` → Projects, `G S` → Sessions, `G T` → Tasks, `G C` → Chat.
+6. **Keyboard-friendly.** Global shortcuts: `D` → Dashboard, `P` → Projects, `T` → Tasks, `W` → Workers, `K` → Context, `N` → Notifications.
 
----
-
-## API Endpoints Used Per Page
-
-| Page | Endpoints |
-|------|-----------|
-| Dashboard | `GET /sessions`, `GET /projects`, `GET /tasks`, `GET /decisions/pending`, `GET /activities?limit=10`, `GET /prs` |
-| Projects | `GET /projects`, `POST /projects`, `PATCH /projects/:id`, `DELETE /projects/:id` |
-| Project Detail | `GET /projects/:id`, `GET /tasks?project_id=`, `GET /prs?session_id=`, `GET /decisions?project_id=`, `GET /activities?project_id=` |
-| Sessions | `GET /sessions`, `POST /sessions`, `DELETE /sessions/:id` |
-| Session Detail | `GET /sessions/:id`, `GET /tasks?assigned_session_id=`, `GET /prs?session_id=`, `GET /activities?session_id=`, `WS /ws/terminal/:id` |
-| Tasks | `GET /tasks`, `POST /tasks`, `PATCH /tasks/:id`, `DELETE /tasks/:id` |
-| Decisions | `GET /decisions`, `GET /decisions/pending`, `POST /decisions/:id/respond`, `POST /decisions/:id/dismiss` |
-| Chat | `POST /chat` |
-| Activity | `GET /activities` |
-| Settings | `GET /config` (needs new endpoint), `PATCH /config` (needs new endpoint) |
+7. **Information density.** Designed for power users managing 10+ workers daily. Compact layouts, grouped events, and smart defaults over spacious layouts.
 
 ---
 
-## New API Endpoints Needed
-
-1. **`GET /api/config`** — List all config entries (for settings page)
-2. **`PATCH /api/config/:key`** — Update a config value
-3. **`GET /api/projects/:id/stats`** — Project task completion stats (or compute client-side)
-
----
-
-## Dark Theme Palette (existing, refined)
+## Dark Theme Palette
 
 ```css
 --bg:             #0d1117    /* Page background */
@@ -588,13 +404,40 @@ src/
 --surface-hover:  #1c2129    /* Hover state */
 --surface-raised: #21262d    /* Elevated surfaces */
 --border:         #30363d    /* Borders */
+--border-subtle:  #21262d    /* Subtle borders */
 --text-primary:   #e6edf3    /* Primary text */
 --text-secondary: #8b949e    /* Secondary text */
 --text-muted:     #484f58    /* Muted text */
 --accent:         #58a6ff    /* Links, active items */
+--accent-muted:   #388bfd26  /* Accent backgrounds */
+--accent-hover:   #79c0ff    /* Accent hover */
 --green:          #3fb950    /* Success, idle, done */
+--green-muted:    #238636    /* Green backgrounds */
 --yellow:         #d29922    /* Warning, waiting */
---red:            #f85149    /* Error, critical */
---orange:         #db6d28    /* High urgency */
---purple:         #a371f7    /* Merged, special */
+--yellow-muted:   #9e6a03    /* Yellow backgrounds */
+--red:            #f85149    /* Error, critical, disconnected */
+--red-muted:      #da3633    /* Red backgrounds */
+--orange:         #db6d28    /* Paused, screen_detached */
+--purple:         #a371f7    /* Special */
 ```
+
+---
+
+## Worker Naming Convention
+
+Workers are named `{project-slug}_{adjective}-{noun}` (e.g., `premium-eng-portal_robust-valley`). In the UI, the project prefix is dimmed and the unique suffix is bolded for quick scanning. The full name is available on hover via title attribute.
+
+---
+
+## Worker Statuses
+
+| Status | Color | Meaning |
+|--------|-------|---------|
+| idle | green | Connected, no task assigned |
+| working | blue (accent) | Actively executing |
+| waiting | yellow | Needs human input |
+| paused | orange | Paused by user |
+| error | red | Error state |
+| disconnected | red | Lost connection |
+| connecting | blue | Establishing connection |
+| screen_detached | orange | tmux screen detached |
