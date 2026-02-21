@@ -29,28 +29,30 @@ function classifyText(text: string): PasteContentType {
  */
 export function useSmartPaste() {
   const readClipboard = useCallback(async (): Promise<PasteResult> => {
-    // Try reading rich clipboard data (images) first
+    // Try readText() first — it does NOT trigger Chromium's clipboard permission
+    // popup, unlike read(). Only fall back to read() for image-only clipboard.
     try {
-      const items = await navigator.clipboard.read()
-      for (const item of items) {
-        const imageType = item.types.find(t => t.startsWith('image/'))
-        if (imageType) {
-          const blob = await item.getType(imageType)
-          const base64 = await blobToBase64(blob)
-          return { type: 'image', imageData: base64 }
-        }
+      const text = await navigator.clipboard.readText()
+      if (text.trim()) {
+        const type = classifyText(text)
+        return { type, text: text.trim() }
       }
     } catch {
-      // Clipboard.read() may not be supported or allowed; fall through to text
+      // readText() failed (permission denied, etc.) — fall through to read()
     }
 
-    // Fall back to text
-    const text = await navigator.clipboard.readText()
-    if (!text.trim()) {
-      throw new Error('Clipboard is empty')
+    // No text found — try the rich clipboard API for images
+    const items = await navigator.clipboard.read()
+    for (const item of items) {
+      const imageType = item.types.find(t => t.startsWith('image/'))
+      if (imageType) {
+        const blob = await item.getType(imageType)
+        const base64 = await blobToBase64(blob)
+        return { type: 'image', imageData: base64 }
+      }
     }
-    const type = classifyText(text)
-    return { type, text: text.trim() }
+
+    throw new Error('Clipboard is empty')
   }, [])
 
   /**

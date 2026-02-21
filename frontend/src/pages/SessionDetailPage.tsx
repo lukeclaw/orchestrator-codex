@@ -201,6 +201,49 @@ export default function SessionDetailPage() {
     }
   }
 
+  // Handle long text paste from Cmd+V in terminal (no permission popup)
+  const handleTextPaste = useCallback(async (text: string) => {
+    if (!id) return
+    try {
+      const res = await api<{ ok: boolean; file_path: string; filename: string }>(
+        `/api/sessions/${id}/paste-text`,
+        { method: 'POST', body: JSON.stringify({ text }) },
+      )
+      if (res.ok) {
+        await api(`/api/sessions/${id}/type`, {
+          method: 'POST',
+          body: JSON.stringify({ text: res.file_path }),
+        })
+      }
+    } catch (e) {
+      notify(e instanceof Error ? e.message : 'Failed to paste text', 'error')
+    }
+  }, [id, notify])
+
+  // Handle image paste from Cmd+V in terminal (no permission popup)
+  const handleImagePaste = useCallback(async (file: File) => {
+    if (!id) return
+    const reader = new FileReader()
+    reader.onload = async () => {
+      try {
+        const base64 = (reader.result as string).split(',')[1]
+        const res = await api<{ ok: boolean; file_path: string; filename: string }>(
+          `/api/sessions/${id}/paste-image`,
+          { method: 'POST', body: JSON.stringify({ image_data: base64 }) },
+        )
+        if (res.ok) {
+          await api(`/api/sessions/${id}/type`, {
+            method: 'POST',
+            body: JSON.stringify({ text: res.file_path }),
+          })
+        }
+      } catch (e) {
+        notify(e instanceof Error ? e.message : 'Failed to paste image', 'error')
+      }
+    }
+    reader.readAsDataURL(file)
+  }, [id, notify])
+
   const handlePaste = useCallback(async () => {
     if (!id || pasting) return
     setPasting(true)
@@ -216,14 +259,24 @@ export default function SessionDetailPage() {
             method: 'POST',
             body: JSON.stringify({ text: res.file_path }),
           })
-          notify(`Image pasted: ${res.filename}`, 'success')
+        }
+      } else if (result.text && result.text.length > 1000) {
+        // Long text: save to file and inject path
+        const res = await api<{ ok: boolean; file_path: string; filename: string }>(
+          `/api/sessions/${id}/paste-text`,
+          { method: 'POST', body: JSON.stringify({ text: result.text }) },
+        )
+        if (res.ok) {
+          await api(`/api/sessions/${id}/type`, {
+            method: 'POST',
+            body: JSON.stringify({ text: res.file_path }),
+          })
         }
       } else {
         await api(`/api/sessions/${id}/send`, {
           method: 'POST',
           body: JSON.stringify({ message: result.text }),
         })
-        notify('Text pasted to terminal', 'success')
       }
     } catch (e) {
       if (e instanceof Error && e.name === 'NotAllowedError') {
@@ -353,7 +406,7 @@ export default function SessionDetailPage() {
 
       {/* Terminal fills the rest */}
       <div className="sd-terminal-area">
-        <TerminalView sessionId={session.id} sessionStatus={session.status} disableScrollback={isRdev} />
+        <TerminalView sessionId={session.id} sessionStatus={session.status} disableScrollback={isRdev} onImagePaste={handleImagePaste} onTextPaste={handleTextPaste} />
       </div>
 
       {/* Footer with task link */}

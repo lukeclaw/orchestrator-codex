@@ -10,6 +10,8 @@ interface Props {
   sessionStatus?: string  // Session status from parent (e.g., 'connecting', 'working')
   disableScrollback?: boolean  // Disable scrollback history (for rdev sessions with screen)
   onInputRef?: (fn: (text: string) => void) => void  // Expose function to inject text into terminal
+  onImagePaste?: (file: File) => void  // Handle image paste from Cmd+V
+  onTextPaste?: (text: string) => void  // Handle long text paste from Cmd+V
 }
 
 type ConnectionState = 'connected' | 'disconnected' | 'reconnecting'
@@ -18,7 +20,7 @@ type ConnectionState = 'connected' | 'disconnected' | 'reconnecting'
 const RECONNECT_DELAYS = [1000, 2000, 5000, 10000, 10000]
 const MAX_RECONNECT_ATTEMPTS = 5
 
-export default function TerminalView({ sessionId, sessionStatus, disableScrollback, onInputRef }: Props) {
+export default function TerminalView({ sessionId, sessionStatus, disableScrollback, onInputRef, onImagePaste, onTextPaste }: Props) {
   const termRef = useRef<HTMLDivElement>(null)
   const terminalRef = useRef<Terminal | null>(null)
   const wsRef = useRef<WebSocket | null>(null)
@@ -26,6 +28,11 @@ export default function TerminalView({ sessionId, sessionStatus, disableScrollba
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const reconnectAttemptRef = useRef(0)
   
+  const onImagePasteRef = useRef(onImagePaste)
+  onImagePasteRef.current = onImagePaste
+  const onTextPasteRef = useRef(onTextPaste)
+  onTextPasteRef.current = onTextPaste
+
   const [isFocused, setIsFocused] = useState(false)
   const [connectionState, setConnectionState] = useState<ConnectionState>('disconnected')
   const [reconnectCountdown, setReconnectCountdown] = useState<number | null>(null)
@@ -251,6 +258,33 @@ export default function TerminalView({ sessionId, sessionStatus, disableScrollba
       textarea.addEventListener('blur', handleBlur)
     }
 
+    // Intercept Cmd+V paste on the xterm textarea for images and long text
+    const handlePaste = (e: ClipboardEvent) => {
+      // Check for image files first
+      const files = e.clipboardData?.files
+      if (files && files.length > 0) {
+        const imageFile = Array.from(files).find(f => f.type.startsWith('image/'))
+        if (imageFile) {
+          e.preventDefault()
+          e.stopPropagation()
+          onImagePasteRef.current?.(imageFile)
+          return
+        }
+      }
+      // Check for long text (>1000 chars) — save to file instead of dumping into terminal
+      const text = e.clipboardData?.getData('text/plain')
+      if (text && text.length > 1000 && onTextPasteRef.current) {
+        e.preventDefault()
+        e.stopPropagation()
+        onTextPasteRef.current(text)
+        return
+      }
+      // Short text: let xterm handle natively
+    }
+    if (textarea) {
+      textarea.addEventListener('paste', handlePaste)
+    }
+
     // Block mouse wheel scroll when scrollback is disabled (rdev + screen)
     const wheelHandler = disableScrollback
       ? (e: WheelEvent) => { e.preventDefault(); e.stopPropagation() }
@@ -290,6 +324,7 @@ export default function TerminalView({ sessionId, sessionStatus, disableScrollba
       if (textarea) {
         textarea.removeEventListener('focus', handleFocus)
         textarea.removeEventListener('blur', handleBlur)
+        textarea.removeEventListener('paste', handlePaste)
       }
       if (wheelHandler && termRef.current) {
         termRef.current.removeEventListener('wheel', wheelHandler)

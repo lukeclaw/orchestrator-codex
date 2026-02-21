@@ -338,3 +338,41 @@ def paste_image(req: PasteImageRequest, db=Depends(get_db)):
         "filename": os.path.basename(file_path),
         "size": len(image_bytes),
     }
+
+
+class PasteTextRequest(BaseModel):
+    """Request body for pasting long text from clipboard."""
+    text: str
+
+
+@router.post("/brain/paste-text")
+def paste_text(req: PasteTextRequest, db=Depends(get_db)):
+    """Save long clipboard text to the brain's tmp folder and return the file path."""
+    session = _get_brain_session(db)
+    if session is None or session.status in ("disconnected",):
+        raise HTTPException(400, "Brain is not running")
+
+    text_bytes = req.text.encode("utf-8")
+
+    brain_tmp_dir = "/tmp/orchestrator/brain/tmp"
+    os.makedirs(brain_tmp_dir, exist_ok=True)
+
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    short_id = uuid.uuid4().hex[:6]
+    filename = f"clipboard_{timestamp}_{short_id}.txt"
+    file_path = os.path.join(brain_tmp_dir, filename)
+
+    try:
+        with open(file_path, "w", encoding="utf-8") as f:
+            f.write(req.text)
+        logger.info("Saved clipboard text to %s (%d bytes)", file_path, len(text_bytes))
+    except Exception as e:
+        logger.exception("Failed to save clipboard text")
+        raise HTTPException(500, f"Failed to save text: {e}")
+
+    return {
+        "ok": True,
+        "file_path": file_path,
+        "filename": filename,
+        "size": len(text_bytes),
+    }

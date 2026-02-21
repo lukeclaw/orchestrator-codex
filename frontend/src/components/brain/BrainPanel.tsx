@@ -95,10 +95,24 @@ export default function BrainPanel({
           if (terminalInputRef.current) {
             terminalInputRef.current(result.file_path)
           }
-          notify(`Image saved: ${result.filename}`, 'success')
+        }
+      } else if (clip.text && clip.text.length > 1000) {
+        // Long text: save to file and inject path
+        const result = await api<{ ok: boolean; file_path: string; filename: string }>(
+          '/api/brain/paste-text',
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ text: clip.text }),
+          }
+        )
+        if (result.ok && result.file_path) {
+          if (terminalInputRef.current) {
+            terminalInputRef.current(result.file_path)
+          }
         }
       } else if (clip.text) {
-        // Text: inject directly into terminal
+        // Short text: inject directly into terminal
         if (terminalInputRef.current) {
           terminalInputRef.current(clip.text)
         }
@@ -113,6 +127,53 @@ export default function BrainPanel({
       setPasting(false)
     }
   }
+
+  // Handle long text paste from Cmd+V in terminal
+  const handleTextPaste = useCallback(async (text: string) => {
+    try {
+      const result = await api<{ ok: boolean; file_path: string; filename: string }>(
+        '/api/brain/paste-text',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text }),
+        }
+      )
+      if (result.ok && result.file_path) {
+        if (terminalInputRef.current) {
+          terminalInputRef.current(result.file_path)
+        }
+      }
+    } catch (e) {
+      notify(e instanceof Error ? e.message : 'Failed to paste text', 'error')
+    }
+  }, [notify])
+
+  // Handle image paste from Cmd+V in terminal
+  const handleImagePaste = useCallback(async (file: File) => {
+    const reader = new FileReader()
+    reader.onload = async () => {
+      try {
+        const base64 = (reader.result as string).split(',')[1]
+        const result = await api<{ ok: boolean; file_path: string; filename: string }>(
+          '/api/brain/paste-image',
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ image_data: base64 }),
+          }
+        )
+        if (result.ok && result.file_path) {
+          if (terminalInputRef.current) {
+            terminalInputRef.current(result.file_path)
+          }
+        }
+      } catch (e) {
+        notify(e instanceof Error ? e.message : 'Failed to paste image', 'error')
+      }
+    }
+    reader.readAsDataURL(file)
+  }, [notify])
 
   // Drag resize
   function handleMouseDown(e: React.MouseEvent) {
@@ -219,6 +280,8 @@ export default function BrainPanel({
           onStart={handleStart}
           onStop={handleStop}
           onTerminalInputRef={(fn: (text: string) => void) => { terminalInputRef.current = fn }}
+          onImagePaste={handleImagePaste}
+          onTextPaste={handleTextPaste}
         />
       </div>
 
