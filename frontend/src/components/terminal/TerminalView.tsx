@@ -8,7 +8,6 @@ import './TerminalView.css'
 interface Props {
   sessionId: string
   sessionStatus?: string  // Session status from parent (e.g., 'connecting', 'working')
-  onUserInput?: () => void
   disableScrollback?: boolean  // Disable scrollback history (for rdev sessions with screen)
   onInputRef?: (fn: (text: string) => void) => void  // Expose function to inject text into terminal
 }
@@ -19,7 +18,7 @@ type ConnectionState = 'connected' | 'disconnected' | 'reconnecting'
 const RECONNECT_DELAYS = [1000, 2000, 5000, 10000, 10000]
 const MAX_RECONNECT_ATTEMPTS = 5
 
-export default function TerminalView({ sessionId, sessionStatus, onUserInput, disableScrollback, onInputRef }: Props) {
+export default function TerminalView({ sessionId, sessionStatus, disableScrollback, onInputRef }: Props) {
   const termRef = useRef<HTMLDivElement>(null)
   const terminalRef = useRef<Terminal | null>(null)
   const wsRef = useRef<WebSocket | null>(null)
@@ -231,7 +230,6 @@ export default function TerminalView({ sessionId, sessionStatus, onUserInput, di
       if (ws?.readyState === WebSocket.OPEN) {
         ws.send(JSON.stringify({ type: 'input', data }))
       }
-      onUserInput?.()
     })
 
     // Expose function to inject text into terminal (for clipboard image paste)

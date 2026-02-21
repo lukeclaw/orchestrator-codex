@@ -192,23 +192,6 @@ def test_11_responsive_layout(page):
 
 
 # ---------------------------------------------------------------------------
-# 12. Auto-sync timer
-# ---------------------------------------------------------------------------
-
-
-def test_12_auto_sync_timer(page):
-    """Auto-sync timer area renders in the brain sidebar."""
-    screenshot(page, "12_auto_sync_timer")
-
-    timer = page.query_selector("[data-testid='auto-sync-timer']")
-    assert timer is not None
-    assert timer.is_visible()
-
-    # When brain is not running, shows "brain not running" message
-    timer_text = timer.inner_text()
-    assert "brain not running" in timer_text.lower() or "auto-sync" in timer_text.lower()
-
-
 # ---------------------------------------------------------------------------
 # 13. Smart Paste button
 # ---------------------------------------------------------------------------

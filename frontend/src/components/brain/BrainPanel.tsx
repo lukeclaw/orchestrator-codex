@@ -3,7 +3,6 @@ import { api } from '../../api/client'
 import { useNotify } from '../../context/NotificationContext'
 import BrainTerminal from './BrainTerminal'
 import type { BrainStatus } from './BrainTerminal'
-import AutoSyncTimer from './AutoSyncTimer'
 import { IconChevronLeft, IconChevronRight, IconImage } from '../common/Icons'
 import ConfirmPopover from '../common/ConfirmPopover'
 import './BrainPanel.css'
@@ -133,12 +132,6 @@ export default function BrainPanel({
     }
   }
 
-  // User interaction tracking for auto-sync pause
-  const userInteractionRef = useRef<(() => void) | null>(null)
-  function handleUserInput() {
-    userInteractionRef.current?.()
-  }
-
   // Drag resize
   function handleMouseDown(e: React.MouseEvent) {
     e.preventDefault()
@@ -245,13 +238,6 @@ export default function BrainPanel({
         </div>
       </div>
 
-      <AutoSyncTimer
-        brainSessionId={brainStatus?.session_id || null}
-        brainStatus={brainStatus?.status || null}
-        brainRunning={!!isRunning}
-        userInteractionRef={userInteractionRef}
-      />
-
       <div className="bp-content">
         <BrainTerminal
           brainStatus={brainStatus}
@@ -259,7 +245,6 @@ export default function BrainPanel({
           stopping={stopping}
           onStart={handleStart}
           onStop={handleStop}
-          onUserInput={handleUserInput}
           onTerminalInputRef={(fn: (text: string) => void) => { terminalInputRef.current = fn }}
         />
       </div>
