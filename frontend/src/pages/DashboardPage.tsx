@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useRef, useEffect, useCallback } from 'react'
 import { Link } from 'react-router-dom'
 import { useApp } from '../context/AppContext'
 import { useProjects } from '../hooks/useProjects'
@@ -7,6 +7,7 @@ import WorkerCardCompact from '../components/workers/WorkerCardCompact'
 import AddSessionModal from '../components/sessions/AddSessionModal'
 import ProjectForm from '../components/projects/ProjectForm'
 import ProjectsTable from '../components/projects/ProjectsTable'
+import RecentActivity from '../components/dashboard/RecentActivity'
 import './DashboardPage.css'
 
 export default function DashboardPage() {
@@ -14,8 +15,19 @@ export default function DashboardPage() {
   const { create: createProject } = useProjects()
   const [showAddWorker, setShowAddWorker] = useState(false)
   const [showAddProject, setShowAddProject] = useState(false)
+  const scrollRef = useRef<HTMLDivElement>(null)
+  const [hasOverflow, setHasOverflow] = useState(false)
 
   const activeProjects = projects.filter(p => p.status === 'active')
+
+  const checkOverflow = useCallback(() => {
+    const el = scrollRef.current
+    if (el) setHasOverflow(el.scrollHeight > el.clientHeight)
+  }, [])
+
+  useEffect(() => {
+    checkOverflow()
+  }, [activeProjects.length, checkOverflow])
 
   // Build session_id -> task lookup
   const taskBySession = new Map(
@@ -30,6 +42,9 @@ export default function DashboardPage() {
     const bViewed = new Date(b.last_viewed_at || b.created_at).getTime()
     return bViewed - aViewed
   })
+
+  // Hide RDEV badge if all workers are on rdevs (badge adds no info)
+  const allRdev = workers.length > 0 && workers.every(w => w.host.includes('/'))
 
   return (
     <>
@@ -47,13 +62,18 @@ export default function DashboardPage() {
           </button>
         </div>
         {activeProjects.length > 0 ? (
-          <div className="dashboard-projects-scroll">
-            <ProjectsTable projects={activeProjects} />
+          <div className={`dashboard-projects-scroll-wrapper${hasOverflow ? ' has-overflow' : ''}`}>
+            <div className="dashboard-projects-scroll" ref={scrollRef}>
+              <ProjectsTable projects={activeProjects} hiddenColumns={['status', 'created']} />
+            </div>
           </div>
         ) : (
           <p className="empty-state">No active projects.</p>
         )}
       </section>
+
+      {/* Recent Activity */}
+      <RecentActivity workers={workers} tasks={tasks} />
 
       {/* Workers */}
       <section className="panel" data-testid="sessions-panel">
@@ -78,6 +98,7 @@ export default function DashboardPage() {
                 key={s.id}
                 session={s}
                 assignedTask={taskBySession.get(s.id) || null}
+                allRdev={allRdev}
               />
             ))}
           </div>

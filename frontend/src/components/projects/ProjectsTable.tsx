@@ -9,6 +9,7 @@ type SortDir = 'asc' | 'desc'
 
 interface Props {
   projects: Project[]
+  hiddenColumns?: SortKey[]
 }
 
 function formatDate(dateStr: string): string {
@@ -51,7 +52,8 @@ function getProjectSortValue(p: Project, key: SortKey): string | number {
   }
 }
 
-export default function ProjectsTable({ projects }: Props) {
+export default function ProjectsTable({ projects, hiddenColumns }: Props) {
+  const hidden = new Set(hiddenColumns ?? [])
   const navigate = useNavigate()
   const [sortKey, setSortKey] = useState<SortKey>('updated')
   const [sortDir, setSortDir] = useState<SortDir>('desc')
@@ -100,8 +102,8 @@ export default function ProjectsTable({ projects }: Props) {
           <SortHeader k="subtasks" className="center">Subtasks</SortHeader>
           <SortHeader k="progress">Progress</SortHeader>
           <SortHeader k="workers">Workers</SortHeader>
-          <SortHeader k="status">Status</SortHeader>
-          <SortHeader k="created">Created</SortHeader>
+          {!hidden.has('status') && <SortHeader k="status">Status</SortHeader>}
+          {!hidden.has('created') && <SortHeader k="created">Created</SortHeader>}
           <SortHeader k="updated">Updated</SortHeader>
         </tr>
       </thead>
@@ -154,10 +156,10 @@ export default function ProjectsTable({ projects }: Props) {
                   )}
                 </div>
               </td>
-              <td className={`pt-td status ${p.status}`}>{p.status}</td>
-              <td className="pt-td date" title={parseDate(p.created_at).toLocaleString()}>
+              {!hidden.has('status') && <td className={`pt-td status ${p.status}`}>{p.status}</td>}
+              {!hidden.has('created') && <td className="pt-td date" title={parseDate(p.created_at).toLocaleString()}>
                 {formatDate(p.created_at)}
-              </td>
+              </td>}
               <td className="pt-td date" title={parseDate(p.updated_at || p.created_at).toLocaleString()}>
                 {formatDate(p.updated_at || p.created_at)}
               </td>

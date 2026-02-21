@@ -6,12 +6,19 @@ import './WorkerCardCompact.css'
 interface Props {
   session: Session
   assignedTask?: Task | null
+  allRdev?: boolean
 }
 
-export default function WorkerCardCompact({ session, assignedTask }: Props) {
+export default function WorkerCardCompact({ session, assignedTask, allRdev }: Props) {
   const navigate = useNavigate()
 
   const previewLines = session.preview ? session.preview.split('\n').slice(-8).join('\n') : ''
+
+  // Split name into project prefix and unique suffix at the underscore
+  const underscoreIdx = session.name.indexOf('_')
+  const hasPrefix = underscoreIdx > 0
+  const namePrefix = hasPrefix ? session.name.slice(0, underscoreIdx) : ''
+  const nameSuffix = hasPrefix ? session.name.slice(underscoreIdx + 1) : session.name
 
   return (
     <div
@@ -22,8 +29,11 @@ export default function WorkerCardCompact({ session, assignedTask }: Props) {
     >
       <div className="wcc-header">
         <span className={`status-indicator ${session.status}`} />
-        <span className="wcc-name">{session.name}</span>
-        {session.host.includes('/') && <span className="wcc-type-tag rdev">rdev</span>}
+        <span className="wcc-name" title={session.name}>
+          {hasPrefix && <span className="wcc-name-prefix">{namePrefix}_</span>}
+          <span className="wcc-name-suffix">{nameSuffix}</span>
+        </span>
+        {!allRdev && session.host.includes('/') && <span className="wcc-type-tag rdev">rdev</span>}
         <span className={`status-badge ${session.status}`}>{session.status}</span>
       </div>
 
