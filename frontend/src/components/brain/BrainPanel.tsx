@@ -1,9 +1,10 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { api } from '../../api/client'
 import { useNotify } from '../../context/NotificationContext'
+import { useSmartPaste } from '../../hooks/useSmartPaste'
 import BrainTerminal from './BrainTerminal'
 import type { BrainStatus } from './BrainTerminal'
-import { IconChevronLeft, IconChevronRight, IconImage, IconStop } from '../common/Icons'
+import { IconChevronLeft, IconChevronRight, IconClipboard, IconStop } from '../common/Icons'
 import ConfirmPopover from '../common/ConfirmPopover'
 import './BrainPanel.css'
 
@@ -28,9 +29,10 @@ export default function BrainPanel({
   const [brainStatus, setBrainStatus] = useState<BrainStatus | null>(null)
   const [starting, setStarting] = useState(false)
   const [stopping, setStopping] = useState(false)
-  const [pastingImage, setPastingImage] = useState(false)
+  const [pasting, setPasting] = useState(false)
   const isDragging = useRef(false)
   const terminalInputRef = useRef<((text: string) => void) | null>(null)
+  const { readClipboard } = useSmartPaste()
 
   // Poll brain status
   const fetchStatus = useCallback(async () => {
@@ -72,63 +74,43 @@ export default function BrainPanel({
     }
   }
 
-  async function handlePasteImage() {
-    if (pastingImage) return
-    
-    setPastingImage(true)
+  async function handlePaste() {
+    if (pasting) return
+
+    setPasting(true)
     try {
-      // Read image from clipboard
-      const clipboardItems = await navigator.clipboard.read()
-      let imageBlob: Blob | null = null
-      
-      for (const item of clipboardItems) {
-        // Check for image types
-        const imageType = item.types.find(type => type.startsWith('image/'))
-        if (imageType) {
-          imageBlob = await item.getType(imageType)
-          break
+      const clip = await readClipboard()
+
+      if (clip.type === 'image' && clip.imageData) {
+        // Image: save to file via backend, then inject file path
+        const result = await api<{ ok: boolean; file_path: string; filename: string }>(
+          '/api/brain/paste-image',
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ image_data: clip.imageData }),
+          }
+        )
+        if (result.ok && result.file_path) {
+          if (terminalInputRef.current) {
+            terminalInputRef.current(result.file_path)
+          }
+          notify(`Image saved: ${result.filename}`, 'success')
         }
-      }
-      
-      if (!imageBlob) {
-        notify('No image found in clipboard', 'error')
-        return
-      }
-      
-      // Convert blob to base64
-      const reader = new FileReader()
-      const base64Promise = new Promise<string>((resolve, reject) => {
-        reader.onload = () => resolve(reader.result as string)
-        reader.onerror = reject
-      })
-      reader.readAsDataURL(imageBlob)
-      const base64Data = await base64Promise
-      
-      // Send to backend
-      const result = await api<{ ok: boolean; file_path: string; filename: string }>(
-        '/api/brain/paste-image',
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ image_data: base64Data }),
-        }
-      )
-      
-      if (result.ok && result.file_path) {
-        // Inject the file path into the terminal input
+      } else if (clip.text) {
+        // Text: inject directly into terminal
         if (terminalInputRef.current) {
-          terminalInputRef.current(result.file_path)
+          terminalInputRef.current(clip.text)
         }
-        notify(`Image saved: ${result.filename}`, 'success')
       }
     } catch (e) {
       if (e instanceof Error && e.name === 'NotAllowedError') {
         notify('Clipboard access denied. Please allow clipboard permissions.', 'error')
       } else {
-        notify(e instanceof Error ? e.message : 'Failed to paste image', 'error')
+        notify(e instanceof Error ? e.message : 'Failed to paste from clipboard', 'error')
       }
     } finally {
-      setPastingImage(false)
+      setPasting(false)
     }
   }
 
@@ -244,12 +226,12 @@ export default function BrainPanel({
         <div className="bp-footer">
           <button
             className="bp-footer-paste-btn"
-            onClick={handlePasteImage}
-            disabled={pastingImage}
-            title="Paste image from clipboard"
+            onClick={handlePaste}
+            disabled={pasting}
+            title="Paste from clipboard"
           >
-            <IconImage size={12} />
-            <span>{pastingImage ? 'Pasting...' : 'Paste'}</span>
+            <IconClipboard size={12} />
+            <span>{pasting ? 'Pasting...' : 'Paste'}</span>
           </button>
         </div>
       )}
