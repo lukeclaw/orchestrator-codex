@@ -27,45 +27,55 @@ fn wait_for_server(url: &str, timeout: Duration) -> bool {
 }
 
 /// Resolve the sidecar binary path.
-/// In a macOS .app bundle: Contents/MacOS/orchestrator-server (next to the main binary)
-/// In dev: src-tauri/binaries/orchestrator-server-{triple}
+/// The sidecar is a PyInstaller onedir bundle (no extraction needed at runtime).
+///
+/// In a macOS .app bundle: Contents/Resources/binaries/orchestrator-server-sidecar/orchestrator-server
+/// In dev: src-tauri/binaries/orchestrator-server-sidecar/orchestrator-server
 fn resolve_sidecar_path() -> std::path::PathBuf {
     let exe_path = std::env::current_exe().expect("failed to get current exe path");
     let exe_dir = exe_path.parent().expect("exe has no parent directory");
 
-    // Try the bundled name first (no triple suffix)
-    let bundled = exe_dir.join("orchestrator-server");
+    const SIDECAR_DIR: &str = "binaries/orchestrator-server-sidecar";
+    const SIDECAR_BIN: &str = "orchestrator-server";
+
+    // Bundled mode: Contents/MacOS/../Resources/<sidecar_dir>/<binary>
+    let resources_dir = exe_dir.join("..").join("Resources");
+    let bundled = resources_dir.join(SIDECAR_DIR).join(SIDECAR_BIN);
     if bundled.exists() {
+        ensure_executable(&bundled);
         return bundled;
     }
 
-    // Try with target triple suffix (dev mode or some bundler versions)
-    let triple = format!("{}-{}", std::env::consts::ARCH, if cfg!(target_os = "macos") {
-        "apple-darwin"
-    } else if cfg!(target_os = "linux") {
-        "unknown-linux-gnu"
-    } else {
-        "unknown"
-    });
-    let with_triple = exe_dir.join(format!("orchestrator-server-{}", triple));
-    if with_triple.exists() {
-        return with_triple;
-    }
-
-    // Fallback: check in src-tauri/binaries/ (cargo tauri dev mode)
+    // Dev mode: exe is in src-tauri/target/{debug,release}/
     let dev_path = exe_dir
         .join("..")
         .join("..")
         .join("..")
         .join("src-tauri")
-        .join("binaries")
-        .join(format!("orchestrator-server-{}", triple));
+        .join(SIDECAR_DIR)
+        .join(SIDECAR_BIN);
     if dev_path.exists() {
         return dev_path;
     }
 
     // Return the bundled path even if it doesn't exist (error will surface at spawn)
     bundled
+}
+
+/// Ensure a file has executable permission (macOS/Linux).
+fn ensure_executable(path: &std::path::Path) {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        if let Ok(meta) = std::fs::metadata(path) {
+            let mode = meta.permissions().mode();
+            if mode & 0o111 == 0 {
+                let mut perms = meta.permissions();
+                perms.set_mode(mode | 0o755);
+                let _ = std::fs::set_permissions(path, perms);
+            }
+        }
+    }
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -172,17 +182,39 @@ pub fn run() {
             Ok(())
         })
         .on_window_event(|window, event| {
-            // Kill the sidecar when the app window is closed
-            if let tauri::WindowEvent::Destroyed = event {
-                let state = window.state::<SidecarState>();
-                let mut guard = state.child.lock().unwrap();
-                if let Some(mut child) = guard.take() {
-                    let _ = child.kill();
-                    let _ = child.wait();
-                    eprintln!("[tauri] Sidecar process killed");
+            match event {
+                tauri::WindowEvent::CloseRequested { api, .. } => {
+                    // Hide the window instead of destroying it (standard macOS behavior).
+                    // The app stays in the dock; Cmd+Q still fully quits.
+                    api.prevent_close();
+                    let _ = window.hide();
+                    eprintln!("[tauri] Window hidden (close button)");
                 }
+                tauri::WindowEvent::Destroyed => {
+                    // Kill the sidecar when the app actually quits
+                    let state = window.state::<SidecarState>();
+                    let mut guard = state.child.lock().unwrap();
+                    if let Some(mut child) = guard.take() {
+                        let _ = child.kill();
+                        let _ = child.wait();
+                        eprintln!("[tauri] Sidecar process killed");
+                    }
+                }
+                _ => {}
             }
         })
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|app_handle, event| {
+            if let tauri::RunEvent::Reopen { has_visible_windows, .. } = event {
+                // Re-show the window when the dock icon is clicked
+                if !has_visible_windows {
+                    if let Some(window) = app_handle.get_webview_window("main") {
+                        let _ = window.show();
+                        let _ = window.set_focus();
+                        eprintln!("[tauri] Window restored from dock");
+                    }
+                }
+            }
+        });
 }

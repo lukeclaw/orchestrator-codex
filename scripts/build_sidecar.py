@@ -78,24 +78,29 @@ def build_sidecar():
 
 
 def copy_to_tauri():
-    """Rename and copy the binary to src-tauri/binaries/ with target triple suffix."""
-    dist_binary = PROJECT_ROOT / "dist" / "orchestrator-server"
-    if not dist_binary.exists():
-        print(f"Error: expected binary at {dist_binary}", file=sys.stderr)
+    """Copy the onedir bundle to src-tauri/binaries/orchestrator-server-sidecar/."""
+    dist_dir = PROJECT_ROOT / "dist" / "orchestrator-server"
+    if not dist_dir.exists() or not dist_dir.is_dir():
+        print(f"Error: expected onedir output at {dist_dir}", file=sys.stderr)
         sys.exit(1)
 
-    triple = get_target_triple()
-    dest_name = f"orchestrator-server-{triple}"
-    dest_path = TAURI_BINARIES / dest_name
+    dest_dir = TAURI_BINARIES / "orchestrator-server-sidecar"
 
-    TAURI_BINARIES.mkdir(parents=True, exist_ok=True)
+    # Clean previous build
+    if dest_dir.exists():
+        shutil.rmtree(dest_dir)
 
-    print(f"==> Copying binary to {dest_path}")
-    shutil.copy2(dist_binary, dest_path)
-    dest_path.chmod(0o755)
+    print(f"==> Copying onedir bundle to {dest_dir}")
+    shutil.copytree(dist_dir, dest_dir)
 
-    print(f"==> Sidecar ready: {dest_path}")
-    print(f"    Size: {dest_path.stat().st_size / (1024*1024):.1f} MB")
+    # Ensure the main binary is executable
+    binary = dest_dir / "orchestrator-server"
+    binary.chmod(0o755)
+
+    # Compute total size
+    total = sum(f.stat().st_size for f in dest_dir.rglob("*") if f.is_file())
+    print(f"==> Sidecar ready: {dest_dir}")
+    print(f"    Total size: {total / (1024*1024):.1f} MB")
 
 
 def main():

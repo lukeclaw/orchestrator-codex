@@ -27,8 +27,8 @@
       "icons/icon.icns",
       "icons/icon.png"
     ],
-    "externalBin": [
-      "binaries/orchestrator-server"
+    "resources": [
+      "binaries/orchestrator-server-sidecar/**/*"
     ],
     "macOS": {
       "minimumSystemVersion": "13.0"

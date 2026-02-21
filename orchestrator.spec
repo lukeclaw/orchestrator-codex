@@ -1,7 +1,8 @@
 # -*- mode: python ; coding: utf-8 -*-
 """PyInstaller spec for the Claude Orchestrator sidecar binary.
 
-Produces a single-file executable that Tauri launches as a sidecar.
+Produces a one-dir bundle (no temp extraction on launch) that Tauri
+bundles as a resource directory inside the .app.
 
 Build with:
     pyinstaller orchestrator.spec
@@ -146,10 +147,8 @@ pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
 exe = EXE(
     pyz,
     a.scripts,
-    a.binaries,
-    a.zipfiles,
-    a.datas,
     [],
+    exclude_binaries=True,
     name="orchestrator-server",
     debug=False,
     bootloader_ignore_signals=False,
@@ -163,4 +162,14 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
+)
+
+coll = COLLECT(
+    exe,
+    a.binaries,
+    a.datas,
+    strip=False,
+    upx=True,
+    upx_exclude=[],
+    name="orchestrator-server",
 )
