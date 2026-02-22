@@ -56,7 +56,7 @@ node_modules/
 
 # OS / misc
 Thumbs.db
-Icon?
+Icon\r
 
 # DB
 *.db
