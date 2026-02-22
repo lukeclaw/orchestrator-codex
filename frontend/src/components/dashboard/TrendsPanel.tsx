@@ -2,6 +2,7 @@ import { useTrends } from '../../hooks/useTrends'
 import ThroughputChart from './ThroughputChart'
 import WorkerHeatmap from './WorkerHeatmap'
 import WorkerHoursChart from './WorkerHoursChart'
+import CollapsiblePanel from './CollapsiblePanel'
 import './TrendsPanel.css'
 
 const RANGES = ['7d', '30d', '90d'] as const
@@ -16,9 +17,11 @@ export default function TrendsPanel() {
   )
 
   return (
-    <section className="trends-panel panel">
-      <div className="panel-header">
-        <h2>Trends</h2>
+    <CollapsiblePanel
+      id="trends"
+      className="trends-panel"
+      title="Trends"
+      actions={
         <div className="toggle-group toggle-sm">
           {RANGES.map(r => (
             <button
@@ -30,7 +33,8 @@ export default function TrendsPanel() {
             </button>
           ))}
         </div>
-      </div>
+      }
+    >
       {loading ? (
         <p className="empty-state">Loading trends...</p>
       ) : !hasData ? (
@@ -44,6 +48,6 @@ export default function TrendsPanel() {
           </div>
         </div>
       )}
-    </section>
+    </CollapsiblePanel>
   )
 }

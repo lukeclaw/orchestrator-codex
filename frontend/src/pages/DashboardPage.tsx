@@ -9,6 +9,7 @@ import ProjectForm from '../components/projects/ProjectForm'
 import ProjectsTable from '../components/projects/ProjectsTable'
 import RecentActivity from '../components/dashboard/RecentActivity'
 import TrendsPanel from '../components/dashboard/TrendsPanel'
+import CollapsiblePanel from '../components/dashboard/CollapsiblePanel'
 import './DashboardPage.css'
 
 export default function DashboardPage() {
@@ -58,16 +59,16 @@ export default function DashboardPage() {
       <TrendsPanel />
 
       {/* Active Projects */}
-      <section className="dashboard-projects panel">
-        <div className="panel-header">
-          <Link to="/projects" className="panel-header-link"><h2>Active Projects</h2></Link>
-          <button
-            className="btn btn-primary btn-sm"
-            onClick={() => setShowAddProject(true)}
-          >
+      <CollapsiblePanel
+        id="projects"
+        className="dashboard-projects"
+        title={<Link to="/projects" className="panel-header-link"><h2>Active Projects</h2></Link>}
+        actions={
+          <button className="btn btn-primary btn-sm" onClick={() => setShowAddProject(true)}>
             + New Project
           </button>
-        </div>
+        }
+      >
         {activeProjects.length > 0 ? (
           <div className={`dashboard-projects-scroll-wrapper${hasOverflow ? ' has-overflow' : ''}`}>
             <div className="dashboard-projects-scroll" ref={scrollRef}>
@@ -77,20 +78,19 @@ export default function DashboardPage() {
         ) : (
           <p className="empty-state">No active projects.</p>
         )}
-      </section>
+      </CollapsiblePanel>
 
       {/* Workers */}
-      <section className="panel" data-testid="sessions-panel">
-        <div className="panel-header">
-          <Link to="/workers" className="panel-header-link"><h2>Workers</h2></Link>
-          <button
-            className="btn btn-primary btn-sm"
-            data-testid="add-session-btn"
-            onClick={() => setShowAddWorker(true)}
-          >
+      <CollapsiblePanel
+        id="workers"
+        data-testid="sessions-panel"
+        title={<Link to="/workers" className="panel-header-link"><h2>Workers</h2></Link>}
+        actions={
+          <button className="btn btn-primary btn-sm" data-testid="add-session-btn" onClick={() => setShowAddWorker(true)}>
             + Add Worker
           </button>
-        </div>
+        }
+      >
         {loading ? (
           <p className="empty-state">Loading workers...</p>
         ) : workers.length === 0 ? (
@@ -107,7 +107,7 @@ export default function DashboardPage() {
             ))}
           </div>
         )}
-      </section>
+      </CollapsiblePanel>
 
       <AddSessionModal open={showAddWorker} onClose={() => setShowAddWorker(false)} />
       <ProjectForm

@@ -1,6 +1,7 @@
 import { Link } from 'react-router-dom'
 import type { Session, Task } from '../../api/types'
 import { timeAgo } from '../common/TimeAgo'
+import CollapsiblePanel from './CollapsiblePanel'
 import './RecentActivity.css'
 
 interface ActivityItem {
@@ -121,10 +122,7 @@ export default function RecentActivity({ workers, tasks }: Props) {
   if (display.length === 0) return null
 
   return (
-    <section className="recent-activity panel">
-      <div className="panel-header">
-        <h2>Recent Activity</h2>
-      </div>
+    <CollapsiblePanel id="recent-activity" className="recent-activity" title="Recent Activity">
       <div className="ra-list">
         {display.map(item => (
           <div key={item.id} className="ra-item">
@@ -140,6 +138,6 @@ export default function RecentActivity({ workers, tasks }: Props) {
           </div>
         ))}
       </div>
-    </section>
+    </CollapsiblePanel>
   )
 }

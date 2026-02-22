@@ -1,0 +1,55 @@
+.collapsible-panel-header {
+  cursor: pointer;
+  user-select: none;
+  height: 44px;
+  box-sizing: border-box;
+}
+
+.collapsible-panel-header:hover {
+  background: var(--surface-hover);
+}
+
+.collapsible-panel-left {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.collapsible-chevron {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--text-muted);
+  border-radius: 4px;
+  flex-shrink: 0;
+  transition: transform 150ms ease, color 150ms ease;
+  transform: rotate(90deg);
+  pointer-events: none; /* header click handles toggle */
+}
+
+.collapsible-panel-header:hover .collapsible-chevron {
+  color: var(--text-secondary);
+}
+
+.collapsed .collapsible-chevron {
+  transform: rotate(0deg);
+}
+
+.collapsible-panel-body {
+  overflow: hidden;
+  transition: max-height 200ms ease;
+}
+
+.collapsed .collapsible-panel-body {
+  /* border-bottom still visible from panel-header; hide it when collapsed */
+}
+
+.collapsed .collapsible-panel-header {
+  border-bottom-color: transparent;
+}
