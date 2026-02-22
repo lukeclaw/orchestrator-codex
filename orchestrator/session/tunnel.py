@@ -20,6 +20,8 @@ import time
 from dataclasses import dataclass, field
 from typing import Dict, Optional, Tuple
 
+from orchestrator.session.health import probe_tunnel_connectivity
+
 logger = logging.getLogger(__name__)
 
 # In-memory cache (rebuilt from process scan)

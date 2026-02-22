@@ -97,7 +97,7 @@ async def broadcast(message: dict[str, Any]):
     data = json.dumps(message)
     disconnected = set()
 
-    for client in _clients:
+    for client in list(_clients):
         try:
             await client.send_text(data)
         except Exception:

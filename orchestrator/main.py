@@ -40,7 +40,14 @@ def setup_logging(config: dict):
     log_cfg = config.get("logging", {})
     level = getattr(logging, log_cfg.get("level", "INFO").upper(), logging.INFO)
 
-    handlers: list[logging.Handler] = [logging.StreamHandler()]
+    handlers: list[logging.Handler] = []
+
+    # Only add StreamHandler in dev mode.  In packaged (sidecar) mode,
+    # stderr is a pipe to the Tauri parent.  If the parent stops reading,
+    # the pipe buffer fills up and any logging flush() blocks the asyncio
+    # event loop, freezing the entire server.
+    if not paths.is_packaged():
+        handlers.append(logging.StreamHandler())
 
     lp = paths.log_path()
     lp.parent.mkdir(parents=True, exist_ok=True)
