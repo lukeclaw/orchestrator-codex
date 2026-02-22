@@ -29,10 +29,11 @@ def setup_path():
         if os.path.isdir(bundled_tmux):
             extra_paths.append(bundled_tmux)
 
-    # Common Homebrew paths (ARM and Intel Macs)
+    # Common Homebrew paths (ARM and Intel Macs) + LinkedIn CLI tools
     extra_paths.extend([
         "/opt/homebrew/bin",
         "/usr/local/bin",
+        "/usr/local/linkedin/bin",
     ])
 
     current_path = os.environ.get("PATH", "")
@@ -84,12 +85,19 @@ def main():
     port = config.get("server", {}).get("port", 8093)
 
     logger.info("Starting uvicorn on %s:%d", host, port)
+
+    # In packaged mode, suppress uvicorn's default logging config so it
+    # doesn't add its own StreamHandler to stderr (which is a pipe to Tauri
+    # and can block the event loop if the parent stops reading).
+    log_config: dict | None = uvicorn.config.LOGGING_CONFIG if not paths.is_packaged() else None
+
     uvicorn.run(
         "orchestrator.api.app:create_app",
         factory=True,
         host=host,
         port=port,
         log_level="info",
+        log_config=log_config,
     )
 
 
