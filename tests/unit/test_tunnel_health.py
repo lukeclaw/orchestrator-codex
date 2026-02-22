@@ -275,12 +275,12 @@ class TestTunnelHealthLoop:
     """Tests for the periodic tunnel health monitoring loop (subprocess-based)."""
 
     @patch("orchestrator.session.tunnel_monitor.sessions_repo")
-    def test_check_all_tunnels_skips_non_rdev(self, mock_repo):
-        """Should skip local (non-rdev) workers."""
+    def test_check_all_tunnels_skips_local(self, mock_repo):
+        """Should skip local workers (host=localhost)."""
         from orchestrator.session.tunnel_monitor import _check_all_tunnels
 
         mock_session = MagicMock()
-        mock_session.host = "local"
+        mock_session.host = "localhost"
         mock_session.status = "waiting"
         mock_session.id = "sess-1"
         mock_repo.list_sessions.return_value = [mock_session]

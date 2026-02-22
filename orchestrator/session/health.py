@@ -321,13 +321,13 @@ def check_claude_process_local(session_id: str) -> tuple[bool, str]:
         return True, f"Health check error: {e}"
 
 
-def check_screen_and_claude_rdev(
-    host: str, 
-    session_id: str, 
-    tmux_sess: str = None, 
+def check_screen_and_claude_remote(
+    host: str,
+    session_id: str,
+    tmux_sess: str = None,
     tmux_win: str = None
 ) -> tuple[str, str]:
-    """Check screen session and Claude process status on rdev host.
+    """Check screen session and Claude process status on a remote host.
     
     Uses subprocess SSH (fresh connection) to check status. Does NOT use tmux send-keys
     because that would type commands into Claude if it's running.
@@ -363,8 +363,15 @@ def check_screen_and_claude_rdev(
     try:
         # Note: Check for 'claude -r' or 'claude --' to avoid matching screen session names
         # which contain 'claude-<session_id>'. The actual Claude CLI is invoked with flags.
+        #
+        # Screen detection uses two methods:
+        #   1. `screen -ls` (socket-based — can fail if SCREENDIR differs between
+        #      interactive and BatchMode SSH sessions)
+        #   2. `ps aux | grep "screen -S <name>"` (process-based — always works)
+        # Either match counts as "screen exists".
         check_cmd = (
             f"screen -ls 2>/dev/null | grep -q '{screen_name}' && echo 'SCREEN_EXISTS' || echo 'NO_SCREEN'; "
+            f"ps aux | grep -v grep | grep -q '[s]creen -S {screen_name}' && echo 'SCREEN_PS_EXISTS' || echo 'NO_SCREEN_PS'; "
             f"ps aux | grep -v grep | grep -E 'claude (-r|--|--settings)' | grep -q '{session_id}' && echo 'CLAUDE_RUNNING' || echo 'NO_CLAUDE'"
         )
         
@@ -377,20 +384,33 @@ def check_screen_and_claude_rdev(
         
         if result.returncode != 0 and "Permission denied" in result.stderr:
             return "screen_detached", f"SSH auth failed - screen may still be running: {result.stderr.strip()}"
-        
+
         if result.returncode != 0 and ("Connection refused" in result.stderr or "Connection timed out" in result.stderr):
             return "screen_detached", f"SSH connection failed - screen may still be running: {result.stderr.strip()}"
+
+        # Catch-all for other SSH transport failures (host key errors, DNS, etc.)
+        # If SSH itself failed (exit 255) and stdout is empty, it's a connection issue.
+        if result.returncode == 255 and not result.stdout.strip():
+            return "screen_detached", f"SSH connection failed - screen may still be running: {result.stderr.strip()[:200]}"
         
         output = result.stdout
         stderr = result.stderr
-        screen_exists = "SCREEN_EXISTS" in output
+        screen_exists_ls = "SCREEN_EXISTS" in output
+        screen_exists_ps = "SCREEN_PS_EXISTS" in output
+        screen_exists = screen_exists_ls or screen_exists_ps
         claude_running = "CLAUDE_RUNNING" in output
-        
+
         # Debug logging to diagnose false negatives
         logger.debug(
-            "SSH health check for %s (screen=%s): returncode=%d, screen_exists=%s, claude_running=%s, stdout=%r, stderr=%r",
-            host, screen_name, result.returncode, screen_exists, claude_running, output[:200], stderr[:100]
+            "SSH health check for %s (screen=%s): returncode=%d, screen_ls=%s, screen_ps=%s, claude=%s, stdout=%r, stderr=%r",
+            host, screen_name, result.returncode, screen_exists_ls, screen_exists_ps, claude_running, output[:200], stderr[:100]
         )
+        if screen_exists_ps and not screen_exists_ls:
+            logger.info(
+                "SSH health check for %s: screen -ls missed session '%s' but ps found it "
+                "(likely SCREENDIR mismatch between interactive and BatchMode SSH)",
+                host, screen_name,
+            )
         
         if screen_exists and claude_running:
             return "alive", "Screen session exists and Claude is running"
@@ -411,20 +431,20 @@ def check_screen_and_claude_rdev(
         return "screen_detached", f"Health check error: {e}"
 
 
-def check_claude_process_rdev(host: str, session_id: str) -> tuple[bool, str]:
-    """Check if Claude Code with given session_id is running on rdev host via SSH.
-    
-    This is a simplified wrapper around check_screen_and_claude_rdev that returns
+def check_claude_process_remote(host: str, session_id: str) -> tuple[bool, str]:
+    """Check if Claude Code with given session_id is running on a remote host via SSH.
+
+    This is a simplified wrapper around check_screen_and_claude_remote that returns
     a boolean alive status.
-    
+
     Args:
-        host: rdev host (e.g., "user/rdev-vm")
+        host: Remote host (rdev or generic SSH)
         session_id: Session ID to check for
-        
+
     Returns:
         (alive: bool, reason: str)
     """
-    status, reason = check_screen_and_claude_rdev(host, session_id)
+    status, reason = check_screen_and_claude_remote(host, session_id)
     
     if status == "alive":
         return True, reason
@@ -433,3 +453,8 @@ def check_claude_process_rdev(host: str, session_id: str) -> tuple[bool, str]:
         return True, reason
     else:
         return False, reason
+
+
+# Backward-compat aliases
+check_screen_and_claude_rdev = check_screen_and_claude_remote
+check_claude_process_rdev = check_claude_process_remote

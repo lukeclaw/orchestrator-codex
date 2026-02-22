@@ -32,7 +32,12 @@ def health_check(session_name: str, window_name: str) -> bool:
     return False
 
 
-# --- rdev helpers ---
+# --- remote host helpers ---
+
+def is_remote_host(host: str) -> bool:
+    """Return True for any remote host (rdev or generic SSH)."""
+    return host != "localhost"
+
 
 def is_rdev_host(host: str) -> bool:
     """Return True if host looks like an rdev session (MP_NAME/SESSION_NAME)."""
@@ -40,9 +45,16 @@ def is_rdev_host(host: str) -> bool:
     return len(parts) == 2 and all(parts)
 
 
+def remote_connect(session_name: str, window_name: str, host: str) -> bool:
+    """Connect to a remote host. Uses `rdev ssh` for rdev hosts, plain `ssh` otherwise."""
+    if is_rdev_host(host):
+        return send_keys(session_name, window_name, f"rdev ssh {host} --non-tmux")
+    return send_keys(session_name, window_name, f"ssh {host}")
+
+
 def rdev_connect(session_name: str, window_name: str, host: str) -> bool:
-    """Connect to an rdev VM via `rdev ssh`."""
-    return send_keys(session_name, window_name, f"rdev ssh {host} --non-tmux")
+    """Connect to an rdev VM via `rdev ssh`. Alias for backward compat."""
+    return remote_connect(session_name, window_name, host)
 
 
 def wait_for_prompt(

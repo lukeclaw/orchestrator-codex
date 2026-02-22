@@ -27,7 +27,7 @@ import threading
 import time
 
 from orchestrator.terminal.manager import capture_output, send_keys, kill_window
-from orchestrator.terminal.session import _copy_dir_to_rdev_ssh
+from orchestrator.terminal.session import _copy_dir_to_remote_ssh
 from orchestrator.session.health import (
     get_screen_session_name,
     check_tui_running_in_pane,
@@ -314,7 +314,7 @@ def _copy_configs_to_remote(host: str, tmp_dir: str, remote_tmp_dir: str, sessio
     import subprocess
 
     # Copy entire directory to remote via direct SSH
-    if not _copy_dir_to_rdev_ssh(tmp_dir, host, remote_tmp_dir):
+    if not _copy_dir_to_remote_ssh(tmp_dir, host, remote_tmp_dir):
         raise RuntimeError(f"Failed to copy configs to remote via SSH: {host}:{remote_tmp_dir}")
 
     # Make scripts executable via SSH subprocess
@@ -472,8 +472,8 @@ def check_screen_exists_via_tmux(
 # Main Reconnect — rdev Workers (Sequential Pipeline)
 # =============================================================================
 
-def reconnect_rdev_worker(conn, session, tmux_sess: str, tmux_win: str, api_port: int, tmp_dir: str, repo, tunnel_manager=None):
-    """Reconnect an rdev worker using the sequential pipeline.
+def reconnect_remote_worker(conn, session, tmux_sess: str, tmux_win: str, api_port: int, tmp_dir: str, repo, tunnel_manager=None):
+    """Reconnect a remote worker (rdev or generic SSH) using the sequential pipeline.
 
     Each step fixes one layer, then evaluates the next.  The critical
     invariant is: **never send commands to a tmux pane that has a TUI running.**
@@ -482,7 +482,7 @@ def reconnect_rdev_worker(conn, session, tmux_sess: str, tmux_win: str, api_port
       0. Acquire per-session lock
       1. Check pane safety (TUI + SSH alive — non-intrusive)
       2. Fix tunnel if dead (subprocess only)
-      3. Ensure SSH connection (clean pane → rdev ssh → wait for prompt)
+      3. Ensure SSH connection (clean pane → ssh/rdev ssh → wait for prompt)
       4. Copy configs to remote (subprocess SSH)
       5. Check screen/Claude status (safe: at shell prompt)
       6. Act: reattach / reattach+launch / create+launch
@@ -490,7 +490,7 @@ def reconnect_rdev_worker(conn, session, tmux_sess: str, tmux_win: str, api_port
     from orchestrator.terminal import ssh
     from orchestrator.terminal.manager import ensure_window
     from orchestrator.terminal.session import _install_screen_if_needed
-    from orchestrator.session.health import check_screen_and_claude_rdev, check_worker_ssh_alive
+    from orchestrator.session.health import check_screen_and_claude_remote, check_worker_ssh_alive
 
     remote_tmp_dir = f"/tmp/orchestrator/workers/{session.name}"
     screen_name = get_screen_session_name(session.id)
@@ -515,7 +515,7 @@ def reconnect_rdev_worker(conn, session, tmux_sess: str, tmux_win: str, api_port
 
         if tui_active and ssh_alive:
             # Claude is probably running fine.  Verify via subprocess SSH.
-            remote_status, reason = check_screen_and_claude_rdev(
+            remote_status, reason = check_screen_and_claude_remote(
                 session.host, session.id, tmux_sess=None, tmux_win=None,
             )
             if remote_status == "alive":
@@ -562,7 +562,7 @@ def reconnect_rdev_worker(conn, session, tmux_sess: str, tmux_win: str, api_port
         if not ssh_alive:
             logger.info("Reconnect %s: Step 3 — SSH dead, cleaning pane and reconnecting", session.name)
             _clean_pane_for_ssh(tmux_sess, tmux_win)
-            ssh.rdev_connect(tmux_sess, tmux_win, session.host)
+            ssh.remote_connect(tmux_sess, tmux_win, session.host)
             if not ssh.wait_for_prompt(tmux_sess, tmux_win, timeout=60):
                 raise RuntimeError(f"Timed out waiting for shell prompt on {session.host}")
             time.sleep(1)
@@ -689,3 +689,7 @@ def reconnect_local_worker(session, tmux_sess: str, tmux_win: str, api_port: int
         logger.info("Launched Claude Code for local worker %s (session_id=%s)", session.name, session.id)
     finally:
         lock.release()
+
+
+# Backward-compat alias
+reconnect_rdev_worker = reconnect_remote_worker

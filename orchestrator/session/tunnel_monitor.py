@@ -17,7 +17,7 @@ import logging
 import sqlite3
 
 from orchestrator.state.repositories import sessions as sessions_repo
-from orchestrator.terminal.ssh import is_rdev_host
+from orchestrator.terminal.ssh import is_remote_host
 
 logger = logging.getLogger(__name__)
 
@@ -94,7 +94,7 @@ async def _check_all_tunnels(
 
     for s in sessions:
         # Skip non-rdev, disconnected, or connecting workers
-        if not is_rdev_host(s.host):
+        if not is_remote_host(s.host):
             continue
         if s.status in ("disconnected", "connecting"):
             continue

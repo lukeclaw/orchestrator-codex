@@ -113,6 +113,6 @@ def sync_dir_to_remote(local_dir: str, host: str, remote_dir: str) -> bool:
 
     Delegates to the existing tar-over-ssh implementation in session.py.
     """
-    from orchestrator.terminal.session import _copy_dir_to_rdev_ssh
+    from orchestrator.terminal.session import _copy_dir_to_remote_ssh
 
-    return _copy_dir_to_rdev_ssh(local_dir, host, remote_dir)
+    return _copy_dir_to_remote_ssh(local_dir, host, remote_dir)

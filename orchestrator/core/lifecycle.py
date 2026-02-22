@@ -43,13 +43,13 @@ def recover_tunnels(conn: sqlite3.Connection, tunnel_manager):
     For each rdev session with a stored tunnel_pid, try to adopt the
     existing SSH process. If the process is dead, start a fresh tunnel.
     """
-    from orchestrator.terminal.ssh import is_rdev_host
+    from orchestrator.terminal.ssh import is_remote_host
 
     all_sessions = sessions.list_sessions(conn, session_type="worker")
     recovered = 0
 
     for s in all_sessions:
-        if not is_rdev_host(s.host):
+        if not is_remote_host(s.host):
             continue
         if s.status in ("disconnected",):
             continue

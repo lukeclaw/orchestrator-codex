@@ -60,25 +60,25 @@ class TestLocalFileDeployment:
 class TestDirectSSHCopy:
     """Test the direct SSH copy function signature and structure."""
 
-    def test_copy_dir_to_rdev_ssh_function_exists(self):
-        """_copy_dir_to_rdev_ssh function should exist with correct signature."""
-        from orchestrator.terminal.session import _copy_dir_to_rdev_ssh
+    def test_copy_dir_to_remote_ssh_function_exists(self):
+        """_copy_dir_to_remote_ssh function should exist with correct signature."""
+        from orchestrator.terminal.session import _copy_dir_to_remote_ssh
         import inspect
-        
-        sig = inspect.signature(_copy_dir_to_rdev_ssh)
+
+        sig = inspect.signature(_copy_dir_to_remote_ssh)
         params = list(sig.parameters.keys())
-        
+
         assert "local_dir" in params, "Should have local_dir parameter"
         assert "host" in params, "Should have host parameter"
         assert "remote_dir" in params, "Should have remote_dir parameter"
 
-    def test_copy_dir_to_rdev_ssh_uses_subprocess(self):
-        """_copy_dir_to_rdev_ssh should use subprocess for SSH."""
-        from orchestrator.terminal.session import _copy_dir_to_rdev_ssh
+    def test_copy_dir_to_remote_ssh_uses_subprocess(self):
+        """_copy_dir_to_remote_ssh should use subprocess for SSH."""
+        from orchestrator.terminal.session import _copy_dir_to_remote_ssh
         import inspect
-        
-        source = inspect.getsource(_copy_dir_to_rdev_ssh)
-        
+
+        source = inspect.getsource(_copy_dir_to_remote_ssh)
+
         assert "subprocess" in source, "Should use subprocess"
         assert "ssh" in source.lower(), "Should use SSH"
         assert "tar" in source, "Should use tar for transfer"
@@ -90,21 +90,21 @@ class TestRemoteVerification:
     def test_session_py_uses_direct_ssh_copy(self):
         """Verify that session.py uses direct SSH for file copy."""
         import inspect
-        from orchestrator.terminal.session import setup_rdev_worker
-        
-        source = inspect.getsource(setup_rdev_worker)
-        
+        from orchestrator.terminal.session import setup_remote_worker
+
+        source = inspect.getsource(setup_remote_worker)
+
         # Check that direct SSH copy is used
-        assert "_copy_dir_to_rdev_ssh" in source, "setup_rdev_worker should use _copy_dir_to_rdev_ssh"
+        assert "_copy_dir_to_remote_ssh" in source, "setup_remote_worker should use _copy_dir_to_remote_ssh"
         assert "RuntimeError" in source, "Should raise RuntimeError on copy failure"
 
     def test_direct_ssh_copy_raises_on_failure(self):
         """Verify that RuntimeError is raised when SSH copy fails."""
         import inspect
-        from orchestrator.terminal.session import setup_rdev_worker
-        
-        source = inspect.getsource(setup_rdev_worker)
-        
+        from orchestrator.terminal.session import setup_remote_worker
+
+        source = inspect.getsource(setup_remote_worker)
+
         # Verify the error handling is present
         assert "Failed to copy files to remote via SSH" in source, "Should have error for SSH copy failure"
 

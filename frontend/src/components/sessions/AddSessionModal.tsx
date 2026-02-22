@@ -30,33 +30,38 @@ const WORKER_BASE_DIR = '/tmp/orchestrator/workers'
 
 export default function AddSessionModal({ open, onClose }: Props) {
   const { refresh } = useApp()
-  const [workerType, setWorkerType] = useState<'rdev' | 'local'>('local')
-  
+  const [workerType, setWorkerType] = useState<'rdev' | 'ssh' | 'local'>('local')
+
   // Local worker state
   const [localName, setLocalName] = useState(generateWorkerName)
   const [host, setHost] = useState('localhost')
   const [mpPath, setMpPath] = useState('')
-  
+
   // Rdev worker state
   const [rdevName, setRdevName] = useState('')
   const [selectedRdev, setSelectedRdev] = useState<string>('')
-  
+
+  // SSH worker state
+  const [sshName, setSshName] = useState(generateWorkerName)
+  const [sshHost, setSshHost] = useState('')
+  const [sshWorkDir, setSshWorkDir] = useState('')
+
   // Shared state
   const [error, setError] = useState('')
   const [creating, setCreating] = useState(false)
-  
+
   // Track which fields have been touched for validation
   const [touchedFields, setTouchedFields] = useState<Set<string>>(new Set())
-  
+
   // Rdev list state
   const [rdevs, setRdevs] = useState<RdevInstance[]>([])
   const [loadingRdevs, setLoadingRdevs] = useState(false)
   const [rdevError, setRdevError] = useState('')
-  
+
   // Get current name based on worker type
-  const name = workerType === 'rdev' ? rdevName : localName
-  const setName = workerType === 'rdev' ? setRdevName : setLocalName
-  
+  const name = workerType === 'rdev' ? rdevName : workerType === 'ssh' ? sshName : localName
+  const setName = workerType === 'rdev' ? setRdevName : workerType === 'ssh' ? setSshName : setLocalName
+
   // Reset state when modal is closed
   useEffect(() => {
     if (!open) {
@@ -66,31 +71,37 @@ export default function AddSessionModal({ open, onClose }: Props) {
       setMpPath('')
       setRdevName('')
       setSelectedRdev('')
+      setSshName(generateWorkerName())
+      setSshHost('')
+      setSshWorkDir('')
       setError('')
       setRdevError('')
       setTouchedFields(new Set())
     }
   }, [open])
-  
+
   // Mark field as touched
   const touchField = (field: string) => {
     setTouchedFields(prev => new Set(prev).add(field))
   }
-  
+
   // Validation helper
   const validateForm = () => {
-    const currentName = workerType === 'rdev' ? rdevName : localName
-    const hasName = !!currentName.trim()
-    const hasRdev = workerType === 'rdev' && !!selectedRdev
-    const hasHost = workerType === 'local' && !!host.trim()
-    return hasName && (hasRdev || hasHost)
+    if (workerType === 'rdev') {
+      return !!rdevName.trim() && !!selectedRdev
+    } else if (workerType === 'ssh') {
+      return !!sshName.trim() && !!sshHost.trim()
+    } else {
+      return !!localName.trim() && !!host.trim()
+    }
   }
-  
+
   // Error messages (shown when field is touched and invalid)
   const nameError = touchedFields.has('name') && !name.trim() ? 'Worker name is required' : ''
   const rdevError2 = touchedFields.has('rdev') && workerType === 'rdev' && !selectedRdev ? 'Please select an rdev instance' : ''
   const hostError = touchedFields.has('host') && workerType === 'local' && !host.trim() ? 'Host is required' : ''
-  
+  const sshHostError = touchedFields.has('sshHost') && workerType === 'ssh' && !sshHost.trim() ? 'SSH host is required' : ''
+
   // Form is valid when all required fields are filled
   const isFormValid = validateForm()
 
@@ -126,7 +137,7 @@ export default function AddSessionModal({ open, onClose }: Props) {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     // Touch all fields to show any remaining errors
-    setTouchedFields(new Set(['name', 'rdev', 'host']))
+    setTouchedFields(new Set(['name', 'rdev', 'host', 'sshHost']))
     if (!validateForm()) return
     setError('')
     setCreating(true)
@@ -139,6 +150,10 @@ export default function AddSessionModal({ open, onClose }: Props) {
       if (workerType === 'rdev') {
         if (!selectedRdev) return
         payload.host = selectedRdev
+      } else if (workerType === 'ssh') {
+        if (!sshHost.trim()) return
+        payload.host = sshHost.trim()
+        payload.work_dir = sshWorkDir.trim() || null
       } else {
         if (!host.trim()) return
         payload.host = host.trim()
@@ -171,6 +186,13 @@ export default function AddSessionModal({ open, onClose }: Props) {
                 onClick={() => setWorkerType('rdev')}
               >
                 rdev VM
+              </button>
+              <button
+                type="button"
+                className={`toggle-btn${workerType === 'ssh' ? ' active' : ''}`}
+                onClick={() => setWorkerType('ssh')}
+              >
+                SSH
               </button>
               <button
                 type="button"
@@ -213,11 +235,11 @@ export default function AddSessionModal({ open, onClose }: Props) {
                   <IconRefresh size={14} className={loadingRdevs ? 'spinning' : ''} />
                 </button>
               </div>
-              
+
               {rdevError && (
                 <div className="rdev-error">{rdevError}</div>
               )}
-              
+
               {loadingRdevs ? (
                 <div className="rdev-loading">Loading rdev instances...</div>
               ) : rdevs.length === 0 ? (
@@ -257,6 +279,36 @@ export default function AddSessionModal({ open, onClose }: Props) {
                 </>
               )}
             </div>
+          ) : workerType === 'ssh' ? (
+            <>
+              <div className="form-group">
+                <label>SSH Host <span className="field-required">*required</span></label>
+                <input
+                  type="text"
+                  data-testid="session-ssh-host-input"
+                  value={sshHost}
+                  onChange={e => {
+                    setSshHost(e.target.value)
+                    touchField('sshHost')
+                  }}
+                  onBlur={() => touchField('sshHost')}
+                  placeholder="user@hostname"
+                  className={sshHostError ? 'input-error' : ''}
+                />
+                {sshHostError && <div className="field-error">{sshHostError}</div>}
+                <div className="field-hint">Uses your ~/.ssh/config for keys and proxy settings</div>
+              </div>
+              <div className="form-group">
+                <label>Working Directory <span className="field-optional">(optional)</span></label>
+                <input
+                  type="text"
+                  data-testid="session-ssh-workdir-input"
+                  value={sshWorkDir}
+                  onChange={e => setSshWorkDir(e.target.value)}
+                  placeholder="e.g. /home/user/project"
+                />
+              </div>
+            </>
           ) : (
             <>
               <div className="form-group">

@@ -300,17 +300,17 @@ def _kill_orphaned_screen(tmux_session: str, window_name: str, screen_name: str)
     time.sleep(0.5)
 
 
-def _copy_dir_to_rdev_ssh(local_dir: str, host: str, remote_dir: str) -> bool:
-    """Copy a local directory to rdev host using direct SSH subprocess.
-    
+def _copy_dir_to_remote_ssh(local_dir: str, host: str, remote_dir: str) -> bool:
+    """Copy a local directory to a remote host using direct SSH subprocess.
+
     This bypasses tmux/screen entirely by piping tar directly through SSH stdin.
     Much more reliable than sending large commands through tmux send-keys.
-    
+
     Args:
         local_dir: Local directory to copy
-        host: rdev host (e.g., "user/rdev-vm")
+        host: Remote host (rdev or generic SSH)
         remote_dir: Remote directory to extract to
-        
+
     Returns:
         True if copy succeeded, False otherwise
     """
@@ -354,13 +354,17 @@ def _copy_dir_to_rdev_ssh(local_dir: str, host: str, remote_dir: str) -> bool:
         
         logger.info("Copied %s to %s:%s via direct SSH", local_dir, host, remote_dir)
         return True
-        
+
     except subprocess.TimeoutExpired:
         logger.error("SSH copy timed out for %s -> %s:%s", local_dir, host, remote_dir)
         return False
     except Exception as e:
         logger.error("SSH copy failed: %s", e)
         return False
+
+
+# Backward-compat alias
+_copy_dir_to_rdev_ssh = _copy_dir_to_remote_ssh
 
 
 def _copy_dir_to_remote(
@@ -407,7 +411,7 @@ def _copy_dir_to_remote(
     logger.info("Copied %s to remote %s via tar+base64 (tmux)", local_dir, remote_dir)
 
 
-def setup_rdev_worker(
+def setup_remote_worker(
     conn: sqlite3.Connection,
     session_id: str,
     name: str,
@@ -418,13 +422,17 @@ def setup_rdev_worker(
     tmp_dir: str | None = None,
     tunnel_manager=None,
 ) -> dict:
-    """Set up a full rdev worker: tunnel, SSH, screen, Claude, prompt.
+    """Set up a full remote worker: tunnel, SSH, screen, Claude, prompt.
+
+    Works for both rdev and generic SSH hosts. The 3 rdev-specific steps
+    (rdev ssh connect, PATH fixup, claude update) are conditionally applied
+    based on ``ssh.is_rdev_host(host)``.
 
     Returns {"ok": True, "tunnel_pid": ...} on success,
     or {"ok": False, "error": "..."} on failure.
 
     Args:
-        work_dir: Where Claude Code runs (user's codebase). If None, uses rdev home.
+        work_dir: Where Claude Code runs (user's codebase). If None, uses home dir.
         tmp_dir: Local tmp directory for generating scripts/configs before copying to remote.
         tunnel_manager: ReverseTunnelManager for subprocess-based tunnel management.
 
@@ -448,22 +456,23 @@ def setup_rdev_worker(
             logger.warning("No tunnel_manager provided, skipping tunnel setup for %s", name)
         time.sleep(2)  # Give tunnel a moment to establish
 
-        # 2. Connect to rdev VM
-        ssh.rdev_connect(tmux_session, name, host)
-        logger.info("Connecting to rdev VM for %s: %s", name, host)
+        # 2. Connect to remote host (rdev ssh or plain ssh)
+        ssh.remote_connect(tmux_session, name, host)
+        logger.info("Connecting to remote host for %s: %s", name, host)
 
         # 3. Wait for shell prompt
         if not ssh.wait_for_prompt(tmux_session, name, timeout=30):
             raise RuntimeError(f"Timed out waiting for shell prompt on {host}")
 
-        # 3b. Source bashrc first to pick up correct claude binary, then update
-        tmux.send_keys(tmux_session, name, 
-            'echo \'export PATH="$HOME/.local/bin:$PATH"\' >> ~/.bashrc && source ~/.bashrc', 
-            enter=True)
-        time.sleep(1)
-        tmux.send_keys(tmux_session, name, "claude update", enter=True)
-        time.sleep(5)  # Wait for update to complete
-        logger.info("Configured PATH and updated Claude for %s", name)
+        # 3b. rdev-specific: PATH fixup and claude update (skip for generic SSH)
+        if ssh.is_rdev_host(host):
+            tmux.send_keys(tmux_session, name,
+                'echo \'export PATH="$HOME/.local/bin:$PATH"\' >> ~/.bashrc && source ~/.bashrc',
+                enter=True)
+            time.sleep(1)
+            tmux.send_keys(tmux_session, name, "claude update", enter=True)
+            time.sleep(5)  # Wait for update to complete
+            logger.info("Configured PATH and updated Claude for %s", name)
         
         # 3c. Install screen if needed
         if not _install_screen_if_needed(tmux_session, name):
@@ -520,7 +529,7 @@ def setup_rdev_worker(
             logger.info("Prepared %d skills for transfer", len(os.listdir(local_skills_dir)))
         
         # 6. Copy entire directory to remote via direct SSH (bypasses tmux/screen)
-        if not _copy_dir_to_rdev_ssh(local_tmp_dir, host, remote_tmp_dir):
+        if not _copy_dir_to_remote_ssh(local_tmp_dir, host, remote_tmp_dir):
             raise RuntimeError(f"Failed to copy files to remote via SSH: {host}:{remote_tmp_dir}")
         
         logger.info("Copied files to remote via direct SSH: %s", remote_tmp_dir)
@@ -569,13 +578,13 @@ def setup_rdev_worker(
         
         claude_cmd = f"claude {' '.join(claude_args)}"
         tmux.send_keys(tmux_session, name, claude_cmd, enter=True)
-        logger.info("Launched Claude Code in screen session '%s' for rdev worker %s (work_dir=%s)", 
+        logger.info("Launched Claude Code in screen session '%s' for remote worker %s (work_dir=%s)",
                     screen_name, name, work_dir)
 
         return {"ok": True, "tunnel_pid": tunnel_pid}
 
     except Exception as e:
-        logger.exception("Failed to set up rdev worker %s", name)
+        logger.exception("Failed to set up remote worker %s", name)
         # Clean up tunnel subprocess on failure
         if tunnel_manager:
             try:
@@ -583,3 +592,7 @@ def setup_rdev_worker(
             except Exception:
                 pass
         return {"ok": False, "error": str(e)}
+
+
+# Backward-compat alias
+setup_rdev_worker = setup_remote_worker

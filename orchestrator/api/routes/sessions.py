@@ -24,17 +24,17 @@ from orchestrator.terminal.manager import (
     send_keys,
     tmux_target,
 )
-from orchestrator.terminal.ssh import is_rdev_host
+from orchestrator.terminal.ssh import is_remote_host, is_rdev_host
 from orchestrator.agents import deploy_worker_scripts, generate_worker_hooks, get_path_export_command, get_worker_prompt
 from orchestrator.agents.deploy import get_worker_skills_dir
 from orchestrator.session import (
     is_reconnectable,
     get_screen_session_name,
     check_claude_process_local,
-    check_screen_and_claude_rdev,
+    check_screen_and_claude_remote,
     check_screen_exists_via_tmux,
     cleanup_reconnect_lock,
-    reconnect_rdev_worker,
+    reconnect_remote_worker,
     reconnect_local_worker,
 )
 from orchestrator.api.ws_terminal import is_user_active
@@ -189,7 +189,7 @@ def toggle_auto_reconnect(session_id: str, request: Request, db=Depends(get_db))
 
         repo.update_session(db, session_id, status="connecting")
 
-        if is_rdev_host(s.host):
+        if is_remote_host(s.host):
             db_path = getattr(request.app.state, "db_path", None)
             tunnel_manager = getattr(request.app.state, "tunnel_manager", None)
 
@@ -197,7 +197,7 @@ def toggle_auto_reconnect(session_id: str, request: Request, db=Depends(get_db))
                 from orchestrator.state.db import get_connection
                 bg_conn = get_connection(db_path) if db_path else db
                 try:
-                    reconnect_rdev_worker(
+                    reconnect_remote_worker(
                         bg_conn, s, tmux_sess, tmux_win, api_port, tmp_dir, repo,
                         tunnel_manager=tunnel_manager,
                     )
@@ -255,8 +255,8 @@ def create_session(body: SessionCreate, request: Request, db=Depends(get_db)):
 
     s = repo.create_session(db, sanitized_name, body.host, work_dir)
 
-    if is_rdev_host(body.host):
-        # rdev worker — launch full setup in background thread
+    if is_remote_host(body.host):
+        # Remote worker — launch full setup in background thread
         # (tunnel, SSH, Claude, prompt delivery takes ~30s)
         config = getattr(request.app.state, "config", {})
         api_port = config.get("server", {}).get("port", 8093)
@@ -267,11 +267,11 @@ def create_session(body: SessionCreate, request: Request, db=Depends(get_db)):
 
         def _background_setup():
             from orchestrator.state.db import get_connection
-            from orchestrator.terminal.session import setup_rdev_worker
+            from orchestrator.terminal.session import setup_remote_worker
 
             bg_conn = get_connection(db_path) if db_path else db
             try:
-                result = setup_rdev_worker(
+                result = setup_remote_worker(
                     bg_conn, s.id, sanitized_name, body.host,
                     tmux_session_name, api_port,
                     work_dir=work_dir,
@@ -287,12 +287,12 @@ def create_session(body: SessionCreate, request: Request, db=Depends(get_db)):
                     if body.task_id:
                         from orchestrator.state.repositories import tasks
                         tasks.update_task(bg_conn, body.task_id, assigned_session_id=s.id, status="in_progress")
-                    logger.info("rdev worker %s setup complete", sanitized_name)
+                    logger.info("Remote worker %s setup complete", sanitized_name)
                 else:
                     repo.update_session(bg_conn, s.id, status="error")
-                    logger.error("rdev worker %s setup failed: %s", sanitized_name, result.get("error"))
+                    logger.error("Remote worker %s setup failed: %s", sanitized_name, result.get("error"))
             except Exception:
-                logger.exception("rdev background setup failed for %s", sanitized_name)
+                logger.exception("Remote background setup failed for %s", sanitized_name)
                 try:
                     repo.update_session(bg_conn, s.id, status="error")
                 except Exception:
@@ -426,12 +426,12 @@ def delete_session(session_id: str, request: Request, db=Depends(get_db)):
         raise HTTPException(404, "Session not found")
 
     worker_scripts_dir = os.path.join(WORKER_BASE_DIR, s.name)
-    is_rdev = is_rdev_host(s.host)
+    is_remote = is_remote_host(s.host)
 
     tmux_sess, tmux_win = tmux_target(s.name)
 
-    # For rdev workers, clean up screen session and remote directory before killing window
-    if is_rdev:
+    # For remote workers, clean up screen session and remote directory before killing window
+    if is_remote:
         try:
             import subprocess
             # Send Escape to stop Claude Code if running
@@ -481,8 +481,8 @@ def delete_session(session_id: str, request: Request, db=Depends(get_db)):
         except Exception:
             logger.warning("Could not remove local worker directory %s", worker_scripts_dir, exc_info=True)
 
-    # Clean up any SSH port-forward tunnels for this rdev host
-    if is_rdev:
+    # Clean up any SSH port-forward tunnels for this remote host
+    if is_remote:
         from orchestrator.session.tunnel import cleanup_tunnels_for_host
         try:
             closed = cleanup_tunnels_for_host(s.host)
@@ -601,10 +601,10 @@ def paste_image_to_session(session_id: str, body: PasteImageBody, db=Depends(get
         logger.exception("Failed to save worker image")
         raise HTTPException(500, f"Failed to save image: {e}")
 
-    # --- sync to rdev if needed ----------------------------------------
+    # --- sync to remote if needed ----------------------------------------
     # The remote path is identical to the local path so Claude Code sees the
     # same absolute path regardless of where it runs.
-    if is_rdev_host(s.host):
+    if is_remote_host(s.host):
         remote_path = local_path  # same absolute path on remote
         ok = sync_file_to_remote(local_path, s.host, remote_path)
         if not ok:
@@ -657,8 +657,8 @@ def paste_text_to_session(session_id: str, body: PasteTextBody, db=Depends(get_d
         logger.exception("Failed to save worker text")
         raise HTTPException(500, f"Failed to save text: {e}")
 
-    # --- sync to rdev if needed ----------------------------------------
-    if is_rdev_host(s.host):
+    # --- sync to remote if needed ----------------------------------------
+    if is_remote_host(s.host):
         remote_path = local_path
         ok = sync_file_to_remote(local_path, s.host, remote_path)
         if not ok:
@@ -831,8 +831,8 @@ def reconnect_session(session_id: str, request: Request, db=Depends(get_db)):
     api_port = config.get("server", {}).get("port", 8093)
     tmp_dir = os.path.join(WORKER_BASE_DIR, s.name)
 
-    if is_rdev_host(s.host):
-        # rdev worker — check tunnel and SSH, re-establish if needed, then launch claude -c
+    if is_remote_host(s.host):
+        # Remote worker — check tunnel and SSH, re-establish if needed, then launch claude
         db_path = getattr(request.app.state, "db_path", None)
         tunnel_manager = getattr(request.app.state, "tunnel_manager", None)
         repo.update_session(db, session_id, status="connecting")
@@ -841,13 +841,13 @@ def reconnect_session(session_id: str, request: Request, db=Depends(get_db)):
             from orchestrator.state.db import get_connection
             bg_conn = get_connection(db_path) if db_path else db
             try:
-                reconnect_rdev_worker(
+                reconnect_remote_worker(
                     bg_conn, s, tmux_sess, tmux_win, api_port, tmp_dir, repo,
                     tunnel_manager=tunnel_manager,
                 )
-                logger.info("rdev worker %s reconnected", s.name)
+                logger.info("Remote worker %s reconnected", s.name)
             except Exception as e:
-                logger.exception("rdev reconnect failed for %s", s.name)
+                logger.exception("Remote reconnect failed for %s", s.name)
                 try:
                     repo.update_session(bg_conn, s.id, status="disconnected")
                 except Exception:
@@ -858,7 +858,7 @@ def reconnect_session(session_id: str, request: Request, db=Depends(get_db)):
 
         thread = threading.Thread(target=_background_reconnect, daemon=True)
         thread.start()
-        return {"ok": True, "message": f"Reconnecting rdev worker {s.name}..."}
+        return {"ok": True, "message": f"Reconnecting remote worker {s.name}..."}
 
     else:
         # Local worker — just relaunch claude
@@ -899,10 +899,10 @@ def health_check_session(session_id: str, request: Request, db=Depends(get_db)):
 
     tmux_sess, tmux_win = tmux_target(s.name)
 
-    # Check if rdev or local worker
-    if is_rdev_host(s.host):
-        # Use detailed screen check for rdev workers
-        screen_status, reason = check_screen_and_claude_rdev(s.host, session_id, tmux_sess, tmux_win)
+    # Check if remote or local worker
+    if is_remote_host(s.host):
+        # Use detailed screen check for remote workers
+        screen_status, reason = check_screen_and_claude_remote(s.host, session_id, tmux_sess, tmux_win)
 
         # Check tunnel via ReverseTunnelManager (deterministic process check)
         tunnel_manager = getattr(request.app.state, "tunnel_manager", None)
@@ -1053,9 +1053,9 @@ def health_check_all_sessions(request: Request, db=Depends(get_db)):
         tmux_sess, tmux_win = tmux_target(s.name)
 
         try:
-            if is_rdev_host(s.host):
-                # Use detailed screen check for rdev workers - pass tmux info to check worker SSH
-                screen_status, reason = check_screen_and_claude_rdev(s.host, s.id, tmux_sess, tmux_win)
+            if is_remote_host(s.host):
+                # Use detailed screen check for remote workers - pass tmux info to check worker SSH
+                screen_status, reason = check_screen_and_claude_remote(s.host, s.id, tmux_sess, tmux_win)
 
                 if screen_status == "alive":
                     results["alive"].append(s.name)
@@ -1110,12 +1110,12 @@ def health_check_all_sessions(request: Request, db=Depends(get_db)):
             try:
                 repo.update_session(db, s.id, status="connecting")
 
-                if is_rdev_host(s.host):
+                if is_remote_host(s.host):
                     def _bg_reconnect(session=s, ts=tmux_sess, tw=tmux_win):
                         from orchestrator.state.db import get_connection
                         bg_conn = get_connection(db_path) if db_path else db
                         try:
-                            reconnect_rdev_worker(
+                            reconnect_remote_worker(
                                 bg_conn, session, ts, tw, api_port, tmp_dir, repo,
                                 tunnel_manager=tunnel_manager,
                             )
@@ -1168,8 +1168,8 @@ def create_session_tunnel(session_id: str, body: TunnelRequest, db=Depends(get_d
     s = repo.get_session(db, session_id)
     if s is None:
         raise HTTPException(404, "Session not found")
-    if not is_rdev_host(s.host):
-        raise HTTPException(400, "Tunnel only supported for rdev workers")
+    if not is_remote_host(s.host):
+        raise HTTPException(400, "Tunnel only supported for remote workers")
     
     local_port = body.local_port or body.port
     remote_port = body.port
@@ -1209,7 +1209,7 @@ def list_session_tunnels(session_id: str, db=Depends(get_db)):
     if s is None:
         raise HTTPException(404, "Session not found")
     
-    if not is_rdev_host(s.host):
+    if not is_remote_host(s.host):
         return {"tunnels": {}}
     
     tunnels = get_tunnels_for_host(s.host)

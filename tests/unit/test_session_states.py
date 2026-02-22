@@ -60,14 +60,14 @@ class TestStatusTransitions:
     @patch('orchestrator.api.routes.sessions.check_claude_process_local')
     @patch('orchestrator.terminal.manager.window_exists')
     @patch('orchestrator.api.routes.sessions.repo')
-    @patch('orchestrator.api.routes.sessions.is_rdev_host')
+    @patch('orchestrator.api.routes.sessions.is_remote_host')
     def test_working_to_disconnected_on_health_fail(
-        self, mock_is_rdev, mock_repo, mock_window_exists, mock_check_claude, db
+        self, mock_is_remote, mock_repo, mock_window_exists, mock_check_claude, db
     ):
         """Health check failure should transition working -> disconnected."""
         from orchestrator.api.routes.sessions import health_check_session
 
-        mock_is_rdev.return_value = False
+        mock_is_remote.return_value = False
         mock_window_exists.return_value = True
         mock_check_claude.return_value = (False, "No Claude process")
 
@@ -88,16 +88,16 @@ class TestStatusTransitions:
         # Should update to disconnected
         mock_repo.update_session.assert_called()
 
-    @patch('orchestrator.api.routes.sessions.check_screen_and_claude_rdev')
+    @patch('orchestrator.api.routes.sessions.check_screen_and_claude_remote')
     @patch('orchestrator.api.routes.sessions.repo')
-    @patch('orchestrator.api.routes.sessions.is_rdev_host')
+    @patch('orchestrator.api.routes.sessions.is_remote_host')
     def test_working_tunnel_dead_auto_reconnect_success(
-        self, mock_is_rdev, mock_repo, mock_screen_check, db
+        self, mock_is_remote, mock_repo, mock_screen_check, db
     ):
         """Dead tunnel with alive Claude should auto-reconnect and stay alive."""
         from orchestrator.api.routes.sessions import health_check_session
 
-        mock_is_rdev.return_value = True
+        mock_is_remote.return_value = True
         mock_screen_check.return_value = ("alive", "Claude running")
 
         mock_session = MagicMock()
@@ -121,16 +121,16 @@ class TestStatusTransitions:
         assert result["tunnel_reconnected"] is True
         mock_tm.restart_tunnel.assert_called_once()
 
-    @patch('orchestrator.api.routes.sessions.check_screen_and_claude_rdev')
+    @patch('orchestrator.api.routes.sessions.check_screen_and_claude_remote')
     @patch('orchestrator.api.routes.sessions.repo')
-    @patch('orchestrator.api.routes.sessions.is_rdev_host')
+    @patch('orchestrator.api.routes.sessions.is_remote_host')
     def test_working_to_screen_detached_on_tunnel_reconnect_fail(
-        self, mock_is_rdev, mock_repo, mock_screen_check, db
+        self, mock_is_remote, mock_repo, mock_screen_check, db
     ):
         """Dead tunnel with failed auto-reconnect should transition to screen_detached."""
         from orchestrator.api.routes.sessions import health_check_session
 
-        mock_is_rdev.return_value = True
+        mock_is_remote.return_value = True
         mock_screen_check.return_value = ("alive", "Claude running")
 
         mock_session = MagicMock()
@@ -156,14 +156,14 @@ class TestStatusTransitions:
 
     @patch('orchestrator.api.routes.sessions.reconnect_local_worker')
     @patch('orchestrator.api.routes.sessions.repo')
-    @patch('orchestrator.api.routes.sessions.is_rdev_host')
+    @patch('orchestrator.api.routes.sessions.is_remote_host')
     def test_disconnected_to_working_on_reconnect(
-        self, mock_is_rdev, mock_repo, mock_reconnect, db
+        self, mock_is_remote, mock_repo, mock_reconnect, db
     ):
         """Successful reconnect should transition disconnected -> working/waiting."""
         from orchestrator.api.routes.sessions import reconnect_session
         
-        mock_is_rdev.return_value = False
+        mock_is_remote.return_value = False
         
         mock_session = MagicMock()
         mock_session.id = "test-id"
@@ -183,14 +183,14 @@ class TestStatusTransitions:
 
     @patch('orchestrator.api.routes.sessions.reconnect_local_worker')
     @patch('orchestrator.api.routes.sessions.repo')
-    @patch('orchestrator.api.routes.sessions.is_rdev_host')
+    @patch('orchestrator.api.routes.sessions.is_remote_host')
     def test_error_to_working_on_reconnect(
-        self, mock_is_rdev, mock_repo, mock_reconnect, db
+        self, mock_is_remote, mock_repo, mock_reconnect, db
     ):
         """Successful reconnect from error should transition to working/waiting."""
         from orchestrator.api.routes.sessions import reconnect_session
         
-        mock_is_rdev.return_value = False
+        mock_is_remote.return_value = False
         
         mock_session = MagicMock()
         mock_session.id = "test-id"

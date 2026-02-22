@@ -11,14 +11,14 @@ class TestSessionCreate:
     @patch('orchestrator.api.routes.sessions.threading')
     @patch('orchestrator.api.routes.sessions.ensure_window')
     @patch('orchestrator.api.routes.sessions.repo')
-    @patch('orchestrator.api.routes.sessions.is_rdev_host')
+    @patch('orchestrator.api.routes.sessions.is_remote_host')
     def test_create_local_session_success(
-        self, mock_is_rdev, mock_repo, mock_ensure_window, mock_threading, db
+        self, mock_is_remote, mock_repo, mock_ensure_window, mock_threading, db
     ):
         """Creating a local session should create tmux window and return session."""
         from orchestrator.api.routes.sessions import create_session, SessionCreate
         
-        mock_is_rdev.return_value = False
+        mock_is_remote.return_value = False
         mock_ensure_window.return_value = "orchestrator:test-worker"
         
         mock_session = MagicMock()
@@ -49,14 +49,14 @@ class TestSessionCreate:
     @patch('orchestrator.api.routes.sessions.threading')
     @patch('orchestrator.api.routes.sessions.ensure_window')
     @patch('orchestrator.api.routes.sessions.repo')
-    @patch('orchestrator.api.routes.sessions.is_rdev_host')
+    @patch('orchestrator.api.routes.sessions.is_remote_host')
     def test_create_local_session_tmux_failure_graceful(
-        self, mock_is_rdev, mock_repo, mock_ensure_window, mock_threading, mock_deploy, db
+        self, mock_is_remote, mock_repo, mock_ensure_window, mock_threading, mock_deploy, db
     ):
         """If tmux window creation fails, session should still be created."""
         from orchestrator.api.routes.sessions import create_session, SessionCreate
         
-        mock_is_rdev.return_value = False
+        mock_is_remote.return_value = False
         mock_ensure_window.side_effect = Exception("tmux error")
         mock_deploy.return_value = "/tmp/mock/bin"
         
@@ -82,14 +82,14 @@ class TestSessionCreate:
     @patch('orchestrator.api.routes.sessions.threading')
     @patch('orchestrator.api.routes.sessions.ensure_window')
     @patch('orchestrator.api.routes.sessions.repo')
-    @patch('orchestrator.api.routes.sessions.is_rdev_host')
+    @patch('orchestrator.api.routes.sessions.is_remote_host')
     def test_create_rdev_session_returns_connecting_status(
-        self, mock_is_rdev, mock_repo, mock_ensure_window, mock_threading, db
+        self, mock_is_remote, mock_repo, mock_ensure_window, mock_threading, db
     ):
         """Creating an rdev session should return with 'connecting' status."""
         from orchestrator.api.routes.sessions import create_session, SessionCreate
         
-        mock_is_rdev.return_value = True
+        mock_is_remote.return_value = True
         mock_ensure_window.return_value = "orchestrator:test-rdev"
         
         mock_session = MagicMock()
@@ -112,14 +112,14 @@ class TestSessionCreate:
     @patch('orchestrator.api.routes.sessions.threading')
     @patch('orchestrator.api.routes.sessions.ensure_window')
     @patch('orchestrator.api.routes.sessions.repo')
-    @patch('orchestrator.api.routes.sessions.is_rdev_host')
+    @patch('orchestrator.api.routes.sessions.is_remote_host')
     def test_create_rdev_session_spawns_background_thread(
-        self, mock_is_rdev, mock_repo, mock_ensure_window, mock_threading, db
+        self, mock_is_remote, mock_repo, mock_ensure_window, mock_threading, db
     ):
         """Creating an rdev session should spawn a background thread for setup."""
         from orchestrator.api.routes.sessions import create_session, SessionCreate
         
-        mock_is_rdev.return_value = True
+        mock_is_remote.return_value = True
         mock_ensure_window.return_value = "orchestrator:test-rdev"
         
         mock_session = MagicMock()
@@ -142,14 +142,14 @@ class TestSessionCreate:
     @patch('orchestrator.api.routes.sessions.threading')
     @patch('orchestrator.api.routes.sessions.ensure_window')
     @patch('orchestrator.api.routes.sessions.repo')
-    @patch('orchestrator.api.routes.sessions.is_rdev_host')
+    @patch('orchestrator.api.routes.sessions.is_remote_host')
     def test_create_session_sanitizes_worker_name(
-        self, mock_is_rdev, mock_repo, mock_ensure_window, mock_threading, db
+        self, mock_is_remote, mock_repo, mock_ensure_window, mock_threading, db
     ):
         """Worker names with / or \\ should be sanitized."""
         from orchestrator.api.routes.sessions import create_session, SessionCreate
         
-        mock_is_rdev.return_value = False
+        mock_is_remote.return_value = False
         mock_ensure_window.return_value = "orchestrator:test_worker"
         
         mock_session = MagicMock()
@@ -176,14 +176,14 @@ class TestSessionDelete:
 
     @patch('orchestrator.api.routes.sessions.kill_window')
     @patch('orchestrator.api.routes.sessions.repo')
-    @patch('orchestrator.api.routes.sessions.is_rdev_host')
+    @patch('orchestrator.api.routes.sessions.is_remote_host')
     def test_delete_local_session_kills_tmux_window(
-        self, mock_is_rdev, mock_repo, mock_kill_window, db
+        self, mock_is_remote, mock_repo, mock_kill_window, db
     ):
         """Deleting a local session should kill its tmux window."""
         from orchestrator.api.routes.sessions import delete_session
 
-        mock_is_rdev.return_value = False
+        mock_is_remote.return_value = False
 
         mock_session = MagicMock()
         mock_session.id = "test-session-id"
@@ -204,14 +204,14 @@ class TestSessionDelete:
     @patch('orchestrator.api.routes.sessions.os.path.exists')
     @patch('orchestrator.api.routes.sessions.kill_window')
     @patch('orchestrator.api.routes.sessions.repo')
-    @patch('orchestrator.api.routes.sessions.is_rdev_host')
+    @patch('orchestrator.api.routes.sessions.is_remote_host')
     def test_delete_local_session_cleans_tmp_dir(
-        self, mock_is_rdev, mock_repo, mock_kill_window, mock_exists, mock_rmtree, db
+        self, mock_is_remote, mock_repo, mock_kill_window, mock_exists, mock_rmtree, db
     ):
         """Deleting a local session should clean up tmp directory."""
         from orchestrator.api.routes.sessions import delete_session
 
-        mock_is_rdev.return_value = False
+        mock_is_remote.return_value = False
         mock_exists.return_value = True
 
         mock_session = MagicMock()
@@ -238,14 +238,14 @@ class TestSessionDelete:
     @patch('orchestrator.api.routes.sessions.send_keys')
     @patch('orchestrator.api.routes.sessions.kill_window')
     @patch('orchestrator.api.routes.sessions.repo')
-    @patch('orchestrator.api.routes.sessions.is_rdev_host')
+    @patch('orchestrator.api.routes.sessions.is_remote_host')
     def test_delete_rdev_session_exits_claude_and_screen(
-        self, mock_is_rdev, mock_repo, mock_kill_window, mock_send_keys, mock_sleep, db
+        self, mock_is_remote, mock_repo, mock_kill_window, mock_send_keys, mock_sleep, db
     ):
         """Deleting an rdev session should exit Claude and screen before cleanup."""
         from orchestrator.api.routes.sessions import delete_session
 
-        mock_is_rdev.return_value = True
+        mock_is_remote.return_value = True
 
         mock_session = MagicMock()
         mock_session.id = "test-session-id"
@@ -266,14 +266,14 @@ class TestSessionDelete:
     @patch('orchestrator.api.routes.sessions.send_keys')
     @patch('orchestrator.api.routes.sessions.kill_window')
     @patch('orchestrator.api.routes.sessions.repo')
-    @patch('orchestrator.api.routes.sessions.is_rdev_host')
+    @patch('orchestrator.api.routes.sessions.is_remote_host')
     def test_delete_rdev_session_kills_tunnel(
-        self, mock_is_rdev, mock_repo, mock_kill_window, mock_send_keys, db
+        self, mock_is_remote, mock_repo, mock_kill_window, mock_send_keys, db
     ):
         """Deleting an rdev session should stop the tunnel subprocess."""
         from orchestrator.api.routes.sessions import delete_session
 
-        mock_is_rdev.return_value = True
+        mock_is_remote.return_value = True
 
         mock_session = MagicMock()
         mock_session.id = "test-session-id"
@@ -294,14 +294,14 @@ class TestSessionDelete:
 
     @patch('orchestrator.api.routes.sessions.kill_window')
     @patch('orchestrator.api.routes.sessions.repo')
-    @patch('orchestrator.api.routes.sessions.is_rdev_host')
+    @patch('orchestrator.api.routes.sessions.is_remote_host')
     def test_delete_session_deletes_from_db(
-        self, mock_is_rdev, mock_repo, mock_kill_window, db
+        self, mock_is_remote, mock_repo, mock_kill_window, db
     ):
         """Deleting a session should delete it from the database."""
         from orchestrator.api.routes.sessions import delete_session
 
-        mock_is_rdev.return_value = False
+        mock_is_remote.return_value = False
 
         mock_session = MagicMock()
         mock_session.id = "test-session-id"

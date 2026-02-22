@@ -148,7 +148,7 @@ class TestSyncFileFromRemote:
 
 
 class TestSyncDirToRemote:
-    @patch("orchestrator.terminal.session._copy_dir_to_rdev_ssh")
+    @patch("orchestrator.terminal.session._copy_dir_to_remote_ssh")
     def test_delegates_to_session(self, mock_copy):
         mock_copy.return_value = True
         result = sync_dir_to_remote("/local/dir", "host", "/remote/dir")

@@ -15,8 +15,10 @@ from orchestrator.session.health import (
     get_screen_session_name,
     check_tui_running_in_pane,
     check_claude_process_local,
-    check_screen_and_claude_rdev,
-    check_claude_process_rdev,
+    check_screen_and_claude_remote,
+    check_screen_and_claude_rdev,   # backward-compat alias
+    check_claude_process_remote,
+    check_claude_process_rdev,      # backward-compat alias
 )
 
 from orchestrator.session.reconnect import (
@@ -26,7 +28,8 @@ from orchestrator.session.reconnect import (
     cleanup_reconnect_lock,
     check_screen_exists_via_tmux,
     reconnect_tunnel_only,
-    reconnect_rdev_worker,
+    reconnect_remote_worker,
+    reconnect_rdev_worker,          # backward-compat alias
     reconnect_local_worker,
 )
 
@@ -44,7 +47,9 @@ __all__ = [
     "get_screen_session_name",
     "check_tui_running_in_pane",
     "check_claude_process_local",
+    "check_screen_and_claude_remote",
     "check_screen_and_claude_rdev",
+    "check_claude_process_remote",
     "check_claude_process_rdev",
     # Reconnect
     "TUIActiveError",
@@ -53,6 +58,7 @@ __all__ = [
     "cleanup_reconnect_lock",
     "check_screen_exists_via_tmux",
     "reconnect_tunnel_only",
+    "reconnect_remote_worker",
     "reconnect_rdev_worker",
     "reconnect_local_worker",
 ]
