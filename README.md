@@ -2,6 +2,12 @@
 
 A meta-agent that manages multiple concurrent Claude Code sessions from a single dashboard.
 
+
+
+https://github.com/user-attachments/assets/ebb2bb47-c4e2-4e01-81e5-f0b1c8b1bede
+
+
+
 ## Try the Demo
 
 The fastest way to see the orchestrator in action — no tmux, no API keys, no setup beyond `uv`:
