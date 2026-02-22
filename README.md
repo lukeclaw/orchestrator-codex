@@ -21,7 +21,7 @@ Open http://localhost:8094 — you'll see 3 projects, 5 workers, and ~15 tasks p
 - Node.js 20+
 - tmux 3.x (`brew install tmux`)
 - [uv](https://docs.astral.sh/uv/) (Python package manager)
-- Rust toolchain + Tauri CLI (only for macOS app builds): `cargo install tauri-cli`
+- Rust toolchain + Tauri CLI (only for macOS app builds — see [Installing Rust](#installing-rust))
 
 ### 1. Backend
 
@@ -59,6 +59,20 @@ yarn dev
 ## macOS App
 
 The orchestrator is packaged as a native macOS app using Tauri. The `.app` bundle is fully self-contained — it includes Python, all dependencies, tmux, and the built frontend.
+
+### Installing Rust
+
+Install the Rust toolchain via [rustup](https://rustup.rs/):
+
+```bash
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+```
+
+After installation, restart your terminal (or run `source "$HOME/.cargo/env"`), then install the Tauri CLI:
+
+```bash
+cargo install tauri-cli
+```
 
 ### Building the App
 
