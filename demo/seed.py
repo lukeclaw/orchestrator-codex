@@ -110,17 +110,6 @@ def seed_sessions(conn: sqlite3.Connection) -> dict[str, str]:
     return ids
 
 
-def seed_project_workers(conn: sqlite3.Connection, proj: dict, sess: dict):
-    """Assign workers to projects."""
-    assignments = [
-        (proj["nse"], sess["backend-1"]),
-        (proj["nse"], sess["backend-2"]),
-        (proj["log"], sess["logging-1"]),
-        (proj["log"], sess["logging-2"]),
-    ]
-    for project_id, session_id in assignments:
-        _insert(conn, "project_workers", {"project_id": project_id, "session_id": session_id})
-
 
 def seed_tasks(conn: sqlite3.Connection, proj: dict, sess: dict) -> dict[str, str]:
     """Create demo tasks with subtasks. Returns {label: task_id}."""
@@ -700,7 +689,6 @@ def seed_demo(db_path: str | None = None):
     # Seed all data in a single transaction
     proj = seed_projects(conn)
     sess = seed_sessions(conn)
-    seed_project_workers(conn, proj, sess)
     tasks = seed_tasks(conn, proj, sess)
     seed_context_items(conn, proj)
     seed_notifications(conn, tasks, sess)
