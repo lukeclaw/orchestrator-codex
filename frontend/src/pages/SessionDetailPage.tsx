@@ -5,7 +5,7 @@ import { useNotify } from '../context/NotificationContext'
 import { useApp } from '../context/AppContext'
 import { useSmartPaste } from '../hooks/useSmartPaste'
 import TerminalView from '../components/terminal/TerminalView'
-import { IconArrowLeft, IconPause, IconPlay, IconStop, IconRefresh, IconTrash, IconSync, IconBrain } from '../components/common/Icons'
+import { IconPause, IconPlay, IconStop, IconRefresh, IconTrash, IconSync, IconBrain } from '../components/common/Icons'
 import ConfirmPopover from '../components/common/ConfirmPopover'
 import './SessionDetailPage.css'
 
@@ -307,9 +307,6 @@ export default function SessionDetailPage() {
       {/* Top bar with session info */}
       <div className="sd-topbar">
         <div className="sd-topbar-left">
-          <button className="sd-back-btn" onClick={() => navigate(-1)} title="Go back">
-            <IconArrowLeft size={16} />
-          </button>
           <h2 className="sd-title">{session.name}</h2>
           {session.host.includes('/') && <span className="sd-type-tag rdev">rdev</span>}
           <span className={`status-badge ${session.status}`}>{session.status}</span>

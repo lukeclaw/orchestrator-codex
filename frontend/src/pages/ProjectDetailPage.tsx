@@ -9,7 +9,6 @@ import TaskForm from '../components/tasks/TaskForm'
 import ContextModal from '../components/context/ContextModal'
 import ProjectEditModal from '../components/projects/ProjectEditModal'
 import WorkerCard from '../components/workers/WorkerCard'
-import { IconArrowLeft } from '../components/common/Icons'
 import { parseDate } from '../components/common/TimeAgo'
 import './ProjectDetailPage.css'
 
@@ -113,9 +112,6 @@ export default function ProjectDetailPage() {
     <div className="project-detail">
       <div className="pd-header">
         <div className="pd-title-row">
-          <button className="pd-back-btn" onClick={() => navigate(-1)} title="Go back">
-            <IconArrowLeft size={16} />
-          </button>
           <h1>{project.name}</h1>
           <button
             type="button"

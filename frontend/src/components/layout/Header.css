@@ -15,22 +15,36 @@
   gap: 12px;
 }
 
-.tmux-hint {
-  font-family: var(--font-mono);
-  font-size: 10px;
-  color: var(--text-muted);
-  background: transparent;
-  padding: 2px 8px;
-  border-radius: var(--radius);
-  border: 1px solid transparent;
-  cursor: pointer;
-  transition: background 0.15s, border-color 0.15s, color 0.15s;
+.header-nav-buttons {
+  display: flex;
+  align-items: center;
+  gap: 2px;
 }
 
-.tmux-hint:hover {
-  background: var(--surface);
-  border-color: var(--border-subtle);
+.header-nav-buttons button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  background: none;
   color: var(--text-secondary);
+  border-radius: var(--radius);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.header-nav-buttons button:hover:not(:disabled) {
+  background: var(--surface-hover);
+  color: var(--text-primary);
+}
+
+.header-nav-buttons button:disabled {
+  color: var(--text-muted);
+  opacity: 0.4;
+  cursor: default;
 }
 
 .header-right {

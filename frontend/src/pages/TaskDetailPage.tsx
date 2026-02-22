@@ -5,7 +5,7 @@ import { useNotify } from '../context/NotificationContext'
 import { api } from '../api/client'
 import { useSmartPaste } from '../hooks/useSmartPaste'
 import type { Task, TaskLink, Notification } from '../api/types'
-import { IconArrowLeft, IconPause, IconPlay, IconStop, IconRefresh } from '../components/common/Icons'
+import { IconPause, IconPlay, IconStop, IconRefresh } from '../components/common/Icons'
 import { timeAgo, parseDate } from '../components/common/TimeAgo'
 import ConfirmPopover from '../components/common/ConfirmPopover'
 import TagDropdown from '../components/common/TagDropdown'
@@ -439,9 +439,6 @@ export default function TaskDetailPage() {
     <div className="task-detail-page">
       {/* Header with back button */}
       <div className="tdp-top-bar">
-        <button className="tdp-back-btn" onClick={() => navigate(-1)} title="Go back">
-          <IconArrowLeft size={16} />
-        </button>
         <nav className="tdp-breadcrumb">
           {project ? (
             <Link to={`/projects/${project.id}`}>{project.name}</Link>

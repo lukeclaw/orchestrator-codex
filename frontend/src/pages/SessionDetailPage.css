@@ -27,25 +27,6 @@
   gap: 10px;
 }
 
-.sd-back-btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 28px;
-  background: none;
-  border: none;
-  color: var(--text-secondary);
-  border-radius: var(--radius);
-  cursor: pointer;
-  transition: background 0.15s, color 0.15s;
-}
-
-.sd-back-btn:hover {
-  background: var(--surface-hover);
-  color: var(--text-primary);
-}
-
 .sd-title {
   font-size: 16px;
   font-weight: 600;

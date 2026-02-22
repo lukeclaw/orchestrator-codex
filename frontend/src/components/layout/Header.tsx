@@ -1,28 +1,23 @@
-import { useState } from 'react'
 import { useApp } from '../../context/AppContext'
+import { useNavigationHistory } from '../../hooks/useNavigationHistory'
+import { IconArrowLeft, IconArrowRight } from '../common/Icons'
 import './Header.css'
 
 export default function Header() {
   const { connected } = useApp()
-  const [copied, setCopied] = useState(false)
-
-  const handleCopy = () => {
-    navigator.clipboard.writeText('tmux attach -t orchestrator')
-    setCopied(true)
-    setTimeout(() => setCopied(false), 1500)
-  }
+  const { canGoBack, canGoForward, goBack, goForward } = useNavigationHistory()
 
   return (
     <header className="app-header">
       <div className="header-left">
-        <button
-          className="tmux-hint"
-          data-testid="tmux-hint"
-          onClick={handleCopy}
-          title="Click to copy"
-        >
-          {copied ? 'Copied!' : 'tmux attach -t orchestrator'}
-        </button>
+        <nav className="header-nav-buttons">
+          <button disabled={!canGoBack} onClick={goBack} title="Go back">
+            <IconArrowLeft size={14} />
+          </button>
+          <button disabled={!canGoForward} onClick={goForward} title="Go forward">
+            <IconArrowRight size={14} />
+          </button>
+        </nav>
       </div>
       <div className="header-right">
         <span

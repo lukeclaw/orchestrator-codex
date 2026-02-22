@@ -12,26 +12,6 @@
   gap: 12px;
 }
 
-.tdp-back-btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 28px;
-  background: none;
-  border: none;
-  border-radius: 6px;
-  color: var(--text-muted);
-  cursor: pointer;
-  flex-shrink: 0;
-  transition: all 0.15s;
-}
-
-.tdp-back-btn:hover {
-  background: var(--surface-hover);
-  color: var(--text-primary);
-}
-
 /* Breadcrumb */
 .tdp-breadcrumb {
   display: flex;
