@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { api } from '../api/client'
 import { useApp } from '../context/AppContext'
 import type { Notification } from '../api/types'
-import { IconBell, IconCheck, IconExternalLink, IconTrash } from '../components/common/Icons'
+import { IconCheck, IconExternalLink, IconTrash } from '../components/common/Icons'
 import { parseDate } from '../components/common/TimeAgo'
 import './NotificationsPage.css'
 
@@ -119,21 +119,12 @@ export default function NotificationsPage() {
   return (
     <div className="notifications-page">
       {/* Header */}
-      <header className="np-header">
-        <div className="np-title-section">
-          <div className="np-icon-wrapper">
-            <IconBell size={24} />
-          </div>
-          <div>
-            <h1>Notifications</h1>
-            <p className="np-subtitle">
-              {activeCount === 0 
-                ? 'All caught up!' 
-                : `${activeCount} notification${activeCount === 1 ? '' : 's'} need${activeCount === 1 ? 's' : ''} attention`}
-            </p>
-          </div>
-        </div>
-        <div className="np-header-actions">
+      <div className="page-header">
+        <h1>Notifications</h1>
+        <div className="page-header-actions">
+          <span className="ctx-count">
+            {activeCount} notification{activeCount === 1 ? '' : 's'}
+          </span>
           {filter === 'active' && activeCount > 0 && (
             <button className="np-dismiss-all-btn" onClick={handleDismissAll}>
               <IconCheck size={16} />
@@ -141,7 +132,7 @@ export default function NotificationsPage() {
             </button>
           )}
         </div>
-      </header>
+      </div>
 
       {/* Filter Tabs */}
       <div className="np-tabs">

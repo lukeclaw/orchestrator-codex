@@ -97,17 +97,6 @@
   color: var(--text-secondary);
 }
 
-.sort-select,
-.status-filter-select {
-  padding: 6px 32px 6px 10px;
-  font-size: 13px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  color: var(--text-primary);
-  cursor: pointer;
-}
-
 .worker-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(420px, 1fr));

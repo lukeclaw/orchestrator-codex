@@ -284,6 +284,7 @@ select:focus {
   flex: 1;
   padding: 6px 12px;
   font-size: 12px;
+  white-space: nowrap;
   background: var(--surface);
   color: var(--text-muted);
   border: none;
@@ -462,3 +463,37 @@ select:focus {
   background: rgba(139,148,158,0.12);
   color: var(--text-secondary);
 }
+
+/* Filter selects (shared across pages) */
+.sort-select,
+.status-filter-select {
+  padding: 6px 32px 6px 10px;
+  font-size: 13px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text-primary);
+  cursor: pointer;
+}
+
+/* Small toggle variant */
+.toggle-sm .toggle-btn {
+  padding: 4px 10px;
+  font-size: 12px;
+}
+
+/* Context category badges */
+.cm-badge {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 500;
+  padding: 2px 8px;
+  border-radius: 10px;
+  white-space: nowrap;
+}
+
+.cm-cat-instruction { background: rgba(56, 139, 253, 0.15); color: #58a6ff; }
+.cm-cat-requirement { background: rgba(248, 81, 73, 0.15); color: #f85149; }
+.cm-cat-convention  { background: rgba(187, 128, 255, 0.15); color: #bc8cff; }
+.cm-cat-reference   { background: rgba(63, 185, 80, 0.15); color: #3fb950; }
+.cm-cat-note        { background: rgba(210, 153, 34, 0.15); color: #d29922; }

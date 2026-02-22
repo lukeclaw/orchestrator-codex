@@ -7,7 +7,6 @@ import ProjectCard from '../components/projects/ProjectCard'
 import ProjectsTable from '../components/projects/ProjectsTable'
 import ProjectForm from '../components/projects/ProjectForm'
 import ProjectEditModal from '../components/projects/ProjectEditModal'
-import FilterBar from '../components/common/FilterBar'
 import './ProjectsPage.css'
 
 export default function ProjectsPage() {
@@ -39,6 +38,16 @@ export default function ProjectsPage() {
       <div className="page-header">
         <h1>Projects</h1>
         <div className="page-header-actions">
+          <select
+            className="status-filter-select"
+            value={statusFilter}
+            onChange={e => setStatusFilter(e.target.value)}
+          >
+            <option value="">All ({projects.length})</option>
+            <option value="active">Active</option>
+            <option value="completed">Completed</option>
+            <option value="paused">Paused</option>
+          </select>
           <div className="toggle-group toggle-sm">
             <button
               type="button"
@@ -60,21 +69,6 @@ export default function ProjectsPage() {
           </button>
         </div>
       </div>
-
-      <FilterBar
-        filters={[{
-          key: 'status',
-          label: 'Status',
-          value: statusFilter,
-          options: [
-            { value: '', label: 'All' },
-            { value: 'active', label: 'Active' },
-            { value: 'completed', label: 'Completed' },
-            { value: 'paused', label: 'Paused' },
-          ],
-        }]}
-        onChange={(_, v) => setStatusFilter(v)}
-      />
 
       {loading ? (
         <p className="empty-state">Loading projects...</p>
