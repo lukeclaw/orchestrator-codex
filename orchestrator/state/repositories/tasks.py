@@ -1,9 +1,12 @@
 """Repository for tasks table."""
 
+import logging
 import sqlite3
 import uuid
 
 from orchestrator.state.models import Task
+
+logger = logging.getLogger(__name__)
 
 # Explicit column list to avoid loading deprecated columns
 TASK_COLUMNS = "id, project_id, title, description, status, priority, assigned_session_id, created_at, updated_at, parent_task_id, notes, links, task_index"
@@ -139,10 +142,29 @@ def update_task(
         params.append(links)
     if not sets:
         return get_task(conn, id)
+
+    # Read old status before UPDATE for event tracking
+    old_status = None
+    is_subtask = False
+    if status is not None:
+        row = conn.execute("SELECT status, parent_task_id FROM tasks WHERE id = ?", (id,)).fetchone()
+        if row:
+            old_status = row["status"]
+            is_subtask = row["parent_task_id"] is not None
+
     # Always update updated_at timestamp
     sets.append("updated_at = CURRENT_TIMESTAMP")
     params.append(id)
     conn.execute(f"UPDATE tasks SET {', '.join(sets)} WHERE id = ?", params)
+
+    # Insert status event if status actually changed
+    if status is not None and old_status is not None and old_status != status:
+        try:
+            from orchestrator.state.repositories.status_events import insert_event
+            insert_event(conn, "task", id, old_status, status, is_subtask=is_subtask)
+        except Exception:
+            logger.debug("Failed to insert status event for task %s", id, exc_info=True)
+
     conn.commit()
     return get_task(conn, id)
 

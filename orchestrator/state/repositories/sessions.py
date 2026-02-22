@@ -1,11 +1,14 @@
 """Repository for sessions table."""
 
+import logging
 import sqlite3
 import uuid
 
 from orchestrator.state.db import transaction, with_retry
 from orchestrator.utils import utc_now_iso
 from orchestrator.state.models import Session
+
+logger = logging.getLogger(__name__)
 
 
 def get_session(conn: sqlite3.Connection, id: str) -> Session | None:
@@ -106,10 +109,29 @@ def update_session(
         params.append(claude_session_id)
     if not sets:
         return get_session(conn, id)
+
+    # Read old status before UPDATE for event tracking
+    old_status = None
+    session_type = None
+    if status is not None:
+        row = conn.execute("SELECT status, session_type FROM sessions WHERE id = ?", (id,)).fetchone()
+        if row:
+            old_status = row["status"]
+            session_type = row["session_type"]
+
     params.append(id)
     conn.execute(
         f"UPDATE sessions SET {', '.join(sets)} WHERE id = ?", params
     )
+
+    # Insert status event if status actually changed
+    if status is not None and old_status is not None and old_status != status:
+        try:
+            from orchestrator.state.repositories.status_events import insert_event
+            insert_event(conn, "session", id, old_status, status, session_type=session_type)
+        except Exception:
+            logger.debug("Failed to insert status event for session %s", id, exc_info=True)
+
     conn.commit()
     return get_session(conn, id)
 

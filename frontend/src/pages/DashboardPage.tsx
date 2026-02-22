@@ -8,6 +8,7 @@ import AddSessionModal from '../components/sessions/AddSessionModal'
 import ProjectForm from '../components/projects/ProjectForm'
 import ProjectsTable from '../components/projects/ProjectsTable'
 import RecentActivity from '../components/dashboard/RecentActivity'
+import TrendsPanel from '../components/dashboard/TrendsPanel'
 import './DashboardPage.css'
 
 export default function DashboardPage() {
@@ -52,6 +53,9 @@ export default function DashboardPage() {
 
       {/* Recent Activity */}
       <RecentActivity workers={workers} tasks={tasks} />
+
+      {/* Trends */}
+      <TrendsPanel />
 
       {/* Active Projects */}
       <section className="dashboard-projects panel">

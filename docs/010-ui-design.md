@@ -63,7 +63,7 @@ The app uses a persistent three-column layout:
 
 ### 1. Dashboard (Home)
 
-The landing page. At-a-glance overview of everything happening. Layout order: Stats → Recent Activity → Active Projects → Workers.
+The landing page. At-a-glance overview of everything happening. Layout order: Stats → Recent Activity → Trends → Active Projects → Workers.
 
 ```
 ┌──────────────────────────────────────────────────────────────────────┐
@@ -117,6 +117,17 @@ The landing page. At-a-glance overview of everything happening. Layout order: St
 - Similar worker events are grouped (e.g., "8 workers waiting for input" instead of 8 separate lines)
 - Capped at 8 items, sorted by most recent. Hidden when empty
 - Each item is clickable (links to task or worker detail)
+
+**Trends:**
+- Three visualizations showing historical data from the `status_events` table
+- Time range toggle (7d / 30d / 90d) using `.toggle-group.toggle-sm`
+- Independent data fetch via `useTrends` hook (not connected to WebSocket cycle)
+- **Throughput chart:** Stacked bar chart (Recharts) showing completed tasks (blue) and subtasks (purple) per day. Rolling 7-day average displayed in header.
+- **Worker Activity heatmap:** Custom SVG grid (7 days x 24 hours) showing when workers start working. Opacity-scaled blue cells. Timestamps in UTC. Hover tooltip shows day/hour/count.
+- **Worker-Hours chart:** Area chart (Recharts) showing total worker-hours per day. Green stroke with gradient fill. Displays today's hours and weekly total.
+- Layout: 2-column CSS grid. Throughput spans full width (row 1). Heatmap and Worker-Hours side by side (row 2). Single column below 900px.
+- Empty state: "No activity data yet." when no historical events exist.
+- Hidden entirely when loading (shows "Loading trends..." text).
 
 **Active Projects table:**
 - Sortable columns: Name, Tasks, Subtasks, Progress, Workers, Updated
@@ -290,7 +301,8 @@ src/
 │   ├── useProjects.ts           ← Projects CRUD
 │   ├── useSettings.ts           ← Settings management
 │   ├── useSidebarState.ts       ← Sidebar collapse state (localStorage)
-│   └── useSmartPaste.ts         ← Image + long text paste support
+│   ├── useSmartPaste.ts         ← Image + long text paste support
+│   └── useTrends.ts            ← Trends data fetching (independent of WS)
 ├── context/
 │   └── AppContext.tsx            ← Global state: workers, projects, tasks,
 │                                   connection status, WebSocket auto-reconnect
@@ -319,7 +331,12 @@ src/
 │   │   └── BrainTerminal.tsx    ← xterm.js terminal for brain
 │   ├── dashboard/
 │   │   ├── RecentActivity.tsx   ← Activity feed derived from tasks/workers
-│   │   └── RecentActivity.css
+│   │   ├── RecentActivity.css
+│   │   ├── TrendsPanel.tsx      ← Container with range toggle + chart grid
+│   │   ├── TrendsPanel.css
+│   │   ├── ThroughputChart.tsx  ← Stacked bar chart (Recharts)
+│   │   ├── WorkerHeatmap.tsx    ← Custom SVG heatmap (7x24 grid)
+│   │   └── WorkerHoursChart.tsx ← Area chart (Recharts)
 │   ├── projects/
 │   │   ├── ProjectCard.tsx      ← Project summary card (card view)
 │   │   ├── ProjectsTable.tsx    ← Sortable table with hiddenColumns support

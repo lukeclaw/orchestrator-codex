@@ -1,0 +1,72 @@
+.trends-panel {
+  margin-bottom: 16px;
+}
+
+.trends-body {
+  padding: 12px 16px;
+}
+
+.trends-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+.trends-chart-wide {
+  grid-column: 1 / -1;
+}
+
+.trends-chart {
+  min-height: 120px;
+}
+
+.trends-chart-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 8px;
+  padding: 0 4px;
+}
+
+.trends-chart-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.trends-chart-stat {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+/* Heatmap tooltip */
+.heatmap-tooltip {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 4px 8px;
+  font-size: 11px;
+  color: var(--text-primary);
+  white-space: nowrap;
+  z-index: 10;
+}
+
+/* Recharts dark theme overrides */
+.trends-chart .recharts-cartesian-grid-horizontal line,
+.trends-chart .recharts-cartesian-grid-vertical line {
+  stroke: var(--border);
+}
+
+.trends-chart .recharts-tooltip-wrapper {
+  outline: none;
+}
+
+@media (max-width: 900px) {
+  .trends-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .trends-chart-wide {
+    grid-column: 1;
+  }
+}

@@ -78,6 +78,13 @@ async def lifespan(app: FastAPI):
     except Exception:
         logger.exception("Image cleanup failed (non-fatal)")
 
+    # Clean up old status events (180-day retention)
+    try:
+        from orchestrator.state.repositories.status_events import cleanup_old_events
+        cleanup_old_events(conn, retention_days=180)
+    except Exception:
+        logger.exception("Status events cleanup failed (non-fatal)")
+
     # Start rdev background refresh task (skip in test mode — no db_path means in-memory DB)
     from orchestrator.api.routes.rdevs import start_background_refresh, stop_background_refresh
     if db_path:
@@ -171,6 +178,7 @@ def create_app(
         sessions,
         settings,
         tasks,
+        trends,
     )
 
     app.include_router(backup.router, prefix="/api", tags=["backup"])
@@ -183,6 +191,7 @@ def create_app(
     app.include_router(settings.router, prefix="/api", tags=["settings"])
     app.include_router(brain.router, prefix="/api", tags=["brain"])
     app.include_router(paste.router, prefix="/api", tags=["paste"])
+    app.include_router(trends.router, prefix="/api", tags=["trends"])
 
     # Health check (used by Tauri shell to know when the sidecar is ready)
     @app.get("/api/health", tags=["health"])

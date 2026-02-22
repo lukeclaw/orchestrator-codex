@@ -19,8 +19,9 @@ def test_fresh_migration():
     # 10=task_index, 11=priority_to_string, 12=drop_pr_tables, 13=context_description, 14=timestamps,
     # 15=notifications, 16=last_viewed_at, 17=last_status_changed_at, 18=tunnel_pid,
     # 19=drop_tunnel_pane, 20=drop_skill_templates, 21=drop_tmux_window,
-    # 22=drop_dead_tables
-    assert applied == [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22]
+    # 22=drop_dead_tables, 24=notification_metadata, 25=auto_reconnect,
+    # 26=claude_session_id, 27=status_events
+    assert applied == [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 24, 25, 26, 27]
 
     # Verify key tables exist
     tables = conn.execute(
@@ -34,6 +35,7 @@ def test_fresh_migration():
         "config",
         "context_items",
         "schema_version",
+        "status_events",
     }
     assert expected_tables.issubset(table_names)
     # These tables should have been dropped by various migrations
@@ -53,7 +55,7 @@ def test_idempotent_rerun():
     """Running migrations twice should be a no-op the second time."""
     conn = get_memory_connection()
     first = apply_migrations(conn)
-    assert first == [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22]
+    assert first == [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 24, 25, 26, 27]
 
     second = apply_migrations(conn)
     assert second == []
@@ -64,7 +66,7 @@ def test_current_version_after_migration():
     conn = get_memory_connection()
     assert get_current_version(conn) == 0
     apply_migrations(conn)
-    assert get_current_version(conn) == 22
+    assert get_current_version(conn) == 27
     conn.close()
 
 

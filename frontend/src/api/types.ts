@@ -131,3 +131,27 @@ export interface Notification {
   dismissed: boolean
   dismissed_at: string | null
 }
+
+export interface ThroughputDay {
+  date: string
+  tasks: number
+  subtasks: number
+}
+
+export interface HeatmapCell {
+  day_of_week: number
+  hour: number
+  count: number
+}
+
+export interface WorkerHoursDay {
+  date: string
+  hours: number
+}
+
+export interface TrendsData {
+  range: string
+  throughput: ThroughputDay[]
+  heatmap: HeatmapCell[]
+  worker_hours: WorkerHoursDay[]
+}
