@@ -2,7 +2,7 @@
   "$schema": "https://raw.githubusercontent.com/nicehash/tauri/refs/heads/dev/crates/tauri-schema-generator/schemas/config.schema.json",
   "productName": "Orchestrator",
   "version": "0.1.0",
-  "identifier": "com.orchestrator.claude",
+  "identifier": "com.yudongqiu.orchestrator",
   "build": {
     "frontendDist": "./loading",
     "devUrl": "http://localhost:5173",
@@ -34,7 +34,11 @@
     ],
     "macOS": {
       "minimumSystemVersion": "13.0",
-      "signingIdentity": "-"
+      "signingIdentity": "Developer ID Application: Yudong Qiu (XT8BC8793B)",
+      "entitlements": "./Entitlements.plist",
+      "files": {
+        "embedded.provisionprofile": "./embedded.provisionprofile"
+      }
     },
     "createUpdaterArtifacts": true
   },

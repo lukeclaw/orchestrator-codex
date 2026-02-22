@@ -39,6 +39,12 @@ else
 fi
 echo ""
 
+# Step 1a: sign the side car app
+echo "--- Step 1a: Signing sidecar app ---"
+cd "$PROJECT_ROOT"
+bash ./scripts/sign-sidecar.sh
+
+
 # Step 2: Build the Tauri app
 echo "--- Step 2: Building Tauri app ---"
 cd "$PROJECT_ROOT"

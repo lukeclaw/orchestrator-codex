@@ -75,6 +75,7 @@ tmp/
 src-tauri/target/
 src-tauri/binaries/orchestrator-server*
 !src-tauri/binaries/.gitkeep
+src-tauri/*.provisionprofile
 
 # PyInstaller
 *.spec.bak
