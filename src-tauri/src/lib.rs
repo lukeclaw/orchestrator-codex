@@ -214,15 +214,28 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
         .run(|app_handle, event| {
-            if let tauri::RunEvent::Reopen { has_visible_windows, .. } = event {
-                // Re-show the window when the dock icon is clicked
-                if !has_visible_windows {
-                    if let Some(window) = app_handle.get_webview_window("main") {
-                        let _ = window.show();
-                        let _ = window.set_focus();
-                        eprintln!("[tauri] Window restored from dock");
+            match event {
+                tauri::RunEvent::Reopen { has_visible_windows, .. } => {
+                    // Re-show the window when the dock icon is clicked
+                    if !has_visible_windows {
+                        if let Some(window) = app_handle.get_webview_window("main") {
+                            let _ = window.show();
+                            let _ = window.set_focus();
+                            eprintln!("[tauri] Window restored from dock");
+                        }
                     }
                 }
+                tauri::RunEvent::Exit => {
+                    // Guaranteed cleanup: kill the sidecar on any app exit
+                    let state = app_handle.state::<SidecarState>();
+                    let mut guard = state.child.lock().unwrap();
+                    if let Some(mut child) = guard.take() {
+                        let _ = child.kill();
+                        let _ = child.wait();
+                        eprintln!("[tauri] Sidecar process killed (RunEvent::Exit)");
+                    }
+                }
+                _ => {}
             }
         });
 }
