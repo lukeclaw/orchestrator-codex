@@ -12,8 +12,8 @@
     "windows": [
       {
         "title": "Claude Orchestrator",
-        "width": 1280,
-        "height": 800,
+        "width": 1600,
+        "height": 900,
         "minWidth": 800,
         "minHeight": 600
       }
@@ -33,7 +33,8 @@
       "binaries/orchestrator-server-sidecar/**/*"
     ],
     "macOS": {
-      "minimumSystemVersion": "13.0"
+      "minimumSystemVersion": "13.0",
+      "signingIdentity": "-"
     },
     "createUpdaterArtifacts": true
   },
@@ -42,9 +43,9 @@
       "open": true
     },
     "updater": {
-      "pubkey": "REPLACE_WITH_GENERATED_PUBLIC_KEY",
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEIxNEY2RDI2ODI2Mjg5OUMKUldTY2lXS0NKbTFQc2YzOXM2T0QxdFVvK1NlNzFzbDBlNUhTTU5Yc2o2dEdyeFRmSWQvNVFUSUIK",
       "endpoints": [
-        "https://github.com/USER/REPO/releases/latest/download/latest.json"
+        "https://github.com/yuqiu/orchestrator/releases/latest/download/latest.json"
       ]
     }
   }
