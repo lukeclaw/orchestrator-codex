@@ -35,6 +35,9 @@ dev = [
 e2e = [
     "playwright>=1.49.0",
 ]
+build = [
+    "pyinstaller>=6.0",
+]
 knowledge = [
     "chromadb>=0.6.0",
 ]

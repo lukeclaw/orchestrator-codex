@@ -26,16 +26,16 @@ if [[ "${1:-}" == "--skip-frontend" ]]; then
     echo "(Skipping frontend build)"
     # Just build PyInstaller part
     cd "$PROJECT_ROOT"
-    uv run python -m PyInstaller orchestrator.spec --clean --noconfirm
+    uv run --extra build python -m PyInstaller orchestrator.spec --clean --noconfirm
     # Copy to tauri binaries
-    uv run python scripts/build_sidecar.py 2>/dev/null || {
+    uv run --extra build python scripts/build_sidecar.py 2>/dev/null || {
         # If the full script fails, just do the copy
         TRIPLE=$(uv run python -c "from scripts.build_sidecar import get_target_triple; print(get_target_triple())")
         cp dist/orchestrator-server "src-tauri/binaries/orchestrator-server-$TRIPLE"
         chmod +x "src-tauri/binaries/orchestrator-server-$TRIPLE"
     }
 else
-    uv run python scripts/build_sidecar.py
+    uv run --extra build python scripts/build_sidecar.py
 fi
 echo ""
 
