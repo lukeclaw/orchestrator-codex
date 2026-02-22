@@ -2,7 +2,7 @@
 
 In dev mode, paths resolve relative to the project root (directory containing pyproject.toml).
 In packaged mode (PyInstaller --onefile), bundled resources live in sys._MEIPASS and
-user data goes to ~/Library/Application Support/ClaudeOrchestrator/.
+user data goes to ~/Library/Application Support/Orchestrator/.
 """
 
 from __future__ import annotations
@@ -29,12 +29,12 @@ def project_root() -> Path:
 def data_dir() -> Path:
     """Return the directory for persistent user data (DB, config, logs, images).
 
-    Packaged: ~/Library/Application Support/ClaudeOrchestrator/
+    Packaged: ~/Library/Application Support/Orchestrator/
     Dev:      <project_root>/data/
     """
     if is_packaged():
         if platform.system() == "Darwin":
-            return Path.home() / "Library" / "Application Support" / "ClaudeOrchestrator"
+            return Path.home() / "Library" / "Application Support" / "Orchestrator"
         # Fallback for other platforms (future-proofing)
         return Path.home() / ".claude-orchestrator"
     return _PROJECT_ROOT / "data"

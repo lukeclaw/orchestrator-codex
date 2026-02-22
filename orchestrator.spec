@@ -1,5 +1,5 @@
 # -*- mode: python ; coding: utf-8 -*-
-"""PyInstaller spec for the Claude Orchestrator sidecar binary.
+"""PyInstaller spec for the Orchestrator sidecar binary.
 
 Produces a one-dir bundle (no temp extraction on launch) that Tauri
 bundles as a resource directory inside the .app.

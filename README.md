@@ -1,4 +1,4 @@
-# Claude Orchestrator
+# Orchestrator
 
 A meta-agent that manages multiple concurrent Claude Code sessions from a single dashboard.
 
@@ -85,8 +85,8 @@ cargo install tauri-cli
 ```
 
 Output:
-- `src-tauri/target/release/bundle/macos/ClaudeOrchestrator.app`
-- `src-tauri/target/release/bundle/dmg/ClaudeOrchestrator_*.dmg`
+- `src-tauri/target/release/bundle/macos/Orchestrator.app`
+- `src-tauri/target/release/bundle/dmg/Orchestrator_*.dmg`
 
 ### App Behavior
 

@@ -68,7 +68,7 @@ def init_db(config: dict):
 @click.option("--config", "config_path", type=click.Path(exists=True), default=None)
 @click.pass_context
 def cli(ctx, config_path):
-    """Claude Orchestrator — manage multiple Claude Code sessions."""
+    """Orchestrator — manage multiple Claude Code sessions."""
     config = load_config(Path(config_path) if config_path else None)
     setup_logging(config)
 
@@ -90,7 +90,7 @@ def shell(ctx):
     conn = ctx.obj["conn"]
     config = ctx.obj["config"]
 
-    console.print("[bold cyan]Claude Orchestrator[/bold cyan] v0.1.0")
+    console.print("[bold cyan]Orchestrator[/bold cyan] v0.1.0")
     console.print("Type [bold]/help[/bold] for available commands, [bold]/quit[/bold] to exit.\n")
 
     while True:

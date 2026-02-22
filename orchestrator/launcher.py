@@ -69,7 +69,7 @@ def main():
     setup_logging(config)
 
     logger = logging.getLogger("orchestrator.launcher")
-    logger.info("Starting Claude Orchestrator sidecar (packaged=%s)", paths.is_packaged())
+    logger.info("Starting Orchestrator sidecar (packaged=%s)", paths.is_packaged())
     logger.info("Data directory: %s", paths.data_dir())
     logger.info("tmux: %s", shutil.which("tmux"))
 

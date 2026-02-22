@@ -69,11 +69,11 @@ jobs:
           projectPath: '.'
           tauriScript: cargo tauri
           tagName: ${{ github.ref_name }}
-          releaseName: 'Claude Orchestrator ${{ github.ref_name }}'
+          releaseName: 'Orchestrator ${{ github.ref_name }}'
           releaseBody: |
             See the assets below to download and install.
 
-            **Installation:** Download the `.dmg` file, open it, and drag Claude Orchestrator to Applications.
+            **Installation:** Download the `.dmg` file, open it, and drag Orchestrator to Applications.
 
             **Prerequisite:** [tmux](https://github.com/tmux/tmux) must be installed (`brew install tmux`).
           releaseDraft: false

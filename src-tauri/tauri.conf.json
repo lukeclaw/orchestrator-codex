@@ -1,6 +1,6 @@
 {
   "$schema": "https://raw.githubusercontent.com/nicehash/tauri/refs/heads/dev/crates/tauri-schema-generator/schemas/config.schema.json",
-  "productName": "ClaudeOrchestrator",
+  "productName": "Orchestrator",
   "version": "0.1.0",
   "identifier": "com.orchestrator.claude",
   "build": {
@@ -11,7 +11,7 @@
   "app": {
     "windows": [
       {
-        "title": "Claude Orchestrator",
+        "title": "Orchestrator",
         "width": 1600,
         "height": 900,
         "minWidth": 800,

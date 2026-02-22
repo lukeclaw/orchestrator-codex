@@ -20,7 +20,7 @@ if not _DB_PATH:
     _DB_PATH = str(paths.db_path())
 
 mcp = FastMCP("orchestrator", instructions=(
-    "Project management tools for the Claude Orchestrator. "
+    "Project management tools for the Orchestrator. "
     "Use these to manage projects, tasks, worker sessions, and monitor activity."
 ))
 

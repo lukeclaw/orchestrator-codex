@@ -117,7 +117,7 @@ def create_app(
 ) -> FastAPI:
     """Create and configure the FastAPI application."""
     app = FastAPI(
-        title="Claude Orchestrator",
+        title="Orchestrator",
         version="0.1.0",
         lifespan=lifespan,
     )

@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Claude Orchestrator</title>
+  <title>Orchestrator</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body {
@@ -48,7 +48,7 @@
 <body>
   <div class="container">
     <div class="spinner"></div>
-    <h1>Starting Claude Orchestrator</h1>
+    <h1>Starting Orchestrator</h1>
     <p id="status">Initializing server...</p>
   </div>
   <script>
@@ -82,7 +82,7 @@
     function retry() {
       if (attempts >= maxAttempts) {
         document.getElementById('status').textContent =
-          'Server failed to start. Check ~/Library/Application Support/ClaudeOrchestrator/orchestrator.log';
+          'Server failed to start. Check ~/Library/Application Support/Orchestrator/orchestrator.log';
         return;
       }
       setTimeout(checkServer, 200);

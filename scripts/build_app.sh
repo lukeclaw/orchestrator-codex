@@ -1,5 +1,5 @@
 #!/bin/bash
-# Build the full Claude Orchestrator macOS app (sidecar + Tauri shell).
+# Build the full Orchestrator macOS app (sidecar + Tauri shell).
 #
 # Prerequisites:
 #   - Rust toolchain (rustup)
@@ -16,7 +16,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
-echo "=== Claude Orchestrator Build ==="
+echo "=== Orchestrator Build ==="
 echo "Project root: $PROJECT_ROOT"
 echo ""
 
@@ -55,5 +55,5 @@ cargo tauri build
 
 echo ""
 echo "=== Build complete ==="
-echo "App bundle: src-tauri/target/release/bundle/macos/ClaudeOrchestrator.app"
-echo "DMG:        src-tauri/target/release/bundle/dmg/ClaudeOrchestrator_*.dmg"
+echo "App bundle: src-tauri/target/release/bundle/macos/Orchestrator.app"
+echo "DMG:        src-tauri/target/release/bundle/dmg/Orchestrator_*.dmg"

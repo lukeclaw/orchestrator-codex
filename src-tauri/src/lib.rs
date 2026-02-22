@@ -151,7 +151,7 @@ pub fn run() {
                                                 .get_webview_window("main")
                                                 .map(|w| {
                                                     let _ = w.eval(
-                                                        "document.body.innerHTML = '<div style=\"padding:2em;font-family:system-ui\"><h1>tmux Required</h1><p>Claude Orchestrator needs tmux to manage sessions.</p><p>Install it with: <code>brew install tmux</code></p><p>Then restart the app.</p></div>';"
+                                                        "document.body.innerHTML = '<div style=\"padding:2em;font-family:system-ui\"><h1>tmux Required</h1><p>Orchestrator needs tmux to manage sessions.</p><p>Install it with: <code>brew install tmux</code></p><p>Then restart the app.</p></div>';"
                                                     );
                                                 });
                                         }
@@ -181,7 +181,7 @@ pub fn run() {
                     eprintln!("[tauri] Server failed to start within timeout");
                     if let Some(window) = handle_for_nav.get_webview_window("main") {
                         let _ = window.eval(
-                            "document.body.innerHTML = '<div style=\"padding:2em;font-family:system-ui\"><h1>Startup Error</h1><p>The orchestrator server failed to start. Check the logs at:<br><code>~/Library/Application Support/ClaudeOrchestrator/orchestrator.log</code></p></div>';"
+                            "document.body.innerHTML = '<div style=\"padding:2em;font-family:system-ui\"><h1>Startup Error</h1><p>The orchestrator server failed to start. Check the logs at:<br><code>~/Library/Application Support/Orchestrator/orchestrator.log</code></p></div>';"
                         );
                     }
                 }
