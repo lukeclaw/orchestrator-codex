@@ -6,4 +6,4 @@ Save all temporary files (screenshots, test outputs, scratch files) to `tmp/` â€
 
 ## Design Docs
 
-The UI design document is at `docs/010-ui-design.md`. Keep it updated when making UI changes.
+The UI design document is at `docs/005-ui-design.md`. Keep it updated when making UI changes.
