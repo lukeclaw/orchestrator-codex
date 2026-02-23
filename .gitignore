@@ -24,7 +24,6 @@ __pycache__/
 # Build / packaging
 build/
 dist/
-!orchestrator/web/dist/
 *.egg-info/
 .eggs/
 pip-wheel-metadata/

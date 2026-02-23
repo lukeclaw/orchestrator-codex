@@ -178,6 +178,12 @@ def create_app(
     dist_assets = paths.web_dist_dir() / "assets"
     if dist_assets.exists():
         app.mount("/assets", StaticFiles(directory=str(dist_assets)), name="assets")
+    else:
+        logger.warning(
+            "Frontend assets not found at %s. "
+            "Run 'cd frontend && npm run build' to build the UI.",
+            dist_assets,
+        )
 
     # Register routes
     from orchestrator.api.routes import (
