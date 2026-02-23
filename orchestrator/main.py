@@ -97,7 +97,8 @@ def shell(ctx):
     conn = ctx.obj["conn"]
     config = ctx.obj["config"]
 
-    console.print("[bold cyan]Orchestrator[/bold cyan] v0.1.0")
+    from orchestrator import __version__
+    console.print(f"[bold cyan]Orchestrator[/bold cyan] v{__version__}")
     console.print("Type [bold]/help[/bold] for available commands, [bold]/quit[/bold] to exit.\n")
 
     while True:
