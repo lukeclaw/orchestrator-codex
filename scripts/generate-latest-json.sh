@@ -62,7 +62,7 @@ echo "  Artifact: $TAR_GZ_NAME"
 echo ""
 
 # Collect all release files into gh_release/
-RELEASE_DIR="$PROJECT_ROOT/gh_release"
+RELEASE_DIR="$PROJECT_ROOT/src-tauri/target/release/bundle/gh_release"
 rm -rf "$RELEASE_DIR"
 mkdir -p "$RELEASE_DIR"
 
