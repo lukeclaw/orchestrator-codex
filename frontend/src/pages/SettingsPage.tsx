@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useSettings } from '../hooks/useSettings'
 import { useBackup } from '../hooks/useBackup'
+import { useUpdate } from '../hooks/useUpdate'
 import { useNotify } from '../context/NotificationContext'
 import ConfirmPopover from '../components/common/ConfirmPopover'
 import './SettingsPage.css'
@@ -27,10 +28,10 @@ const SCHEDULE_OPTIONS = [
 export default function SettingsPage() {
   const { settings, loading, saving, save, getValue } = useSettings()
   const notify = useNotify()
+  const { info: updateInfo, checking: updateChecking, check: checkUpdate, openRelease } = useUpdate()
 
   // Local state for general settings
-  const [pollingInterval, setPollingInterval] = useState(5)
-  const [maxSessions, setMaxSessions] = useState(10)
+  const [autoUpdateCheck, setAutoUpdateCheck] = useState(true)
 
   // Backup state
   const {
@@ -55,12 +56,18 @@ export default function SettingsPage() {
   // Sync local state when settings load
   useEffect(() => {
     if (settings.length > 0) {
-      const pi = getValue('general.polling_interval')
-      if (pi != null) setPollingInterval(Number(pi))
-      const ms = getValue('general.max_sessions')
-      if (ms != null) setMaxSessions(Number(ms))
+      const auc = getValue('general.auto_update_check')
+      if (auc != null) setAutoUpdateCheck(Boolean(auc))
     }
   }, [settings, getValue])
+
+  // Auto-check for updates on mount
+  useEffect(() => {
+    if (!loading && autoUpdateCheck) {
+      checkUpdate()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading])
 
   // Sync backup settings
   useEffect(() => {
@@ -72,11 +79,10 @@ export default function SettingsPage() {
     }
   }, [backupSettings])
 
-  const handleSave = () => {
-    save({
-      'general.polling_interval': pollingInterval,
-      'general.max_sessions': maxSessions,
-    })
+  const handleToggleAutoUpdate = () => {
+    const next = !autoUpdateCheck
+    setAutoUpdateCheck(next)
+    save({ 'general.auto_update_check': next })
   }
 
   const handleBackupSave = async () => {
@@ -110,42 +116,68 @@ export default function SettingsPage() {
 
       <div className="settings-content panel">
         <div className="panel-body">
-          {loading && <p className="settings-hint">Loading settings...</p>}
+          <div className="settings-section">
+            <h3>App Updates</h3>
 
-          {!loading && (
-            <div className="settings-section">
-              <h3>General Configuration</h3>
-              <div className="form-group">
-                <label>Polling Interval (seconds)</label>
-                <input
-                  type="number"
-                  value={pollingInterval}
-                  onChange={e => setPollingInterval(Number(e.target.value))}
-                  min={2}
-                  max={60}
-                />
-                <span className="form-hint">How often the monitor checks terminal state</span>
+            <div className="update-version-row">
+              <span className="update-version-label">Current version</span>
+              <span className="update-version-value">{updateInfo?.current_version ?? '...'}</span>
+            </div>
+
+            {updateInfo?.update_available && (
+              <div className="update-banner">
+                <div className="update-banner-text">
+                  <strong>v{updateInfo.latest_version}</strong> is available
+                  {updateInfo.pub_date && (
+                    <span className="update-pub-date">
+                      {' '}— {new Date(updateInfo.pub_date).toLocaleDateString()}
+                    </span>
+                  )}
+                </div>
+                {updateInfo.release_notes && (
+                  <p className="update-notes">{updateInfo.release_notes}</p>
+                )}
+                <button
+                  className="btn btn-primary"
+                  onClick={() => updateInfo.release_url && openRelease(updateInfo.release_url)}
+                >
+                  Download Update
+                </button>
               </div>
-              <div className="form-group">
-                <label>Max Concurrent Sessions</label>
-                <input
-                  type="number"
-                  value={maxSessions}
-                  onChange={e => setMaxSessions(Number(e.target.value))}
-                  min={1}
-                  max={50}
-                />
-                <span className="form-hint">Maximum number of worker sessions</span>
-              </div>
+            )}
+
+            {updateInfo && !updateInfo.update_available && !updateInfo.error && (
+              <div className="update-up-to-date">You're on the latest version.</div>
+            )}
+
+            {updateInfo?.error && (
+              <div className="update-error">Could not reach update server.</div>
+            )}
+
+            <div className="update-actions">
               <button
-                className="btn btn-primary"
-                onClick={handleSave}
-                disabled={saving}
+                className="btn btn-secondary"
+                onClick={() => checkUpdate(true)}
+                disabled={updateChecking}
               >
-                {saving ? 'Saving...' : 'Save'}
+                {updateChecking ? 'Checking...' : 'Check for Updates'}
               </button>
             </div>
-          )}
+
+            <div className="approval-rule" style={{ marginTop: 16 }}>
+              <div className="rule-info">
+                <span className="rule-label">Check automatically on launch</span>
+                <span className="rule-hint">Checks GitHub for new releases when the app starts</span>
+              </div>
+              <button
+                className={`toggle ${autoUpdateCheck ? 'on' : 'off'}`}
+                onClick={handleToggleAutoUpdate}
+                disabled={saving}
+              >
+                {autoUpdateCheck ? 'ON' : 'OFF'}
+              </button>
+            </div>
+          </div>
         </div>
       </div>
 

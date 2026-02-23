@@ -95,6 +95,73 @@
   cursor: not-allowed;
 }
 
+/* Update section */
+.update-version-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+  font-size: 14px;
+}
+
+.update-version-label {
+  color: var(--text-secondary);
+}
+
+.update-version-value {
+  font-family: var(--font-mono, monospace);
+  font-weight: 600;
+}
+
+.update-banner {
+  padding: 12px 14px;
+  background: rgba(56, 139, 253, 0.08);
+  border: 1px solid rgba(56, 139, 253, 0.3);
+  border-radius: var(--radius);
+  margin-bottom: 12px;
+}
+
+.update-banner-text {
+  font-size: 14px;
+  color: var(--text-primary);
+}
+
+.update-pub-date {
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+
+.update-notes {
+  font-size: 13px;
+  color: var(--text-secondary);
+  margin: 6px 0 10px;
+  white-space: pre-line;
+}
+
+.update-banner .btn {
+  margin-top: 0;
+}
+
+.update-up-to-date {
+  font-size: 13px;
+  color: var(--green);
+  margin-bottom: 12px;
+}
+
+.update-error {
+  font-size: 13px;
+  color: var(--text-secondary);
+  margin-bottom: 12px;
+}
+
+.update-actions {
+  margin-bottom: 4px;
+}
+
+.update-actions .btn {
+  margin-top: 0;
+}
+
 /* Save button */
 .settings-page .btn {
   margin-top: 12px;

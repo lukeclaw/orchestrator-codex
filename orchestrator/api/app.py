@@ -190,6 +190,7 @@ def create_app(
         settings,
         tasks,
         trends,
+        updates,
     )
 
     app.include_router(backup.router, prefix="/api", tags=["backup"])
@@ -203,6 +204,7 @@ def create_app(
     app.include_router(brain.router, prefix="/api", tags=["brain"])
     app.include_router(paste.router, prefix="/api", tags=["paste"])
     app.include_router(trends.router, prefix="/api", tags=["trends"])
+    app.include_router(updates.router, prefix="/api", tags=["updates"])
 
     # Health check (used by Tauri shell to know when the sidecar is ready)
     @app.get("/api/health", tags=["health"])

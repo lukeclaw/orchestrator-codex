@@ -75,6 +75,7 @@ a = Analysis(
         "orchestrator.api.routes.sessions",
         "orchestrator.api.routes.settings",
         "orchestrator.api.routes.tasks",
+        "orchestrator.api.routes.updates",
         "orchestrator.core.events",
         "orchestrator.core.lifecycle",
         "orchestrator.core.orchestrator",
