@@ -92,9 +92,9 @@ def start_brain(db=Depends(get_db)):
     brain_dir = "/tmp/orchestrator/brain"
     os.makedirs(brain_dir, exist_ok=True)
 
-    # Fetch custom brain skills from DB
+    # Fetch custom brain skills from DB (enabled only)
     from orchestrator.state.repositories import skills as skills_repo
-    custom_skills = skills_repo.list_skills(db, target="brain")
+    custom_skills = skills_repo.list_skills(db, target="brain", enabled_only=True)
     custom_skills_dicts = [{"name": s.name, "description": s.description, "content": s.content} for s in custom_skills]
     custom_skills_section = format_custom_skills_for_prompt(custom_skills_dicts)
 
@@ -104,13 +104,22 @@ def start_brain(db=Depends(get_db)):
         with open(os.path.join(brain_dir, "CLAUDE.md"), "w") as f:
             f.write(brain_prompt)
 
-    # Deploy pre-built skills to .claude/commands/
+    # Deploy pre-built skills to .claude/commands/ (skip disabled)
+    disabled_builtins = skills_repo.list_disabled_builtin_skills(db, "brain")
     skills_src = get_brain_skills_dir()
     skills_dest = os.path.join(brain_dir, ".claude", "commands")
+    # Clear stale skill files before repopulating
+    if os.path.isdir(skills_dest):
+        for f in os.listdir(skills_dest):
+            if f.endswith(".md"):
+                os.remove(os.path.join(skills_dest, f))
     if skills_src and os.path.isdir(skills_src):
         os.makedirs(skills_dest, exist_ok=True)
         for skill_file in os.listdir(skills_src):
             if skill_file.endswith(".md"):
+                skill_name = os.path.splitext(skill_file)[0]
+                if (skill_name, "brain") in disabled_builtins:
+                    continue
                 shutil.copy2(
                     os.path.join(skills_src, skill_file),
                     os.path.join(skills_dest, skill_file),

@@ -8,7 +8,10 @@ from orchestrator.state.repositories.skills import (
     create_skill,
     delete_skill,
     get_skill,
+    is_builtin_skill_disabled,
+    list_disabled_builtin_skills,
     list_skills,
+    set_builtin_skill_enabled,
     update_skill,
 )
 
@@ -226,3 +229,73 @@ def test_same_name_different_target(db):
     assert s1.id != s2.id
     assert s1.target == "worker"
     assert s2.target == "brain"
+
+
+# --- Enable/disable ---
+
+
+def test_create_skill_default_enabled(db):
+    skill = create_skill(db, name="enabled-skill", target="worker", content="x")
+    assert skill.enabled == 1
+
+
+def test_update_skill_disable(db):
+    skill = create_skill(db, name="toggle-me", target="worker", content="x")
+    updated = update_skill(db, skill.id, enabled=False)
+    assert updated.enabled == 0
+
+
+def test_update_skill_enable(db):
+    skill = create_skill(db, name="toggle-back", target="worker", content="x")
+    update_skill(db, skill.id, enabled=False)
+    updated = update_skill(db, skill.id, enabled=True)
+    assert updated.enabled == 1
+
+
+def test_list_skills_enabled_only(db):
+    create_skill(db, name="enabled-one", target="worker", content="x")
+    s2 = create_skill(db, name="disabled-one", target="worker", content="y")
+    update_skill(db, s2.id, enabled=False)
+
+    all_skills = list_skills(db, target="worker")
+    assert len(all_skills) == 2
+
+    enabled = list_skills(db, target="worker", enabled_only=True)
+    assert len(enabled) == 1
+    assert enabled[0].name == "enabled-one"
+
+
+# --- Built-in skill overrides ---
+
+
+def test_builtin_default_is_enabled(db):
+    """No override row means the built-in skill is enabled."""
+    assert is_builtin_skill_disabled(db, "create", "brain") is False
+
+
+def test_set_builtin_disabled(db):
+    set_builtin_skill_enabled(db, "create", "brain", False)
+    assert is_builtin_skill_disabled(db, "create", "brain") is True
+
+
+def test_set_builtin_reenabled(db):
+    set_builtin_skill_enabled(db, "create", "brain", False)
+    assert is_builtin_skill_disabled(db, "create", "brain") is True
+
+    set_builtin_skill_enabled(db, "create", "brain", True)
+    assert is_builtin_skill_disabled(db, "create", "brain") is False
+
+
+def test_list_disabled_builtins(db):
+    set_builtin_skill_enabled(db, "create", "brain", False)
+    set_builtin_skill_enabled(db, "check-worker", "brain", False)
+    set_builtin_skill_enabled(db, "deploy", "worker", False)
+
+    all_disabled = list_disabled_builtin_skills(db)
+    assert ("create", "brain") in all_disabled
+    assert ("check-worker", "brain") in all_disabled
+    assert ("deploy", "worker") in all_disabled
+
+    brain_disabled = list_disabled_builtin_skills(db, target="brain")
+    assert ("create", "brain") in brain_disabled
+    assert ("deploy", "worker") not in brain_disabled

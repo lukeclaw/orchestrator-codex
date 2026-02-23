@@ -1,5 +1,4 @@
 import { useState, useMemo } from 'react'
-import { useLocation, useNavigate } from 'react-router-dom'
 import { useSkills } from '../hooks/useSkills'
 import type { Skill } from '../api/types'
 import SkillCard from '../components/skills/SkillCard'
@@ -7,20 +6,30 @@ import SkillModal from '../components/skills/SkillModal'
 import './SkillsPage.css'
 
 export default function SkillsPage() {
-  const location = useLocation()
-  const navigate = useNavigate()
-  const activeTab = location.pathname === '/skills/worker' ? 'worker' : 'brain'
-
-  const { items, loading, fetch, getItem, create, update, remove } = useSkills({ target: activeTab })
+  const { items, loading, fetch, getItem, create, update, remove, toggleEnabled } = useSkills()
 
   const [selectedSkill, setSelectedSkill] = useState<Skill | null>(null)
   const [showNewSkill, setShowNewSkill] = useState(false)
 
-  const sorted = useMemo(() => {
-    const builtIn = items.filter(s => s.type === 'built_in')
-    const custom = items.filter(s => s.type === 'custom')
-    return [...builtIn, ...custom]
+  const { brainBuiltIn, brainCustom, workerBuiltIn, workerCustom } = useMemo(() => {
+    const bb: Skill[] = []
+    const bc: Skill[] = []
+    const wb: Skill[] = []
+    const wc: Skill[] = []
+    for (const s of items) {
+      if (s.target === 'brain') {
+        if (s.type === 'built_in') bb.push(s)
+        else bc.push(s)
+      } else {
+        if (s.type === 'built_in') wb.push(s)
+        else wc.push(s)
+      }
+    }
+    return { brainBuiltIn: bb, brainCustom: bc, workerBuiltIn: wb, workerCustom: wc }
   }, [items])
+
+  const brainSkills = [...brainBuiltIn, ...brainCustom]
+  const workerSkills = [...workerBuiltIn, ...workerCustom]
 
   async function handleCardClick(skill: Skill) {
     const full = await getItem(skill)
@@ -46,46 +55,58 @@ export default function SkillsPage() {
       <div className="page-header">
         <h1>Skills</h1>
         <div className="page-header-actions">
-          <div className="skills-tabs">
-            <button
-              className={`skills-tab ${activeTab === 'brain' ? 'active' : ''}`}
-              onClick={() => navigate('/skills')}
-            >
-              Brain
-            </button>
-            <button
-              className={`skills-tab ${activeTab === 'worker' ? 'active' : ''}`}
-              onClick={() => navigate('/skills/worker')}
-            >
-              Worker
-            </button>
-          </div>
           <button className="btn btn-primary btn-sm" onClick={() => setShowNewSkill(true)}>
             + New Skill
           </button>
         </div>
       </div>
 
+      <p className="skills-note">Skill changes take effect on new sessions only.</p>
+
       {loading ? (
         <p className="empty-state">Loading...</p>
-      ) : sorted.length === 0 ? (
-        <p className="empty-state">No {activeTab} skills yet.</p>
+      ) : items.length === 0 ? (
+        <p className="empty-state">No skills yet.</p>
       ) : (
-        <div className="skills-grid">
-          {sorted.map(skill => (
-            <SkillCard
-              key={skill.id}
-              skill={skill}
-              onClick={() => handleCardClick(skill)}
-            />
-          ))}
-        </div>
+        <>
+          {brainSkills.length > 0 && (
+            <div className="skills-section">
+              <h2 className="skills-section-title">Brain</h2>
+              <div className="skills-grid">
+                {brainSkills.map(skill => (
+                  <SkillCard
+                    key={skill.id}
+                    skill={skill}
+                    onClick={() => handleCardClick(skill)}
+                    onToggleEnabled={() => toggleEnabled(skill)}
+                  />
+                ))}
+              </div>
+            </div>
+          )}
+
+          {workerSkills.length > 0 && (
+            <div className="skills-section">
+              <h2 className="skills-section-title">Worker</h2>
+              <div className="skills-grid">
+                {workerSkills.map(skill => (
+                  <SkillCard
+                    key={skill.id}
+                    skill={skill}
+                    onClick={() => handleCardClick(skill)}
+                    onToggleEnabled={() => toggleEnabled(skill)}
+                  />
+                ))}
+              </div>
+            </div>
+          )}
+        </>
       )}
 
       <SkillModal
         skill={selectedSkill}
         isNew={showNewSkill}
-        defaultTarget={activeTab}
+        defaultTarget="worker"
         onClose={() => {
           setSelectedSkill(null)
           setShowNewSkill(false)

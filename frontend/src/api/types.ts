@@ -180,6 +180,7 @@ export interface Skill {
   description: string | null
   content: string | null
   line_count: number
+  enabled: boolean
   created_at: string
   updated_at: string
 }

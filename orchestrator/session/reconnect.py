@@ -336,9 +336,12 @@ def _launch_claude_in_screen(
 
 
 def _get_custom_skills_from_conn(conn, target: str) -> list[dict]:
-    """Read custom skills from an existing DB connection."""
+    """Read enabled custom skills from an existing DB connection."""
     try:
-        rows = conn.execute("SELECT name, description, content FROM skills WHERE target = ?", (target,)).fetchall()
+        rows = conn.execute(
+            "SELECT name, description, content FROM skills WHERE target = ? AND enabled = 1",
+            (target,),
+        ).fetchall()
         return [dict(r) for r in rows]
     except Exception:
         # Table may not exist if migration hasn't run yet
@@ -365,13 +368,31 @@ def _ensure_local_configs_exist(tmp_dir: str, session_id: str, api_base: str = "
     logger.info("Regenerating local bin scripts at %s", tmp_dir)
     deploy_worker_scripts(tmp_dir, session_id, api_base)
 
-    # Always regenerate skills to .claude/commands/
+    # Always regenerate skills to .claude/commands/ (skip disabled built-ins)
+    disabled_builtin_names: set[str] = set()
+    if conn is not None:
+        try:
+            rows = conn.execute(
+                "SELECT name FROM skill_overrides WHERE enabled = 0 AND target = 'worker'",
+            ).fetchall()
+            disabled_builtin_names = {r["name"] for r in rows}
+        except Exception:
+            pass  # Table may not exist yet
+
     skills_src = get_worker_skills_dir()
     local_skills_dir = os.path.join(tmp_dir, ".claude", "commands")
+    # Clear stale skill files before repopulating
+    if os.path.isdir(local_skills_dir):
+        for f in os.listdir(local_skills_dir):
+            if f.endswith(".md"):
+                os.remove(os.path.join(local_skills_dir, f))
     if skills_src and os.path.isdir(skills_src):
         os.makedirs(local_skills_dir, exist_ok=True)
         for skill_file in os.listdir(skills_src):
             if skill_file.endswith(".md"):
+                skill_name = os.path.splitext(skill_file)[0]
+                if skill_name in disabled_builtin_names:
+                    continue
                 shutil.copy2(
                     os.path.join(skills_src, skill_file),
                     os.path.join(local_skills_dir, skill_file),
@@ -412,7 +433,8 @@ def _copy_configs_to_remote(host: str, tmp_dir: str, remote_tmp_dir: str, sessio
     # NOTE: --add-dir flag doesn't work reliably in recent Claude Code versions,
     # so we copy skills directly to the user's global ~/.claude/commands/ folder
     # which Claude always loads regardless of working directory.
-    skills_copy_cmd = f"mkdir -p ~/.claude/commands && cp {remote_tmp_dir}/.claude/commands/*.md ~/.claude/commands/ 2>/dev/null || true"
+    # Clear stale skills first, then copy current set.
+    skills_copy_cmd = f"rm -f ~/.claude/commands/*.md 2>/dev/null; mkdir -p ~/.claude/commands && cp {remote_tmp_dir}/.claude/commands/*.md ~/.claude/commands/ 2>/dev/null || true"
     subprocess.run(
         ["ssh", "-o", "ConnectTimeout=10", "-o", "BatchMode=yes", host, skills_copy_cmd],
         capture_output=True,

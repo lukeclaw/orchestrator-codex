@@ -38,6 +38,7 @@ def list_skills(
     conn: sqlite3.Connection,
     target: str | None = None,
     search: str | None = None,
+    enabled_only: bool = False,
 ) -> list[Skill]:
     clauses = []
     params: list = []
@@ -48,6 +49,8 @@ def list_skills(
     if search:
         clauses.append("(name LIKE ? OR description LIKE ? OR content LIKE ?)")
         params.extend([f"%{search}%", f"%{search}%", f"%{search}%"])
+    if enabled_only:
+        clauses.append("enabled = 1")
 
     where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
     rows = conn.execute(
@@ -95,6 +98,7 @@ def update_skill(
     description: str | None = ...,
     content: str | None = None,
     target: str | None = None,
+    enabled: bool | None = None,
 ) -> Skill | None:
     sets = []
     params: list = []
@@ -121,6 +125,10 @@ def update_skill(
         sets.append("content = ?")
         params.append(content)
 
+    if enabled is not None:
+        sets.append("enabled = ?")
+        params.append(1 if enabled else 0)
+
     if not sets:
         return get_skill(conn, id)
 
@@ -146,3 +154,56 @@ def delete_skill(conn: sqlite3.Connection, id: str) -> bool:
     cursor = conn.execute("DELETE FROM skills WHERE id = ?", (id,))
     conn.commit()
     return cursor.rowcount > 0
+
+
+# ---------------------------------------------------------------------------
+# Built-in skill overrides
+# ---------------------------------------------------------------------------
+
+def is_builtin_skill_disabled(conn: sqlite3.Connection, name: str, target: str) -> bool:
+    """Check if a built-in skill has been disabled via overrides table."""
+    row = conn.execute(
+        "SELECT enabled FROM skill_overrides WHERE name = ? AND target = ?",
+        (name, target),
+    ).fetchone()
+    if row is None:
+        return False  # No override = default enabled
+    return row["enabled"] == 0
+
+
+def set_builtin_skill_enabled(conn: sqlite3.Connection, name: str, target: str, enabled: bool):
+    """Enable or disable a built-in skill.
+
+    Disabling inserts a row with enabled=0.
+    Re-enabling deletes the override row (back to default).
+    """
+    if enabled:
+        conn.execute(
+            "DELETE FROM skill_overrides WHERE name = ? AND target = ?",
+            (name, target),
+        )
+    else:
+        conn.execute(
+            """INSERT INTO skill_overrides (name, target, enabled)
+               VALUES (?, ?, 0)
+               ON CONFLICT(name, target) DO UPDATE SET enabled = 0""",
+            (name, target),
+        )
+    conn.commit()
+
+
+def list_disabled_builtin_skills(
+    conn: sqlite3.Connection,
+    target: str | None = None,
+) -> set[tuple[str, str]]:
+    """Return set of (name, target) tuples for disabled built-in skills."""
+    if target:
+        rows = conn.execute(
+            "SELECT name, target FROM skill_overrides WHERE enabled = 0 AND target = ?",
+            (target,),
+        ).fetchall()
+    else:
+        rows = conn.execute(
+            "SELECT name, target FROM skill_overrides WHERE enabled = 0",
+        ).fetchall()
+    return {(r["name"], r["target"]) for r in rows}

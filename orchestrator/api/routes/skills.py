@@ -30,6 +30,7 @@ class SkillUpdate(BaseModel):
     target: str | None = None
     content: str | None = None
     description: str | None = None
+    enabled: bool | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -94,10 +95,15 @@ def _strip_content_header(content: str) -> str:
     return '\n'.join(lines[i:]).lstrip('\n')
 
 
-def _list_builtin_skills(target: str | None = None) -> list[dict]:
-    """List built-in skills from the filesystem."""
+def _list_builtin_skills(target: str | None = None, conn=None) -> list[dict]:
+    """List built-in skills from the filesystem, merging disabled state from DB."""
     results = []
     targets = [target] if target else ["brain", "worker"]
+
+    # Load disabled overrides if DB connection available
+    disabled: set[tuple[str, str]] = set()
+    if conn is not None:
+        disabled = repo.list_disabled_builtin_skills(conn, target=target)
 
     for t in targets:
         if t == "brain":
@@ -128,6 +134,7 @@ def _list_builtin_skills(target: str | None = None) -> list[dict]:
                 "description": parsed["description"],
                 "content": None,  # Not included in list view
                 "line_count": line_count,
+                "enabled": (parsed["name"], t) not in disabled,
                 "created_at": mtime,
                 "updated_at": mtime,
             })
@@ -147,6 +154,7 @@ def _serialize(skill, include_content: bool = True) -> dict:
         "description": skill.description,
         "content": content,
         "line_count": line_count,
+        "enabled": bool(skill.enabled),
         "created_at": skill.created_at,
         "updated_at": skill.updated_at,
     }
@@ -163,8 +171,8 @@ def list_skills(
     db=Depends(get_db),
 ):
     """List all skills (built-in + custom). Content is excluded from list view."""
-    # Built-in skills from filesystem
-    builtin = _list_builtin_skills(target)
+    # Built-in skills from filesystem (with disabled state from DB)
+    builtin = _list_builtin_skills(target, conn=db)
 
     # Filter built-in by search if provided
     if search:
@@ -184,7 +192,7 @@ def list_skills(
 
 
 @router.get("/skills/builtin/{target}/{name}")
-def get_builtin_skill(target: str, name: str):
+def get_builtin_skill(target: str, name: str, db=Depends(get_db)):
     """Get a built-in skill with full content."""
     if target == "brain":
         skills_dir = get_brain_skills_dir()
@@ -216,6 +224,7 @@ def get_builtin_skill(target: str, name: str):
         "description": parsed["description"],
         "content": content,
         "line_count": line_count,
+        "enabled": not repo.is_builtin_skill_disabled(db, parsed["name"], target),
         "created_at": mtime,
         "updated_at": mtime,
     }
@@ -260,7 +269,7 @@ def update_skill(skill_id: str, body: SkillUpdate, db=Depends(get_db)):
 
     kwargs = {}
     data = body.model_dump(exclude_unset=True)
-    for field in ("name", "target", "content", "description"):
+    for field in ("name", "target", "content", "description", "enabled"):
         if field in data:
             kwargs[field] = data[field]
 
@@ -274,6 +283,38 @@ def update_skill(skill_id: str, body: SkillUpdate, db=Depends(get_db)):
     publish(Event(type="skill.changed", data={"action": "updated", "name": updated.name, "target": updated.target}))
 
     return _serialize(updated)
+
+
+class BuiltinSkillToggle(BaseModel):
+    enabled: bool
+
+
+@router.patch("/skills/builtin/{target}/{name}")
+def toggle_builtin_skill(target: str, name: str, body: BuiltinSkillToggle, db=Depends(get_db)):
+    """Toggle a built-in skill's enabled state."""
+    if target not in ("brain", "worker"):
+        raise HTTPException(400, "Target must be 'brain' or 'worker'")
+
+    # Verify the built-in skill exists on disk
+    if target == "brain":
+        skills_dir = get_brain_skills_dir()
+    else:
+        skills_dir = get_worker_skills_dir()
+
+    if not skills_dir or not os.path.exists(os.path.join(skills_dir, f"{name}.md")):
+        raise HTTPException(404, f"Built-in skill '{name}' not found for target '{target}'")
+
+    repo.set_builtin_skill_enabled(db, name, target, body.enabled)
+
+    # Publish event
+    from orchestrator.core.events import Event, publish
+    publish(Event(type="skill.changed", data={
+        "action": "enabled" if body.enabled else "disabled",
+        "name": name,
+        "target": target,
+    }))
+
+    return {"ok": True, "name": name, "target": target, "enabled": body.enabled}
 
 
 @router.delete("/skills/{skill_id}")

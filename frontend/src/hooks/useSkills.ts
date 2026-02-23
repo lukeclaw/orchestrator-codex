@@ -69,5 +69,32 @@ export function useSkills(filters?: SkillFilters) {
     setItems(prev => prev.filter(x => x.id !== id))
   }, [])
 
-  return { items, loading, fetch: fetchItems, getItem, create, update, remove }
+  const toggleEnabled = useCallback(async (skill: Skill) => {
+    const newEnabled = !skill.enabled
+
+    // Optimistic update
+    setItems(prev => prev.map(s => s.id === skill.id ? { ...s, enabled: newEnabled } : s))
+
+    try {
+      if (skill.type === 'built_in') {
+        const parts = skill.id.split(':')
+        const target = parts[1]
+        const name = parts.slice(2).join(':')
+        await api(`/api/skills/builtin/${target}/${name}`, {
+          method: 'PATCH',
+          body: JSON.stringify({ enabled: newEnabled }),
+        })
+      } else {
+        await api(`/api/skills/${skill.id}`, {
+          method: 'PATCH',
+          body: JSON.stringify({ enabled: newEnabled }),
+        })
+      }
+    } catch {
+      // Revert optimistic update on failure
+      setItems(prev => prev.map(s => s.id === skill.id ? { ...s, enabled: skill.enabled } : s))
+    }
+  }, [])
+
+  return { items, loading, fetch: fetchItems, getItem, create, update, remove, toggleEnabled }
 }

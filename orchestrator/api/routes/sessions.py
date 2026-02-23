@@ -267,8 +267,10 @@ def create_session(body: SessionCreate, request: Request, db=Depends(get_db)):
 
         # Read custom skills before spawning background thread (DB access from main thread)
         from orchestrator.state.repositories import skills as skills_repo
-        remote_custom_skills = skills_repo.list_skills(db, target="worker")
+        remote_custom_skills = skills_repo.list_skills(db, target="worker", enabled_only=True)
         remote_custom_skills_dicts = [{"name": sk.name, "description": sk.description, "content": sk.content} for sk in remote_custom_skills]
+        # Get disabled built-in skill names for filtering during remote setup
+        remote_disabled_builtins = {name for name, _ in skills_repo.list_disabled_builtin_skills(db, "worker")}
 
         def _background_setup():
             from orchestrator.state.db import get_connection
@@ -283,6 +285,7 @@ def create_session(body: SessionCreate, request: Request, db=Depends(get_db)):
                     tmp_dir=tmp_dir,
                     tunnel_manager=tunnel_manager,
                     custom_skills=remote_custom_skills_dicts,
+                    disabled_builtin_names=remote_disabled_builtins,
                 )
                 if result["ok"]:
                     repo.update_session(
@@ -338,13 +341,23 @@ def create_session(body: SessionCreate, request: Request, db=Depends(get_db)):
             )
             logger.info("Generated hooks settings for local worker %s", sanitized_name)
 
-            # Deploy worker skills to .claude/commands/ in work_dir
+            # Deploy worker skills to .claude/commands/ in work_dir (skip disabled)
+            from orchestrator.state.repositories import skills as skills_repo
+            disabled_builtins = skills_repo.list_disabled_builtin_skills(db, "worker")
             skills_src = get_worker_skills_dir()
             if skills_src and os.path.isdir(skills_src) and work_dir:
                 skills_dest = os.path.join(work_dir, ".claude", "commands")
+                # Clear stale skill files before repopulating
+                if os.path.isdir(skills_dest):
+                    for f in os.listdir(skills_dest):
+                        if f.endswith(".md"):
+                            os.remove(os.path.join(skills_dest, f))
                 os.makedirs(skills_dest, exist_ok=True)
                 for skill_file in os.listdir(skills_src):
                     if skill_file.endswith(".md"):
+                        skill_name = os.path.splitext(skill_file)[0]
+                        if (skill_name, "worker") in disabled_builtins:
+                            continue
                         shutil.copy2(
                             os.path.join(skills_src, skill_file),
                             os.path.join(skills_dest, skill_file),
@@ -353,9 +366,8 @@ def create_session(body: SessionCreate, request: Request, db=Depends(get_db)):
                            len([f for f in os.listdir(skills_dest) if f.endswith(".md")]),
                            skills_dest, sanitized_name)
 
-            # Deploy custom worker skills from DB
-            from orchestrator.state.repositories import skills as skills_repo
-            custom_skills = skills_repo.list_skills(db, target="worker")
+            # Deploy custom worker skills from DB (enabled only)
+            custom_skills = skills_repo.list_skills(db, target="worker", enabled_only=True)
             custom_skills_dicts = [{"name": sk.name, "description": sk.description, "content": sk.content} for sk in custom_skills]
             if custom_skills_dicts and work_dir:
                 skills_dest = os.path.join(work_dir, ".claude", "commands")

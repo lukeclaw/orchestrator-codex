@@ -23,34 +23,31 @@
   margin-left: auto;
 }
 
-/* Tab switcher */
-.skills-tabs {
-  display: flex;
+/* Info note */
+.skills-note {
+  font-size: 13px;
+  color: var(--text-muted);
+  margin: 0;
+  padding: 8px 12px;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  overflow: hidden;
 }
 
-.skills-tab {
-  padding: 6px 16px;
-  font-size: 13px;
-  font-weight: 500;
+/* Section grouping */
+.skills-section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.skills-section-title {
+  font-size: 14px;
+  font-weight: 600;
   color: var(--text-secondary);
-  background: none;
-  border: none;
-  cursor: pointer;
-  transition: all 0.15s;
-}
-
-.skills-tab:hover {
-  color: var(--text-primary);
-  background: var(--bg);
-}
-
-.skills-tab.active {
-  color: var(--text-primary);
-  background: var(--accent-muted);
+  margin: 0;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
 }
 
 /* Card grid */

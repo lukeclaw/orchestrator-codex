@@ -4,7 +4,7 @@
   border-radius: var(--radius);
   padding: 16px;
   cursor: pointer;
-  transition: border-color 0.15s;
+  transition: border-color 0.15s, opacity 0.15s;
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -14,11 +14,19 @@
   border-color: var(--text-muted);
 }
 
-/* Header: name + badge */
+.skill-card.disabled {
+  opacity: 0.55;
+}
+
+/* Header: name + badge + toggle */
 .skill-card-header {
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+.skill-card-header-spacer {
+  flex: 1;
 }
 
 .skill-card-name {
@@ -49,6 +57,51 @@
 .skill-card-badge.custom {
   background: rgba(63, 185, 80, 0.15);
   color: #3fb950;
+}
+
+/* Toggle switch */
+.skill-card-toggle {
+  flex-shrink: 0;
+  width: 28px;
+  height: 16px;
+  border-radius: 8px;
+  border: none;
+  background: var(--text-muted);
+  cursor: pointer;
+  position: relative;
+  padding: 0;
+  transition: background 0.2s;
+}
+
+.skill-card-toggle.on {
+  background: #3fb950;
+}
+
+.skill-card-toggle-knob {
+  display: block;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: white;
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  transition: transform 0.2s;
+}
+
+.skill-card-toggle.on .skill-card-toggle-knob {
+  transform: translateX(12px);
+}
+
+/* Warning for disabled built-in */
+.skill-card-warning {
+  font-size: 11px;
+  color: #d29922;
+  background: rgba(210, 153, 34, 0.1);
+  border: 1px solid rgba(210, 153, 34, 0.25);
+  border-radius: 4px;
+  padding: 4px 8px;
+  line-height: 1.3;
 }
 
 /* Body: description */

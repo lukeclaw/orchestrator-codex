@@ -153,5 +153,6 @@ class Skill:
     target: str = "worker"  # "brain" | "worker"
     description: str | None = None
     content: str = ""
+    enabled: int = 1
     created_at: str = ""
     updated_at: str = ""

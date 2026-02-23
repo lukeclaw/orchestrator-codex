@@ -32,7 +32,6 @@ export default function App() {
               <Route path="/workers/:id" element={<SessionDetailPage />} />
               <Route path="/context" element={<ContextPage />} />
               <Route path="/skills" element={<SkillsPage />} />
-              <Route path="/skills/worker" element={<SkillsPage />} />
               <Route path="/notifications" element={<NotificationsPage />} />
               <Route path="/settings" element={<SettingsPage />} />
             </Route>

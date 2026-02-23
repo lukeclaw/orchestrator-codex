@@ -5,17 +5,31 @@ import './SkillCard.css'
 interface Props {
   skill: Skill
   onClick: () => void
+  onToggleEnabled: () => void
 }
 
-export default function SkillCard({ skill, onClick }: Props) {
+export default function SkillCard({ skill, onClick, onToggleEnabled }: Props) {
   return (
-    <div className="skill-card" onClick={onClick}>
+    <div className={`skill-card ${!skill.enabled ? 'disabled' : ''}`} onClick={onClick}>
       <div className="skill-card-header">
         <span className="skill-card-name">/{skill.name}</span>
         <span className={`skill-card-badge ${skill.type === 'built_in' ? 'built-in' : 'custom'}`}>
           {skill.type === 'built_in' ? 'BUILT-IN' : 'CUSTOM'}
         </span>
+        <div className="skill-card-header-spacer" />
+        <button
+          className={`skill-card-toggle ${skill.enabled ? 'on' : ''}`}
+          onClick={e => { e.stopPropagation(); onToggleEnabled() }}
+          title={skill.enabled ? 'Disable skill' : 'Enable skill'}
+        >
+          <span className="skill-card-toggle-knob" />
+        </button>
       </div>
+      {!skill.enabled && skill.type === 'built_in' && (
+        <div className="skill-card-warning">
+          Disabling built-in skills may break core functionality
+        </div>
+      )}
       <div className="skill-card-body">
         {skill.description ? (
           <p className="skill-card-desc">{skill.description}</p>

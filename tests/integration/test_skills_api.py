@@ -33,6 +33,7 @@ def mock_builtin_skills():
                 "description": "Create new tasks",
                 "content": None,
                 "line_count": 50,
+                "enabled": True,
                 "created_at": "2026-01-01T00:00:00",
                 "updated_at": "2026-01-01T00:00:00",
             }
@@ -231,3 +232,48 @@ class TestSkillsDelete:
     def test_delete_not_found(self, client):
         resp = client.delete("/api/skills/nonexistent")
         assert resp.status_code == 404
+
+
+class TestSkillsToggle:
+    def test_list_includes_enabled_field(self, client):
+        resp = client.get("/api/skills")
+        assert resp.status_code == 200
+        data = resp.json()
+        for skill in data:
+            assert "enabled" in skill
+
+    def test_custom_skill_default_enabled(self, client):
+        resp = client.post("/api/skills", json={
+            "name": "enabled-by-default",
+            "target": "worker",
+            "content": "body",
+        })
+        assert resp.status_code == 201
+        assert resp.json()["enabled"] is True
+
+    def test_disable_custom_skill(self, client):
+        create = client.post("/api/skills", json={
+            "name": "toggle-me",
+            "target": "worker",
+            "content": "body",
+        })
+        skill_id = create.json()["id"]
+
+        resp = client.patch(f"/api/skills/{skill_id}", json={"enabled": False})
+        assert resp.status_code == 200
+        assert resp.json()["enabled"] is False
+
+        # Verify it persists
+        get_resp = client.get(f"/api/skills/{skill_id}")
+        assert get_resp.json()["enabled"] is False
+
+    def test_toggle_builtin_skill(self, client):
+        """Test the builtin skill toggle endpoint."""
+        with patch(
+            "orchestrator.api.routes.skills.get_brain_skills_dir",
+            return_value="/tmp/test-skills",
+        ), patch("os.path.exists", return_value=True):
+            resp = client.patch("/api/skills/builtin/brain/create", json={"enabled": False})
+            assert resp.status_code == 200
+            assert resp.json()["ok"] is True
+            assert resp.json()["enabled"] is False

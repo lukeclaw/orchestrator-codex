@@ -425,6 +425,7 @@ def setup_remote_worker(
     tmp_dir: str | None = None,
     tunnel_manager=None,
     custom_skills: list[dict] | None = None,
+    disabled_builtin_names: set[str] | None = None,
 ) -> dict:
     """Set up a full remote worker: tunnel, SSH, screen, Claude, prompt.
 
@@ -522,11 +523,19 @@ def setup_remote_worker(
         # Copy worker skills to local tmp dir for transfer (inside .claude/commands/)
         skills_src = get_worker_skills_dir()
         local_skills_dir = os.path.join(local_tmp_dir, ".claude", "commands")
+        # Clear stale skill files before repopulating
+        if os.path.isdir(local_skills_dir):
+            for f in os.listdir(local_skills_dir):
+                if f.endswith(".md"):
+                    os.remove(os.path.join(local_skills_dir, f))
         if skills_src and os.path.isdir(skills_src):
             import shutil
             os.makedirs(local_skills_dir, exist_ok=True)
             for skill_file in os.listdir(skills_src):
                 if skill_file.endswith(".md"):
+                    skill_name = os.path.splitext(skill_file)[0]
+                    if disabled_builtin_names and skill_name in disabled_builtin_names:
+                        continue
                     shutil.copy2(
                         os.path.join(skills_src, skill_file),
                         os.path.join(local_skills_dir, skill_file),
@@ -567,7 +576,8 @@ def setup_remote_worker(
         # which Claude always loads regardless of working directory.
         if skills_src and os.path.isdir(skills_src):
             global_skills_dest = "~/.claude/commands"
-            tmux.send_keys(tmux_session, name, f"mkdir -p {global_skills_dest}", enter=True)
+            # Clear stale skills, then copy current set
+            tmux.send_keys(tmux_session, name, f"rm -f {global_skills_dest}/*.md 2>/dev/null; mkdir -p {global_skills_dest}", enter=True)
             time.sleep(0.2)
             tmux.send_keys(tmux_session, name, f"cp {remote_tmp_dir}/.claude/commands/*.md {global_skills_dest}/ 2>/dev/null || true", enter=True)
             time.sleep(0.3)

@@ -159,6 +159,10 @@ export default function SkillModal({ skill, isNew, defaultTarget, onClose, onSav
               {isBuiltIn ? 'BUILT-IN' : isNew ? 'NEW' : 'CUSTOM'}
             </span>
 
+            {skill && !skill.enabled && (
+              <span className="sk-badge sk-badge-disabled">DISABLED</span>
+            )}
+
             {(isNew || isCustom) && (
               <div className="sk-target-toggle">
                 <button
@@ -197,6 +201,12 @@ export default function SkillModal({ skill, isNew, defaultTarget, onClose, onSav
             )}
           </div>
         </div>
+
+        {skill && !skill.enabled && isBuiltIn && (
+          <div className="sk-warning-banner">
+            This built-in skill is disabled. Disabling built-in skills may break core functionality.
+          </div>
+        )}
 
         {/* Body: content */}
         <div className="sk-body">
