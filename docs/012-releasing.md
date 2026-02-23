@@ -171,3 +171,8 @@ If you just want a DMG without auto-install support:
    `.app.tar.gz`, verifies the signature, replaces the app bundle, and restarts.
 3. **Fallback**: If Tauri IPC isn't available (dev mode) or signed artifacts are
    missing, the app opens the release page in the browser for manual download.
+
+# Quick command:
+```
+./scripts/bump-build-tag.sh 0.2.0
+```
