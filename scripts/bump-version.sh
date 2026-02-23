@@ -47,8 +47,8 @@ sed -i '' "s/\"version\": \"$V\"/\"version\": \"$NEW_VERSION\"/" "$PROJECT_ROOT/
 # 3. src-tauri/Cargo.toml — match first 'version = "X.Y.Z"' line
 sed -i '' "s/^version = \"$V\"/version = \"$NEW_VERSION\"/" "$PROJECT_ROOT/src-tauri/Cargo.toml"
 
-# 4. frontend/package.json + package-lock.json (npm updates both correctly)
-npm version "$NEW_VERSION" --no-git-tag-version --prefix "$PROJECT_ROOT/frontend" > /dev/null
+# 4. frontend/package.json — match "version": "X.Y.Z"
+sed -i '' "s/\"version\": \"$V\"/\"version\": \"$NEW_VERSION\"/" "$PROJECT_ROOT/frontend/package.json"
 
 echo ""
 echo "Updated files:"
