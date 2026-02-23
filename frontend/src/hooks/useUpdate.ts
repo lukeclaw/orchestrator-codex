@@ -30,7 +30,8 @@ function createChannel(onMessage?: (event: unknown) => void) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const internals = (window as any).__TAURI_INTERNALS__
   const id = internals.transformCallback(onMessage || (() => {}))
-  return { id, __TAURI_CHANNEL_MARKER__: true }
+  // Tauri deserializes Channel from a string "__CHANNEL__:<id>" via toJSON()
+  return { id, __TAURI_CHANNEL_MARKER__: true, toJSON: () => `__CHANNEL__:${id}` }
 }
 
 /** Metadata returned by plugin:updater|check when an update is available. */
@@ -124,16 +125,9 @@ export function useUpdate() {
       await tauriInvoke('plugin:process|restart')
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
-      console.error('[update] Install failed, falling back to browser:', msg)
+      console.error('[update] Install failed:', msg)
       setInstallStatus('error')
       setInstallError(msg)
-
-      // Fallback: open release page
-      if (info?.dmg_url) {
-        await openRelease(info.dmg_url)
-      } else if (info?.release_url) {
-        await openRelease(info.release_url)
-      }
     }
   }, [info, openRelease])
 

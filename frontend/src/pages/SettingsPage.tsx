@@ -166,7 +166,16 @@ export default function SettingsPage() {
                 </div>
                 {installError && (
                   <div className="update-error" style={{ marginTop: 8 }}>
-                    Auto-install failed: {installError}
+                    <span>Auto-install failed: {installError}</span>
+                    {updateInfo.dmg_url && (
+                      <button
+                        className="btn btn-secondary btn-sm"
+                        style={{ marginLeft: 8 }}
+                        onClick={() => openRelease(updateInfo.dmg_url!)}
+                      >
+                        Download DMG
+                      </button>
+                    )}
                   </div>
                 )}
               </div>
