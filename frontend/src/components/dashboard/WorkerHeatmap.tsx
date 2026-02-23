@@ -35,6 +35,13 @@ export default function WorkerHeatmap({ data, onCellClick }: Props) {
     return { grid: g, maxCount: max }
   }, [data])
 
+  // Anchor the grid to "now" — today on top, going backwards
+  const now = new Date()
+  const todayDow = now.getDay()
+  const currentHour = now.getHours()
+  // [today, yesterday, 2 days ago, ...] as day-of-week indices
+  const dayOrder = Array.from({ length: 7 }, (_, i) => (todayDow - i + 7) % 7)
+
   if (maxCount === 0) return null
 
   const svgW = LABEL_W + 24 * (CELL_SIZE + GAP)
@@ -76,49 +83,57 @@ export default function WorkerHeatmap({ data, onCellClick }: Props) {
             {h}
           </text>
         ))}
-        {/* Day labels + cells */}
-        {grid.map((row, day) => (
-          <g key={`d-${day}`}>
-            <text
-              x={LABEL_W - 6}
-              y={LABEL_H + day * (CELL_SIZE + GAP) + CELL_SIZE / 2 + 4}
-              textAnchor="end"
-              fill="var(--text-muted)"
-              fontSize={10}
-            >
-              {DAY_LABELS[day]}
-            </text>
-            {row.map((count, hour) => (
-              <rect
-                key={`c-${day}-${hour}`}
-                x={LABEL_W + hour * (CELL_SIZE + GAP)}
-                y={LABEL_H + day * (CELL_SIZE + GAP)}
-                width={CELL_SIZE}
-                height={CELL_SIZE}
-                rx={3}
-                fill={cellColor(count)}
-                style={{ cursor: count > 0 && onCellClick ? 'pointer' : undefined }}
-                onClick={() => {
-                  if (count > 0 && onCellClick) {
-                    // Convert local day/hour back to UTC for the API
-                    const ref = new Date(2025, 0, 5 + day, hour, 0, 0, 0)
-                    onCellClick(ref.getUTCDay(), ref.getUTCHours())
-                  }
-                }}
-                onMouseEnter={(e) => {
+        {/* Day rows: today first, then backwards */}
+        {dayOrder.map((dow, rowIdx) => {
+          const row = grid[dow]
+          const isToday = rowIdx === 0
+          return (
+            <g key={`d-${dow}`}>
+              <text
+                x={LABEL_W - 6}
+                y={LABEL_H + rowIdx * (CELL_SIZE + GAP) + CELL_SIZE / 2 + 4}
+                textAnchor="end"
+                fill={isToday ? 'var(--text-secondary)' : 'var(--text-muted)'}
+                fontSize={10}
+              >
+                {DAY_LABELS[dow]}
+              </text>
+              {row.map((count, hour) => {
+                const isNow = isToday && hour === currentHour
+                const cx = LABEL_W + hour * (CELL_SIZE + GAP)
+                const cy = LABEL_H + rowIdx * (CELL_SIZE + GAP)
+                const handleMouseEnter = (e: React.MouseEvent<SVGRectElement>) => {
                   const rect = (e.target as SVGRectElement).getBoundingClientRect()
                   const parent = (e.target as SVGRectElement).closest('.trends-chart')!.getBoundingClientRect()
+                  const prefix = isToday ? 'Today' : dayName(dow)
                   setTooltip({
                     x: rect.left - parent.left + rect.width / 2,
                     y: rect.top - parent.top - 4,
-                    text: `${dayName(day)} ${hourLabel(hour)}: ${count} event${count !== 1 ? 's' : ''}`,
+                    text: `${prefix} ${hourLabel(hour)}: ${count} event${count !== 1 ? 's' : ''}`,
                   })
-                }}
-                onMouseLeave={() => setTooltip(null)}
-              />
-            ))}
-          </g>
-        ))}
+                }
+                const handleClick = () => {
+                  if (count > 0 && onCellClick) {
+                    const ref = new Date(2025, 0, 5 + dow, hour, 0, 0, 0)
+                    onCellClick(ref.getUTCDay(), ref.getUTCHours())
+                  }
+                }
+                return (
+                  <rect
+                    key={`c-${dow}-${hour}`}
+                    x={cx} y={cy} width={CELL_SIZE} height={CELL_SIZE} rx={3}
+                    fill={cellColor(count)}
+                    className={isNow ? 'heatmap-now' : undefined}
+                    style={{ cursor: count > 0 && onCellClick ? 'pointer' : undefined }}
+                    onClick={handleClick}
+                    onMouseEnter={handleMouseEnter}
+                    onMouseLeave={() => setTooltip(null)}
+                  />
+                )
+              })}
+            </g>
+          )
+        })}
       </svg>
       {tooltip && (
         <div

@@ -67,6 +67,16 @@
   outline: none;
 }
 
+/* Heatmap current-hour pulse */
+@keyframes heatmap-pulse {
+  0%, 100% { fill: rgba(88, 166, 255, 0.06); }
+  50% { fill: rgba(88, 166, 255, 0.18); }
+}
+
+.heatmap-now {
+  animation: heatmap-pulse 3s ease-in-out infinite;
+}
+
 /* Hover affordance for clickable chart elements */
 .trends-chart .recharts-bar-rectangle:hover,
 .trends-chart .recharts-area-curve:hover {

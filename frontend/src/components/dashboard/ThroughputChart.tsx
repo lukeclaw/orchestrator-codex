@@ -45,7 +45,7 @@ export default function ThroughputChart({ data, range, onBarClick }: Props) {
   return (
     <div className="trends-chart">
       <div className="trends-chart-header">
-        <span className="trends-chart-title">Throughput</span>
+        <span className="trends-chart-title">Task Throughput</span>
         <span className="trends-chart-stat">{avg7d}/day avg (7d)</span>
       </div>
       <ResponsiveContainer width="100%" height={180}>
