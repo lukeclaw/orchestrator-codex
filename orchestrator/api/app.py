@@ -127,9 +127,11 @@ def create_app(
     db_path: str | None = None,
 ) -> FastAPI:
     """Create and configure the FastAPI application."""
+    from orchestrator import __version__
+
     app = FastAPI(
         title="Orchestrator",
-        version="0.1.0",
+        version=__version__,
         lifespan=lifespan,
     )
 
