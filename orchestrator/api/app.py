@@ -8,6 +8,9 @@ import sqlite3
 from contextlib import asynccontextmanager
 from pathlib import Path
 
+import mimetypes
+# Prevent Python from scanning /etc/ or other system paths
+mimetypes.init(files=[])
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles

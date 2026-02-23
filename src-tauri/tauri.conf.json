@@ -32,6 +32,7 @@
     "resources": [
       "binaries/orchestrator-server-sidecar/**/*"
     ],
+    "category": "public.app-category.productivity",
     "macOS": {
       "minimumSystemVersion": "13.0",
       "signingIdentity": "Developer ID Application: Yudong Qiu (XT8BC8793B)",
