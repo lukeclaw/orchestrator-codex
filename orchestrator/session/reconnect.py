@@ -217,6 +217,31 @@ def _get_claude_session_arg(session_id: str, session_exists: bool, has_tracked_i
         return f"--session-id {session_id}"
 
 
+def _verify_claude_started(
+    tmux_sess: str, tmux_win: str,
+    timeout: int = 10, poll_interval: float = 2.0,
+) -> tuple[bool, str]:
+    """Check that Claude's TUI actually started after sending the launch command.
+
+    Polls for the alternate screen buffer (TUI indicator) within *timeout*
+    seconds.  If the TUI never appears it usually means ``claude -r`` failed
+    with an error like "No conversation found with session ID: …".
+
+    Returns:
+        (started, error_output) — *started* is True when the TUI is detected.
+        When False, *error_output* contains the last terminal lines for diagnosis.
+    """
+    start = time.time()
+    while time.time() - start < timeout:
+        time.sleep(poll_interval)
+        if check_tui_running_in_pane(tmux_sess, tmux_win):
+            return True, ""
+
+    # TUI never appeared — capture output to check for errors
+    output = capture_output(tmux_sess, tmux_win, lines=15)
+    return False, output
+
+
 def _launch_claude_in_screen(
     tmux_sess: str, tmux_win: str, session, tmp_dir: str, remote_tmp_dir: str, repo, conn
 ):
@@ -265,6 +290,45 @@ def _launch_claude_in_screen(
 
     claude_cmd = f"claude {' '.join(claude_args)}"
     send_keys(tmux_sess, tmux_win, claude_cmd, enter=True)
+
+    # Verify Claude actually started — recover if -r failed
+    started, error_output = _verify_claude_started(tmux_sess, tmux_win)
+    if not started:
+        logger.warning(
+            "Reconnect %s: Claude failed to start (arg=%s, output=%s). "
+            "Retrying with --session-id to create a fresh session.",
+            session.name, session_arg, error_output[:300],
+        )
+        # Clean up the failed command prompt
+        send_keys(tmux_sess, tmux_win, "C-c", enter=False)
+        time.sleep(0.5)
+        send_keys(tmux_sess, tmux_win, "", enter=True)
+        time.sleep(0.5)
+
+        # Retry with --session-id (creates a new conversation)
+        fallback_arg = f"--session-id {target_id}"
+        claude_args_retry = [
+            fallback_arg,
+            f"--settings {settings_file}",
+            f"--add-dir {remote_tmp_dir}",
+            "--dangerously-skip-permissions",
+        ]
+        if remote_prompt_path:
+            claude_args_retry.append(get_prompt_load_arg(remote_prompt_path))
+
+        claude_cmd_retry = f"claude {' '.join(claude_args_retry)}"
+        logger.info("Reconnect %s: retrying with: %s", session.name, fallback_arg)
+        send_keys(tmux_sess, tmux_win, claude_cmd_retry, enter=True)
+
+        # Check the retry — if this also fails, let the health check loop handle it
+        retry_started, retry_output = _verify_claude_started(tmux_sess, tmux_win)
+        if not retry_started:
+            logger.error(
+                "Reconnect %s: retry also failed (output=%s). Giving up.",
+                session.name, retry_output[:300],
+            )
+            repo.update_session(conn, session.id, status="error")
+            return
 
     repo.update_session(conn, session.id, status="waiting")
     logger.info("Reconnect %s: SUCCESS - launched Claude in screen session", session.name)
@@ -688,6 +752,44 @@ def reconnect_local_worker(session, tmux_sess: str, tmux_win: str, api_port: int
 
         claude_cmd = f"claude {' '.join(claude_args)}"
         safe_send_keys(tmux_sess, tmux_win, claude_cmd, enter=True)
+
+        # Verify Claude actually started — recover if -r failed
+        started, error_output = _verify_claude_started(tmux_sess, tmux_win)
+        if not started:
+            logger.warning(
+                "Reconnect local %s: Claude failed to start (arg=%s, output=%s). "
+                "Retrying with --session-id to create a fresh session.",
+                session.name, session_arg, error_output[:300],
+            )
+            # Clean up the failed command prompt
+            send_keys(tmux_sess, tmux_win, "C-c", enter=False)
+            time.sleep(0.5)
+            send_keys(tmux_sess, tmux_win, "", enter=True)
+            time.sleep(0.5)
+
+            # Retry with --session-id (creates a new conversation)
+            fallback_arg = f"--session-id {target_id}"
+            claude_args_retry = [
+                fallback_arg,
+                "--dangerously-skip-permissions",
+                f"--settings {shlex.quote(settings_file)}",
+            ]
+            if prompt:
+                claude_args_retry.append(f'--append-system-prompt "$(cat {shlex.quote(prompt_file)})"')
+
+            claude_cmd_retry = f"claude {' '.join(claude_args_retry)}"
+            logger.info("Reconnect local %s: retrying with: %s", session.name, fallback_arg)
+            safe_send_keys(tmux_sess, tmux_win, claude_cmd_retry, enter=True)
+
+            # Check the retry — if this also fails, let the health check loop handle it
+            retry_started, retry_output = _verify_claude_started(tmux_sess, tmux_win)
+            if not retry_started:
+                logger.error(
+                    "Reconnect local %s: retry also failed (output=%s). Giving up.",
+                    session.name, retry_output[:300],
+                )
+                return
+
         logger.info("Launched Claude Code for local worker %s (session_id=%s)", session.name, session.id)
     finally:
         lock.release()

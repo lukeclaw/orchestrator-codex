@@ -221,6 +221,7 @@ class TestGetClaudeSessionArg:
 class TestReconnectUsesClaudeSessionId:
     """Test that reconnect logic uses claude_session_id when available."""
 
+    @patch('orchestrator.session.reconnect._verify_claude_started', return_value=(True, ""))
     @patch('orchestrator.session.reconnect._check_claude_session_exists_local')
     @patch('orchestrator.session.reconnect._get_claude_session_arg')
     @patch('orchestrator.session.reconnect.safe_send_keys')
@@ -230,7 +231,7 @@ class TestReconnectUsesClaudeSessionId:
     @patch('orchestrator.session.reconnect.check_tui_running_in_pane', return_value=False)
     def test_local_reconnect_uses_claude_session_id(
         self, mock_tui, mock_prompt, mock_path, mock_ensure,
-        mock_safe_send, mock_get_arg, mock_check_exists,
+        mock_safe_send, mock_get_arg, mock_check_exists, mock_verify,
     ):
         """reconnect_local_worker should use claude_session_id for session check."""
         from orchestrator.session.reconnect import reconnect_local_worker
@@ -256,6 +257,7 @@ class TestReconnectUsesClaudeSessionId:
         mock_check_exists.assert_called_once_with("tracked-uuid")
         mock_get_arg.assert_called_once_with("tracked-uuid", True, True)
 
+    @patch('orchestrator.session.reconnect._verify_claude_started', return_value=(True, ""))
     @patch('orchestrator.session.reconnect._check_claude_session_exists_local')
     @patch('orchestrator.session.reconnect._get_claude_session_arg')
     @patch('orchestrator.session.reconnect.safe_send_keys')
@@ -265,7 +267,7 @@ class TestReconnectUsesClaudeSessionId:
     @patch('orchestrator.session.reconnect.check_tui_running_in_pane', return_value=False)
     def test_local_reconnect_falls_back_to_orch_id(
         self, mock_tui, mock_prompt, mock_path, mock_ensure,
-        mock_safe_send, mock_get_arg, mock_check_exists,
+        mock_safe_send, mock_get_arg, mock_check_exists, mock_verify,
     ):
         """reconnect_local_worker without claude_session_id should use session.id."""
         from orchestrator.session.reconnect import reconnect_local_worker
@@ -290,6 +292,140 @@ class TestReconnectUsesClaudeSessionId:
         # Should fall back to orchestrator ID
         mock_check_exists.assert_called_once_with("orch-id")
         mock_get_arg.assert_called_once_with("orch-id", False, False)
+
+
+# =============================================================================
+# Claude launch recovery tests
+# =============================================================================
+
+class TestClaudeLaunchRecovery:
+    """Test that reconnect retries with --session-id when -r fails."""
+
+    @patch('orchestrator.session.reconnect._verify_claude_started')
+    @patch('orchestrator.session.reconnect.send_keys')
+    @patch('orchestrator.session.reconnect._check_claude_session_exists_local', return_value=True)
+    @patch('orchestrator.session.reconnect.safe_send_keys')
+    @patch('orchestrator.session.reconnect._ensure_local_configs_exist')
+    @patch('orchestrator.session.reconnect.get_path_export_command', return_value="export PATH=...")
+    @patch('orchestrator.session.reconnect.get_worker_prompt', return_value=None)
+    @patch('orchestrator.session.reconnect.check_tui_running_in_pane', return_value=False)
+    def test_local_reconnect_retries_on_r_failure(
+        self, mock_tui, mock_prompt, mock_path, mock_ensure,
+        mock_safe_send, mock_check_exists, mock_send_keys, mock_verify,
+    ):
+        """When -r fails, should retry with --session-id."""
+        from orchestrator.session.reconnect import reconnect_local_worker
+
+        # First call fails (original -r), second call succeeds (retry --session-id)
+        mock_verify.side_effect = [
+            (False, "No conversation found with session ID: abc-123"),
+            (True, ""),
+        ]
+
+        session = Session(
+            id="abc-123",
+            name="test-worker",
+            host="localhost",
+            work_dir="/tmp/test",
+            claude_session_id="abc-123",
+        )
+
+        with patch('orchestrator.session.reconnect.get_reconnect_lock') as mock_lock:
+            mock_lock.return_value = MagicMock()
+            mock_lock.return_value.acquire.return_value = True
+            with patch('orchestrator.terminal.manager.ensure_window'):
+                reconnect_local_worker(session, "orch", "test-worker", 8093, "/tmp/test-dir")
+
+        # _verify_claude_started should be called twice (initial + retry)
+        assert mock_verify.call_count == 2
+
+        # The retry command should use --session-id
+        retry_calls = [
+            c for c in mock_safe_send.call_args_list
+            if "--session-id" in str(c)
+        ]
+        assert len(retry_calls) >= 1, (
+            f"Expected retry with --session-id, got: {mock_safe_send.call_args_list}"
+        )
+
+    @patch('orchestrator.session.reconnect._verify_claude_started', return_value=(True, ""))
+    @patch('orchestrator.session.reconnect._check_claude_session_exists_local', return_value=True)
+    @patch('orchestrator.session.reconnect.safe_send_keys')
+    @patch('orchestrator.session.reconnect._ensure_local_configs_exist')
+    @patch('orchestrator.session.reconnect.get_path_export_command', return_value="export PATH=...")
+    @patch('orchestrator.session.reconnect.get_worker_prompt', return_value=None)
+    @patch('orchestrator.session.reconnect.check_tui_running_in_pane', return_value=False)
+    def test_local_reconnect_no_retry_on_success(
+        self, mock_tui, mock_prompt, mock_path, mock_ensure,
+        mock_safe_send, mock_check_exists, mock_verify,
+    ):
+        """When -r succeeds, should NOT retry."""
+        from orchestrator.session.reconnect import reconnect_local_worker
+
+        session = Session(
+            id="abc-123",
+            name="test-worker",
+            host="localhost",
+            work_dir="/tmp/test",
+            claude_session_id="abc-123",
+        )
+
+        with patch('orchestrator.session.reconnect.get_reconnect_lock') as mock_lock:
+            mock_lock.return_value = MagicMock()
+            mock_lock.return_value.acquire.return_value = True
+            with patch('orchestrator.terminal.manager.ensure_window'):
+                reconnect_local_worker(session, "orch", "test-worker", 8093, "/tmp/test-dir")
+
+        # _verify_claude_started should only be called once (success on first try)
+        assert mock_verify.call_count == 1
+
+        # No --session-id retry should have been sent
+        retry_calls = [
+            c for c in mock_safe_send.call_args_list
+            if "--session-id" in str(c)
+        ]
+        assert len(retry_calls) == 0, (
+            f"Expected no retry with --session-id, got: {mock_safe_send.call_args_list}"
+        )
+
+    @patch('orchestrator.session.reconnect._verify_claude_started')
+    @patch('orchestrator.session.reconnect.send_keys')
+    @patch('orchestrator.session.reconnect._check_claude_session_exists_local', return_value=True)
+    @patch('orchestrator.session.reconnect.safe_send_keys')
+    @patch('orchestrator.session.reconnect._ensure_local_configs_exist')
+    @patch('orchestrator.session.reconnect.get_path_export_command', return_value="export PATH=...")
+    @patch('orchestrator.session.reconnect.get_worker_prompt', return_value=None)
+    @patch('orchestrator.session.reconnect.check_tui_running_in_pane', return_value=False)
+    def test_local_reconnect_gives_up_after_retry_fails(
+        self, mock_tui, mock_prompt, mock_path, mock_ensure,
+        mock_safe_send, mock_check_exists, mock_send_keys, mock_verify,
+    ):
+        """When both -r and --session-id fail, should give up gracefully."""
+        from orchestrator.session.reconnect import reconnect_local_worker
+
+        # Both attempts fail
+        mock_verify.side_effect = [
+            (False, "No conversation found"),
+            (False, "Some other error"),
+        ]
+
+        session = Session(
+            id="abc-123",
+            name="test-worker",
+            host="localhost",
+            work_dir="/tmp/test",
+            claude_session_id="abc-123",
+        )
+
+        with patch('orchestrator.session.reconnect.get_reconnect_lock') as mock_lock:
+            mock_lock.return_value = MagicMock()
+            mock_lock.return_value.acquire.return_value = True
+            with patch('orchestrator.terminal.manager.ensure_window'):
+                # Should not raise
+                reconnect_local_worker(session, "orch", "test-worker", 8093, "/tmp/test-dir")
+
+        # Both attempts checked
+        assert mock_verify.call_count == 2
 
 
 # =============================================================================
