@@ -7,6 +7,8 @@ A meta-agent that manages multiple concurrent Claude Code sessions from a single
 https://github.com/user-attachments/assets/ebb2bb47-c4e2-4e01-81e5-f0b1c8b1bede
 
 
+Download the latest dmg (Mac M-series processor): https://github.com/yudongqiu/orchestrator/releases/latest/download/Orchestrator_aarch64.dmg
+
 
 ## Try the Demo
 
