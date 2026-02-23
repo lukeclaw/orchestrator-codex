@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react'
 import { useSettings } from '../hooks/useSettings'
 import { useBackup } from '../hooks/useBackup'
+import { useNotify } from '../context/NotificationContext'
+import ConfirmPopover from '../components/common/ConfirmPopover'
 import './SettingsPage.css'
 
 function formatBytes(bytes: number): string {
@@ -14,8 +16,17 @@ function formatTimestamp(ts: string): string {
   return ts.replace(/T/, ' ').replace(/-(\d{2})-(\d{2})Z$/, ':$1:$2 UTC')
 }
 
+const SCHEDULE_OPTIONS = [
+  { value: 0, label: 'Disabled' },
+  { value: 6, label: 'Every 6 hours' },
+  { value: 12, label: 'Every 12 hours' },
+  { value: 24, label: 'Every 24 hours' },
+  { value: 48, label: 'Every 48 hours' },
+]
+
 export default function SettingsPage() {
   const { settings, loading, saving, save, getValue } = useSettings()
+  const notify = useNotify()
 
   // Local state for general settings
   const [pollingInterval, setPollingInterval] = useState(5)
@@ -28,14 +39,17 @@ export default function SettingsPage() {
     loading: backupLoading,
     saving: backupSaving,
     running: backupRunning,
+    restoring,
     lastResult,
     saveSettings: saveBackupSettings,
     runBackup,
+    restoreBackup,
   } = useBackup()
 
   const [backupDir, setBackupDir] = useState('')
   const [backupPassword, setBackupPassword] = useState('')
   const [retentionCount, setRetentionCount] = useState(5)
+  const [scheduleHours, setScheduleHours] = useState(0)
   const [backupDirty, setBackupDirty] = useState(false)
 
   // Sync local state when settings load
@@ -53,6 +67,7 @@ export default function SettingsPage() {
     if (backupSettings) {
       setBackupDir(backupSettings.directory || '')
       setRetentionCount(backupSettings.retention_count)
+      setScheduleHours(backupSettings.schedule_hours || 0)
       setBackupDirty(false)
     }
   }, [backupSettings])
@@ -69,9 +84,20 @@ export default function SettingsPage() {
     if (backupDir) updates.directory = backupDir
     if (backupPassword) updates.password = backupPassword
     updates.retention_count = retentionCount
+    updates.schedule_hours = scheduleHours
     await saveBackupSettings(updates)
     setBackupPassword('')
     setBackupDirty(false)
+  }
+
+  const handleRestore = async (filename: string) => {
+    const result = await restoreBackup(filename)
+    if (result.ok) {
+      notify('Database restored successfully. Reloading...', 'success')
+      setTimeout(() => window.location.reload(), 1500)
+    } else {
+      notify(`Restore failed: ${result.error}`, 'error')
+    }
   }
 
   const isBackupConfigured = backupSettings?.directory && backupSettings?.has_password
@@ -169,6 +195,19 @@ export default function SettingsPage() {
                   <span className="form-hint">Number of backup files to keep (oldest are auto-deleted)</span>
                 </div>
 
+                <div className="form-group">
+                  <label>Automatic Backup Schedule</label>
+                  <select
+                    value={scheduleHours}
+                    onChange={e => { setScheduleHours(Number(e.target.value)); setBackupDirty(true) }}
+                  >
+                    {SCHEDULE_OPTIONS.map(opt => (
+                      <option key={opt.value} value={opt.value}>{opt.label}</option>
+                    ))}
+                  </select>
+                  <span className="form-hint">Automatically run backups at a regular interval</span>
+                </div>
+
                 <div className="backup-actions">
                   <button
                     className="btn btn-primary"
@@ -206,6 +245,12 @@ export default function SettingsPage() {
                     )}
                   </div>
                 )}
+
+                {scheduleHours > 0 && isBackupConfigured && (
+                  <div className="backup-schedule-info">
+                    Automatic backup active: every {scheduleHours}h
+                  </div>
+                )}
               </div>
 
               {backups.length > 0 && (
@@ -218,6 +263,22 @@ export default function SettingsPage() {
                         <span className="backup-meta">
                           <span>{formatTimestamp(b.timestamp)}</span>
                           <span className="backup-size">{formatBytes(b.size_bytes)}</span>
+                          <ConfirmPopover
+                            message={`Restore database from this backup? Current data will be replaced.`}
+                            confirmLabel="Restore"
+                            onConfirm={() => handleRestore(b.filename)}
+                            variant="warning"
+                          >
+                            {({ onClick }) => (
+                              <button
+                                className="btn btn-sm backup-restore-btn"
+                                onClick={onClick}
+                                disabled={restoring}
+                              >
+                                {restoring ? 'Restoring...' : 'Restore'}
+                              </button>
+                            )}
+                          </ConfirmPopover>
                         </span>
                       </div>
                     ))}

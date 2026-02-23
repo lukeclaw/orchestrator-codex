@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import logging
 import re
+import shutil
 import sqlite3
 import tempfile
 from datetime import datetime, timezone
@@ -196,3 +197,130 @@ def list_backups(backup_dir: str | Path) -> list[dict]:
             })
 
     return results
+
+
+def decrypt_from_zip(zip_path: Path, password: str) -> Path:
+    """Extract the database file from an AES-encrypted zip archive.
+
+    Returns the path to a temporary file containing the extracted DB.
+    The caller is responsible for cleaning up the temp file.
+
+    Raises:
+        FileNotFoundError: If zip_path does not exist.
+        KeyError: If 'orchestrator.db' is not found inside the zip.
+        RuntimeError: If the password is incorrect.
+    """
+    zip_path = Path(zip_path)
+    if not zip_path.exists():
+        raise FileNotFoundError(f"Backup file not found: {zip_path}")
+
+    tmp = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
+    tmp.close()
+    tmp_path = Path(tmp.name)
+
+    try:
+        with pyzipper.AESZipFile(str(zip_path), "r") as zf:
+            zf.setpassword(password.encode("utf-8"))
+            if "orchestrator.db" not in zf.namelist():
+                raise KeyError("orchestrator.db not found inside backup zip")
+            tmp_path.write_bytes(zf.read("orchestrator.db"))
+    except Exception:
+        tmp_path.unlink(missing_ok=True)
+        raise
+
+    logger.info("Decrypted backup: %s → %s", zip_path.name, tmp_path)
+    return tmp_path
+
+
+def validate_sqlite_db(db_path: Path) -> bool:
+    """Check whether a file is a valid SQLite database.
+
+    Runs ``PRAGMA integrity_check`` and returns True only if it passes.
+    Returns False for non-existent paths, non-SQLite files, or corrupt databases.
+    """
+    db_path = Path(db_path)
+    if not db_path.exists():
+        return False
+    try:
+        conn = sqlite3.connect(str(db_path))
+        result = conn.execute("PRAGMA integrity_check").fetchone()
+        conn.close()
+        return result is not None and result[0] == "ok"
+    except Exception:
+        return False
+
+
+def restore_backup(
+    filename: str,
+    backup_dir: str | Path,
+    password: str,
+    target_db_path: str | Path,
+) -> dict:
+    """Restore a database from an encrypted backup file.
+
+    Steps:
+        1. Validate filename against backup pattern (path-traversal protection).
+        2. Verify resolved path stays within backup_dir.
+        3. Decrypt zip → validate extracted SQLite.
+        4. Create a pre-restore safety copy of the current DB.
+        5. Remove stale WAL/SHM files.
+        6. Replace DB file via shutil.copy2.
+
+    Returns:
+        Dict with keys: ok, error, pre_restore_backup.
+    """
+    backup_dir = Path(backup_dir)
+    target_db_path = Path(target_db_path)
+
+    # 1. Validate filename
+    if not _BACKUP_PATTERN.match(filename):
+        return {"ok": False, "error": "Invalid backup filename", "pre_restore_backup": None}
+
+    zip_path = (backup_dir / filename).resolve()
+
+    # 2. Path-traversal protection
+    if not str(zip_path).startswith(str(backup_dir.resolve())):
+        return {"ok": False, "error": "Invalid backup path", "pre_restore_backup": None}
+
+    if not zip_path.exists():
+        return {"ok": False, "error": f"Backup file not found: {filename}", "pre_restore_backup": None}
+
+    extracted_path = None
+    try:
+        # 3. Decrypt and validate
+        extracted_path = decrypt_from_zip(zip_path, password)
+        if not validate_sqlite_db(extracted_path):
+            return {"ok": False, "error": "Extracted database failed integrity check", "pre_restore_backup": None}
+
+        # 4. Pre-restore safety copy
+        pre_restore_name = f"pre-restore-{_timestamp_for_filename()}.db"
+        pre_restore_path = target_db_path.parent / pre_restore_name
+        if target_db_path.exists():
+            shutil.copy2(str(target_db_path), str(pre_restore_path))
+            logger.info("Pre-restore backup saved: %s", pre_restore_path)
+
+        # 5. Remove stale WAL/SHM files
+        for suffix in ("-wal", "-shm"):
+            wal_path = target_db_path.parent / (target_db_path.name + suffix)
+            if wal_path.exists():
+                wal_path.unlink()
+                logger.info("Removed stale %s file", suffix)
+
+        # 6. Replace DB
+        shutil.copy2(str(extracted_path), str(target_db_path))
+        logger.info("Database restored from %s", filename)
+
+        return {
+            "ok": True,
+            "error": None,
+            "pre_restore_backup": pre_restore_name,
+        }
+
+    except RuntimeError as e:
+        return {"ok": False, "error": f"Decryption failed (wrong password?): {e}", "pre_restore_backup": None}
+    except Exception as e:
+        logger.exception("Restore failed")
+        return {"ok": False, "error": str(e), "pre_restore_backup": None}
+    finally:
+        if extracted_path and Path(extracted_path).exists():
+            Path(extracted_path).unlink(missing_ok=True)

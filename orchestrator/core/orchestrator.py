@@ -87,3 +87,16 @@ class Orchestrator:
             except asyncio.CancelledError:
                 pass
         logger.info("Orchestrator stopped")
+
+    async def replace_connection(self, new_conn: sqlite3.Connection):
+        """Swap the database connection used by background tasks.
+
+        Stops the monitor and tunnel-health loops, replaces ``self.conn``,
+        then restarts both loops with the new connection.  This is needed
+        when the database file is replaced (e.g. restore from backup) so
+        that background tasks don't hold stale file-descriptors.
+        """
+        await self.stop()
+        self.conn = new_conn
+        await self.start()
+        logger.info("Orchestrator connection replaced and tasks restarted")

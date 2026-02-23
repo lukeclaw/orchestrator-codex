@@ -7,6 +7,7 @@ export interface BackupSettings {
   retention_count: number
   last_run: string | null
   last_status: string | null
+  schedule_hours: number
 }
 
 export interface BackupEntry {
@@ -30,6 +31,7 @@ export function useBackup() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [running, setRunning] = useState(false)
+  const [restoring, setRestoring] = useState(false)
   const [lastResult, setLastResult] = useState<BackupResult | null>(null)
 
   const fetchSettings = useCallback(async () => {
@@ -62,6 +64,7 @@ export function useBackup() {
     directory?: string
     password?: string
     retention_count?: number
+    schedule_hours?: number
   }) => {
     setSaving(true)
     try {
@@ -89,15 +92,30 @@ export function useBackup() {
     }
   }, [fetchSettings, fetchBackups])
 
+  const restoreBackup = useCallback(async (filename: string) => {
+    setRestoring(true)
+    try {
+      const result = await api<{ ok: boolean; error?: string }>('/api/backup/restore', {
+        method: 'POST',
+        body: JSON.stringify({ filename }),
+      })
+      return result
+    } finally {
+      setRestoring(false)
+    }
+  }, [])
+
   return {
     settings,
     backups,
     loading,
     saving,
     running,
+    restoring,
     lastResult,
     saveSettings,
     runBackup,
+    restoreBackup,
     refresh,
   }
 }

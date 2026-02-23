@@ -1,4 +1,4 @@
-"""Unit tests for orchestrator.backup — snapshot, encrypt, retention, list."""
+"""Unit tests for orchestrator.backup — snapshot, encrypt, retention, list, restore."""
 
 from __future__ import annotations
 
@@ -12,9 +12,12 @@ from orchestrator.backup import (
     _BACKUP_PATTERN,
     _prune_old_backups,
     create_db_snapshot,
+    decrypt_from_zip,
     encrypt_to_zip,
     list_backups,
+    restore_backup,
     run_backup,
+    validate_sqlite_db,
 )
 
 
@@ -221,3 +224,158 @@ class TestBackupPattern:
     ])
     def test_pattern_matching(self, name: str, expected: bool):
         assert bool(_BACKUP_PATTERN.match(name)) is expected
+
+
+# ---------------------------------------------------------------------------
+# New tests: decrypt, validate, restore
+# ---------------------------------------------------------------------------
+
+
+class TestDecryptFromZip:
+    def test_roundtrip_encrypt_decrypt(self, sample_db: Path, tmp_path: Path):
+        """Encrypt a DB and decrypt it back — contents should match."""
+        zip_path = tmp_path / "backup.zip"
+        encrypt_to_zip(sample_db, zip_path, password="roundtrip")
+
+        extracted = decrypt_from_zip(zip_path, password="roundtrip")
+        try:
+            conn = sqlite3.connect(str(extracted))
+            rows = conn.execute("SELECT name FROM items ORDER BY name").fetchall()
+            assert [r[0] for r in rows] == ["alpha", "beta"]
+            conn.close()
+        finally:
+            extracted.unlink(missing_ok=True)
+
+    def test_wrong_password_raises(self, sample_db: Path, tmp_path: Path):
+        zip_path = tmp_path / "backup.zip"
+        encrypt_to_zip(sample_db, zip_path, password="correct")
+
+        with pytest.raises(RuntimeError):
+            decrypt_from_zip(zip_path, password="wrong")
+
+    def test_nonexistent_zip_raises(self, tmp_path: Path):
+        with pytest.raises(FileNotFoundError):
+            decrypt_from_zip(tmp_path / "missing.zip", password="any")
+
+
+class TestValidateSqliteDb:
+    def test_valid_db(self, sample_db: Path):
+        assert validate_sqlite_db(sample_db) is True
+
+    def test_invalid_file(self, tmp_path: Path):
+        bad = tmp_path / "bad.db"
+        bad.write_text("this is not a database")
+        assert validate_sqlite_db(bad) is False
+
+    def test_nonexistent_path(self, tmp_path: Path):
+        assert validate_sqlite_db(tmp_path / "nope.db") is False
+
+
+class TestRestoreBackup:
+    def _make_backup(self, db_path: Path, backup_dir: Path, password: str) -> str:
+        """Helper: run a backup and return the filename."""
+        result = run_backup(db_path, password=password, backup_dir=backup_dir, retention=10)
+        assert result["ok"] is True
+        return result["filename"]
+
+    def test_full_restore_cycle(self, sample_db: Path, backup_dir: Path):
+        """Backup → modify original → restore → verify original data returns."""
+        password = "restore-test"
+        filename = self._make_backup(sample_db, backup_dir, password)
+
+        # Modify the original database
+        conn = sqlite3.connect(str(sample_db))
+        conn.execute("DELETE FROM items")
+        conn.execute("INSERT INTO items (name) VALUES ('modified')")
+        conn.commit()
+        conn.close()
+
+        # Verify modification took effect
+        conn = sqlite3.connect(str(sample_db))
+        rows = conn.execute("SELECT name FROM items ORDER BY name").fetchall()
+        assert [r[0] for r in rows] == ["modified"]
+        conn.close()
+
+        # Restore from backup
+        result = restore_backup(
+            filename=filename,
+            backup_dir=backup_dir,
+            password=password,
+            target_db_path=sample_db,
+        )
+        assert result["ok"] is True
+        assert result["error"] is None
+        assert result["pre_restore_backup"] is not None
+
+        # Verify data is restored
+        conn = sqlite3.connect(str(sample_db))
+        rows = conn.execute("SELECT name FROM items ORDER BY name").fetchall()
+        assert [r[0] for r in rows] == ["alpha", "beta"]
+        conn.close()
+
+    def test_invalid_filename_rejected(self, sample_db: Path, backup_dir: Path):
+        result = restore_backup(
+            filename="../../etc/passwd",
+            backup_dir=backup_dir,
+            password="any",
+            target_db_path=sample_db,
+        )
+        assert result["ok"] is False
+        assert "Invalid" in result["error"]
+
+    def test_nonexistent_file(self, sample_db: Path, backup_dir: Path):
+        result = restore_backup(
+            filename="orchestrator-backup-2099-01-01T00-00-00Z.zip",
+            backup_dir=backup_dir,
+            password="any",
+            target_db_path=sample_db,
+        )
+        assert result["ok"] is False
+        assert "not found" in result["error"].lower()
+
+    def test_wrong_password(self, sample_db: Path, backup_dir: Path):
+        filename = self._make_backup(sample_db, backup_dir, password="correct")
+
+        result = restore_backup(
+            filename=filename,
+            backup_dir=backup_dir,
+            password="wrong",
+            target_db_path=sample_db,
+        )
+        assert result["ok"] is False
+
+    def test_pre_restore_backup_created(self, sample_db: Path, backup_dir: Path):
+        password = "pre-restore"
+        filename = self._make_backup(sample_db, backup_dir, password)
+
+        result = restore_backup(
+            filename=filename,
+            backup_dir=backup_dir,
+            password=password,
+            target_db_path=sample_db,
+        )
+        assert result["ok"] is True
+        pre_backup_name = result["pre_restore_backup"]
+        assert pre_backup_name is not None
+        pre_backup_path = sample_db.parent / pre_backup_name
+        assert pre_backup_path.exists()
+
+    def test_wal_shm_files_cleaned(self, sample_db: Path, backup_dir: Path):
+        password = "wal-test"
+        filename = self._make_backup(sample_db, backup_dir, password)
+
+        # Create fake WAL and SHM files
+        wal_path = sample_db.parent / (sample_db.name + "-wal")
+        shm_path = sample_db.parent / (sample_db.name + "-shm")
+        wal_path.write_text("fake wal")
+        shm_path.write_text("fake shm")
+
+        result = restore_backup(
+            filename=filename,
+            backup_dir=backup_dir,
+            password=password,
+            target_db_path=sample_db,
+        )
+        assert result["ok"] is True
+        assert not wal_path.exists()
+        assert not shm_path.exists()

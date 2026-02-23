@@ -93,7 +93,15 @@ async def lifespan(app: FastAPI):
     if db_path:
         start_background_refresh()
 
+    # Start scheduled backup task
+    from orchestrator.api.routes.backup import start_backup_schedule, stop_backup_schedule
+    if db_path:
+        start_backup_schedule(db_path)
+
     yield
+
+    # Stop scheduled backup
+    await stop_backup_schedule()
 
     # Stop rdev background refresh
     await stop_background_refresh()
