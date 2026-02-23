@@ -105,7 +105,7 @@ Invoke with `/skill-name`. Skills provide step-by-step workflows.
 
 ## When You're Stuck
 
-**Do NOT ask the human directly.** Simply explain what you're stuck on — the orchestrator brain monitors all workers and will send guidance.
+Do not make assumptions without facts. Simply explain what you're stuck on — the orchestrator brain or human user monitors all workers and will send guidance.
 
 ## Workflow
 

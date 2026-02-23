@@ -234,4 +234,4 @@ echo "Action completed at: $(date '+%Y-%m-%d %H:%M:%S %Z')"
 
 ## When Anything Is Unclear
 
-**STOP and wait.** The brain or another worker will come to help. Do NOT proceed with guesses or workarounds.
+**STOP and wait.** The brain or user will come to help. Do NOT proceed with guesses or workarounds.
