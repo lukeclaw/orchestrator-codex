@@ -142,25 +142,25 @@ If you just want a DMG without auto-install support:
 ## How Auto-Update Works
 
 ```
-┌─────────────┐     GET /repos/.../releases/latest      ┌────────────┐
-│  Settings    │ ──────────────────────────────────────►  │  GitHub    │
-│  Page        │ ◄──────────────────────────────────────  │  API       │
-│              │     { tag_name: "v0.2.0", ... }         └────────────┘
-│              │
-│  "Install    │     plugin:updater|check                ┌────────────┐
-│   Update"    │ ──────────────────────────────────────►  │  Tauri     │
-│   clicked    │     plugin:updater|download_and_install  │  Updater   │
-│              │ ──────────────────────────────────────►  │  Plugin    │
-│              │     plugin:process|restart               │            │
-│              │ ──────────────────────────────────────►  │  fetches   │
-└─────────────┘                                          │  latest.json
-                                                         │  downloads │
-                  ┌──────────────────┐                   │  .tar.gz   │
-                  │ Fallback: opens  │◄── if no signed   │  verifies  │
+┌─────────────┐     GET /repos/.../releases/latest        ┌────────────┐
+│  Settings   │ ──────────────────────────────────────►   │  GitHub    │
+│  Page       │ ◄──────────────────────────────────────   │  API       │
+│             │     { tag_name: "v0.2.0", ... }           └────────────┘
+│             │
+│  "Install   │     plugin:updater|check                  ┌────────────┐
+│   Update"   │ ──────────────────────────────────────►   │  Tauri     │
+│   clicked   │     plugin:updater|download_and_install   │  Updater   │
+│             │ ──────────────────────────────────────►   │  Plugin    │
+│             │     plugin:process|restart                │            │
+│             │ ──────────────────────────────────────►   │  fetches   │
+└─────────────┘                                           │  latest.json
+                                                          │  downloads │
+                  ┌──────────────────┐                    │  .tar.gz   │
+                  │ Fallback: opens  │◄── if no signed    │  verifies  │
                   │ release page in  │    artifacts       │  .sig      │
                   │ browser          │                    │  replaces  │
                   └──────────────────┘                    │  app       │
-                                                         └────────────┘
+                                                          └────────────┘
 ```
 
 1. **Detection**: Python backend calls GitHub Releases API, compares tag version
