@@ -1,6 +1,9 @@
+use std::net::TcpListener;
 use std::sync::Mutex;
 use std::time::Duration;
 use tauri::Manager;
+
+const SERVER_PORT: u16 = 8093;
 
 /// Shared state to hold the sidecar child process handle.
 struct SidecarState {
@@ -78,6 +81,75 @@ fn ensure_executable(path: &std::path::Path) {
     }
 }
 
+/// Check whether a TCP port is available to bind on localhost.
+fn is_port_available(port: u16) -> bool {
+    TcpListener::bind(("127.0.0.1", port)).is_ok()
+}
+
+/// Use `lsof` + `ps` to find the PID and process name occupying a TCP port.
+fn find_port_occupier(port: u16) -> Option<(u32, String)> {
+    let output = std::process::Command::new("lsof")
+        .args([
+            &format!("-iTCP:{}", port),
+            "-sTCP:LISTEN",
+            "-t",
+        ])
+        .output()
+        .ok()?;
+
+    let pid_str = String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .next()?
+        .trim()
+        .to_string();
+    let pid: u32 = pid_str.parse().ok()?;
+
+    let name_output = std::process::Command::new("ps")
+        .args(["-p", &pid_str, "-o", "comm="])
+        .output()
+        .ok()?;
+    let name = String::from_utf8_lossy(&name_output.stdout)
+        .trim()
+        .to_string();
+
+    Some((pid, if name.is_empty() { "<unknown>".to_string() } else { name }))
+}
+
+/// Send SIGTERM to a process; if it's still alive after 3 seconds, SIGKILL.
+fn kill_process(pid: u32) -> bool {
+    use std::process::Command;
+
+    // SIGTERM
+    let _ = Command::new("kill")
+        .args(["-15", &pid.to_string()])
+        .status();
+
+    // Wait up to 3 seconds for the process to exit
+    for _ in 0..30 {
+        std::thread::sleep(Duration::from_millis(100));
+        let status = Command::new("kill")
+            .args(["-0", &pid.to_string()])
+            .status();
+        if let Ok(s) = status {
+            if !s.success() {
+                return true; // process is gone
+            }
+        }
+    }
+
+    // SIGKILL as last resort
+    let _ = Command::new("kill")
+        .args(["-9", &pid.to_string()])
+        .status();
+    std::thread::sleep(Duration::from_millis(500));
+
+    // Verify it's dead
+    let status = Command::new("kill")
+        .args(["-0", &pid.to_string()])
+        .status();
+    matches!(status, Ok(s) if !s.success())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -95,6 +167,87 @@ pub fn run() {
             if cfg!(debug_assertions) {
                 eprintln!("[tauri] Dev mode — skipping sidecar (run Python server manually)");
                 return Ok(());
+            }
+
+            // --- Port conflict detection ---
+            if !is_port_available(SERVER_PORT) {
+                eprintln!("[tauri] Port {} is already in use", SERVER_PORT);
+
+                if let Some((pid, name)) = find_port_occupier(SERVER_PORT) {
+                    eprintln!("[tauri] Port occupied by {} (PID {})", name, pid);
+
+                    let confirmed = rfd::MessageDialog::new()
+                        .set_title("Port Conflict")
+                        .set_description(format!(
+                            "Port {} is already in use by \"{}\" (PID {}).\n\n\
+                             This usually means a previous instance didn't shut down cleanly.\n\n\
+                             Kill it and start fresh?",
+                            SERVER_PORT, name, pid
+                        ))
+                        .set_level(rfd::MessageLevel::Warning)
+                        .set_buttons(rfd::MessageButtons::OkCancelCustom(
+                            "Kill & Restart".into(),
+                            "Quit".into(),
+                        ))
+                        .show();
+
+                    if confirmed == rfd::MessageDialogResult::Ok
+                        || confirmed == rfd::MessageDialogResult::Custom("Kill & Restart".into())
+                    {
+                        eprintln!("[tauri] User chose to kill PID {}", pid);
+                        if kill_process(pid) {
+                            // Give the OS a moment to release the port
+                            std::thread::sleep(Duration::from_millis(500));
+                            if !is_port_available(SERVER_PORT) {
+                                eprintln!("[tauri] Port still occupied after killing process");
+                                rfd::MessageDialog::new()
+                                    .set_title("Port Still in Use")
+                                    .set_description(format!(
+                                        "Port {} is still occupied after killing PID {}.\n\
+                                         Please free the port manually and restart the app.",
+                                        SERVER_PORT, pid
+                                    ))
+                                    .set_level(rfd::MessageLevel::Error)
+                                    .set_buttons(rfd::MessageButtons::Ok)
+                                    .show();
+                                std::process::exit(1);
+                            }
+                        } else {
+                            eprintln!("[tauri] Failed to kill PID {}", pid);
+                            rfd::MessageDialog::new()
+                                .set_title("Failed to Kill Process")
+                                .set_description(format!(
+                                    "Could not terminate PID {}.\n\
+                                     Try running: kill -9 {}\n\n\
+                                     Then restart the app.",
+                                    pid, pid
+                                ))
+                                .set_level(rfd::MessageLevel::Error)
+                                .set_buttons(rfd::MessageButtons::Ok)
+                                .show();
+                            std::process::exit(1);
+                        }
+                    } else {
+                        eprintln!("[tauri] User declined to kill the existing process");
+                        std::process::exit(0);
+                    }
+                } else {
+                    // Can't identify the process
+                    eprintln!("[tauri] Could not identify process on port {}", SERVER_PORT);
+                    rfd::MessageDialog::new()
+                        .set_title("Port Conflict")
+                        .set_description(format!(
+                            "Port {} is already in use but the occupying process could not be identified.\n\n\
+                             Try running: lsof -iTCP:{} -sTCP:LISTEN\n\
+                             Then kill the process manually and restart the app.",
+                            SERVER_PORT, SERVER_PORT
+                        ))
+                        .set_level(rfd::MessageLevel::Error)
+                        .set_buttons(rfd::MessageButtons::Ok)
+                        .show();
+                    std::process::exit(1);
+                }
+                eprintln!("[tauri] Port {} is now available", SERVER_PORT);
             }
 
             let app_handle = app.handle().clone();
@@ -167,14 +320,14 @@ pub fn run() {
             // Wait for the server to be ready, then navigate the webview
             let handle_for_nav = app_handle.clone();
             std::thread::spawn(move || {
-                let health_url = "http://127.0.0.1:8093/api/health";
-                let ready = wait_for_server(health_url, Duration::from_secs(30));
+                let health_url = format!("http://127.0.0.1:{}/api/health", SERVER_PORT);
+                let ready = wait_for_server(&health_url, Duration::from_secs(30));
 
                 if ready {
                     eprintln!("[tauri] Server is ready, navigating to dashboard");
                     if let Some(window) = handle_for_nav.get_webview_window("main") {
                         let _ = window.eval(
-                            "window.location.replace('http://127.0.0.1:8093');"
+                            &format!("window.location.replace('http://127.0.0.1:{}');", SERVER_PORT)
                         );
                     }
                 } else {
