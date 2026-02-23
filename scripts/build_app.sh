@@ -75,14 +75,22 @@ if [[ "$BUILD_DMG" == "true" ]]; then
     bash ./scripts/sign-sidecar.sh
     echo ""
 
-    echo "--- [DMG] Step 2: Building Tauri app ---"
+    echo "--- [DMG] Step 2: Building and notarizing Tauri app ---"
     if ! command -v cargo-tauri &>/dev/null; then
         if ! cargo tauri --version &>/dev/null 2>&1; then
             echo "Error: Tauri CLI not found. Install with: cargo install tauri-cli"
             exit 1
         fi
     fi
-    cargo tauri build
+    cargo tauri build --bundles app
+    echo ""
+
+    echo "--- [DMG] Step 2b: Waiting for macOS security scan to finish ---"
+    sleep 10
+    echo ""
+
+    echo "--- [DMG] Step 2c: Bundling DMG ---"
+    cargo tauri build --bundles dmg
     echo ""
 
     echo "--- [DMG] Step 3: Copying DMG to stable name ---"
