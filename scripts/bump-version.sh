@@ -31,23 +31,26 @@ fi
 
 PROJECT_ROOT="$(git rev-parse --show-toplevel)"
 
-# Read current version from pyproject.toml
+# Semver pattern to match any X.Y.Z version
+V='[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*'
+
+# Read current version from pyproject.toml (for display only)
 CURRENT=$(grep '^version = ' "$PROJECT_ROOT/pyproject.toml" | head -1 | sed 's/version = "\(.*\)"/\1/')
 echo "Bumping version: $CURRENT → $NEW_VERSION"
 
-# 1. pyproject.toml
-sed -i '' "s/^version = \"$CURRENT\"/version = \"$NEW_VERSION\"/" "$PROJECT_ROOT/pyproject.toml"
+# 1. pyproject.toml — match first 'version = "X.Y.Z"' line
+sed -i '' "s/^version = \"$V\"/version = \"$NEW_VERSION\"/" "$PROJECT_ROOT/pyproject.toml"
 
-# 2. src-tauri/tauri.conf.json
-sed -i '' "s/\"version\": \"$CURRENT\"/\"version\": \"$NEW_VERSION\"/" "$PROJECT_ROOT/src-tauri/tauri.conf.json"
+# 2. src-tauri/tauri.conf.json — match "version": "X.Y.Z"
+sed -i '' "s/\"version\": \"$V\"/\"version\": \"$NEW_VERSION\"/" "$PROJECT_ROOT/src-tauri/tauri.conf.json"
 
-# 3. src-tauri/Cargo.toml
-sed -i '' "s/^version = \"$CURRENT\"/version = \"$NEW_VERSION\"/" "$PROJECT_ROOT/src-tauri/Cargo.toml"
+# 3. src-tauri/Cargo.toml — match first 'version = "X.Y.Z"' line
+sed -i '' "s/^version = \"$V\"/version = \"$NEW_VERSION\"/" "$PROJECT_ROOT/src-tauri/Cargo.toml"
 
-# 4. frontend/package.json (npm doesn't auto-update package-lock, so update both)
-sed -i '' "s/\"version\": \"$CURRENT\"/\"version\": \"$NEW_VERSION\"/" "$PROJECT_ROOT/frontend/package.json"
-# Update the root entry in package-lock.json (first two occurrences)
-sed -i '' "s/\"version\": \"$CURRENT\"/\"version\": \"$NEW_VERSION\"/" "$PROJECT_ROOT/frontend/package-lock.json"
+# 4. frontend/package.json — match "version": "X.Y.Z"
+sed -i '' "s/\"version\": \"$V\"/\"version\": \"$NEW_VERSION\"/" "$PROJECT_ROOT/frontend/package.json"
+# Update the root entry in package-lock.json
+sed -i '' "s/\"version\": \"$V\"/\"version\": \"$NEW_VERSION\"/" "$PROJECT_ROOT/frontend/package-lock.json"
 
 echo ""
 echo "Updated files:"
