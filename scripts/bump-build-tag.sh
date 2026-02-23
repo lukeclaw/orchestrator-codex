@@ -5,12 +5,27 @@
 
 set -e
 
+
 VERSION="$1"
 
 if [ -z "$VERSION" ]; then
-  echo "Error: No version specified."
-  echo "Usage: $0 <version>"
-  exit 1
+  echo "No version specified. Attempting to auto-increment the latest tag..."
+  LATEST_TAG=$(git tag --list 'v*' --sort=-v:refname | head -n1)
+  if [ -z "$LATEST_TAG" ]; then
+    echo "Error: No existing version tag found. Please specify a version manually."
+    echo "Usage: $0 <version>"
+    exit 1
+  fi
+  # Remove leading 'v' if present
+  LATEST_VERSION=${LATEST_TAG#v}
+  IFS='.' read -r MAJOR MINOR PATCH <<< "$LATEST_VERSION"
+  if [[ -z "$MAJOR" || -z "$MINOR" || -z "$PATCH" ]]; then
+    echo "Error: Latest tag '$LATEST_TAG' is not in semantic version format (vX.Y.Z)."
+    exit 1
+  fi
+  PATCH=$((PATCH + 1))
+  VERSION="$MAJOR.$MINOR.$PATCH"
+  echo "Auto-incremented version: $VERSION"
 fi
 
 if ! git diff --quiet || ! git diff --cached --quiet; then
