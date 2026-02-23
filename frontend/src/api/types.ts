@@ -155,3 +155,24 @@ export interface TrendsData {
   heatmap: HeatmapCell[]
   worker_hours: WorkerHoursDay[]
 }
+
+export interface ThroughputDetailItem {
+  entity_id: string; is_subtask: boolean; timestamp: string
+  title: string; task_key: string | null; status: string
+  parent_task_id: string | null; parent_title: string | null; parent_task_key: string | null
+}
+
+export interface WorkerHoursDetailItem {
+  session_id: string; session_name: string; total_hours: number
+  intervals: { start: string; end: string }[]
+  current_task: { id: string; title: string } | null
+}
+
+export interface HeatmapDetailItem {
+  date: string; session_id: string; session_name: string; timestamp: string
+}
+
+export type TrendDetailSelection =
+  | { chart: 'throughput'; date: string }
+  | { chart: 'worker_hours'; date: string }
+  | { chart: 'heatmap'; day_of_week: number; hour: number }

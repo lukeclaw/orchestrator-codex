@@ -1,14 +1,18 @@
+import { useState } from 'react'
 import { useTrends } from '../../hooks/useTrends'
 import ThroughputChart from './ThroughputChart'
 import WorkerHeatmap from './WorkerHeatmap'
 import WorkerHoursChart from './WorkerHoursChart'
+import TrendDetailModal from './TrendDetailModal'
 import CollapsiblePanel from './CollapsiblePanel'
+import type { TrendDetailSelection } from '../../api/types'
 import './TrendsPanel.css'
 
 const RANGES = ['7d', '30d', '90d'] as const
 
 export default function TrendsPanel() {
   const { data, loading, range, setRange } = useTrends()
+  const [detailSelection, setDetailSelection] = useState<TrendDetailSelection | null>(null)
 
   const hasData = data && (
     data.throughput.length > 0 ||
@@ -41,11 +45,27 @@ export default function TrendsPanel() {
         <p className="empty-state">No activity data yet.</p>
       ) : (
         <div className="trends-body">
-          <div className="trends-grid">
-            <ThroughputChart data={data!.throughput} range={range} />
-            <WorkerHeatmap data={data!.heatmap} />
-            <WorkerHoursChart data={data!.worker_hours} range={range} />
+          <ThroughputChart
+            data={data!.throughput}
+            range={range}
+            onBarClick={(date) => setDetailSelection({ chart: 'throughput', date })}
+          />
+          <div className="trends-bottom-row">
+            <WorkerHeatmap
+              data={data!.heatmap}
+              onCellClick={(day_of_week, hour) => setDetailSelection({ chart: 'heatmap', day_of_week, hour })}
+            />
+            <WorkerHoursChart
+              data={data!.worker_hours}
+              range={range}
+              onPointClick={(date) => setDetailSelection({ chart: 'worker_hours', date })}
+            />
           </div>
+          <TrendDetailModal
+            selection={detailSelection}
+            range={range}
+            onClose={() => setDetailSelection(null)}
+          />
         </div>
       )}
     </CollapsiblePanel>

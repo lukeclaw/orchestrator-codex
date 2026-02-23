@@ -5,6 +5,7 @@ import type { WorkerHoursDay } from '../../api/types'
 interface Props {
   data: WorkerHoursDay[]
   range: string
+  onPointClick?: (date: string) => void
 }
 
 /** Fill missing days with zeros for continuous x-axis. */
@@ -26,7 +27,7 @@ function formatDate(dateStr: string): string {
   return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
 }
 
-export default function WorkerHoursChart({ data, range }: Props) {
+export default function WorkerHoursChart({ data, range, onPointClick }: Props) {
   const rangeDays = range === '90d' ? 90 : range === '30d' ? 30 : 7
   const filled = useMemo(() => fillDays(data, rangeDays), [data, rangeDays])
 
@@ -49,7 +50,16 @@ export default function WorkerHoursChart({ data, range }: Props) {
         <span className="trends-chart-stat">{stats.todayHours}h today / {stats.weekTotal}h this week</span>
       </div>
       <ResponsiveContainer width="100%" height={180}>
-        <AreaChart data={filled} margin={{ top: 4, right: 4, bottom: 0, left: -20 }}>
+        <AreaChart
+          data={filled}
+          margin={{ top: 4, right: 4, bottom: 0, left: -20 }}
+          onClick={(state: any) => {
+            if (onPointClick && state?.activeLabel) {
+              onPointClick(String(state.activeLabel))
+            }
+          }}
+          style={{ cursor: onPointClick ? 'pointer' : undefined }}
+        >
           <defs>
             <linearGradient id="workerHoursGradient" x1="0" y1="0" x2="0" y2="1">
               <stop offset="5%" stopColor="var(--green)" stopOpacity={0.3} />
@@ -89,6 +99,21 @@ export default function WorkerHoursChart({ data, range }: Props) {
             stroke="var(--green)"
             strokeWidth={2}
             fill="url(#workerHoursGradient)"
+            activeDot={onPointClick ? ((props: any) => {
+              const { cx, cy, payload } = props
+              return (
+                <circle
+                  cx={cx}
+                  cy={cy}
+                  r={5}
+                  stroke="var(--green)"
+                  strokeWidth={2}
+                  fill="var(--surface)"
+                  style={{ cursor: 'pointer' }}
+                  onClick={() => onPointClick(payload.date)}
+                />
+              )
+            }) : undefined}
           />
         </AreaChart>
       </ResponsiveContainer>

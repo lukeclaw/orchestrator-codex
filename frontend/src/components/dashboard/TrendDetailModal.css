@@ -1,0 +1,219 @@
+.trend-detail-body {
+  padding: 12px 16px;
+  max-height: 60vh;
+  overflow-y: auto;
+}
+
+.trend-detail-empty {
+  color: var(--text-muted);
+  text-align: center;
+  padding: 24px 0;
+  font-size: 13px;
+}
+
+.trend-detail-summary {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin: 0 0 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border);
+}
+
+/* Section headers */
+.trend-detail-section {
+  margin-bottom: 16px;
+}
+
+.trend-detail-section-title {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin: 0 0 8px;
+}
+
+/* Row layout */
+.trend-detail-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--border);
+  font-size: 13px;
+}
+
+.trend-detail-row:last-child {
+  border-bottom: none;
+}
+
+/* Type badges */
+.trend-detail-type-badge {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: 4px;
+  text-transform: uppercase;
+  flex-shrink: 0;
+}
+
+.badge-task {
+  background: rgba(88, 166, 255, 0.15);
+  color: var(--accent);
+}
+
+.badge-subtask {
+  background: rgba(168, 130, 255, 0.15);
+  color: var(--purple);
+}
+
+/* Task key links */
+.trend-detail-key {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--accent);
+  text-decoration: none;
+  flex-shrink: 0;
+}
+
+.trend-detail-key:hover {
+  text-decoration: underline;
+}
+
+.trend-detail-title {
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+  min-width: 0;
+}
+
+.trend-detail-parent {
+  font-size: 11px;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.trend-detail-parent a {
+  color: var(--text-muted);
+  text-decoration: none;
+}
+
+.trend-detail-parent a:hover {
+  color: var(--accent);
+  text-decoration: underline;
+}
+
+.trend-detail-time {
+  font-size: 11px;
+  color: var(--text-muted);
+  flex-shrink: 0;
+  margin-left: auto;
+}
+
+/* Worker-hours cards */
+.worker-hours-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.worker-hours-card {
+  background: var(--surface-raised);
+  border-radius: 8px;
+  padding: 10px 12px;
+}
+
+.worker-hours-card-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.worker-hours-card-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.worker-hours-name {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.worker-hours-name:hover {
+  text-decoration: underline;
+}
+
+.worker-hours-badge {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 10px;
+  background: rgba(63, 185, 80, 0.15);
+  color: var(--green);
+}
+
+/* Timeline bar */
+.timeline-bar {
+  position: relative;
+  height: 6px;
+  background: var(--surface);
+  border-radius: 3px;
+  margin: 4px 0 18px;
+}
+
+.timeline-segment {
+  position: absolute;
+  top: 0;
+  height: 100%;
+  background: var(--green);
+  border-radius: 3px;
+  min-width: 2px;
+}
+
+.timeline-marker {
+  position: absolute;
+  top: 10px;
+  transform: translateX(-50%);
+  font-size: 9px;
+  color: var(--text-muted);
+}
+
+.worker-hours-task-inline {
+  font-size: 11px;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.worker-hours-task-inline a {
+  color: var(--text-secondary);
+  text-decoration: none;
+}
+
+.worker-hours-task-inline a:hover {
+  color: var(--accent);
+  text-decoration: underline;
+}
+
+/* Heatmap date groups */
+.heatmap-date-group {
+  margin-bottom: 12px;
+}
+
+.heatmap-date-header {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  margin: 0 0 6px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--border);
+}

@@ -5,6 +5,7 @@ import type { ThroughputDay } from '../../api/types'
 interface Props {
   data: ThroughputDay[]
   range: string
+  onBarClick?: (date: string) => void
 }
 
 /** Fill missing days in the range with zeros for a continuous x-axis. */
@@ -26,7 +27,7 @@ function formatDate(dateStr: string): string {
   return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
 }
 
-export default function ThroughputChart({ data, range }: Props) {
+export default function ThroughputChart({ data, range, onBarClick }: Props) {
   const rangeDays = range === '90d' ? 90 : range === '30d' ? 30 : 7
   const filled = useMemo(() => fillDays(data, rangeDays), [data, rangeDays])
 
@@ -42,13 +43,22 @@ export default function ThroughputChart({ data, range }: Props) {
   if (!hasData) return null
 
   return (
-    <div className="trends-chart trends-chart-wide">
+    <div className="trends-chart">
       <div className="trends-chart-header">
         <span className="trends-chart-title">Throughput</span>
         <span className="trends-chart-stat">{avg7d}/day avg (7d)</span>
       </div>
       <ResponsiveContainer width="100%" height={180}>
-        <BarChart data={filled} margin={{ top: 4, right: 4, bottom: 0, left: -20 }}>
+        <BarChart
+          data={filled}
+          margin={{ top: 4, right: 4, bottom: 0, left: -20 }}
+          onClick={(state: any) => {
+            if (onBarClick && state?.activeLabel) {
+              onBarClick(String(state.activeLabel))
+            }
+          }}
+          style={{ cursor: onBarClick ? 'pointer' : undefined }}
+        >
           <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
           <XAxis
             dataKey="date"
@@ -75,8 +85,24 @@ export default function ThroughputChart({ data, range }: Props) {
             labelFormatter={(label) => formatDate(String(label))}
             cursor={{ fill: 'var(--surface-hover)' }}
           />
-          <Bar dataKey="tasks" stackId="a" fill="var(--accent)" name="Tasks" radius={[0, 0, 0, 0]} />
-          <Bar dataKey="subtasks" stackId="a" fill="var(--purple)" name="Subtasks" radius={[2, 2, 0, 0]} />
+          <Bar
+            dataKey="tasks"
+            stackId="a"
+            fill="var(--accent)"
+            name="Tasks"
+            radius={[0, 0, 0, 0]}
+            onClick={(data: any) => onBarClick?.(data?.payload?.date)}
+            style={{ cursor: onBarClick ? 'pointer' : undefined }}
+          />
+          <Bar
+            dataKey="subtasks"
+            stackId="a"
+            fill="var(--purple)"
+            name="Subtasks"
+            radius={[2, 2, 0, 0]}
+            onClick={(data: any) => onBarClick?.(data?.payload?.date)}
+            style={{ cursor: onBarClick ? 'pointer' : undefined }}
+          />
         </BarChart>
       </ResponsiveContainer>
     </div>

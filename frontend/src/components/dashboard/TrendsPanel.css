@@ -6,14 +6,20 @@
   padding: 12px 16px;
 }
 
-.trends-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
+.trends-bottom-row {
+  display: flex;
+  flex-wrap: wrap;
   gap: 16px;
+  margin-top: 16px;
 }
 
-.trends-chart-wide {
-  grid-column: 1 / -1;
+.trends-bottom-row > .trends-chart:first-child {
+  flex: 0 0 auto;
+}
+
+.trends-bottom-row > .trends-chart:last-child {
+  flex: 1 1 0;
+  min-width: 320px;
 }
 
 .trends-chart {
@@ -61,12 +67,18 @@
   outline: none;
 }
 
+/* Hover affordance for clickable chart elements */
+.trends-chart .recharts-bar-rectangle:hover,
+.trends-chart .recharts-area-curve:hover {
+  filter: brightness(1.2);
+}
+
 @media (max-width: 900px) {
-  .trends-grid {
-    grid-template-columns: 1fr;
+  .trends-bottom-row {
+    flex-direction: column;
   }
 
-  .trends-chart-wide {
-    grid-column: 1;
+  .trends-bottom-row > .trends-chart:last-child {
+    min-width: 0;
   }
 }

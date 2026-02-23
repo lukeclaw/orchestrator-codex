@@ -3,6 +3,7 @@ import type { HeatmapCell } from '../../api/types'
 
 interface Props {
   data: HeatmapCell[]
+  onCellClick?: (dayOfWeek: number, hour: number) => void
 }
 
 const DAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
@@ -13,15 +14,23 @@ const GAP = 2
 const LABEL_W = 30
 const LABEL_H = 16
 
-export default function WorkerHeatmap({ data }: Props) {
+const TZ_SHORT = Intl.DateTimeFormat(undefined, { timeZoneName: 'short' })
+  .formatToParts(new Date())
+  .find(p => p.type === 'timeZoneName')?.value || ''
+
+export default function WorkerHeatmap({ data, onCellClick }: Props) {
   const [tooltip, setTooltip] = useState<{ x: number; y: number; text: string } | null>(null)
 
   const { grid, maxCount } = useMemo(() => {
     const g: number[][] = Array.from({ length: 7 }, () => Array(24).fill(0))
     let max = 0
     for (const cell of data) {
-      g[cell.day_of_week][cell.hour] = cell.count
-      if (cell.count > max) max = cell.count
+      // Convert UTC day/hour to local timezone for display
+      const ref = new Date(Date.UTC(2025, 0, 5 + cell.day_of_week, cell.hour))
+      const localDay = ref.getDay()
+      const localHour = ref.getHours()
+      g[localDay][localHour] += cell.count
+      if (g[localDay][localHour] > max) max = g[localDay][localHour]
     }
     return { grid: g, maxCount: max }
   }, [data])
@@ -51,7 +60,7 @@ export default function WorkerHeatmap({ data }: Props) {
   return (
     <div className="trends-chart" style={{ position: 'relative' }}>
       <div className="trends-chart-header">
-        <span className="trends-chart-title">Worker Activity (UTC)</span>
+        <span className="trends-chart-title">Worker Activity{TZ_SHORT ? ` (${TZ_SHORT})` : ''}</span>
       </div>
       <svg width={svgW} height={svgH} style={{ display: 'block', maxWidth: '100%' }}>
         {/* Hour labels */}
@@ -88,6 +97,14 @@ export default function WorkerHeatmap({ data }: Props) {
                 height={CELL_SIZE}
                 rx={3}
                 fill={cellColor(count)}
+                style={{ cursor: count > 0 && onCellClick ? 'pointer' : undefined }}
+                onClick={() => {
+                  if (count > 0 && onCellClick) {
+                    // Convert local day/hour back to UTC for the API
+                    const ref = new Date(2025, 0, 5 + day, hour, 0, 0, 0)
+                    onCellClick(ref.getUTCDay(), ref.getUTCHours())
+                  }
+                }}
                 onMouseEnter={(e) => {
                   const rect = (e.target as SVGRectElement).getBoundingClientRect()
                   const parent = (e.target as SVGRectElement).closest('.trends-chart')!.getBoundingClientRect()
