@@ -197,7 +197,12 @@ For PRs that are approved, all checks pass, and no unaddressed reviewer question
 gh pr merge <PR_NUMBER> --merge
 ```
 
-After merging, mark the subtask as `done`. This is the only time a subtask should be marked done.
+After merging:
+1. **Send a notification** so the user knows the PR landed:
+   ```bash
+   orch-notify "PR #<PR_NUMBER> merged: <brief summary of the change>" --type info --link "https://github.com/OWNER/REPO/pull/<PR_NUMBER>"
+   ```
+2. **Mark the subtask as `done`** — this is the only time a subtask should be marked done.
 
 ---
 
