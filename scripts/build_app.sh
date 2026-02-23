@@ -9,7 +9,8 @@
 #   - create-dmg: brew install create-dmg
 #
 # Usage:
-#   ./scripts/build_app.sh                       # Build both (DMG + App Store PKG)
+#   ./scripts/build_app.sh                       # DMG only (default; PKG skipped)
+#   ./scripts/build_app.sh --with-pkg            # Build both (DMG + App Store PKG)
 #   ./scripts/build_app.sh --dmg-only            # DMG only (Developer ID direct distribution)
 #   ./scripts/build_app.sh --pkg-only            # App Store PKG only (reuses existing .app)
 #   ./scripts/build_app.sh --skip-frontend       # Skip npm build (if frontend unchanged)
@@ -32,11 +33,12 @@ PKG_OUTPUT="src-tauri/target/release/bundle/pkg/Orchestrator.pkg"
 
 # --- Argument parsing ---
 BUILD_DMG=true
-BUILD_PKG=true
+BUILD_PKG=false
 SKIP_FRONTEND=false
 
 for arg in "$@"; do
     case $arg in
+        --with-pkg)      BUILD_PKG=true ;;
         --dmg-only)      BUILD_PKG=false ;;
         --pkg-only)      BUILD_DMG=false ;;
         --skip-frontend) SKIP_FRONTEND=true ;;
