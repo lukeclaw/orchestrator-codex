@@ -197,18 +197,17 @@ def test_11_responsive_layout(page):
 # ---------------------------------------------------------------------------
 
 
-def test_13_smart_paste_disabled_on_dashboard(page):
-    """Smart Paste button is disabled on the main dashboard page."""
+def test_13_smart_paste_not_on_dashboard(page):
+    """Smart Paste button is not present on the main dashboard page (contextual only)."""
     screenshot(page, "13a_paste_dashboard")
 
-    paste_btn = page.query_selector(".smart-paste-btn")
-    assert paste_btn is not None
-    assert paste_btn.is_disabled()
-    assert "disabled" in (paste_btn.get_attribute("class") or "")
+    # Smart Paste was moved from global header to session detail pages
+    paste_btn = page.query_selector(".sd-paste-btn")
+    assert paste_btn is None
 
 
-def test_14_smart_paste_enabled_on_worker_page(page):
-    """Smart Paste button becomes enabled on a worker detail page."""
+def test_14_smart_paste_on_worker_page(page):
+    """Smart Paste button is present on the worker detail page."""
     # Navigate to worker-alpha detail page
     card = page.query_selector("[data-session-id='s1']")
     assert card is not None
@@ -219,7 +218,5 @@ def test_14_smart_paste_enabled_on_worker_page(page):
 
     assert "/workers/s1" in page.url
 
-    paste_btn = page.query_selector(".smart-paste-btn")
+    paste_btn = page.query_selector(".sd-paste-btn")
     assert paste_btn is not None
-    assert not paste_btn.is_disabled()
-    assert "disabled" not in (paste_btn.get_attribute("class") or "")
