@@ -174,5 +174,5 @@ If you just want a DMG without auto-install support:
 
 # Quick command:
 ```
-./scripts/bump-build-tag.sh 0.2.0
+./scripts/bump-build-tag.sh <new_version>
 ```
