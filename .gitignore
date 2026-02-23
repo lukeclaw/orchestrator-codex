@@ -1,3 +1,6 @@
+# Release staging
+gh_release/
+
 # macOS
 .DS_Store
 .AppleDouble

@@ -108,6 +108,14 @@ jobs:
           releaseDraft: false
           prerelease: false
 
+      - name: Upload stable-named DMG asset
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          DMG=$(find src-tauri/target/release/bundle/dmg -name "*.dmg" | head -1)
+          cp "$DMG" Orchestrator_aarch64.dmg
+          gh release upload ${{ github.ref_name }} Orchestrator_aarch64.dmg --clobber
+
       - name: Cleanup keychain
         if: always()
         run: security delete-keychain "$KEYCHAIN_PATH" 2>/dev/null || true

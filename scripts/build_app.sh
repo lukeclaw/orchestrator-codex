@@ -84,6 +84,14 @@ if [[ "$BUILD_DMG" == "true" ]]; then
     fi
     cargo tauri build
     echo ""
+
+    echo "--- [DMG] Step 3: Copying DMG to stable name ---"
+    DMG_DIR="src-tauri/target/release/bundle/dmg"
+    VERSIONED_DMG=$(find "$DMG_DIR" -name "Orchestrator_*.dmg" | head -1)
+    STABLE_DMG="$DMG_DIR/Orchestrator_aarch64.dmg"
+    cp "$VERSIONED_DMG" "$STABLE_DMG"
+    echo "  Stable DMG: $STABLE_DMG"
+    echo ""
 fi
 
 # ============================================================
@@ -142,4 +150,5 @@ fi
 # ============================================================
 echo "=== Build complete ==="
 [[ "$BUILD_DMG" == "true" ]] && echo "DMG:             src-tauri/target/release/bundle/dmg/Orchestrator_*.dmg"
+[[ "$BUILD_DMG" == "true" ]] && echo "Stable DMG:      src-tauri/target/release/bundle/dmg/Orchestrator_aarch64.dmg"
 [[ "$BUILD_PKG" == "true" ]] && echo "PKG (App Store): $PKG_OUTPUT"

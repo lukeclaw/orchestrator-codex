@@ -13,6 +13,13 @@ if [ -z "$VERSION" ]; then
   exit 1
 fi
 
+if ! git diff --quiet || ! git diff --cached --quiet; then
+  echo "⚠️  Uncommitted changes detected! Please commit or stash all changes before running this script."
+  exit 1
+fi
+
+echo "==> Repository is clean. Proceeding..."
+
 echo "==> Bumping version to $VERSION..."
 ./scripts/bump-version.sh "$VERSION"
 echo "✔ Version bumped."

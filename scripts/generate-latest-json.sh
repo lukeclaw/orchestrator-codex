@@ -60,8 +60,20 @@ echo "Generated: $OUTPUT"
 echo "  Version:  $VERSION"
 echo "  Artifact: $TAR_GZ_NAME"
 echo ""
-echo "Upload these to GitHub release v$VERSION:"
-echo "  1. $(find "$BUNDLE_DIR/../dmg" -name "*.dmg" 2>/dev/null | head -1 || echo "(DMG not found)")"
-echo "  2. $TAR_GZ"
-echo "  3. $SIG_FILE"
-echo "  4. $OUTPUT"
+
+# Collect all release files into gh_release/
+RELEASE_DIR="$PROJECT_ROOT/gh_release"
+rm -rf "$RELEASE_DIR"
+mkdir -p "$RELEASE_DIR"
+
+VERSIONED_DMG=$(find "$BUNDLE_DIR/../dmg" -name "Orchestrator_*.dmg" ! -name "Orchestrator_aarch64.dmg" | head -1)
+cp "$VERSIONED_DMG"    "$RELEASE_DIR/Orchestrator_aarch64.dmg"
+cp "$TAR_GZ"           "$RELEASE_DIR/"
+cp "$SIG_FILE"         "$RELEASE_DIR/"
+cp "$OUTPUT"           "$RELEASE_DIR/"
+
+echo "Release files collected in: $RELEASE_DIR"
+echo "  1. Orchestrator_aarch64.dmg  (stable download link)"
+echo "  2. $(basename "$TAR_GZ")"
+echo "  3. $(basename "$SIG_FILE")"
+echo "  4. latest.json"
