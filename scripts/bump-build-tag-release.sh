@@ -56,4 +56,16 @@ git tag "v$VERSION"
 echo "==> Pushing to remote..."
 git push
 git push --tags
+# Create GitHub release using gh CLI if available
+if command -v gh >/dev/null 2>&1; then
+  echo "==> Creating GitHub release via gh CLI..."
+  gh release create "v$VERSION" \
+    --title "Orchestrator v$VERSION" \
+    --notes "Automated release for version $VERSION" \
+    --target main
+  echo "✔ GitHub release created."
+else
+  echo "gh CLI not found, skipping GitHub release creation."
+fi
+
 echo "✔ Release process complete."

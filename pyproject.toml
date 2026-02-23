@@ -1,6 +1,6 @@
 [project]
 name = "claude-orchestrator"
-version = "0.2.3"
+version = "0.2.4"
 description = "Meta-agent that manages multiple concurrent Claude Code sessions"
 requires-python = ">=3.11"
 
