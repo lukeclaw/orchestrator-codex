@@ -166,7 +166,7 @@ export default function SettingsPage() {
                 </div>
                 {installError && (
                   <div className="update-error" style={{ marginTop: 8 }}>
-                    Auto-install unavailable — opened download page instead.
+                    Auto-install failed: {installError}
                   </div>
                 )}
               </div>

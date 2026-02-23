@@ -25,6 +25,23 @@ async function tauriInvoke<T>(cmd: string, args?: Record<string, unknown>): Prom
   return (window as any).__TAURI_INTERNALS__.invoke(cmd, args)
 }
 
+/** Create a Tauri IPC Channel for streaming events (e.g. download progress). */
+function createChannel(onMessage?: (event: unknown) => void) {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const internals = (window as any).__TAURI_INTERNALS__
+  const id = internals.transformCallback(onMessage || (() => {}))
+  return { id, __TAURI_CHANNEL_MARKER__: true }
+}
+
+/** Metadata returned by plugin:updater|check when an update is available. */
+interface UpdateMetadata {
+  rid: number
+  currentVersion: string
+  version: string
+  date?: string
+  body?: string
+}
+
 export function useUpdate() {
   const [info, setInfo] = useState<UpdateInfo | null>(null)
   const [checking, setChecking] = useState(false)
@@ -74,12 +91,13 @@ export function useUpdate() {
     setInstallError(null)
 
     try {
-      // Ask the Tauri updater plugin to check (it uses the latest.json endpoint)
-      const update = await tauriInvoke<{ available: boolean; rid?: number } | null>(
+      // Ask the Tauri updater plugin to check (it uses the latest.json endpoint).
+      // Returns the update metadata object when available, or null when up-to-date.
+      const update = await tauriInvoke<UpdateMetadata | null>(
         'plugin:updater|check'
       )
 
-      if (!update || !update.available) {
+      if (!update) {
         // Tauri updater says no update (maybe no signed artifacts yet).
         // Fall back to opening the release page.
         setInstallStatus('idle')
@@ -92,8 +110,13 @@ export function useUpdate() {
       }
 
       // Download and install. The rid (resource ID) references the update object.
+      // The onEvent channel is required by the plugin for download progress events.
       setInstallStatus('installing')
-      await tauriInvoke('plugin:updater|download_and_install', { rid: update.rid })
+      const onEvent = createChannel()
+      await tauriInvoke('plugin:updater|download_and_install', {
+        rid: update.rid,
+        onEvent,
+      })
 
       setInstallStatus('done')
 
