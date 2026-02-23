@@ -241,34 +241,52 @@ function TimelineBar({ intervals }: { intervals: { start: string; end: string }[
 }
 
 function HeatmapContent({ items }: { items: HeatmapDetailItem[] }) {
-  // Group by date
-  const byDate = new Map<string, HeatmapDetailItem[]>()
+  // Group by date, then by worker within each date
+  const byDate = new Map<string, Map<string, HeatmapDetailItem[]>>()
   for (const item of items) {
-    const existing = byDate.get(item.date)
+    let dateMap = byDate.get(item.date)
+    if (!dateMap) {
+      dateMap = new Map()
+      byDate.set(item.date, dateMap)
+    }
+    const existing = dateMap.get(item.session_id)
     if (existing) existing.push(item)
-    else byDate.set(item.date, [item])
+    else dateMap.set(item.session_id, [item])
   }
   const dates = Array.from(byDate.keys())
 
   return (
     <>
-      <p className="trend-detail-summary">
-        {items.length} event{items.length !== 1 ? 's' : ''}
-      </p>
-
-      {dates.map(date => (
-        <div key={date} className="heatmap-date-group">
-          <h4 className="heatmap-date-header">{formatDate(date)}</h4>
-          {byDate.get(date)!.map((item, i) => (
-            <div key={i} className="trend-detail-row">
-              <Link to={`/workers/${item.session_id}`} className="trend-detail-key" onClick={e => e.stopPropagation()}>
-                {item.session_name}
-              </Link>
-              <span className="trend-detail-time">{formatTime(item.timestamp)}</span>
+      <div className="heatmap-table">
+        {dates.map(date => {
+          const workers = byDate.get(date)!
+          return (
+            <div key={date} className="heatmap-date-group">
+              <div className="heatmap-date-header">
+                <span>{formatDate(date)}</span>
+                <span className="heatmap-date-count">{items.length} event{items.length !== 1 ? 's' : ''}</span>
+              </div>
+              {Array.from(workers.entries()).map(([sessionId, events]) => (
+                <div key={sessionId} className="heatmap-worker-group">
+                  <div className="heatmap-worker-header">
+                    <Link to={`/workers/${sessionId}`} className="heatmap-worker-name" onClick={e => e.stopPropagation()}>
+                      {events[0].session_name}
+                    </Link>
+                    {events.length > 1 && (
+                      <span className="heatmap-worker-count">×{events.length}</span>
+                    )}
+                  </div>
+                  <div className="heatmap-timestamps">
+                    {events.map((ev, i) => (
+                      <span key={i} className="heatmap-time-chip">{formatTime(ev.timestamp)}</span>
+                    ))}
+                  </div>
+                </div>
+              ))}
             </div>
-          ))}
-        </div>
-      ))}
+          )
+        })}
+      </div>
     </>
   )
 }

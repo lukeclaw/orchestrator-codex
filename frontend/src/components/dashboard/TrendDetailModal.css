@@ -262,16 +262,76 @@
   z-index: 1;
 }
 
-/* Heatmap date groups */
+/* Heatmap grouped layout */
+.heatmap-table {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
 .heatmap-date-group {
-  margin-bottom: 12px;
+  display: flex;
+  flex-direction: column;
 }
 
 .heatmap-date-header {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
   font-size: 12px;
   font-weight: 600;
   color: var(--text-secondary);
-  margin: 0 0 6px;
-  padding-bottom: 4px;
-  border-bottom: 1px solid var(--border);
+  margin: 0 0 8px;
+}
+
+.heatmap-date-count {
+  font-weight: 400;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.heatmap-worker-group {
+  padding: 6px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+.heatmap-worker-group:last-child {
+  border-bottom: none;
+}
+
+.heatmap-worker-header {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+
+.heatmap-worker-name {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.heatmap-worker-name:hover {
+  text-decoration: underline;
+}
+
+.heatmap-worker-count {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.heatmap-timestamps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.heatmap-time-chip {
+  font-size: 11px;
+  color: var(--text-muted);
+  background: rgba(255, 255, 255, 0.05);
+  padding: 1px 8px;
+  border-radius: 4px;
 }
