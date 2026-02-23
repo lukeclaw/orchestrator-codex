@@ -36,10 +36,7 @@
     "macOS": {
       "minimumSystemVersion": "13.0",
       "signingIdentity": "Developer ID Application: Yudong Qiu (XT8BC8793B)",
-      "entitlements": "./Entitlements.plist",
-      "files": {
-        "embedded.provisionprofile": "./embedded.provisionprofile"
-      }
+      "entitlements": "./Entitlements.plist"
     },
     "createUpdaterArtifacts": true
   },

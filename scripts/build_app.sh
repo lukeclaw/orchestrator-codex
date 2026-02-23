@@ -104,6 +104,11 @@ if [[ "$BUILD_PKG" == "true" ]]; then
     rm -rf "$APP_STORE_BUNDLE"
     cp -R "$APP_BUNDLE" "$APP_STORE_BUNDLE"
 
+    # Embed the App Store provisioning profile (required for sandboxed apps).
+    echo "  Embedding provisioning profile..."
+    cp "src-tauri/embedded.provisionprofile" \
+       "$APP_STORE_BUNDLE/Contents/embedded.provisionprofile"
+
     # Sign inside-out: deepest binaries first, then the bundle.
     # --deep is unreliable for nested .so files, so we do it explicitly.
     # All executables must carry the app-sandbox entitlement for App Store validation.
@@ -124,7 +129,7 @@ if [[ "$BUILD_PKG" == "true" ]]; then
     echo "  Re-signing app bundle (Apple Distribution)..."
     codesign --force --options runtime --timestamp \
              --sign "$APP_STORE_IDENTITY" \
-             --entitlements "src-tauri/Entitlements.plist" \
+             --entitlements "src-tauri/Entitlements-appstore.plist" \
              "$APP_STORE_BUNDLE"
 
     echo "  Running productbuild..."
