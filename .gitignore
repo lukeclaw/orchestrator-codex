@@ -81,3 +81,4 @@ src-tauri/*.provisionprofile
 *.spec.bak
 orchestrator-server
 orchestrator-server.pkg
+orchestrator/_version.py

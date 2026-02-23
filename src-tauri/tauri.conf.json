@@ -9,6 +9,7 @@
     "beforeDevCommand": "cd frontend && npm run dev"
   },
   "app": {
+    "withGlobalTauri": true,
     "windows": [
       {
         "title": "Orchestrator",

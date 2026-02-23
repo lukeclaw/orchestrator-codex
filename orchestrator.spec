@@ -10,8 +10,18 @@ Build with:
 
 import os
 import glob
+import re
 
 block_cipher = None
+
+# Read version from pyproject.toml and bake into _version.py for the bundle
+with open("pyproject.toml") as f:
+    _match = re.search(r'^version = "(.+?)"', f.read(), re.MULTILINE)
+    _version = _match.group(1) if _match else "0.0.0"
+
+_version_file = os.path.join("orchestrator", "_version.py")
+with open(_version_file, "w") as f:
+    f.write(f'VERSION = "{_version}"\n')
 
 # Collect SQL migration files
 migration_dir = os.path.join("orchestrator", "state", "migrations", "versions")
