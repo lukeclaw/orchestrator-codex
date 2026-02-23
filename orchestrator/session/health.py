@@ -367,11 +367,12 @@ def check_screen_and_claude_remote(
         # Screen detection uses two methods:
         #   1. `screen -ls` (socket-based — can fail if SCREENDIR differs between
         #      interactive and BatchMode SSH sessions)
-        #   2. `ps aux | grep "screen -S <name>"` (process-based — always works)
+        #   2. `ps aux | grep "screen .* <name>"` (process-based — always works,
+        #      matches both `screen -S` from initial creation and `screen -rd` from reconnect)
         # Either match counts as "screen exists".
         check_cmd = (
             f"screen -ls 2>/dev/null | grep -q '{screen_name}' && echo 'SCREEN_EXISTS' || echo 'NO_SCREEN'; "
-            f"ps aux | grep -v grep | grep -q '[s]creen -S {screen_name}' && echo 'SCREEN_PS_EXISTS' || echo 'NO_SCREEN_PS'; "
+            f"ps aux | grep -v grep | grep -q '[s]creen .* {screen_name}' && echo 'SCREEN_PS_EXISTS' || echo 'NO_SCREEN_PS'; "
             f"ps aux | grep -v grep | grep -E 'claude (-r|--|--settings)' | grep -q '{session_id}' && echo 'CLAUDE_RUNNING' || echo 'NO_CLAUDE'"
         )
         
