@@ -63,10 +63,10 @@ gh api repos/OWNER/REPO/issues/N/comments
 Address each comment in code, then push.
 
 **Case C — PR is clean (checks pass, no unresolved comments):**
-Mark as ready for review — but **only during working hours: 9 AM – 6 PM PST, Mon–Fri.**
+Mark as ready for review — but **only during working hours: 9 AM – 6 PM local time, Mon–Fri.**
 ```bash
-current_hour=$(TZ="America/Los_Angeles" date +%H)
-current_day=$(TZ="America/Los_Angeles" date +%u)  # 1=Monday, 7=Sunday
+current_hour=$(date +%H)
+current_day=$(date +%u)  # 1=Monday, 7=Sunday
 if [ "$current_day" -le 5 ] && [ "$current_hour" -ge 9 ] && [ "$current_hour" -lt 18 ]; then
   gh pr ready <PR_NUMBER>
 else
@@ -220,6 +220,15 @@ After merging, mark the subtask as `done`. This is the only time a subtask shoul
 - Review comment status when addressed (e.g., "Review: @user's naming concern — addressed in commit abc123")
 
 **Update task and subtask notes after each significant action (PR created, review addressed, merged, blocked, etc.).**
+
+---
+
+## Log Timestamp After Each Action
+
+After completing any significant action (PR created, review addressed, CI fix pushed, PR merged, etc.), print the current datetime so the user can see when the action was taken:
+```bash
+echo "Action completed at: $(date '+%Y-%m-%d %H:%M:%S %Z')"
+```
 
 ---
 
