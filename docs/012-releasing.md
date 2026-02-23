@@ -82,6 +82,7 @@ git add -A && git commit -m "chore: bump version to 0.2.0"
 ```bash
 # Build with updater signing (enables auto-install for users)
 export TAURI_SIGNING_PRIVATE_KEY="your-key-here"
+# Optional, if not set, will be prompted to enter password during the build
 export TAURI_SIGNING_PRIVATE_KEY_PASSWORD="your-password"
 ./scripts/build_app.sh --dmg-only
 ```
