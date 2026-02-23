@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 GITHUB_REPO = "yudongqiu/orchestrator"
-LATEST_JSON_URL = f"https://github.com/{GITHUB_REPO}/releases/latest/download/latest.json"
+GITHUB_API_URL = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
 
 # Simple in-memory cache (avoid hammering GitHub on repeated clicks)
 _cache: dict[str, Any] = {}
@@ -29,7 +29,7 @@ def _parse_version(v: str) -> tuple[int, ...]:
 
 @router.get("/updates/check")
 async def check_for_updates(force: bool = False):
-    """Fetch latest.json from GitHub releases and compare versions."""
+    """Check the GitHub Releases API for a newer version."""
     now = time.time()
 
     if not force and _cache.get("result") and now - _cache.get("fetched_at", 0) < _CACHE_TTL:
@@ -38,8 +38,11 @@ async def check_for_updates(force: bool = False):
     current = __version__
 
     try:
-        async with httpx.AsyncClient(timeout=10, follow_redirects=True) as client:
-            resp = await client.get(LATEST_JSON_URL)
+        async with httpx.AsyncClient(timeout=10) as client:
+            resp = await client.get(
+                GITHUB_API_URL,
+                headers={"Accept": "application/vnd.github+json"},
+            )
             resp.raise_for_status()
             data = resp.json()
     except Exception as e:
@@ -51,20 +54,30 @@ async def check_for_updates(force: bool = False):
             "error": str(e),
         }
 
-    latest = data.get("version", current)
-    notes = data.get("notes", "")
-    pub_date = data.get("pub_date", "")
+    tag = data.get("tag_name", "")
+    latest = tag.lstrip("v")
+    notes = data.get("body", "")
+    pub_date = data.get("published_at", "")
+    release_url = data.get("html_url", f"https://github.com/{GITHUB_REPO}/releases/latest")
+
+    # Find the DMG asset URL for the direct download link
+    dmg_url = None
+    for asset in data.get("assets", []):
+        if asset.get("name", "").endswith(".dmg"):
+            dmg_url = asset["browser_download_url"]
+            break
 
     try:
-        update_available = _parse_version(latest) > _parse_version(current)
+        update_available = bool(latest) and _parse_version(latest) > _parse_version(current)
     except (ValueError, TypeError):
         update_available = False
 
     result = {
         "current_version": current,
-        "latest_version": latest,
+        "latest_version": latest or None,
         "update_available": update_available,
-        "release_url": f"https://github.com/{GITHUB_REPO}/releases/tag/v{latest}",
+        "release_url": release_url,
+        "dmg_url": dmg_url,
         "release_notes": notes,
         "pub_date": pub_date,
     }

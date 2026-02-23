@@ -6,6 +6,7 @@ export interface UpdateInfo {
   latest_version: string | null
   update_available: boolean
   release_url?: string
+  dmg_url?: string | null
   release_notes?: string
   pub_date?: string
   error?: string

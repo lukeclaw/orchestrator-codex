@@ -137,12 +137,22 @@ export default function SettingsPage() {
                 {updateInfo.release_notes && (
                   <p className="update-notes">{updateInfo.release_notes}</p>
                 )}
-                <button
-                  className="btn btn-primary"
-                  onClick={() => updateInfo.release_url && openRelease(updateInfo.release_url)}
-                >
-                  Download Update
-                </button>
+                <div className="update-banner-actions">
+                  <button
+                    className="btn btn-primary"
+                    onClick={() => openRelease(updateInfo.dmg_url || updateInfo.release_url!)}
+                  >
+                    {updateInfo.dmg_url ? 'Download DMG' : 'View Release'}
+                  </button>
+                  {updateInfo.dmg_url && updateInfo.release_url && (
+                    <button
+                      className="btn btn-secondary"
+                      onClick={() => openRelease(updateInfo.release_url!)}
+                    >
+                      Release Notes
+                    </button>
+                  )}
+                </div>
               </div>
             )}
 
