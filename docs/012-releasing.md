@@ -14,8 +14,10 @@ git tag v0.2.0
 git push && git push --tags
 
 # 3b. Manual release — build locally, upload to GitHub
+export TAURI_SIGNING_PRIVATE_KEY="..."
 ./scripts/build_app.sh --dmg-only
-# Then upload DMG at https://github.com/yudongqiu/orchestrator/releases/new
+./scripts/generate-latest-json.sh
+# Upload DMG + tar.gz + sig + latest.json at GitHub releases
 ```
 
 ---
@@ -31,6 +33,7 @@ that can't read it dynamically:
 | `pyproject.toml` | bump script (source of truth) |
 | `src-tauri/tauri.conf.json` | bump script |
 | `src-tauri/Cargo.toml` | bump script |
+| `frontend/package.json` | bump script |
 | `orchestrator/__init__.py` | reads from pyproject.toml at runtime |
 | `orchestrator/api/app.py` | reads from `__version__` at runtime |
 
@@ -77,12 +80,28 @@ git add -A && git commit -m "chore: bump version to 0.2.0"
 ### 2. Build locally
 
 ```bash
+# Build with updater signing (enables auto-install for users)
+export TAURI_SIGNING_PRIVATE_KEY="your-key-here"
+export TAURI_SIGNING_PRIVATE_KEY_PASSWORD="your-password"
 ./scripts/build_app.sh --dmg-only
 ```
 
-Output: `src-tauri/target/release/bundle/dmg/Orchestrator_0.2.0_aarch64.dmg`
+Output in `src-tauri/target/release/bundle/`:
+- `dmg/Orchestrator_0.2.0_aarch64.dmg`
+- `macos/Orchestrator.app.tar.gz` (updater artifact)
+- `macos/Orchestrator.app.tar.gz.sig` (signature)
 
-### 3. Create the release on GitHub
+### 3. Generate latest.json
+
+```bash
+./scripts/generate-latest-json.sh
+```
+
+This reads the `.sig` file and version from `tauri.conf.json` and generates
+`latest.json` in the bundle directory. The script prints the full list of
+files to upload.
+
+### 4. Create the release on GitHub
 
 Go to https://github.com/yudongqiu/orchestrator/releases/new
 
@@ -90,33 +109,33 @@ Go to https://github.com/yudongqiu/orchestrator/releases/new
 - **Target**: `main`
 - **Title**: `Orchestrator v0.2.0`
 - **Description**: release notes
-- **Attach**: drag the `.dmg` file
+- **Attach** these files:
+  1. `Orchestrator_0.2.0_aarch64.dmg` — for manual download
+  2. `Orchestrator.app.tar.gz` — updater artifact
+  3. `Orchestrator.app.tar.gz.sig` — signature
+  4. `latest.json` — version manifest for auto-install
 - Click **Publish release**
 
-### 4. What users see
+### 5. What users see
 
 - **Update detection** works immediately — the app checks the GitHub Releases
   API, which reads the tag name and compares versions.
-- **Auto-install** (download + replace + restart) only works if the release
-  includes signed updater artifacts (`latest.json`, `.app.tar.gz`, `.sig`).
-  Without them, clicking "Install Update" opens the release page in the browser
-  as a fallback.
+- **Auto-install** (download + replace + restart) works when the release
+  includes `latest.json`, `.app.tar.gz`, and `.sig`. The Tauri updater
+  fetches `latest.json`, downloads the tar.gz, verifies the signature,
+  replaces the app, and restarts.
+- **Fallback**: If signed artifacts are missing, clicking "Install Update"
+  opens the release page in the browser for manual download.
 
-### Generating signed updater artifacts locally (optional)
+### Building without updater signing (quick test)
 
-To enable auto-install for a manual release, build with the signing key:
+If you just want a DMG without auto-install support:
 
 ```bash
-export TAURI_SIGNING_PRIVATE_KEY="your-key-here"
-export TAURI_SIGNING_PRIVATE_KEY_PASSWORD="your-password"
-cargo tauri build
+./scripts/build_app.sh --dmg-only
+# Upload only the DMG — update detection still works, but users
+# will be directed to the release page to download manually.
 ```
-
-This generates additional files in `src-tauri/target/release/bundle/macos/`:
-- `Orchestrator.app.tar.gz`
-- `Orchestrator.app.tar.gz.sig`
-
-And a `latest.json` — upload all three alongside the DMG to the GitHub release.
 
 ---
 
