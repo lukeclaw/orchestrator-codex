@@ -48,9 +48,50 @@ def _parse_skill_file(path: str) -> dict:
             return {
                 "name": meta.get("name", Path(path).stem),
                 "description": meta.get("description", ""),
-                "content": body,
+                "content": _strip_content_header(body),
             }
     return {"name": Path(path).stem, "description": "", "content": text}
+
+
+def _strip_content_header(content: str) -> str:
+    """Strip leading heading and first description paragraph from skill content.
+
+    Built-in skills typically start their body with:
+        # Heading
+        <blank>
+        Description paragraph (duplicates frontmatter description).
+        <blank>
+        ## First real section ...
+
+    Since name and description are shown separately in the UI, strip this
+    redundant leading block for display.
+    """
+    lines = content.split('\n')
+    i = 0
+
+    # Skip leading blank lines
+    while i < len(lines) and not lines[i].strip():
+        i += 1
+
+    # Only strip if the first non-blank line is a top-level heading (# ...)
+    if i >= len(lines) or not lines[i].startswith('# ') or lines[i].startswith('## '):
+        return content
+
+    i += 1  # skip the heading line
+
+    # Skip blank lines after heading
+    while i < len(lines) and not lines[i].strip():
+        i += 1
+
+    # Skip first paragraph (description) — consecutive non-empty lines
+    # that aren't sub-headings, horizontal rules, or code blocks
+    while (i < len(lines) and lines[i].strip()
+           and not lines[i].startswith('#')
+           and not lines[i].startswith('---')
+           and not lines[i].startswith('```')):
+        i += 1
+
+    return '\n'.join(lines[i:]).lstrip('\n')
 
 
 def _list_builtin_skills(target: str | None = None) -> list[dict]:

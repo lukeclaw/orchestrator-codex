@@ -291,6 +291,11 @@ def get_brain_prompt(custom_skills_section: str = "") -> str | None:
 def deploy_custom_skills(skills_dest: str, custom_skills: list[dict]):
     """Write custom skill markdown files to a skills directory.
 
+    The generated file includes YAML frontmatter plus a leading heading and
+    description paragraph so the deployed file is self-documenting.  The DB
+    stores name, description, and body content separately; this function
+    reassembles them into a complete .md file.
+
     Args:
         skills_dest: Directory to write skill .md files into
         custom_skills: List of dicts with 'name', 'description', 'content' keys
@@ -298,9 +303,19 @@ def deploy_custom_skills(skills_dest: str, custom_skills: list[dict]):
     os.makedirs(skills_dest, exist_ok=True)
     for skill in custom_skills:
         skill_path = os.path.join(skills_dest, f"{skill['name']}.md")
+        name = skill['name']
         desc = skill.get("description") or ""
+        body = skill.get('content', '')
+
+        parts = [f"---\nname: {name}\ndescription: {desc}\n---\n"]
+        parts.append(f"\n# {name}\n")
+        if desc:
+            parts.append(f"\n{desc}\n")
+        if body.strip():
+            parts.append(f"\n{body}")
+
         with open(skill_path, "w") as f:
-            f.write(f"---\nname: {skill['name']}\ndescription: {desc}\n---\n\n{skill.get('content', '')}")
+            f.write(''.join(parts))
 
 
 def generate_worker_hooks(

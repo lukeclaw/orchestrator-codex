@@ -14,17 +14,15 @@ interface Props {
   onDelete?: (id: string) => Promise<unknown>
 }
 
-const STARTER_TEMPLATE = `# Skill Name
-
-Describe what this skill does and when to use it.
-
----
-
-## Steps
+const STARTER_TEMPLATE = `## Steps
 
 1. First step
 2. Second step
 3. Third step
+
+## Notes
+
+- Additional guidelines or context
 `
 
 export default function SkillModal({ skill, isNew, defaultTarget, onClose, onSave, onDelete }: Props) {

@@ -65,7 +65,7 @@ class TestDeployCustomSkills:
             assert os.path.exists(os.path.join(tmp_dir, "deploy-check.md"))
             assert os.path.exists(os.path.join(tmp_dir, "lint-code.md"))
 
-    def test_file_has_frontmatter(self):
+    def test_file_has_frontmatter_and_heading(self):
         skills = [
             {"name": "my-skill", "description": "A description", "content": "Body here"},
         ]
@@ -82,10 +82,13 @@ class TestDeployCustomSkills:
             meta = yaml.safe_load(parts[1])
             assert meta["name"] == "my-skill"
             assert meta["description"] == "A description"
-            # Body after frontmatter
-            assert "Body here" in parts[2]
+            # After frontmatter: heading + description + body
+            body = parts[2]
+            assert "# my-skill" in body
+            assert "A description" in body
+            assert "Body here" in body
 
-    def test_empty_description(self):
+    def test_file_no_description(self):
         skills = [
             {"name": "no-desc", "content": "Body"},
         ]
@@ -96,10 +99,9 @@ class TestDeployCustomSkills:
             with open(filepath) as f:
                 text = f.read()
 
-            parts = text.split("---\n", 2)
-            meta = yaml.safe_load(parts[1])
-            # YAML parses empty string as None; the key exists with no value
-            assert meta["description"] is None or meta["description"] == ""
+            # Should have heading but no description paragraph
+            assert "# no-desc" in text
+            assert "Body" in text
 
     def test_creates_directory_if_missing(self):
         skills = [
@@ -117,6 +119,49 @@ class TestDeployCustomSkills:
             assert os.path.isdir(tmp_dir)
             md_files = [f for f in os.listdir(tmp_dir) if f.endswith(".md")]
             assert len(md_files) == 0
+
+
+class TestStripContentHeader:
+    """Test _strip_content_header used to remove duplicate heading/desc from built-in skills."""
+
+    def test_strips_heading_and_paragraph(self):
+        from orchestrator.api.routes.skills import _strip_content_header
+
+        content = "\n# Create Work Item\n\nAnalyze user input and do stuff.\n\n## Usage\n- step 1\n"
+        result = _strip_content_header(content)
+        assert "# Create Work Item" not in result
+        assert "Analyze user input" not in result
+        assert "## Usage" in result
+
+    def test_strips_multiline_paragraph(self):
+        from orchestrator.api.routes.skills import _strip_content_header
+
+        content = "# PR Workflow\n\nFull PR lifecycle: creation,\nreview handling, and merge.\n\n---\n\n## Steps\n"
+        result = _strip_content_header(content)
+        assert "# PR Workflow" not in result
+        assert "Full PR lifecycle" not in result
+        assert "## Steps" in result
+
+    def test_no_heading_returns_as_is(self):
+        from orchestrator.api.routes.skills import _strip_content_header
+
+        content = "## Steps\n\n1. First\n2. Second\n"
+        result = _strip_content_header(content)
+        assert result == content
+
+    def test_heading_without_paragraph(self):
+        from orchestrator.api.routes.skills import _strip_content_header
+
+        content = "# Title\n\n## Section\nContent here\n"
+        result = _strip_content_header(content)
+        assert "# Title" not in result
+        assert "## Section" in result
+
+    def test_empty_content(self):
+        from orchestrator.api.routes.skills import _strip_content_header
+
+        assert _strip_content_header("") == ""
+        assert _strip_content_header("\n\n") == "\n\n"
 
 
 class TestPromptInjection:

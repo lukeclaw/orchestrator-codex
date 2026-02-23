@@ -133,7 +133,7 @@ First, check the MP's PR template for a testing checklist. If the template has i
 For verifiable evidence, choose the approach that fits the change:
 
 1. **API/behavior changes** (preferred): Deploy locally on qprod/qei and include `curli`/`grpcurli` call + response showing the change works
-2. **UI changes**: E2E test with screenshots (use `/screenshot-gh-upload` skill)
+2. **UI changes**: E2E test with screenshots
 3. **Internal/non-API changes**: Unit test results and coverage stats are sufficient
 
 Include the actual output — not just "tests pass". Reviewers should be able to verify the change from the PR description without checking out the branch.

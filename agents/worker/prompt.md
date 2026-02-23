@@ -101,7 +101,6 @@ orch-context add --title "Title" --description "Short desc" --content "Full cont
 Invoke with `/skill-name`. Skills provide step-by-step workflows.
 
 - **`/pr-workflow`** — **MANDATORY for ALL PR-related work.** Invoke before ANY PR activity: checking status, reconciling state, creating, reviewing, fixing CI, merging. This skill also covers `orch-prs` for batch PR status checks.
-- **`/screenshot-gh-upload`** — Capture screenshots for PR descriptions
 {{CUSTOM_SKILLS}}
 
 ## When You're Stuck
