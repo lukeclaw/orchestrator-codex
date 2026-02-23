@@ -167,7 +167,7 @@ class TestHookGeneration:
         assert '\\"claude_session_id\\"' in content
 
     def test_hook_session_start_non_startup_sends_claude_session_id(self):
-        """SessionStart for /clear should send claude_session_id without status change."""
+        """SessionStart for /clear should send claude_session_id and restore idle status."""
         hook_path = os.path.join(
             os.path.dirname(__file__), "..", "..",
             "agents", "worker", "hooks", "update-status.sh",
@@ -175,9 +175,11 @@ class TestHookGeneration:
         with open(hook_path) as f:
             content = f.read()
 
-        # Should have a dedicated curl in SessionStart that sends only claude_session_id
-        # (no status field) and exits before the shared curl at the bottom
-        assert '{\\"claude_session_id\\": \\"$CLAUDE_SID\\"}' in content
+        # SessionStart (non-startup) should send both status and claude_session_id
+        # to restore idle status after SessionEnd briefly set "disconnected"
+        assert '\\"claude_session_id\\": \\"$CLAUDE_SID\\"' in content
+        # The dedicated curl in the SessionStart branch should exit early
+        assert "exit 0" in content
 
 
 # =============================================================================

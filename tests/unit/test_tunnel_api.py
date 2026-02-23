@@ -12,6 +12,8 @@ from orchestrator.api.app import create_app
 from orchestrator.state.db import get_connection
 from orchestrator.state.migrations.runner import apply_migrations
 
+pytestmark = pytest.mark.allow_subprocess
+
 
 @pytest.fixture
 def db():
@@ -78,7 +80,7 @@ class TestCreateTunnelEndpoint:
         )
         
         assert response.status_code == 400
-        assert "only supported for rdev" in response.json()["detail"].lower()
+        assert "only supported for remote" in response.json()["detail"].lower()
 
     def test_returns_404_for_unknown_session(self, client):
         """Should return 404 for non-existent session."""

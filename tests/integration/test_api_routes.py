@@ -36,7 +36,8 @@ class TestSessions:
         assert resp.status_code == 201
         data = resp.json()
         assert data["name"] == "worker-1"
-        assert data["status"] == "idle"
+        # Remote workers start in "connecting" while background setup runs
+        assert data["status"] == "connecting"
 
     def test_get_session(self, client):
         with patch("orchestrator.api.routes.sessions.ensure_window", return_value="orchestrator:w1"):

@@ -105,21 +105,30 @@ class TestPortConflictDetection:
         ps_output = """USER       PID  %CPU %MEM      VSZ    RSS   TT  STAT STARTED      TIME COMMAND
 yuqiu    12345   0.0  0.0 408628368   1234 s000  S+   10:00AM   0:00.01 ssh -N -L 4200:localhost:4200 user/rdev-vm
 """
-        with patch("subprocess.run") as mock_run, \
+        def run_side_effect(cmd, **kwargs):
+            # ps aux → return tunnel process list
+            if cmd[0] == "ps":
+                return MagicMock(stdout=ps_output, returncode=0)
+            # lsof → return empty (port is available)
+            if cmd[0] == "lsof":
+                return MagicMock(stdout="", returncode=1)
+            return MagicMock(stdout="", returncode=0)
+
+        with patch("subprocess.run", side_effect=run_side_effect), \
              patch("os.kill") as mock_kill, \
-             patch("subprocess.Popen") as mock_popen:
-            mock_run.return_value = MagicMock(stdout=ps_output, returncode=0)
+             patch("subprocess.Popen") as mock_popen, \
+             patch("time.sleep"):
             # Process is dead
             mock_kill.side_effect = ProcessLookupError()
-            
+
             # New tunnel should be allowed
             mock_proc = MagicMock()
             mock_proc.pid = 99999
             mock_proc.poll.return_value = None
             mock_popen.return_value = mock_proc
-            
+
             success, result = tunnel.create_tunnel("other/host", 4200)
-            
+
             assert success is True
             assert result["pid"] == 99999
 
