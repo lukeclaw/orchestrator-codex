@@ -11,6 +11,7 @@ import ProjectDetailPage from './pages/ProjectDetailPage'
 import TasksPage from './pages/TasksPage'
 import TaskDetailPage from './pages/TaskDetailPage'
 import ContextPage from './pages/ContextPage'
+import SkillsPage from './pages/SkillsPage'
 import NotificationsPage from './pages/NotificationsPage'
 import SettingsPage from './pages/SettingsPage'
 
@@ -30,6 +31,8 @@ export default function App() {
               <Route path="/workers/rdevs" element={<WorkersPage />} />
               <Route path="/workers/:id" element={<SessionDetailPage />} />
               <Route path="/context" element={<ContextPage />} />
+              <Route path="/skills" element={<SkillsPage />} />
+              <Route path="/skills/worker" element={<SkillsPage />} />
               <Route path="/notifications" element={<NotificationsPage />} />
               <Route path="/settings" element={<SettingsPage />} />
             </Route>

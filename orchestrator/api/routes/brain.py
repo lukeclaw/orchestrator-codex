@@ -17,7 +17,7 @@ from orchestrator.state.repositories import sessions as sessions_repo
 from orchestrator.terminal import manager as tmux
 from orchestrator.terminal.session import send_to_session
 from orchestrator.agents import deploy_brain_scripts, get_path_export_command, generate_brain_hooks
-from orchestrator.agents.deploy import get_brain_prompt, get_brain_skills_dir
+from orchestrator.agents.deploy import get_brain_prompt, get_brain_skills_dir, format_custom_skills_for_prompt, deploy_custom_skills
 
 logger = logging.getLogger(__name__)
 
@@ -92,8 +92,14 @@ def start_brain(db=Depends(get_db)):
     brain_dir = "/tmp/orchestrator/brain"
     os.makedirs(brain_dir, exist_ok=True)
 
+    # Fetch custom brain skills from DB
+    from orchestrator.state.repositories import skills as skills_repo
+    custom_skills = skills_repo.list_skills(db, target="brain")
+    custom_skills_dicts = [{"name": s.name, "description": s.description, "content": s.content} for s in custom_skills]
+    custom_skills_section = format_custom_skills_for_prompt(custom_skills_dicts)
+
     # Copy brain prompt as CLAUDE.md into the working directory
-    brain_prompt = get_brain_prompt()
+    brain_prompt = get_brain_prompt(custom_skills_section=custom_skills_section)
     if brain_prompt:
         with open(os.path.join(brain_dir, "CLAUDE.md"), "w") as f:
             f.write(brain_prompt)
@@ -109,7 +115,12 @@ def start_brain(db=Depends(get_db)):
                     os.path.join(skills_src, skill_file),
                     os.path.join(skills_dest, skill_file),
                 )
-        logger.info("Deployed %d skills to %s", len(os.listdir(skills_dest)), skills_dest)
+        logger.info("Deployed %d built-in skills to %s", len(os.listdir(skills_dest)), skills_dest)
+
+    # Deploy custom brain skills from DB
+    if custom_skills_dicts:
+        deploy_custom_skills(skills_dest, custom_skills_dicts)
+        logger.info("Deployed %d custom brain skills to %s", len(custom_skills_dicts), skills_dest)
 
     # Deploy brain CLI scripts
     bin_dir = deploy_brain_scripts(brain_dir)

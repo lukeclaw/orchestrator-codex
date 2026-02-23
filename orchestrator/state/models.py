@@ -144,3 +144,14 @@ class Notification:
 
     def __post_init__(self):
         self.dismissed = bool(self.dismissed)
+
+
+@dataclass
+class Skill:
+    id: str
+    name: str
+    target: str = "worker"  # "brain" | "worker"
+    description: str | None = None
+    content: str = ""
+    created_at: str = ""
+    updated_at: str = ""

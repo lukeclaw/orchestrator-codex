@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { api } from '../api/client'
+import { api, openUrl } from '../api/client'
 import { useApp } from '../context/AppContext'
 import type { Notification } from '../api/types'
 import { IconCheck, IconExternalLink, IconTrash } from '../components/common/Icons'
@@ -199,7 +199,7 @@ export default function NotificationsPage() {
                       {expanded.has(n.id) && n.notification_type === 'pr_comment' && n.metadata ? (
                         <div className="np-pr-thread">
                           {n.metadata.pr_title && n.link_url && (
-                            <a href={n.link_url} target="_blank" rel="noopener noreferrer" className="np-pr-thread-title">
+                            <a href={n.link_url} className="np-pr-thread-title" onClick={e => { e.preventDefault(); e.stopPropagation(); openUrl(n.link_url!) }}>
                               {n.metadata.pr_title}
                             </a>
                           )}
@@ -242,15 +242,13 @@ export default function NotificationsPage() {
                         </button>
                       )}
                       {n.link_url && (
-                        <a
-                          href={n.link_url}
-                          target="_blank"
-                          rel="noopener noreferrer"
+                        <button
                           className="np-link-btn"
+                          onClick={() => openUrl(n.link_url!)}
                         >
                           <IconExternalLink size={12} />
                           Link
-                        </a>
+                        </button>
                       )}
                       {!n.dismissed && (
                         <button

@@ -172,6 +172,18 @@ export interface HeatmapDetailItem {
   date: string; session_id: string; session_name: string; timestamp: string
 }
 
+export interface Skill {
+  id: string
+  name: string
+  target: 'brain' | 'worker'
+  type: 'built_in' | 'custom'
+  description: string | null
+  content: string | null
+  line_count: number
+  created_at: string
+  updated_at: string
+}
+
 export type TrendDetailSelection =
   | { chart: 'throughput'; date: string }
   | { chart: 'worker_hours'; date: string }

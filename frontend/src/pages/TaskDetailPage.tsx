@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { useParams, Link, useNavigate } from 'react-router-dom'
 import { useApp } from '../context/AppContext'
 import { useNotify } from '../context/NotificationContext'
-import { api } from '../api/client'
+import { api, openUrl } from '../api/client'
 import { useSmartPaste } from '../hooks/useSmartPaste'
 import type { Task, TaskLink, Notification } from '../api/types'
 import { IconPause, IconPlay, IconStop, IconRefresh } from '../components/common/Icons'
@@ -763,7 +763,7 @@ export default function TaskDetailPage() {
                   ) : (
                     <div key={link.url} className="tdp-link">
                       <span className={`link-tag ${link.tag ? '' : 'empty'}`}>{link.tag || ''}</span>
-                      <a href={link.url} target="_blank" rel="noopener noreferrer">{link.url}</a>
+                      <a href={link.url} onClick={e => { e.preventDefault(); openUrl(link.url) }}>{link.url}</a>
                       {isEditable && (
                         <div className="tdp-link-actions">
                           <button className="link-edit" onClick={() => startEditLink(link)} title="Edit">✎</button>
@@ -917,9 +917,9 @@ export default function TaskDetailPage() {
                         <p className="notification-message">{n.message}</p>
                         <div className="notification-actions">
                           {n.link_url && (
-                            <a href={n.link_url} target="_blank" rel="noopener noreferrer" className="btn btn-link btn-sm">
+                            <button className="btn btn-link btn-sm" onClick={() => openUrl(n.link_url!)}>
                               Open Link ↗
-                            </a>
+                            </button>
                           )}
                           <button className="btn btn-secondary btn-sm" onClick={() => handleDismissNotification(n.id)}>
                             Dismiss

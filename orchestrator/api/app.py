@@ -190,6 +190,7 @@ def create_app(
         rdevs,
         sessions,
         settings,
+        skills,
         tasks,
         trends,
         updates,
@@ -204,6 +205,7 @@ def create_app(
     app.include_router(notifications.router, prefix="/api", tags=["notifications"])
     app.include_router(settings.router, prefix="/api", tags=["settings"])
     app.include_router(brain.router, prefix="/api", tags=["brain"])
+    app.include_router(skills.router, prefix="/api", tags=["skills"])
     app.include_router(paste.router, prefix="/api", tags=["paste"])
     app.include_router(trends.router, prefix="/api", tags=["trends"])
     app.include_router(updates.router, prefix="/api", tags=["updates"])

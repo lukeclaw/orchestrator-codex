@@ -1,5 +1,5 @@
 import { useState, useCallback } from 'react'
-import { api } from '../api/client'
+import { api, openUrl } from '../api/client'
 
 export interface UpdateInfo {
   current_version: string
@@ -66,11 +66,8 @@ export function useUpdate() {
   }, [])
 
   /** Open a URL in the system browser. */
-  const openRelease = useCallback(async (url: string) => {
-    await api('/api/open-url', {
-      method: 'POST',
-      body: JSON.stringify({ url }),
-    })
+  const openRelease = useCallback((url: string) => {
+    openUrl(url)
   }, [])
 
   /**

@@ -1,4 +1,5 @@
 import { useMemo, useState, useCallback } from 'react'
+import { openUrl } from '../../api/client'
 import { IconCopy, IconCheck } from './Icons'
 import './Markdown.css'
 
@@ -362,6 +363,13 @@ export default function Markdown({ children, className }: Props) {
       <div 
         className="markdown-content"
         dangerouslySetInnerHTML={{ __html: html }}
+        onClick={e => {
+          const anchor = (e.target as HTMLElement).closest('a')
+          if (anchor?.href && /^https?:\/\//.test(anchor.href)) {
+            e.preventDefault()
+            openUrl(anchor.href)
+          }
+        }}
       />
     </div>
   )

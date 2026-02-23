@@ -273,7 +273,38 @@ Manage context items (documents, guidelines, specs) that get injected into worke
 
 ---
 
-### 6. Notifications Page
+### 6. Skills Page
+
+Manage built-in and custom skills (slash commands) deployed to brain and worker agents.
+
+**Layout:**
+- Header: "Skills" title + Brain/Worker tab toggle + "+ New Skill" button
+- Card grid: `auto-fill` with `minmax(300px, 1fr)` columns
+- Built-in skills shown first (purple badge), then custom skills (green badge)
+- Tabs switch via URL: `/skills` (brain), `/skills/worker` (worker)
+
+**Skill Card:**
+- Header: `/name` in monospace + type badge (BUILT-IN purple, CUSTOM green)
+- Body: description truncated to 3 lines
+- Footer: line count + relative timestamp
+- Click opens SkillModal
+
+**SkillModal** (follows ContextModal pattern):
+- **View mode** (built-in): read-only markdown preview + "Duplicate as Custom" button
+- **Edit mode** (custom/new): editable name (slug validation), target toggle, description input, content textarea with Edit/Preview toggle
+- **Create mode**: starter template pre-filled, target defaults to current tab
+- Footer: Delete (with ConfirmPopover) | metadata | Cancel | Save
+
+**Data flow:**
+- Built-in skills read from `agents/{brain,worker}/skills/*.md` (filesystem, read-only)
+- Custom skills stored in SQLite `skills` table (full CRUD)
+- List endpoint merges both sources, content excluded from list view (lazy-loaded on click)
+- Custom skills auto-deployed to `.claude/commands/` on session start
+- Custom skill names injected into agent prompts for discoverability
+
+---
+
+### 7. Notifications Page
 
 Notification feed showing system events, worker alerts, and brain messages.
 
@@ -298,6 +329,7 @@ src/
 │   ├── useBackup.ts             ← Backup functionality
 │   ├── useBrainPanelState.ts    ← Brain panel resize/collapse state
 │   ├── useContextItems.ts       ← Context items CRUD
+│   ├── useSkills.ts             ← Skills CRUD (built-in + custom)
 │   ├── useProjects.ts           ← Projects CRUD
 │   ├── useSettings.ts           ← Settings management
 │   ├── useSidebarState.ts       ← Sidebar collapse state (localStorage)
@@ -359,6 +391,9 @@ src/
 │   │   └── TerminalView.tsx     ← xterm.js terminal component
 │   ├── context/
 │   │   └── ContextModal.tsx     ← Context item editor
+│   ├── skills/
+│   │   ├── SkillCard.tsx        ← Skill card (grid item)
+│   │   └── SkillModal.tsx       ← Skill view/edit/create modal
 │   └── common/
 │       ├── Modal.tsx
 │       ├── ConfirmPopover.tsx

@@ -203,38 +203,6 @@ build_json() {{
     return bin_dir
 
 
-def get_worker_prompt(session_id: str) -> str | None:
-    """Load and render worker prompt template.
-    
-    Args:
-        session_id: Worker's session ID (for placeholder replacement)
-        
-    Returns:
-        Rendered prompt string, or None if template not found
-    """
-    template_path = os.path.join(_AGENTS_DIR, "worker", "prompt.md")
-    if not os.path.exists(template_path):
-        return None
-    
-    with open(template_path) as f:
-        template = f.read()
-    
-    return template.replace("SESSION_ID", session_id)
-
-
-def get_brain_prompt() -> str | None:
-    """Load brain prompt.
-    
-    Returns:
-        Prompt string, or None if not found
-    """
-    prompt_path = os.path.join(_AGENTS_DIR, "brain", "prompt.md")
-    if not os.path.exists(prompt_path):
-        return None
-    
-    with open(prompt_path) as f:
-        return f.read()
-
 
 def get_brain_skills_dir() -> str | None:
     """Get path to brain skills directory.
@@ -258,6 +226,81 @@ def get_worker_skills_dir() -> str | None:
     if os.path.isdir(skills_dir):
         return skills_dir
     return None
+
+
+def format_custom_skills_for_prompt(skills: list[dict]) -> str:
+    """Format custom skills as a markdown list for prompt injection.
+
+    Args:
+        skills: List of dicts with 'name' and optional 'description' keys.
+
+    Returns:
+        Markdown section string, or empty string if no skills.
+    """
+    if not skills:
+        return ""
+    lines = ["\n### Custom Skills\n"]
+    for s in skills:
+        desc = s.get("description") or "No description"
+        lines.append(f"- **`/{s['name']}`** — {desc}")
+    return "\n".join(lines)
+
+
+def get_worker_prompt(session_id: str, custom_skills_section: str = "") -> str | None:
+    """Load and render worker prompt template.
+
+    Args:
+        session_id: Worker's session ID (for placeholder replacement)
+        custom_skills_section: Pre-formatted custom skills text to inject
+
+    Returns:
+        Rendered prompt string, or None if template not found
+    """
+    template_path = os.path.join(_AGENTS_DIR, "worker", "prompt.md")
+    if not os.path.exists(template_path):
+        return None
+
+    with open(template_path) as f:
+        template = f.read()
+
+    result = template.replace("SESSION_ID", session_id)
+    result = result.replace("{{CUSTOM_SKILLS}}", custom_skills_section)
+    return result
+
+
+def get_brain_prompt(custom_skills_section: str = "") -> str | None:
+    """Load brain prompt.
+
+    Args:
+        custom_skills_section: Pre-formatted custom skills text to inject
+
+    Returns:
+        Prompt string, or None if not found
+    """
+    prompt_path = os.path.join(_AGENTS_DIR, "brain", "prompt.md")
+    if not os.path.exists(prompt_path):
+        return None
+
+    with open(prompt_path) as f:
+        content = f.read()
+
+    content = content.replace("{{CUSTOM_SKILLS}}", custom_skills_section)
+    return content
+
+
+def deploy_custom_skills(skills_dest: str, custom_skills: list[dict]):
+    """Write custom skill markdown files to a skills directory.
+
+    Args:
+        skills_dest: Directory to write skill .md files into
+        custom_skills: List of dicts with 'name', 'description', 'content' keys
+    """
+    os.makedirs(skills_dest, exist_ok=True)
+    for skill in custom_skills:
+        skill_path = os.path.join(skills_dest, f"{skill['name']}.md")
+        desc = skill.get("description") or ""
+        with open(skill_path, "w") as f:
+            f.write(f"---\nname: {skill['name']}\ndescription: {desc}\n---\n\n{skill.get('content', '')}")
 
 
 def generate_worker_hooks(

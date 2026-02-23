@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, useCallback } from 'react'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import { WebLinksAddon } from '@xterm/addon-web-links'
+import { openUrl } from '../../api/client'
 import '@xterm/xterm/css/xterm.css'
 import './TerminalView.css'
 
@@ -206,16 +207,7 @@ export default function TerminalView({ sessionId, sessionStatus, disableScrollba
 
     const fitAddon = new FitAddon()
     const webLinksAddon = new WebLinksAddon((_event, uri) => {
-      // Use backend endpoint to open in system browser (window.open doesn't
-      // work reliably inside a Tauri webview)
-      fetch('/api/open-url', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url: uri }),
-      }).catch(() => {
-        // Fallback: try window.open in case we're running outside the app
-        window.open(uri, '_blank', 'noopener')
-      })
+      openUrl(uri)
     })
     terminal.loadAddon(fitAddon)
     terminal.loadAddon(webLinksAddon)

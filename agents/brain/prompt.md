@@ -122,3 +122,4 @@ The user needs visibility into all external communications happening on their be
 - **Include context links** (PRs, docs, issues)
 - **Review before marking done** — verify the work
 - **Act quickly** on simple requests — skip ceremony
+{{CUSTOM_SKILLS}}

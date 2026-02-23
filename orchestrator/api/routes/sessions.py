@@ -26,7 +26,7 @@ from orchestrator.terminal.manager import (
 )
 from orchestrator.terminal.ssh import is_remote_host, is_rdev_host
 from orchestrator.agents import deploy_worker_scripts, generate_worker_hooks, get_path_export_command, get_worker_prompt
-from orchestrator.agents.deploy import get_worker_skills_dir
+from orchestrator.agents.deploy import get_worker_skills_dir, format_custom_skills_for_prompt, deploy_custom_skills
 from orchestrator.session import (
     is_reconnectable,
     get_screen_session_name,
@@ -265,6 +265,11 @@ def create_session(body: SessionCreate, request: Request, db=Depends(get_db)):
 
         repo.update_session(db, s.id, status="connecting")
 
+        # Read custom skills before spawning background thread (DB access from main thread)
+        from orchestrator.state.repositories import skills as skills_repo
+        remote_custom_skills = skills_repo.list_skills(db, target="worker")
+        remote_custom_skills_dicts = [{"name": sk.name, "description": sk.description, "content": sk.content} for sk in remote_custom_skills]
+
         def _background_setup():
             from orchestrator.state.db import get_connection
             from orchestrator.terminal.session import setup_remote_worker
@@ -277,6 +282,7 @@ def create_session(body: SessionCreate, request: Request, db=Depends(get_db)):
                     work_dir=work_dir,
                     tmp_dir=tmp_dir,
                     tunnel_manager=tunnel_manager,
+                    custom_skills=remote_custom_skills_dicts,
                 )
                 if result["ok"]:
                     repo.update_session(
@@ -343,12 +349,23 @@ def create_session(body: SessionCreate, request: Request, db=Depends(get_db)):
                             os.path.join(skills_src, skill_file),
                             os.path.join(skills_dest, skill_file),
                         )
-                logger.info("Deployed %d skills to %s for local worker %s",
+                logger.info("Deployed %d built-in skills to %s for local worker %s",
                            len([f for f in os.listdir(skills_dest) if f.endswith(".md")]),
                            skills_dest, sanitized_name)
 
+            # Deploy custom worker skills from DB
+            from orchestrator.state.repositories import skills as skills_repo
+            custom_skills = skills_repo.list_skills(db, target="worker")
+            custom_skills_dicts = [{"name": sk.name, "description": sk.description, "content": sk.content} for sk in custom_skills]
+            if custom_skills_dicts and work_dir:
+                skills_dest = os.path.join(work_dir, ".claude", "commands")
+                deploy_custom_skills(skills_dest, custom_skills_dicts)
+                logger.info("Deployed %d custom worker skills for local worker %s", len(custom_skills_dicts), sanitized_name)
+
+            custom_skills_section = format_custom_skills_for_prompt(custom_skills_dicts)
+
             # Write worker prompt to file in tmp_dir (avoids pasting large content through tmux)
-            worker_prompt = get_worker_prompt(s.id)
+            worker_prompt = get_worker_prompt(s.id, custom_skills_section=custom_skills_section)
             prompt_file = os.path.join(tmp_dir, "prompt.md")
             if worker_prompt:
                 with open(prompt_file, "w") as f:

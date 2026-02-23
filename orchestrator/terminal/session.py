@@ -16,7 +16,7 @@ from orchestrator.state.repositories import sessions as sessions_repo
 from orchestrator.terminal import manager as tmux
 from orchestrator.terminal import ssh
 from orchestrator.agents import deploy_worker_scripts, generate_worker_hooks, get_path_export_command, get_worker_prompt, WORKER_SCRIPT_NAMES
-from orchestrator.agents.deploy import get_worker_skills_dir
+from orchestrator.agents.deploy import get_worker_skills_dir, deploy_custom_skills, format_custom_skills_for_prompt
 
 logger = logging.getLogger(__name__)
 
@@ -424,6 +424,7 @@ def setup_remote_worker(
     work_dir: str | None = None,
     tmp_dir: str | None = None,
     tunnel_manager=None,
+    custom_skills: list[dict] | None = None,
 ) -> dict:
     """Set up a full remote worker: tunnel, SSH, screen, Claude, prompt.
 
@@ -511,7 +512,8 @@ def setup_remote_worker(
         logger.info("Generated hooks settings in %s", local_configs_dir)
         
         # Write prompt.md to local tmp dir
-        worker_prompt = get_worker_prompt(session_id)
+        custom_skills_section = format_custom_skills_for_prompt(custom_skills or [])
+        worker_prompt = get_worker_prompt(session_id, custom_skills_section=custom_skills_section)
         remote_prompt_path = f"{remote_tmp_dir}/prompt.md"
         if worker_prompt:
             with open(os.path.join(local_tmp_dir, "prompt.md"), "w") as f:
@@ -529,7 +531,12 @@ def setup_remote_worker(
                         os.path.join(skills_src, skill_file),
                         os.path.join(local_skills_dir, skill_file),
                     )
-            logger.info("Prepared %d skills for transfer", len(os.listdir(local_skills_dir)))
+            logger.info("Prepared %d built-in skills for transfer", len(os.listdir(local_skills_dir)))
+
+        # Deploy custom skills from DB
+        if custom_skills:
+            deploy_custom_skills(local_skills_dir, custom_skills)
+            logger.info("Prepared %d custom skills for transfer", len(custom_skills))
         
         # 6. Copy entire directory to remote via direct SSH (bypasses tmux/screen)
         if not _copy_dir_to_remote_ssh(local_tmp_dir, host, remote_tmp_dir):

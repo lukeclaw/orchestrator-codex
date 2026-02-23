@@ -335,14 +335,24 @@ def _launch_claude_in_screen(
     logger.info("Reconnect %s: SUCCESS - launched Claude in screen session", session.name)
 
 
-def _ensure_local_configs_exist(tmp_dir: str, session_id: str, api_base: str = "http://127.0.0.1:8093"):
+def _get_custom_skills_from_conn(conn, target: str) -> list[dict]:
+    """Read custom skills from an existing DB connection."""
+    try:
+        rows = conn.execute("SELECT name, description, content FROM skills WHERE target = ?", (target,)).fetchall()
+        return [dict(r) for r in rows]
+    except Exception:
+        # Table may not exist if migration hasn't run yet
+        return []
+
+
+def _ensure_local_configs_exist(tmp_dir: str, session_id: str, api_base: str = "http://127.0.0.1:8093", conn=None):
     """Regenerate local configs from templates.
 
     Always regenerates to ensure configs match current templates, even if files exist.
     This handles both missing files (orchestrator restart) and stale files (template updates).
     """
     import shutil
-    from orchestrator.agents.deploy import generate_worker_hooks, deploy_worker_scripts, get_worker_skills_dir
+    from orchestrator.agents.deploy import generate_worker_hooks, deploy_worker_scripts, get_worker_skills_dir, deploy_custom_skills
 
     configs_dir = os.path.join(tmp_dir, "configs")
     os.makedirs(configs_dir, exist_ok=True)
@@ -366,7 +376,15 @@ def _ensure_local_configs_exist(tmp_dir: str, session_id: str, api_base: str = "
                     os.path.join(skills_src, skill_file),
                     os.path.join(local_skills_dir, skill_file),
                 )
-        logger.info("Regenerated %d skills at %s", len(os.listdir(local_skills_dir)), local_skills_dir)
+        logger.info("Regenerated %d built-in skills at %s", len(os.listdir(local_skills_dir)), local_skills_dir)
+
+    # Deploy custom skills from DB
+    if conn is not None:
+        custom_skills = _get_custom_skills_from_conn(conn, "worker")
+        if custom_skills:
+            os.makedirs(local_skills_dir, exist_ok=True)
+            deploy_custom_skills(local_skills_dir, custom_skills)
+            logger.info("Regenerated %d custom skills at %s", len(custom_skills), local_skills_dir)
 
 
 def _copy_configs_to_remote(host: str, tmp_dir: str, remote_tmp_dir: str, session_name: str):
@@ -636,7 +654,7 @@ def reconnect_remote_worker(conn, session, tmux_sess: str, tmux_win: str, api_po
 
         # ── Step 4: Ensure configs on remote ──────────────────────────────
         api_base = f"http://127.0.0.1:{api_port}"
-        _ensure_local_configs_exist(tmp_dir, session.id, api_base)
+        _ensure_local_configs_exist(tmp_dir, session.id, api_base, conn=conn)
         _copy_configs_to_remote(session.host, tmp_dir, remote_tmp_dir, session.name)
 
         # ── Step 5: Check screen/Claude status (safe: at shell prompt) ────
