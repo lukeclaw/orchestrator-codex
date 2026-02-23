@@ -92,6 +92,23 @@ if [[ "$BUILD_DMG" == "true" ]]; then
     cp "$VERSIONED_DMG" "$STABLE_DMG"
     echo "  Stable DMG: $STABLE_DMG"
     echo ""
+
+    echo "--- [DMG] Step 4: Setting DMG file icon ---"
+    ICON_PNG="src-tauri/icons/icon.png"
+    SET_ICON_SWIFT=$(mktemp /tmp/set_icon.XXXXXX.swift)
+    cat > "$SET_ICON_SWIFT" << 'SWIFT'
+import AppKit
+let args = CommandLine.arguments
+guard args.count == 3 else { fputs("Usage: set_icon <icon> <file>\n", stderr); exit(1) }
+guard let icon = NSImage(contentsOfFile: args[1]) else { fputs("Error: cannot load \(args[1])\n", stderr); exit(1) }
+if NSWorkspace.shared.setIcon(icon, forFile: args[2]) { print("  Set icon on \(args[2])") }
+else { fputs("  Warning: failed to set icon on \(args[2])\n", stderr); exit(1) }
+SWIFT
+    for dmg_file in "$VERSIONED_DMG" "$STABLE_DMG"; do
+        swift "$SET_ICON_SWIFT" "$ICON_PNG" "$dmg_file" || echo "  Warning: could not set icon on $(basename "$dmg_file")"
+    done
+    rm -f "$SET_ICON_SWIFT"
+    echo ""
 fi
 
 # ============================================================
