@@ -47,7 +47,7 @@
     "updater": {
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEIxNEY2RDI2ODI2Mjg5OUMKUldTY2lXS0NKbTFQc2YzOXM2T0QxdFVvK1NlNzFzbDBlNUhTTU5Yc2o2dEdyeFRmSWQvNVFUSUIK",
       "endpoints": [
-        "https://github.com/yuqiu/orchestrator/releases/latest/download/latest.json"
+        "https://github.com/yudongqiu/orchestrator/releases/latest/download/latest.json"
       ]
     }
   }
