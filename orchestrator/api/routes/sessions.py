@@ -238,17 +238,17 @@ def create_session(body: SessionCreate, request: Request, db=Depends(get_db)):
     # Sanitize name to avoid folder structure issues
     sanitized_name = _sanitize_worker_name(body.name)
     
-    # Create tmux window for the session
-    tmux_session_name, _ = tmux_target(sanitized_name)
-    try:
-        ensure_window(tmux_session_name, sanitized_name)
-        logger.info("Created tmux window for session %s", sanitized_name)
-    except Exception:
-        logger.warning("Could not create tmux window for session %s", sanitized_name, exc_info=True)
-
-    # Set up tmp directory for CLI scripts and configs
+    # Set up tmp directory for CLI scripts and configs (before tmux window so we can use it as cwd)
     tmp_dir = os.path.join(WORKER_BASE_DIR, sanitized_name)
     os.makedirs(tmp_dir, exist_ok=True)
+
+    # Create tmux window for the session, starting in the worker's tmp dir
+    tmux_session_name, _ = tmux_target(sanitized_name)
+    try:
+        ensure_window(tmux_session_name, sanitized_name, cwd=tmp_dir)
+        logger.info("Created tmux window for session %s (cwd=%s)", sanitized_name, tmp_dir)
+    except Exception:
+        logger.warning("Could not create tmux window for session %s", sanitized_name, exc_info=True)
 
     # work_dir is where Claude runs - user-specified or defaults
     work_dir = body.work_dir  # Can be None, will be set later based on host

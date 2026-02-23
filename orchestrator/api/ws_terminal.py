@@ -27,6 +27,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import time
 import zlib
 
@@ -118,7 +119,8 @@ async def terminal_websocket(websocket: WebSocket, session_id: str):
 
         # Auto-create tmux session and window if they don't exist
         try:
-            target = ensure_window(tmux_sess, tmux_win)
+            worker_tmp_dir = os.path.join("/tmp/orchestrator/workers", row["name"])
+            target = ensure_window(tmux_sess, tmux_win, cwd=worker_tmp_dir)
             logger.info("Terminal ready: %s", target)
         except Exception as e:
             logger.exception("Failed to create tmux session/window")

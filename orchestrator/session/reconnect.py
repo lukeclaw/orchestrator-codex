@@ -107,7 +107,7 @@ def _detach_from_screen(tmux_sess: str, tmux_win: str):
     time.sleep(0.5)
 
 
-def _clean_pane_for_ssh(tmux_sess: str, tmux_win: str):
+def _clean_pane_for_ssh(tmux_sess: str, tmux_win: str, cwd: str | None = None):
     """Prepare a pane for SSH reconnection.
 
     Only called when we've determined SSH is dead.  Handles the edge case
@@ -127,7 +127,7 @@ def _clean_pane_for_ssh(tmux_sess: str, tmux_win: str):
         if check_tui_running_in_pane(tmux_sess, tmux_win):
             logger.info("_clean_pane_for_ssh: TUI still active after Ctrl-C, killing and recreating pane")
             kill_window(tmux_sess, tmux_win)
-            ensure_window(tmux_sess, tmux_win)
+            ensure_window(tmux_sess, tmux_win, cwd=cwd)
             return
 
     # Normal case: Ctrl-C + Enter to ensure clean shell prompt
@@ -502,7 +502,8 @@ def reconnect_remote_worker(conn, session, tmux_sess: str, tmux_win: str, api_po
         return
 
     try:
-        ensure_window(tmux_sess, tmux_win)
+        os.makedirs(tmp_dir, exist_ok=True)
+        ensure_window(tmux_sess, tmux_win, cwd=tmp_dir)
 
         # ── Step 1: Is the pane safe to interact with? ────────────────────
         tui_active = check_tui_running_in_pane(tmux_sess, tmux_win)
@@ -561,7 +562,7 @@ def reconnect_remote_worker(conn, session, tmux_sess: str, tmux_win: str, api_po
         # ── Step 3: Ensure SSH connection ─────────────────────────────────
         if not ssh_alive:
             logger.info("Reconnect %s: Step 3 — SSH dead, cleaning pane and reconnecting", session.name)
-            _clean_pane_for_ssh(tmux_sess, tmux_win)
+            _clean_pane_for_ssh(tmux_sess, tmux_win, cwd=tmp_dir)
             ssh.remote_connect(tmux_sess, tmux_win, session.host)
             if not ssh.wait_for_prompt(tmux_sess, tmux_win, timeout=60):
                 raise RuntimeError(f"Timed out waiting for shell prompt on {session.host}")
@@ -635,7 +636,8 @@ def reconnect_local_worker(session, tmux_sess: str, tmux_win: str, api_port: int
         return
 
     try:
-        ensure_window(tmux_sess, tmux_win)
+        os.makedirs(tmp_dir, exist_ok=True)
+        ensure_window(tmux_sess, tmux_win, cwd=tmp_dir)
 
         # Check if Claude is still running
         if check_tui_running_in_pane(tmux_sess, tmux_win):

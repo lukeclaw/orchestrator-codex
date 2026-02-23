@@ -29,10 +29,13 @@ def create_session(
     host: str,
     work_dir: str | None = None,
     tmux_session: str = "orchestrator",
+    tmp_dir: str | None = None,
 ) -> Session:
     """Create a new session: tmux window, SSH, cd to path, persist to DB."""
-    # Create tmux window
-    target = tmux.create_window(tmux_session, name)
+    # Create tmux window (start in worker's tmp dir if provided)
+    if tmp_dir:
+        os.makedirs(tmp_dir, exist_ok=True)
+    target = tmux.create_window(tmux_session, name, cwd=tmp_dir)
 
     # If remote, SSH into host
     if host != "local":

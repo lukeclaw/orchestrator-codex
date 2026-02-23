@@ -70,13 +70,25 @@ def create_session(session_name: str, cols: int = 80, rows: int = 24) -> bool:
     return True
 
 
-def create_window(session_name: str, window_name: str) -> str:
-    """Create a new window in the session. Returns the tmux target."""
+def create_window(session_name: str, window_name: str, cwd: str | None = None) -> str:
+    """Create a new window in the session. Returns the tmux target.
+
+    Args:
+        cwd: Starting directory for the new window.  When provided, the
+             directory is created (if needed) and passed via ``-c`` to
+             ``tmux new-window`` so the shell starts there instead of
+             inheriting the tmux server's cwd.
+    """
     # Ensure session exists
     if not session_exists(session_name):
         create_session(session_name)
 
-    _run_tmux("new-window", "-t", session_name, "-n", window_name)
+    args = ["new-window", "-t", session_name, "-n", window_name]
+    if cwd:
+        import os
+        os.makedirs(cwd, exist_ok=True)
+        args += ["-c", cwd]
+    _run_tmux(*args)
     target = f"{session_name}:{window_name}"
     logger.info("Created tmux window: %s", target)
     return target
@@ -117,8 +129,12 @@ def window_exists(session_name: str, window_name: str) -> bool:
     return any(w.name == window_name for w in windows)
 
 
-def ensure_window(session_name: str, window_name: str) -> str:
+def ensure_window(session_name: str, window_name: str, cwd: str | None = None) -> str:
     """Ensure a tmux session and window exist, creating them if needed.
+
+    Args:
+        cwd: Starting directory passed to :func:`create_window` when a new
+             window must be created.
 
     Returns the tmux target string (session:window).
     """
@@ -133,7 +149,7 @@ def ensure_window(session_name: str, window_name: str) -> str:
             target = f"{session_name}:{windows[0].name}"
             _run_tmux("rename-window", "-t", target, window_name, check=False)
         else:
-            create_window(session_name, window_name)
+            create_window(session_name, window_name, cwd=cwd)
 
     return f"{session_name}:{window_name}"
 

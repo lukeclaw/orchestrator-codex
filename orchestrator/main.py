@@ -229,8 +229,9 @@ def _handle_add(conn, config: dict, user_input: str):
     work_dir = parts[3] if len(parts) > 3 else None
     tmux_session = config.get("tmux", {}).get("session_name", "orchestrator")
 
+    tmp_dir = f"/tmp/orchestrator/workers/{name}"
     try:
-        session = create_session(conn, name, host, work_dir, tmux_session)
+        session = create_session(conn, name, host, work_dir, tmux_session, tmp_dir=tmp_dir)
         console.print(f"[green]Created session:[/green] {session.name} ({session.host})")
         console.print(f"  tmux target: orchestrator:{session.name}")
     except Exception as e:
