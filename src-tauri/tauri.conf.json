@@ -1,7 +1,7 @@
 {
   "$schema": "https://raw.githubusercontent.com/nicehash/tauri/refs/heads/dev/crates/tauri-schema-generator/schemas/config.schema.json",
   "productName": "Orchestrator",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "identifier": "com.yudongqiu.orchestrator",
   "build": {
     "frontendDist": "./loading",
@@ -46,7 +46,7 @@
       "open": true
     },
     "updater": {
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEIxNEY2RDI2ODI2Mjg5OUMKUldTY2lXS0NKbTFQc2YzOXM2T0QxdFVvK1NlNzFzbDBlNUhTTU5Yc2o2dEdyeFRmSWQvNVFUSUIK",
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEE3QUI2Njg1NDNBRkE3OTUKUldTVnA2OURoV2FycDU0M0JoZlpHdEJJYU9md1pKM2paeC9Eb01iYWhhV3hiU1poaSsrZTRsN3gK",
       "endpoints": [
         "https://github.com/yudongqiu/orchestrator/releases/latest/download/latest.json"
       ]
