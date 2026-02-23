@@ -203,16 +203,17 @@ def _get_claude_session_arg(session_id: str, session_exists: bool, has_tracked_i
 
     Returns:
         '-r <id>' if session exists (resume specific conversation)
-        '-c' if tracked ID's session file is gone (resume most recent)
-        '--session-id <id>' if no tracked ID and session doesn't exist (create new)
+        '--session-id <id>' if session doesn't exist (create new)
+
+    Note: We intentionally never use 'claude -c' (resume most recent).
+    On shared rdev hosts, -c can pick up a conversation from a *different*
+    worker that previously ran in the same work_dir.  That resumed session
+    carries the old worker's stored hooks (absolute paths + baked-in
+    SESSION_ID), causing cross-worker hook contamination and task mismatches.
+    Creating a fresh session is always safer than gambling on -c.
     """
     if session_exists:
         return f"-r {session_id}"
-    elif has_tracked_id:
-        # Tracked session file is gone (cleaned up or stale). Fall back to
-        # most-recent conversation, which is more likely correct than creating
-        # a brand-new session with a random ID.
-        return "-c"
     else:
         return f"--session-id {session_id}"
 

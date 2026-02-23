@@ -199,11 +199,15 @@ class TestGetClaudeSessionArg:
         result = _get_claude_session_arg("abc-123", session_exists=True, has_tracked_id=True)
         assert result == "-r abc-123"
 
-    def test_tracked_id_session_missing_returns_continue(self):
-        """If tracked ID but session file gone, use -c (most recent)."""
+    def test_tracked_id_session_missing_returns_new_session(self):
+        """If tracked ID but session file gone, create fresh session (never use -c).
+
+        Using -c on shared rdev hosts can resume a conversation from a different
+        worker, carrying stale hooks and causing cross-worker contamination.
+        """
         from orchestrator.session.reconnect import _get_claude_session_arg
         result = _get_claude_session_arg("abc-123", session_exists=False, has_tracked_id=True)
-        assert result == "-c"
+        assert result == "--session-id abc-123"
 
     def test_no_tracked_id_session_missing_returns_new_session(self):
         """If no tracked ID and no session, create new with --session-id."""
