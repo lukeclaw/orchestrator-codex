@@ -74,33 +74,36 @@ export function buildDetailQuery(selection: TrendDetailSelection, range: string)
 
 export default function TrendDetailModal({ selection, range, onClose }: Props) {
   const [loading, setLoading] = useState(false)
-  const [items, setItems] = useState<unknown[]>([])
+  // Keep chart type paired with its items so a stale render never
+  // dispatches to the wrong content component.
+  const [result, setResult] = useState<{ chart: string; items: unknown[] } | null>(null)
 
   useEffect(() => {
     if (!selection) return
     setLoading(true)
-    setItems([])
     api<{ items: unknown[] }>(buildDetailQuery(selection, range))
-      .then(res => setItems(res.items))
-      .catch(() => setItems([]))
+      .then(res => setResult({ chart: selection.chart, items: res.items }))
+      .catch(() => setResult({ chart: selection.chart, items: [] }))
       .finally(() => setLoading(false))
   }, [selection, range])
 
   if (!selection) return null
 
+  const showLoading = loading || !result || result.chart !== selection.chart
+
   return (
     <Modal open={!!selection} onClose={onClose} title={getTitle(selection)} wide>
       <div className="trend-detail-body">
-        {loading ? (
+        {showLoading ? (
           <p className="trend-detail-empty">Loading...</p>
-        ) : items.length === 0 ? (
+        ) : result.items.length === 0 ? (
           <p className="trend-detail-empty">No data for this selection</p>
-        ) : selection.chart === 'throughput' ? (
-          <ThroughputContent items={items as ThroughputDetailItem[]} />
-        ) : selection.chart === 'worker_hours' ? (
-          <WorkerHoursContent items={items as WorkerHoursDetailItem[]} />
+        ) : result.chart === 'throughput' ? (
+          <ThroughputContent items={result.items as ThroughputDetailItem[]} />
+        ) : result.chart === 'worker_hours' ? (
+          <WorkerHoursContent items={result.items as WorkerHoursDetailItem[]} />
         ) : (
-          <HeatmapContent items={items as HeatmapDetailItem[]} />
+          <HeatmapContent items={result.items as HeatmapDetailItem[]} />
         )}
       </div>
     </Modal>
@@ -164,29 +167,46 @@ function WorkerHoursContent({ items }: { items: WorkerHoursDetailItem[] }) {
 
   return (
     <>
-      <p className="trend-detail-summary">
-        {totalHours.toFixed(1)}h total, {items.length} worker{items.length !== 1 ? 's' : ''}
-      </p>
+      <div className="worker-hours-table">
+        {/* Shared time axis with summary in the label column */}
+        <div className="worker-hours-axis-row">
+          <div className="worker-hours-label-col">
+            <span className="worker-hours-summary">
+              {totalHours.toFixed(1)}h total, {items.length} worker{items.length !== 1 ? 's' : ''}
+            </span>
+          </div>
+          <div className="worker-hours-timeline-col">
+            <div className="shared-axis">
+              {[0, 6, 12, 18, 24].map(h => (
+                <span key={h} className="shared-axis-label" style={{ left: `${(h / 24) * 100}%` }}>
+                  {h}
+                </span>
+              ))}
+            </div>
+          </div>
+        </div>
 
-      <div className="worker-hours-cards">
+        {/* Worker rows */}
         {items.map(item => (
-          <div key={item.session_id} className="worker-hours-card">
-            <div className="worker-hours-card-header">
-              <div className="worker-hours-card-info">
+          <div key={item.session_id} className="worker-hours-row">
+            <div className="worker-hours-label-col">
+              <div className="worker-hours-label">
                 <Link to={`/workers/${item.session_id}`} className="worker-hours-name" onClick={e => e.stopPropagation()}>
                   {item.session_name}
                 </Link>
-                {item.current_task && (
-                  <span className="worker-hours-task-inline">
-                    working on <Link to={`/tasks/${item.current_task.id}`} onClick={e => e.stopPropagation()}>
-                      {item.current_task.title}
-                    </Link>
-                  </span>
-                )}
+                <span className="worker-hours-hours">{item.total_hours.toFixed(1)}h</span>
               </div>
-              <span className="worker-hours-badge">{item.total_hours.toFixed(1)}h</span>
+              {item.current_task && (
+                <span className="worker-hours-task-inline">
+                  <Link to={`/tasks/${item.current_task.id}`} onClick={e => e.stopPropagation()}>
+                    {item.current_task.title}
+                  </Link>
+                </span>
+              )}
             </div>
-            <TimelineBar intervals={item.intervals} />
+            <div className="worker-hours-timeline-col">
+              <TimelineBar intervals={item.intervals} />
+            </div>
           </div>
         ))}
       </div>
@@ -195,10 +215,12 @@ function WorkerHoursContent({ items }: { items: WorkerHoursDetailItem[] }) {
 }
 
 function TimelineBar({ intervals }: { intervals: { start: string; end: string }[] }) {
-  if (intervals.length === 0) return null
-
   return (
     <div className="timeline-bar">
+      <div className="timeline-track" />
+      {[6, 12, 18].map(h => (
+        <div key={h} className="timeline-gridline" style={{ left: `${(h / 24) * 100}%` }} />
+      ))}
       {intervals.map((iv, i) => {
         const start = new Date(iv.start)
         const end = new Date(iv.end)
@@ -214,12 +236,6 @@ function TimelineBar({ intervals }: { intervals: { start: string; end: string }[
           />
         )
       })}
-      {/* Hour markers (local time) */}
-      {[0, 6, 12, 18].map(h => (
-        <span key={h} className="timeline-marker" style={{ left: `${(h / 24) * 100}%` }}>
-          {h}
-        </span>
-      ))}
     </div>
   )
 }

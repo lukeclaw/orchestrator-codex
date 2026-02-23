@@ -15,8 +15,6 @@
   font-size: 12px;
   color: var(--text-secondary);
   margin: 0 0 12px;
-  padding-bottom: 8px;
-  border-bottom: 1px solid var(--border);
 }
 
 /* Section headers */
@@ -112,31 +110,54 @@
   margin-left: auto;
 }
 
-/* Worker-hours cards */
-.worker-hours-cards {
+/* Worker-hours table layout */
+.worker-hours-table {
   display: flex;
   flex-direction: column;
-  gap: 10px;
 }
 
-.worker-hours-card {
-  background: var(--surface-raised);
-  border-radius: 8px;
-  padding: 10px 12px;
-}
-
-.worker-hours-card-header {
+/* Shared axis row + worker rows share the same two-column grid */
+.worker-hours-axis-row,
+.worker-hours-row {
   display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 8px;
-  margin-bottom: 8px;
+  align-items: center;
+  gap: 12px;
 }
 
-.worker-hours-card-info {
+.worker-hours-axis-row {
+  margin-bottom: 2px;
+}
+
+.worker-hours-summary {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.worker-hours-row {
+  padding: 8px 0;
+  min-height: 52px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+.worker-hours-row:last-child {
+  border-bottom: none;
+}
+
+/* Left label column — fixed width */
+.worker-hours-label-col {
+  width: 280px;
+  flex-shrink: 0;
+  min-width: 0;
   display: flex;
   flex-direction: column;
   gap: 2px;
+}
+
+/* Name + hours on one line */
+.worker-hours-label {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
   min-width: 0;
 }
 
@@ -145,45 +166,21 @@
   font-weight: 500;
   color: var(--accent);
   text-decoration: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
 }
 
 .worker-hours-name:hover {
   text-decoration: underline;
 }
 
-.worker-hours-badge {
+.worker-hours-hours {
   font-size: 11px;
   font-weight: 600;
-  padding: 2px 8px;
-  border-radius: 10px;
-  background: rgba(63, 185, 80, 0.15);
-  color: var(--green);
-}
-
-/* Timeline bar */
-.timeline-bar {
-  position: relative;
-  height: 6px;
-  background: var(--surface);
-  border-radius: 3px;
-  margin: 4px 0 18px;
-}
-
-.timeline-segment {
-  position: absolute;
-  top: 0;
-  height: 100%;
-  background: var(--green);
-  border-radius: 3px;
-  min-width: 2px;
-}
-
-.timeline-marker {
-  position: absolute;
-  top: 10px;
-  transform: translateX(-50%);
-  font-size: 9px;
   color: var(--text-muted);
+  flex-shrink: 0;
 }
 
 .worker-hours-task-inline {
@@ -202,6 +199,67 @@
 .worker-hours-task-inline a:hover {
   color: var(--accent);
   text-decoration: underline;
+}
+
+/* Right timeline column — fills remaining space */
+.worker-hours-timeline-col {
+  flex: 1;
+  min-width: 0;
+}
+
+/* Shared axis */
+.shared-axis {
+  position: relative;
+  height: 16px;
+}
+
+.shared-axis-label {
+  position: absolute;
+  transform: translateX(-50%);
+  font-size: 10px;
+  color: var(--text-muted);
+  top: 0;
+}
+
+/* First label left-aligned, last label right-aligned to avoid clipping */
+.shared-axis-label:first-child {
+  transform: none;
+}
+
+.shared-axis-label:last-child {
+  transform: translateX(-100%);
+}
+
+/* Timeline bar (no per-row axis) */
+.timeline-bar {
+  position: relative;
+  height: 8px;
+}
+
+.timeline-track {
+  position: absolute;
+  inset: 0;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 4px;
+}
+
+.timeline-gridline {
+  position: absolute;
+  top: -4px;
+  bottom: -4px;
+  width: 1px;
+  background: rgba(255, 255, 255, 0.06);
+  pointer-events: none;
+}
+
+.timeline-segment {
+  position: absolute;
+  top: 0;
+  height: 100%;
+  background: var(--green);
+  border-radius: 4px;
+  min-width: 3px;
+  z-index: 1;
 }
 
 /* Heatmap date groups */
