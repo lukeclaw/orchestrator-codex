@@ -28,7 +28,15 @@ const SCHEDULE_OPTIONS = [
 export default function SettingsPage() {
   const { settings, loading, saving, save, getValue } = useSettings()
   const notify = useNotify()
-  const { info: updateInfo, checking: updateChecking, check: checkUpdate, openRelease } = useUpdate()
+  const {
+    info: updateInfo,
+    checking: updateChecking,
+    installStatus,
+    installError,
+    check: checkUpdate,
+    openRelease,
+    installUpdate,
+  } = useUpdate()
 
   // Local state for general settings
   const [autoUpdateCheck, setAutoUpdateCheck] = useState(true)
@@ -140,11 +148,14 @@ export default function SettingsPage() {
                 <div className="update-banner-actions">
                   <button
                     className="btn btn-primary"
-                    onClick={() => openRelease(updateInfo.dmg_url || updateInfo.release_url!)}
+                    onClick={installUpdate}
+                    disabled={installStatus === 'downloading' || installStatus === 'installing'}
                   >
-                    {updateInfo.dmg_url ? 'Download DMG' : 'View Release'}
+                    {installStatus === 'downloading' ? 'Downloading...'
+                      : installStatus === 'installing' ? 'Installing...'
+                      : 'Install Update'}
                   </button>
-                  {updateInfo.dmg_url && updateInfo.release_url && (
+                  {updateInfo.release_url && (
                     <button
                       className="btn btn-secondary"
                       onClick={() => openRelease(updateInfo.release_url!)}
@@ -153,6 +164,11 @@ export default function SettingsPage() {
                     </button>
                   )}
                 </div>
+                {installError && (
+                  <div className="update-error" style={{ marginTop: 8 }}>
+                    Auto-install unavailable — opened download page instead.
+                  </div>
+                )}
               </div>
             )}
 

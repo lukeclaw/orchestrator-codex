@@ -1,0 +1,13 @@
+{
+  "identifier": "remote-update",
+  "description": "Allow the local Python backend to invoke the Tauri updater and process restart",
+  "windows": ["main"],
+  "remote": {
+    "urls": ["http://127.0.0.1:*"]
+  },
+  "permissions": [
+    "core:default",
+    "updater:default",
+    "process:allow-restart"
+  ]
+}

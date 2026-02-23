@@ -12,10 +12,26 @@ export interface UpdateInfo {
   error?: string
 }
 
+type InstallStatus = 'idle' | 'downloading' | 'installing' | 'done' | 'error'
+
+/** Check if Tauri IPC is available (app is running inside the Tauri webview). */
+function hasTauriIPC(): boolean {
+  return '__TAURI_INTERNALS__' in window
+}
+
+/** Invoke a Tauri plugin command via the IPC bridge. */
+async function tauriInvoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return (window as any).__TAURI_INTERNALS__.invoke(cmd, args)
+}
+
 export function useUpdate() {
   const [info, setInfo] = useState<UpdateInfo | null>(null)
   const [checking, setChecking] = useState(false)
+  const [installStatus, setInstallStatus] = useState<InstallStatus>('idle')
+  const [installError, setInstallError] = useState<string | null>(null)
 
+  /** Check for updates via the Python backend (GitHub Releases API). */
   const check = useCallback(async (force = false) => {
     setChecking(true)
     try {
@@ -31,6 +47,7 @@ export function useUpdate() {
     }
   }, [])
 
+  /** Open a URL in the system browser. */
   const openRelease = useCallback(async (url: string) => {
     await api('/api/open-url', {
       method: 'POST',
@@ -38,5 +55,73 @@ export function useUpdate() {
     })
   }, [])
 
-  return { info, checking, check, openRelease }
+  /**
+   * Download and install the update via Tauri's updater plugin, then restart.
+   * Falls back to opening the release page if Tauri IPC is not available.
+   */
+  const installUpdate = useCallback(async () => {
+    if (!hasTauriIPC()) {
+      // Fallback: open release page in browser
+      if (info?.dmg_url) {
+        await openRelease(info.dmg_url)
+      } else if (info?.release_url) {
+        await openRelease(info.release_url)
+      }
+      return
+    }
+
+    setInstallStatus('downloading')
+    setInstallError(null)
+
+    try {
+      // Ask the Tauri updater plugin to check (it uses the latest.json endpoint)
+      const update = await tauriInvoke<{ available: boolean; rid?: number } | null>(
+        'plugin:updater|check'
+      )
+
+      if (!update || !update.available) {
+        // Tauri updater says no update (maybe no signed artifacts yet).
+        // Fall back to opening the release page.
+        setInstallStatus('idle')
+        if (info?.dmg_url) {
+          await openRelease(info.dmg_url)
+        } else if (info?.release_url) {
+          await openRelease(info.release_url)
+        }
+        return
+      }
+
+      // Download and install. The rid (resource ID) references the update object.
+      setInstallStatus('installing')
+      await tauriInvoke('plugin:updater|download_and_install', { rid: update.rid })
+
+      setInstallStatus('done')
+
+      // Restart the app to apply the update
+      await tauriInvoke('plugin:process|restart')
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      console.error('[update] Install failed, falling back to browser:', msg)
+      setInstallStatus('error')
+      setInstallError(msg)
+
+      // Fallback: open release page
+      if (info?.dmg_url) {
+        await openRelease(info.dmg_url)
+      } else if (info?.release_url) {
+        await openRelease(info.release_url)
+      }
+    }
+  }, [info, openRelease])
+
+  return {
+    info,
+    checking,
+    installStatus,
+    installError,
+    check,
+    openRelease,
+    installUpdate,
+    hasTauri: hasTauriIPC(),
+  }
 }
