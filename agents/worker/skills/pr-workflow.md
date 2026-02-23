@@ -1,6 +1,6 @@
 ---
 name: pr-workflow
-description: PR lifecycle workflow — creating PRs, handling reviews, and driving PRs to merge. Use this skill whenever your task involves pull requests.
+description: Full PR lifecycle — checking PR status, reconciling state, creating PRs, handling reviews, addressing CI failures, and merging. Use this skill for ANY pull request activity.
 ---
 
 # PR Workflow

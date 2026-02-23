@@ -170,7 +170,7 @@ orch-tunnel --list
 
 ### Bulk PR Status (`orch-prs`)
 
-Batch-check multiple PR statuses in a single call instead of running `gh pr view` per PR.
+**Always follow the `/pr-workflow` skill when checking PR status.** Batch-check multiple PR statuses in a single call instead of running `gh pr view` per PR.
 
 ```bash
 # Check multiple PRs at once (auto-detects repo from cwd)
@@ -219,7 +219,7 @@ orch-context add --title "API Auth" --description "Bearer token required" \
 
 You have skills available for specific workflows. Invoke them with `/skill-name`.
 
-- **`/pr-workflow`** — **MANDATORY.** You **MUST** invoke `/pr-workflow` before creating any PR, handling any PR review, or merging any PR. Do not perform these actions without following this skill.
+- **`/pr-workflow`** — **MANDATORY for ALL PR-related work.** You **MUST** invoke `/pr-workflow` before performing ANY pull request activity, including: checking PR status, reconciling subtask state against PRs, batch-checking PRs with `orch-prs`, creating PRs, handling PR reviews, addressing CI failures, and merging PRs. Always follow this skill for anything involving pull requests.
 - **`/screenshot-gh-upload`** — Use when capturing screenshots for PR descriptions
 
 ## When You're Stuck
@@ -231,7 +231,7 @@ Simply explain what you're stuck on in your response, and the brain will check o
 ## Workflow
 
 1. **View your task** — `orch-task show` to understand what's required
-2. **Check existing subtasks** — `orch-subtask list` to see if work has already been done. Review the status and linked PRs of each subtask. If some subtasks are already `done`, do NOT redo them — focus only on subtasks that are `todo` or `in_progress`. If all subtasks are done but the parent task was re-assigned to you, look for any new `todo` subtasks that represent follow-up work.
+2. **Check existing subtasks** — `orch-subtask list` to see if work has already been done. Review the status and linked PRs of each subtask. **If any subtask has a PR link, use `/pr-workflow` to check its current state and reconcile** (e.g., mark merged PRs as `done`). If some subtasks are already `done`, do NOT redo them — focus only on subtasks that are `todo` or `in_progress`. If all subtasks are done but the parent task was re-assigned to you, look for any new `todo` subtasks that represent follow-up work.
 3. **List context** — `orch-context list --scope project` and `orch-context list --scope global` to see available context (titles + descriptions)
 4. **Read relevant context** — `orch-context read ITEM_ID` for items relevant to your task (especially any with category "instruction")
 5. **Follow instructions** — Context items with category "instruction" contain **mandatory steps** you must follow
