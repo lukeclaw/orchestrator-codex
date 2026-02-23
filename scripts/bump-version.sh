@@ -8,6 +8,7 @@
 #   pyproject.toml          (single source of truth)
 #   src-tauri/tauri.conf.json
 #   src-tauri/Cargo.toml
+#   frontend/package.json
 #
 # Python code reads the version from pyproject.toml at runtime
 # via importlib.metadata, so no Python files need updating.
@@ -44,12 +45,18 @@ sed -i '' "s/\"version\": \"$CURRENT\"/\"version\": \"$NEW_VERSION\"/" "$PROJECT
 # 3. src-tauri/Cargo.toml
 sed -i '' "s/^version = \"$CURRENT\"/version = \"$NEW_VERSION\"/" "$PROJECT_ROOT/src-tauri/Cargo.toml"
 
+# 4. frontend/package.json (npm doesn't auto-update package-lock, so update both)
+sed -i '' "s/\"version\": \"$CURRENT\"/\"version\": \"$NEW_VERSION\"/" "$PROJECT_ROOT/frontend/package.json"
+# Update the root entry in package-lock.json (first two occurrences)
+sed -i '' "s/\"version\": \"$CURRENT\"/\"version\": \"$NEW_VERSION\"/" "$PROJECT_ROOT/frontend/package-lock.json"
+
 echo ""
 echo "Updated files:"
 grep -n "\"$NEW_VERSION\"\|= \"$NEW_VERSION\"" \
     "$PROJECT_ROOT/pyproject.toml" \
     "$PROJECT_ROOT/src-tauri/tauri.conf.json" \
-    "$PROJECT_ROOT/src-tauri/Cargo.toml"
+    "$PROJECT_ROOT/src-tauri/Cargo.toml" \
+    "$PROJECT_ROOT/frontend/package.json"
 
 echo ""
 echo "Done. To release:"
