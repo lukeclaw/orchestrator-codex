@@ -56,14 +56,31 @@ git tag "v$VERSION"
 echo "==> Pushing to remote..."
 git push
 git push --tags
-# Create GitHub release using gh CLI if available
+
+# Create GitHub release using gh CLI if available, and upload release files
 if command -v gh >/dev/null 2>&1; then
-  echo "==> Creating GitHub release via gh CLI..."
-  gh release create "v$VERSION" \
-    --title "Orchestrator v$VERSION" \
-    --notes "Automated release for version $VERSION" \
-    --target main
-  echo "✔ GitHub release created."
+  echo "==> Creating GitHub release via gh CLI and uploading artifacts..."
+  RELEASE_DIR="src-tauri/target/release/bundle/gh_release"
+  DMG_FILE=$(ls "$RELEASE_DIR"/Orchestrator_*.dmg 2>/dev/null | head -n1)
+  TAR_FILE=$(ls "$RELEASE_DIR"/Orchestrator.app.tar.gz 2>/dev/null | head -n1)
+  SIG_FILE=$(ls "$RELEASE_DIR"/Orchestrator.app.tar.gz.sig 2>/dev/null | head -n1)
+  LATEST_JSON=$(ls "$RELEASE_DIR"/latest.json 2>/dev/null | head -n1)
+
+  if [[ -f "$DMG_FILE" && -f "$TAR_FILE" && -f "$SIG_FILE" && -f "$LATEST_JSON" ]]; then
+    gh release create "v$VERSION" \
+      --title "Orchestrator v$VERSION" \
+      --notes "Automated release for version $VERSION" \
+      --target main \
+      "$DMG_FILE" "$TAR_FILE" "$SIG_FILE" "$LATEST_JSON"
+    echo "✔ GitHub release created and files uploaded."
+  else
+    echo "Warning: One or more release files not found in $RELEASE_DIR. Creating release without files."
+    gh release create "v$VERSION" \
+      --title "Orchestrator v$VERSION" \
+      --notes "Automated release for version $VERSION" \
+      --target main
+    echo "✔ GitHub release created (no files uploaded)."
+  fi
 else
   echo "gh CLI not found, skipping GitHub release creation."
 fi
