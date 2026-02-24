@@ -723,6 +723,10 @@ def reconnect_remote_worker(conn, session, tmux_sess: str, tmux_win: str, api_po
         repo.update_session(conn, session.id, status="error")
     except Exception:
         logger.exception("Reconnect failed for %s", session.name)
+        try:
+            repo.update_session(conn, session.id, status="error")
+        except Exception:
+            pass
         raise
     finally:
         lock.release()
@@ -890,6 +894,12 @@ def trigger_reconnect(
 
     tmux_sess, tmux_win = tmux_target(session.name)
     tmp_dir = os.path.join(WORKER_BASE_DIR, session.name)
+
+    # Check if a reconnect is already in progress (RC-18: avoid double-click confusion)
+    lock = get_reconnect_lock(session.id)
+    if lock.locked():
+        logger.info("trigger_reconnect %s: reconnect already in progress, skipping", session.name)
+        return {"ok": False, "error": "Reconnect already in progress"}
 
     repo.update_session(db, session.id, status="connecting")
 

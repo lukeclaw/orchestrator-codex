@@ -4,11 +4,15 @@ import logging
 import sqlite3
 import uuid
 
+from orchestrator.session.state_machine import SessionStatus
 from orchestrator.state.db import transaction, with_retry
 from orchestrator.state.models import Session
 from orchestrator.utils import utc_now_iso
 
 logger = logging.getLogger(__name__)
+
+# Valid status strings (derived from the state machine enum)
+_VALID_STATUSES = {s.value for s in SessionStatus}
 
 
 def get_session(conn: sqlite3.Connection, id: str) -> Session | None:
@@ -88,6 +92,14 @@ def update_session(
     params = []
     # Auto-update last_status_changed_at whenever status changes
     if status is not None:
+        if status not in _VALID_STATUSES:
+            logger.error(
+                "Rejected invalid status %r for session %s", status, id
+            )
+            raise ValueError(
+                f"Invalid session status: {status!r}. "
+                f"Valid: {sorted(_VALID_STATUSES)}"
+            )
         sets.append("status = ?")
         params.append(status)
         sets.append("last_status_changed_at = ?")

@@ -336,10 +336,29 @@ def update_session(session_id: str, body: SessionUpdate, db=Depends(get_db)):
 
 @router.delete("/sessions/{session_id}")
 def delete_session(session_id: str, request: Request, db=Depends(get_db)):
+    from orchestrator.session.reconnect import get_reconnect_lock
+
     s = repo.get_session(db, session_id)
     if s is None:
         raise HTTPException(404, "Session not found")
 
+    # Acquire reconnect lock first to prevent concurrent reconnect from
+    # recreating resources we're about to tear down (RC-03).
+    lock = get_reconnect_lock(session_id)
+    if not lock.acquire(timeout=10):
+        logger.warning("delete_session %s: reconnect in progress, waiting timed out", s.name)
+
+    try:
+        return _delete_session_inner(s, session_id, request, db)
+    finally:
+        try:
+            lock.release()
+        except RuntimeError:
+            pass  # Lock wasn't acquired (timeout above)
+        cleanup_reconnect_lock(session_id)
+
+
+def _delete_session_inner(s, session_id: str, request: Request, db):
     worker_scripts_dir = os.path.join(WORKER_BASE_DIR, s.name)
     is_remote = is_remote_host(s.host)
 
@@ -408,9 +427,6 @@ def delete_session(session_id: str, request: Request, db=Depends(get_db)):
 
     # Note: work_dir is NOT cleaned up - it's the user's working directory
     # Only tmp_dir (worker_scripts_dir) is cleaned up above
-
-    # Clean up per-session reconnect lock
-    cleanup_reconnect_lock(session_id)
 
     repo.delete_session(db, session_id)
     return {"ok": True}

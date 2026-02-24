@@ -530,8 +530,22 @@ class ReverseTunnelManager:
         session_name: str,
         host: str,
     ) -> int | None:
-        """Stop and restart a tunnel. Returns new PID or None."""
-        self.stop_tunnel(session_id)
+        """Stop and restart a tunnel atomically. Returns new PID or None.
+
+        Holds the internal lock across stop+start to prevent concurrent
+        restarts from creating orphaned SSH processes.
+        """
+        # Pop existing entry under lock (same as stop_tunnel but inline)
+        with self._lock:
+            old_entry = self._tunnels.pop(session_id, None)
+
+        if old_entry is not None:
+            self._kill_entry(old_entry)
+            logger.info(
+                "Stopped tunnel for %s (pid=%d) before restart",
+                old_entry.session_name, old_entry.pid,
+            )
+
         return self.start_tunnel(session_id, session_name, host)
 
     def is_alive(self, session_id: str) -> bool:
