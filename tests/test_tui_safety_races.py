@@ -28,7 +28,6 @@ import pytest
 # Pre-import ws_terminal early to avoid _osx_support/sysconfig issues
 # when open() gets monkeypatched by other tests in the same session.
 from orchestrator.api import ws_terminal as _ws_terminal_mod  # noqa: F401
-
 from orchestrator.session.reconnect import (
     TUIActiveError,
     _clean_pane_for_ssh,

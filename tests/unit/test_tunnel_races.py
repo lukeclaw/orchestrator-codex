@@ -682,7 +682,6 @@ class TestRace7DBUpdateRace:
         Uses a file-based DB because :memory: connections can't be shared
         across threads (sqlite3.InterfaceError).
         """
-        import sqlite3
 
         from orchestrator.state.db import get_connection
         from orchestrator.state.migrations.runner import apply_migrations
