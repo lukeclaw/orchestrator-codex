@@ -220,7 +220,6 @@ class TestPauseVsAutoReconnect:
         with status='paused' without checking s.status first.
         """
         import ast
-        import inspect
         from pathlib import Path
 
         # Read the source file
@@ -495,8 +494,9 @@ class TestRepositoryBypassesStateMachine:
     def _extract_function(self, source: str, func_name: str) -> str:
         """Extract a top-level function body from source code."""
         import re
+
         # Match from 'def name(' to the next top-level def/class or EOF
-        pattern = rf'(def {func_name}\(.*?\n(?:(?:    |\n).*\n)*)'
+        pattern = rf"(def {func_name}\(.*?\n(?:(?:    |\n).*\n)*)"
         match = re.search(pattern, source)
         assert match, f"{func_name} function not found"
         return match.group(1)
@@ -611,10 +611,10 @@ class TestReconnectExceptionHandling:
                 "orchestrator.terminal.session._install_screen_if_needed",
                 return_value=True,
             ),
-            # Step 5: screen_exists=True, claude_running=True
+            # Step 5: screen_exists=True, claude_running=True, screen_pid
             patch(
                 "orchestrator.session.reconnect.check_screen_exists_via_tmux",
-                return_value=(True, True),
+                return_value=(True, True, "12345.claude-test"),
             ),
             patch("orchestrator.session.reconnect.safe_send_keys"),
             patch("orchestrator.session.reconnect.time.sleep"),
@@ -739,8 +739,9 @@ class TestReconnectExceptionHandling:
             ),
             patch(
                 "orchestrator.session.reconnect.check_screen_exists_via_tmux",
-                return_value=(False, False),
+                return_value=(False, False, None),
             ),
+            patch("orchestrator.session.reconnect._kill_orphaned_screen"),
             # safe_send_keys raises TUIActiveError
             patch(
                 "orchestrator.session.reconnect.safe_send_keys",

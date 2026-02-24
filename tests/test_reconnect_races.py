@@ -402,16 +402,18 @@ class TestReconnectVsTunnelHealthLoopRace:
     @patch("orchestrator.terminal.session._install_screen_if_needed", return_value=True)
     @patch(
         "orchestrator.session.reconnect.check_screen_exists_via_tmux",
-        return_value=(False, False),
+        return_value=(False, False, None),
     )
     @patch("orchestrator.session.reconnect.safe_send_keys")
     @patch("orchestrator.session.reconnect._launch_claude_in_screen")
+    @patch("orchestrator.session.reconnect._kill_orphaned_screen")
     @patch("orchestrator.terminal.manager.subprocess")
     @patch("orchestrator.terminal.manager.ensure_window")
     def test_reconnect_worker_restarts_dead_tunnel(
         self,
         mock_ensure_window,
         mock_subprocess,
+        mock_kill_orphaned,
         mock_launch,
         mock_safe_send,
         mock_screen_check,

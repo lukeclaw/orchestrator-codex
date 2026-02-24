@@ -32,7 +32,7 @@ from orchestrator.session.health import (
     get_screen_session_name,
 )
 from orchestrator.terminal.manager import capture_output, kill_window, send_keys
-from orchestrator.terminal.session import _copy_dir_to_remote_ssh
+from orchestrator.terminal.session import _copy_dir_to_remote_ssh, _kill_orphaned_screen
 
 logger = logging.getLogger(__name__)
 
@@ -41,8 +41,10 @@ logger = logging.getLogger(__name__)
 # TUI Safety Guard
 # =============================================================================
 
+
 class TUIActiveError(RuntimeError):
     """Raised when attempting to send keys to a pane with an active TUI."""
+
     pass
 
 
@@ -57,9 +59,7 @@ def safe_send_keys(tmux_sess: str, tmux_win: str, text: str, enter: bool = True)
         TUIActiveError: if a TUI (alternate screen buffer) is detected.
     """
     if check_tui_running_in_pane(tmux_sess, tmux_win):
-        raise TUIActiveError(
-            f"TUI running in {tmux_sess}:{tmux_win}, refusing send_keys"
-        )
+        raise TUIActiveError(f"TUI running in {tmux_sess}:{tmux_win}, refusing send_keys")
     return send_keys(tmux_sess, tmux_win, text, enter=enter)
 
 
@@ -89,6 +89,7 @@ def cleanup_reconnect_lock(session_id: str):
 # Internal Helpers
 # =============================================================================
 
+
 def _detach_from_screen(tmux_sess: str, tmux_win: str):
     """Detach from GNU Screen by sending Ctrl-A then d as separate keys.
 
@@ -97,6 +98,7 @@ def _detach_from_screen(tmux_sess: str, tmux_win: str):
     literal characters ``C``, ``-``, ``a``, `` ``, ``d``.
     """
     import subprocess
+
     target = f"{tmux_sess}:{tmux_win}"
     subprocess.run(["tmux", "send-keys", "-t", target, "C-a"], capture_output=True, timeout=5)
     time.sleep(0.1)
@@ -125,7 +127,9 @@ def _clean_pane_for_ssh(tmux_sess: str, tmux_win: str, cwd: str | None = None):
 
         # If still stuck, kill and recreate pane
         if check_tui_running_in_pane(tmux_sess, tmux_win):
-            logger.info("_clean_pane_for_ssh: TUI still active after Ctrl-C, killing and recreating pane")
+            logger.info(
+                "_clean_pane_for_ssh: TUI still active after Ctrl-C, killing and recreating pane"
+            )
             kill_window(tmux_sess, tmux_win)
             ensure_window(tmux_sess, tmux_win, cwd=cwd)
             return
@@ -154,6 +158,7 @@ def _ensure_tunnel(session, tunnel_manager, repo, conn):
 # Unchanged Helpers (kept from previous version)
 # =============================================================================
 
+
 def _check_claude_session_exists_remote(host: str, session_id: str) -> bool:
     """Check if a Claude session file exists on remote host via SSH.
 
@@ -172,8 +177,17 @@ def _check_claude_session_exists_remote(host: str, session_id: str) -> bool:
             timeout=15,
         )
         output = result.stdout + result.stderr
-        exists = "SESSION_EXISTS" in output and "SESSION_MISSING" not in output.split("SESSION_EXISTS")[-1]
-        logger.debug("Claude session check on %s for %s: exists=%s (output=%r)", host, session_id, exists, output)
+        exists = (
+            "SESSION_EXISTS" in output
+            and "SESSION_MISSING" not in output.split("SESSION_EXISTS")[-1]
+        )
+        logger.debug(
+            "Claude session check on %s for %s: exists=%s (output=%r)",
+            host,
+            session_id,
+            exists,
+            output,
+        )
         return exists
     except Exception as e:
         logger.warning("Failed to check Claude session existence on %s: %s", host, e)
@@ -190,15 +204,20 @@ def _check_claude_session_exists_local(session_id: str) -> bool:
     Returns True if session exists, False otherwise.
     """
     import glob
+
     claude_dir = os.path.expanduser("~/.claude/projects")
     pattern = os.path.join(claude_dir, "*", f"{session_id}.jsonl")
     matches = glob.glob(pattern)
     exists = len(matches) > 0
-    logger.debug("Claude session check local for %s: exists=%s (matches=%s)", session_id, exists, matches)
+    logger.debug(
+        "Claude session check local for %s: exists=%s (matches=%s)", session_id, exists, matches
+    )
     return exists
 
 
-def _get_claude_session_arg(session_id: str, session_exists: bool, has_tracked_id: bool = False) -> str:
+def _get_claude_session_arg(
+    session_id: str, session_exists: bool, has_tracked_id: bool = False
+) -> str:
     """Get the appropriate Claude CLI argument based on session existence.
 
     Returns:
@@ -219,8 +238,10 @@ def _get_claude_session_arg(session_id: str, session_exists: bool, has_tracked_i
 
 
 def _verify_claude_started(
-    tmux_sess: str, tmux_win: str,
-    timeout: int = 10, poll_interval: float = 2.0,
+    tmux_sess: str,
+    tmux_win: str,
+    timeout: int = 10,
+    poll_interval: float = 2.0,
 ) -> tuple[bool, str]:
     """Check that Claude's TUI actually started after sending the launch command.
 
@@ -265,9 +286,7 @@ def _launch_claude_in_screen(
         time.sleep(0.3)
 
     # Copy prompt to remote (avoids pasting large content through tmux)
-    remote_prompt_path = ensure_prompt_on_remote(
-        tmux_sess, tmux_win, session.id, remote_tmp_dir
-    )
+    remote_prompt_path = ensure_prompt_on_remote(tmux_sess, tmux_win, session.id, remote_tmp_dir)
 
     # Use Claude's tracked session ID if available, otherwise orchestrator ID
     target_id = session.claude_session_id or session.id
@@ -275,7 +294,12 @@ def _launch_claude_in_screen(
 
     session_exists = _check_claude_session_exists_remote(session.host, target_id)
     session_arg = _get_claude_session_arg(target_id, session_exists, has_tracked_id)
-    logger.info("Reconnect %s: Claude session exists=%s, using arg: %s", session.name, session_exists, session_arg)
+    logger.info(
+        "Reconnect %s: Claude session exists=%s, using arg: %s",
+        session.name,
+        session_exists,
+        session_arg,
+    )
 
     # Launch Claude with skills from the remote .claude directory
     settings_file = f"{remote_tmp_dir}/configs/settings.json"
@@ -298,7 +322,9 @@ def _launch_claude_in_screen(
         logger.warning(
             "Reconnect %s: Claude failed to start (arg=%s, output=%s). "
             "Retrying with --session-id to create a fresh session.",
-            session.name, session_arg, error_output[:300],
+            session.name,
+            session_arg,
+            error_output[:300],
         )
         # Clean up the failed command prompt
         send_keys(tmux_sess, tmux_win, "C-c", enter=False)
@@ -326,7 +352,8 @@ def _launch_claude_in_screen(
         if not retry_started:
             logger.error(
                 "Reconnect %s: retry also failed (output=%s). Giving up.",
-                session.name, retry_output[:300],
+                session.name,
+                retry_output[:300],
             )
             repo.update_session(conn, session.id, status="error")
             return
@@ -348,7 +375,9 @@ def _get_custom_skills_from_conn(conn, target: str) -> list[dict]:
         return []
 
 
-def _ensure_local_configs_exist(tmp_dir: str, session_id: str, api_base: str = "http://127.0.0.1:8093", conn=None):
+def _ensure_local_configs_exist(
+    tmp_dir: str, session_id: str, api_base: str = "http://127.0.0.1:8093", conn=None
+):
     """Regenerate local configs from templates.
 
     Always regenerates to ensure configs match current templates, even if files exist.
@@ -403,7 +432,11 @@ def _ensure_local_configs_exist(tmp_dir: str, session_id: str, api_base: str = "
                     os.path.join(skills_src, skill_file),
                     os.path.join(local_skills_dir, skill_file),
                 )
-        logger.info("Regenerated %d built-in skills at %s", len(os.listdir(local_skills_dir)), local_skills_dir)
+        logger.info(
+            "Regenerated %d built-in skills at %s",
+            len(os.listdir(local_skills_dir)),
+            local_skills_dir,
+        )
 
     # Deploy custom skills from DB
     if conn is not None:
@@ -447,10 +480,15 @@ def _copy_configs_to_remote(host: str, tmp_dir: str, remote_tmp_dir: str, sessio
         timeout=30,
     )
 
-    logger.info("Reconnect %s: copied all files to remote via direct SSH (including skills to ~/.claude/commands/)", session_name)
+    logger.info(
+        "Reconnect %s: copied all files to remote via direct SSH (including skills to ~/.claude/commands/)",
+        session_name,
+    )
 
 
-def reconnect_tunnel_only(conn, session, tmux_sess: str, api_port: int, repo, tunnel_manager=None) -> bool:
+def reconnect_tunnel_only(
+    conn, session, tmux_sess: str, api_port: int, repo, tunnel_manager=None
+) -> bool:
     """Reconnect just the SSH tunnel without touching the main worker window.
 
     Use this when SSH/screen/Claude are all running fine but the tunnel died.
@@ -506,9 +544,12 @@ def ensure_prompt_on_remote(
         return None
 
     remote_prompt_path = f"{remote_tmp_dir}/prompt.md"
-    send_keys(tmux_sess, tmux_win,
+    send_keys(
+        tmux_sess,
+        tmux_win,
         f"cat > {remote_prompt_path} << 'ORCHEOF'\n{prompt}\nORCHEOF",
-        enter=True)
+        enter=True,
+    )
     time.sleep(0.3)
     logger.info("Copied worker prompt to remote: %s", remote_prompt_path)
 
@@ -521,11 +562,8 @@ def get_prompt_load_arg(remote_prompt_path: str) -> str:
 
 
 def check_screen_exists_via_tmux(
-    tmux_sess: str,
-    tmux_win: str,
-    screen_name: str,
-    session_id: str
-) -> tuple[bool, bool]:
+    tmux_sess: str, tmux_win: str, screen_name: str, session_id: str
+) -> tuple[bool, bool, str | None]:
     """Check if screen session exists and if Claude is running inside it.
 
     Sends commands via tmux to check screen status on the remote host.
@@ -535,17 +573,33 @@ def check_screen_exists_via_tmux(
         screen_name: The screen session name (e.g., "claude-{session_id}")
         session_id: The orchestrator session ID (used to find Claude process)
 
-    Returns (screen_exists: bool, claude_running: bool)
+    Returns:
+        (screen_exists, claude_running, screen_pid) — *screen_pid* is the
+        full ``pid.name`` identifier (e.g. ``12345.claude-abc``) of the
+        newest matching session, or ``None`` when no session is found.
+        Using *screen_pid* for ``screen -rd`` avoids the "several suitable
+        screens" ambiguity when duplicates exist.
     """
     from orchestrator.terminal.markers import MarkerCommand, parse_between_markers
 
-    # Build the check command - outputs SCREEN_EXISTS/MISSING and CLAUDE_RUNNING/MISSING
-    # Note: Check for 'claude -r' or 'claude --' to avoid matching screen session names
-    # which contain 'claude-<session_id>'. The actual Claude CLI is invoked with flags.
-    inner_cmd = (
-        f"(screen -ls 2>/dev/null | grep -q '{screen_name}' && echo SCREEN_EXISTS || echo SCREEN_MISSING) && "
-        f"(ps aux | grep -v grep | grep -E 'claude (-r|--|--settings)' | grep -q '{session_id}' && echo CLAUDE_RUNNING || echo CLAUDE_MISSING)"
+    # Build the check command — outputs SCREEN_EXISTS/MISSING, the newest
+    # session id (pid.name), and CLAUDE_RUNNING/MISSING.
+    # We anchor the grep with a word-boundary (\b) to avoid substring matches.
+    # The awk+sort+tail extracts the newest (highest-PID) session id.
+    screen_check = (
+        f"screen -ls 2>/dev/null | grep -w '{screen_name}' "
+        f"| awk '{{print $1}}' | sort -t. -k1 -n | tail -1 | "
+        f'{{ read sid; if [ -n "$sid" ]; then '
+        f'echo SCREEN_EXISTS; echo "SCREEN_PID=$sid"; '
+        f"else echo SCREEN_MISSING; fi; }}"
     )
+    claude_check = (
+        f"ps aux | grep -v grep "
+        f"| grep -E 'claude (-r|--|--settings)' "
+        f"| grep -q '{session_id}' "
+        f"&& echo CLAUDE_RUNNING || echo CLAUDE_MISSING"
+    )
+    inner_cmd = f"({screen_check}) && ({claude_check})"
     cmd = MarkerCommand(inner_cmd, prefix="SCRCHK")
 
     # Debug: log the actual command being sent
@@ -559,10 +613,16 @@ def check_screen_exists_via_tmux(
 
     # Parse result between markers (safe from command echo)
     result = parse_between_markers(output, cmd.start_marker, cmd.end_marker)
-    logger.debug("Screen check parsed result: %r (start=%s, end=%s)", result, cmd.start_marker, cmd.end_marker)
+    logger.debug(
+        "Screen check parsed result: %r (start=%s, end=%s)",
+        result,
+        cmd.start_marker,
+        cmd.end_marker,
+    )
 
     screen_exists = False
     claude_running = False
+    screen_pid: str | None = None
 
     if result:
         # Check for exact matches in the parsed result
@@ -571,19 +631,36 @@ def check_screen_exists_via_tmux(
             logger.debug("Screen check line: %r", stripped)
             if stripped == "SCREEN_EXISTS":
                 screen_exists = True
+            elif stripped.startswith("SCREEN_PID="):
+                screen_pid = stripped.split("=", 1)[1]
             elif stripped == "CLAUDE_RUNNING":
                 claude_running = True
 
-    logger.info("Screen check via tmux: screen_exists=%s, claude_running=%s (result=%r)",
-                screen_exists, claude_running, result)
-    return screen_exists, claude_running
+    logger.info(
+        "Screen check via tmux: exists=%s, claude=%s, pid=%s (result=%r)",
+        screen_exists,
+        claude_running,
+        screen_pid,
+        result,
+    )
+    return screen_exists, claude_running, screen_pid
 
 
 # =============================================================================
 # Main Reconnect — rdev Workers (Sequential Pipeline)
 # =============================================================================
 
-def reconnect_remote_worker(conn, session, tmux_sess: str, tmux_win: str, api_port: int, tmp_dir: str, repo, tunnel_manager=None):
+
+def reconnect_remote_worker(
+    conn,
+    session,
+    tmux_sess: str,
+    tmux_win: str,
+    api_port: int,
+    tmp_dir: str,
+    repo,
+    tunnel_manager=None,
+):
     """Reconnect a remote worker (rdev or generic SSH) using the sequential pipeline.
 
     Each step fixes one layer, then evaluates the next.  The critical
@@ -622,13 +699,18 @@ def reconnect_remote_worker(conn, session, tmux_sess: str, tmux_win: str, api_po
 
         logger.info(
             "Reconnect %s: Step 1 — tui_active=%s, ssh_alive=%s",
-            session.name, tui_active, ssh_alive,
+            session.name,
+            tui_active,
+            ssh_alive,
         )
 
         if tui_active and ssh_alive:
             # Claude is probably running fine.  Verify via subprocess SSH.
             remote_status, reason = check_screen_and_claude_remote(
-                session.host, session.id, tmux_sess=None, tmux_win=None,
+                session.host,
+                session.id,
+                tmux_sess=None,
+                tmux_win=None,
             )
             if remote_status == "alive":
                 # Everything is fine!  Just fix tunnel if needed.
@@ -657,7 +739,9 @@ def reconnect_remote_worker(conn, session, tmux_sess: str, tmux_win: str, api_po
                 logger.warning(
                     "Reconnect %s: TUI active + SSH alive but remote says %s (%s). "
                     "Not touching pane to avoid disruption.",
-                    session.name, remote_status, reason,
+                    session.name,
+                    remote_status,
+                    reason,
                 )
                 repo.update_session(conn, session.id, status="error")
                 return
@@ -672,7 +756,9 @@ def reconnect_remote_worker(conn, session, tmux_sess: str, tmux_win: str, api_po
 
         # ── Step 3: Ensure SSH connection ─────────────────────────────────
         if not ssh_alive:
-            logger.info("Reconnect %s: Step 3 — SSH dead, cleaning pane and reconnecting", session.name)
+            logger.info(
+                "Reconnect %s: Step 3 — SSH dead, cleaning pane and reconnecting", session.name
+            )
             _clean_pane_for_ssh(tmux_sess, tmux_win, cwd=tmp_dir)
             ssh.remote_connect(tmux_sess, tmux_win, session.host)
             if not ssh.wait_for_prompt(tmux_sess, tmux_win, timeout=60):
@@ -687,35 +773,61 @@ def reconnect_remote_worker(conn, session, tmux_sess: str, tmux_win: str, api_po
 
         # ── Step 5: Check screen/Claude status (safe: at shell prompt) ────
         if not _install_screen_if_needed(tmux_sess, tmux_win):
-            raise RuntimeError(f"Reconnect {session.name}: screen not available and could not be installed")
+            raise RuntimeError(
+                f"Reconnect {session.name}: screen not available and could not be installed"
+            )
 
-        screen_exists, claude_running = check_screen_exists_via_tmux(
-            tmux_sess, tmux_win, screen_name, session.id,
+        screen_exists, claude_running, screen_pid = check_screen_exists_via_tmux(
+            tmux_sess,
+            tmux_win,
+            screen_name,
+            session.id,
         )
         logger.info(
-            "Reconnect %s: Step 5 — screen_exists=%s, claude_running=%s",
-            session.name, screen_exists, claude_running,
+            "Reconnect %s: Step 5 — screen_exists=%s, claude_running=%s, screen_pid=%s",
+            session.name,
+            screen_exists,
+            claude_running,
+            screen_pid,
         )
+
+        # Reattach target: use pid.name when available (always unambiguous),
+        # fall back to bare name if the check didn't capture a PID.
+        reattach_target = screen_pid if screen_pid else screen_name
 
         # ── Step 6: Act on findings ───────────────────────────────────────
         if screen_exists and claude_running:
-            safe_send_keys(tmux_sess, tmux_win, f"screen -rd {screen_name}", enter=True)
+            safe_send_keys(tmux_sess, tmux_win, f"screen -rd {reattach_target}", enter=True)
             repo.update_session(conn, session.id, status="waiting")
             logger.info("Reconnect %s: SUCCESS — reattached to screen with Claude", session.name)
 
         elif screen_exists and not claude_running:
-            safe_send_keys(tmux_sess, tmux_win, f"screen -rd {screen_name}", enter=True)
+            safe_send_keys(tmux_sess, tmux_win, f"screen -rd {reattach_target}", enter=True)
             time.sleep(1)
             _launch_claude_in_screen(
-                tmux_sess, tmux_win, session, tmp_dir, remote_tmp_dir, repo, conn,
+                tmux_sess,
+                tmux_win,
+                session,
+                tmp_dir,
+                remote_tmp_dir,
+                repo,
+                conn,
             )
 
         else:  # no screen
+            # Kill any residual sessions the check may have missed
+            _kill_orphaned_screen(tmux_sess, tmux_win, screen_name)
             _install_screen_if_needed(tmux_sess, tmux_win)
             safe_send_keys(tmux_sess, tmux_win, f"screen -S {screen_name}", enter=True)
             time.sleep(2)
             _launch_claude_in_screen(
-                tmux_sess, tmux_win, session, tmp_dir, remote_tmp_dir, repo, conn,
+                tmux_sess,
+                tmux_win,
+                session,
+                tmp_dir,
+                remote_tmp_dir,
+                repo,
+                conn,
             )
 
     except TUIActiveError as e:
@@ -735,6 +847,7 @@ def reconnect_remote_worker(conn, session, tmux_sess: str, tmux_win: str, api_po
 # =============================================================================
 # Main Reconnect — Local Workers
 # =============================================================================
+
 
 def reconnect_local_worker(session, tmux_sess: str, tmux_win: str, api_port: int, tmp_dir: str):
     """Reconnect a local worker with TUI guard.
@@ -784,7 +897,12 @@ def reconnect_local_worker(session, tmux_sess: str, tmux_win: str, api_port: int
 
         session_exists = _check_claude_session_exists_local(target_id)
         session_arg = _get_claude_session_arg(target_id, session_exists, has_tracked_id)
-        logger.info("Reconnect local %s: Claude session exists=%s, using arg: %s", session.name, session_exists, session_arg)
+        logger.info(
+            "Reconnect local %s: Claude session exists=%s, using arg: %s",
+            session.name,
+            session_exists,
+            session_arg,
+        )
 
         settings_file = os.path.join(tmp_dir, "configs", "settings.json")
         claude_args = [
@@ -810,7 +928,9 @@ def reconnect_local_worker(session, tmux_sess: str, tmux_win: str, api_port: int
             logger.warning(
                 "Reconnect local %s: Claude failed to start (arg=%s, output=%s). "
                 "Retrying with --session-id to create a fresh session.",
-                session.name, session_arg, error_output[:300],
+                session.name,
+                session_arg,
+                error_output[:300],
             )
             # Clean up the failed command prompt
             send_keys(tmux_sess, tmux_win, "C-c", enter=False)
@@ -826,7 +946,9 @@ def reconnect_local_worker(session, tmux_sess: str, tmux_win: str, api_port: int
                 f"--settings {shlex.quote(settings_file)}",
             ]
             if prompt:
-                claude_args_retry.append(f'--append-system-prompt "$(cat {shlex.quote(prompt_file)})"')
+                claude_args_retry.append(
+                    f'--append-system-prompt "$(cat {shlex.quote(prompt_file)})"'
+                )
 
             claude_cmd_retry = f"claude {' '.join(claude_args_retry)}"
             logger.info("Reconnect local %s: retrying with: %s", session.name, fallback_arg)
@@ -837,11 +959,14 @@ def reconnect_local_worker(session, tmux_sess: str, tmux_win: str, api_port: int
             if not retry_started:
                 logger.error(
                     "Reconnect local %s: retry also failed (output=%s). Giving up.",
-                    session.name, retry_output[:300],
+                    session.name,
+                    retry_output[:300],
                 )
                 return
 
-        logger.info("Launched Claude Code for local worker %s (session_id=%s)", session.name, session.id)
+        logger.info(
+            "Launched Claude Code for local worker %s (session_id=%s)", session.name, session.id
+        )
     finally:
         lock.release()
 
@@ -909,10 +1034,17 @@ def trigger_reconnect(
         # are bound via default parameters to avoid closure bugs.
         def _bg_reconnect(_session=session, _ts=tmux_sess, _tw=tmux_win, _td=tmp_dir):
             from orchestrator.state.db import get_connection
+
             bg_conn = get_connection(db_path) if db_path else db
             try:
                 reconnect_remote_worker(
-                    bg_conn, _session, _ts, _tw, api_port, _td, repo,
+                    bg_conn,
+                    _session,
+                    _ts,
+                    _tw,
+                    api_port,
+                    _td,
+                    repo,
                     tunnel_manager=tunnel_manager,
                 )
                 logger.info("Reconnect succeeded for %s", _session.name)

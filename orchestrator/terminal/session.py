@@ -59,9 +59,7 @@ def create_session(
         time.sleep(0.5)
 
     # Persist to DB
-    session = sessions_repo.create_session(
-        conn, name=name, host=host, work_dir=work_dir
-    )
+    session = sessions_repo.create_session(conn, name=name, host=host, work_dir=work_dir)
     logger.info("Created session: %s (host=%s, path=%s)", name, host, work_dir)
     return session
 
@@ -118,14 +116,14 @@ def _verify_message_sent(
     message: str,
 ) -> bool:
     """Check if a message was successfully submitted (no longer in input line).
-    
+
     After pressing Enter, if the message was sent successfully:
     - Claude Code will start processing (showing status/thinking)
     - The input line will be cleared
-    
+
     If the message is stuck:
     - The terminal will still show the message text on the input line
-    
+
     Returns True if the message appears to have been sent.
     """
     # Give Claude Code a moment to process the Enter
@@ -135,7 +133,7 @@ def _verify_message_sent(
     output = tmux.capture_output(tmux_session, window_name, lines=10)
 
     # Get the last few lines to check for stuck input
-    lines = output.strip().split('\n')
+    lines = output.strip().split("\n")
     if not lines:
         return True  # Empty output, assume sent
 
@@ -149,8 +147,8 @@ def _verify_message_sent(
         # Check if last portion of message is in the last line (message stuck in input)
         message_tail = message[-100:] if len(message) > 100 else message
         # Normalize whitespace for comparison
-        message_tail_normalized = ' '.join(message_tail.split())
-        last_line_normalized = ' '.join(last_line.split())
+        message_tail_normalized = " ".join(message_tail.split())
+        last_line_normalized = " ".join(last_line.split())
 
         if len(last_line_normalized) > 20 and message_tail_normalized[-50:] in last_line_normalized:
             logger.debug("Message appears stuck in input - last line matches message tail")
@@ -159,7 +157,7 @@ def _verify_message_sent(
     # Also check if the cursor line appears to have unsubmitted content
     # Claude Code shows ">" prompt when waiting for input
     # If we see significant text after the prompt, message may be stuck
-    if last_line.startswith('>') and len(last_line) > 20:
+    if last_line.startswith(">") and len(last_line) > 20:
         # There's substantial text after the prompt - likely stuck
         logger.debug("Message appears stuck - text after prompt: %s...", last_line[:50])
         return False
@@ -175,13 +173,13 @@ def send_to_session(
     retry_delay: float = 2.0,
 ) -> bool:
     """Send a message to a session's Claude Code instance.
-    
+
     Uses literal mode to send text (avoiding tmux special key interpretation),
     then sends Enter separately to submit the message.
-    
+
     For long messages, the Enter key might be pressed before text is fully pasted.
     This function verifies the message was sent and retries Enter if needed.
-    
+
     Args:
         name: Session/window name
         message: Message content to send
@@ -215,7 +213,8 @@ def send_to_session(
         if attempt < max_enter_retries - 1:
             logger.warning(
                 "Message may be stuck in input, retrying Enter (attempt %d/%d)",
-                attempt + 1, max_enter_retries
+                attempt + 1,
+                max_enter_retries,
             )
             time.sleep(retry_delay)
 
@@ -229,17 +228,23 @@ def _get_screen_session_name(session_id: str) -> str:
     return f"claude-{session_id}"
 
 
-def _wait_for_command_completion(tmux_session: str, window_name: str, timeout: int = 60, poll_interval: float = 2.0) -> bool:
+def _wait_for_command_completion(
+    tmux_session: str, window_name: str, timeout: int = 60, poll_interval: float = 2.0
+) -> bool:
     """Wait for a command to complete by checking for shell prompt return.
-    
+
     Uses the markers module for safe marker-based detection.
     Returns True if command completed within timeout, False otherwise.
     """
     from orchestrator.terminal.markers import wait_for_completion
+
     return wait_for_completion(
-        tmux.send_keys, tmux.capture_output,
-        tmux_session, window_name,
-        timeout=timeout, poll_interval=poll_interval
+        tmux.send_keys,
+        tmux.capture_output,
+        tmux_session,
+        window_name,
+        timeout=timeout,
+        poll_interval=poll_interval,
     )
 
 
@@ -252,10 +257,12 @@ def _install_screen_if_needed(tmux_session: str, window_name: str) -> bool:
 
     # Check if screen is installed
     result = check_yes_no(
-        tmux.send_keys, tmux.capture_output,
-        tmux_session, window_name,
+        tmux.send_keys,
+        tmux.capture_output,
+        tmux_session,
+        window_name,
         check_command="which screen",
-        prefix="SCREEN_CHK"
+        prefix="SCREEN_CHK",
     )
 
     if result is True:
@@ -275,7 +282,8 @@ def _install_screen_if_needed(tmux_session: str, window_name: str) -> bool:
     marker_id = random.randint(10000, 99999)
     done_marker = f"__INSTALL_DONE_{marker_id}__"
     tmux.send_keys(
-        tmux_session, window_name,
+        tmux_session,
+        window_name,
         f"sudo yum install screen -y; echo {done_marker}",
         enter=True,
     )
@@ -292,10 +300,12 @@ def _install_screen_if_needed(tmux_session: str, window_name: str) -> bool:
 
     # Verify installation
     verify_result = check_yes_no(
-        tmux.send_keys, tmux.capture_output,
-        tmux_session, window_name,
+        tmux.send_keys,
+        tmux.capture_output,
+        tmux_session,
+        window_name,
         check_command="which screen",
-        prefix="SCREEN_VFY"
+        prefix="SCREEN_VFY",
     )
     logger.debug("Screen verify result: %r", verify_result)
 
@@ -308,8 +318,22 @@ def _install_screen_if_needed(tmux_session: str, window_name: str) -> bool:
 
 
 def _kill_orphaned_screen(tmux_session: str, window_name: str, screen_name: str):
-    """Kill any orphaned screen session with the given name."""
-    tmux.send_keys(tmux_session, window_name, f"screen -X -S {screen_name} quit 2>/dev/null", enter=True)
+    """Kill ALL orphaned screen sessions matching the given name.
+
+    Uses ``screen -ls`` to find PIDs, then kills each by ``{pid}.{name}``
+    so the command is unambiguous even when multiple sessions share a name.
+    The old single ``screen -X -S {name} quit`` silently fails when there
+    are duplicates ("There are several suitable screens …").
+
+    The grep uses ``-w`` (word boundary) to avoid matching sessions whose
+    names are a superstring of *screen_name*.
+    """
+    kill_cmd = (
+        f"screen -ls 2>/dev/null | grep -w '{screen_name}' "
+        f"| awk '{{print $1}}' "
+        f'| while read sid; do screen -X -S "$sid" quit 2>/dev/null; done'
+    )
+    tmux.send_keys(tmux_session, window_name, kill_cmd, enter=True)
     time.sleep(0.5)
 
 
@@ -330,8 +354,15 @@ def _copy_dir_to_remote_ssh(local_dir: str, host: str, remote_dir: str) -> bool:
     try:
         # First create remote directory via SSH
         mkdir_result = subprocess.run(
-            ["ssh", "-o", "ConnectTimeout=10", "-o", "BatchMode=yes", host,
-             f"mkdir -p {remote_dir}"],
+            [
+                "ssh",
+                "-o",
+                "ConnectTimeout=10",
+                "-o",
+                "BatchMode=yes",
+                host,
+                f"mkdir -p {remote_dir}",
+            ],
             capture_output=True,
             text=True,
             timeout=30,
@@ -348,8 +379,15 @@ def _copy_dir_to_remote_ssh(local_dir: str, host: str, remote_dir: str) -> bool:
         )
 
         ssh_proc = subprocess.Popen(
-            ["ssh", "-o", "ConnectTimeout=10", "-o", "BatchMode=yes", host,
-             f"tar xzf - -C {remote_dir}"],
+            [
+                "ssh",
+                "-o",
+                "ConnectTimeout=10",
+                "-o",
+                "BatchMode=yes",
+                host,
+                f"tar xzf - -C {remote_dir}",
+            ],
             stdin=tar_proc.stdout,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
@@ -387,7 +425,7 @@ def _copy_dir_to_remote(
     remote_dir: str,
 ) -> None:
     """Copy a local directory to remote using tar + base64 via tmux.
-    
+
     DEPRECATED: Use _copy_dir_to_rdev_ssh() for rdev hosts instead.
     This function sends commands through tmux which can fail with large payloads.
     Kept for backwards compatibility with non-rdev hosts.
@@ -406,19 +444,23 @@ def _copy_dir_to_remote(
 
     # Always use chunked file approach for reliability
     chunk_size = 4000  # Much smaller chunks for tmux reliability
-    chunks = [encoded[i:i+chunk_size] for i in range(0, len(encoded), chunk_size)]
+    chunks = [encoded[i : i + chunk_size] for i in range(0, len(encoded), chunk_size)]
 
     tmux.send_keys(tmux_session, window_name, "rm -f /tmp/_orch_transfer.b64", enter=True)
     time.sleep(0.1)
 
     for chunk in chunks:
-        tmux.send_keys(tmux_session, window_name,
-            f"echo -n '{chunk}' >> /tmp/_orch_transfer.b64", enter=True)
+        tmux.send_keys(
+            tmux_session, window_name, f"echo -n '{chunk}' >> /tmp/_orch_transfer.b64", enter=True
+        )
         time.sleep(0.05)
 
-    tmux.send_keys(tmux_session, window_name,
+    tmux.send_keys(
+        tmux_session,
+        window_name,
         f"base64 -d /tmp/_orch_transfer.b64 | tar xzf - -C {remote_dir} && rm -f /tmp/_orch_transfer.b64",
-        enter=True)
+        enter=True,
+    )
     time.sleep(0.5)
 
     logger.info("Copied %s to remote %s via tar+base64 (tmux)", local_dir, remote_dir)
@@ -464,7 +506,12 @@ def setup_remote_worker(
         if tunnel_manager:
             tunnel_pid = tunnel_manager.start_tunnel(session_id, name, host)
             if tunnel_pid:
-                logger.info("Started reverse tunnel subprocess for %s -> %s (pid=%d)", name, host, tunnel_pid)
+                logger.info(
+                    "Started reverse tunnel subprocess for %s -> %s (pid=%d)",
+                    name,
+                    host,
+                    tunnel_pid,
+                )
             else:
                 logger.warning("Failed to start tunnel subprocess for %s, continuing setup", name)
         else:
@@ -481,9 +528,12 @@ def setup_remote_worker(
 
         # 3b. rdev-specific: PATH fixup and claude update (skip for generic SSH)
         if ssh.is_rdev_host(host):
-            tmux.send_keys(tmux_session, name,
-                'echo \'export PATH="$HOME/.local/bin:$PATH"\' >> ~/.bashrc && source ~/.bashrc',
-                enter=True)
+            tmux.send_keys(
+                tmux_session,
+                name,
+                "echo 'export PATH=\"$HOME/.local/bin:$PATH\"' >> ~/.bashrc && source ~/.bashrc",
+                enter=True,
+            )
             time.sleep(1)
             tmux.send_keys(tmux_session, name, "claude update", enter=True)
             time.sleep(5)  # Wait for update to complete
@@ -540,6 +590,7 @@ def setup_remote_worker(
                     os.remove(os.path.join(local_skills_dir, f))
         if skills_src and os.path.isdir(skills_src):
             import shutil
+
             os.makedirs(local_skills_dir, exist_ok=True)
             for skill_file in os.listdir(skills_src):
                 if skill_file.endswith(".md"):
@@ -550,7 +601,9 @@ def setup_remote_worker(
                         os.path.join(skills_src, skill_file),
                         os.path.join(local_skills_dir, skill_file),
                     )
-            logger.info("Prepared %d built-in skills for transfer", len(os.listdir(local_skills_dir)))
+            logger.info(
+                "Prepared %d built-in skills for transfer", len(os.listdir(local_skills_dir))
+            )
 
         # Deploy custom skills from DB
         if custom_skills:
@@ -566,7 +619,12 @@ def setup_remote_worker(
         # Make scripts executable
         tmux.send_keys(tmux_session, name, f"chmod +x {remote_tmp_dir}/bin/*", enter=True)
         time.sleep(0.3)
-        tmux.send_keys(tmux_session, name, f"chmod +x {remote_tmp_dir}/configs/hooks/*.sh 2>/dev/null || true", enter=True)
+        tmux.send_keys(
+            tmux_session,
+            name,
+            f"chmod +x {remote_tmp_dir}/configs/hooks/*.sh 2>/dev/null || true",
+            enter=True,
+        )
         time.sleep(0.3)
 
         # Export PATH
@@ -587,9 +645,19 @@ def setup_remote_worker(
         if skills_src and os.path.isdir(skills_src):
             global_skills_dest = "~/.claude/commands"
             # Clear stale skills, then copy current set
-            tmux.send_keys(tmux_session, name, f"rm -f {global_skills_dest}/*.md 2>/dev/null; mkdir -p {global_skills_dest}", enter=True)
+            tmux.send_keys(
+                tmux_session,
+                name,
+                f"rm -f {global_skills_dest}/*.md 2>/dev/null; mkdir -p {global_skills_dest}",
+                enter=True,
+            )
             time.sleep(0.2)
-            tmux.send_keys(tmux_session, name, f"cp {remote_tmp_dir}/.claude/commands/*.md {global_skills_dest}/ 2>/dev/null || true", enter=True)
+            tmux.send_keys(
+                tmux_session,
+                name,
+                f"cp {remote_tmp_dir}/.claude/commands/*.md {global_skills_dest}/ 2>/dev/null || true",
+                enter=True,
+            )
             time.sleep(0.3)
             logger.info("Deployed skills to %s for rdev worker %s", global_skills_dest, name)
 
@@ -608,8 +676,12 @@ def setup_remote_worker(
 
         claude_cmd = f"claude {' '.join(claude_args)}"
         tmux.send_keys(tmux_session, name, claude_cmd, enter=True)
-        logger.info("Launched Claude Code in screen session '%s' for remote worker %s (work_dir=%s)",
-                    screen_name, name, work_dir)
+        logger.info(
+            "Launched Claude Code in screen session '%s' for remote worker %s (work_dir=%s)",
+            screen_name,
+            name,
+            work_dir,
+        )
 
         return {"ok": True, "tunnel_pid": tunnel_pid}
 
@@ -685,14 +757,19 @@ def setup_local_worker(
                         os.path.join(skills_src, skill_file),
                         os.path.join(skills_dest, skill_file),
                     )
-            logger.info("Deployed %d built-in skills to %s for local worker %s",
-                        len([f for f in os.listdir(skills_dest) if f.endswith(".md")]),
-                        skills_dest, name)
+            logger.info(
+                "Deployed %d built-in skills to %s for local worker %s",
+                len([f for f in os.listdir(skills_dest) if f.endswith(".md")]),
+                skills_dest,
+                name,
+            )
 
         if custom_skills and work_dir:
             skills_dest = os.path.join(work_dir, ".claude", "commands")
             deploy_custom_skills(skills_dest, custom_skills)
-            logger.info("Deployed %d custom worker skills for local worker %s", len(custom_skills), name)
+            logger.info(
+                "Deployed %d custom worker skills for local worker %s", len(custom_skills), name
+            )
 
         # 4. Write worker prompt to file
         custom_skills_section = format_custom_skills_for_prompt(custom_skills or [])
