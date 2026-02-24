@@ -225,6 +225,9 @@ export default function NotificationsPage() {
                               <div className="np-comment-body">{n.metadata.reply}</div>
                             </div>
                           )}
+                          {!n.metadata.reviewer_comment && !n.metadata.reply && (
+                            <p className="np-message" style={{ whiteSpace: 'pre-wrap' }}>{n.message}</p>
+                          )}
                         </div>
                       ) : (
                         <p className="np-message" title={expanded.has(n.id) ? undefined : (n.metadata?.reply || n.message)}>
