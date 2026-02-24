@@ -1,7 +1,7 @@
 {
   "$schema": "https://raw.githubusercontent.com/nicehash/tauri/refs/heads/dev/crates/tauri-schema-generator/schemas/config.schema.json",
   "productName": "Orchestrator",
-  "version": "0.2.7",
+  "version": "0.2.8",
   "identifier": "com.yudongqiu.orchestrator",
   "build": {
     "frontendDist": "./loading",
