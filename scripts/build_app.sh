@@ -188,6 +188,13 @@ fi
 
 # ============================================================
 echo "=== Build complete ==="
-[[ "$BUILD_DMG" == "true" ]] && echo "DMG:             src-tauri/target/release/bundle/dmg/Orchestrator_*.dmg"
-[[ "$BUILD_DMG" == "true" ]] && echo "Stable DMG:      src-tauri/target/release/bundle/dmg/Orchestrator_aarch64.dmg"
-[[ "$BUILD_PKG" == "true" ]] && echo "PKG (App Store): $PKG_OUTPUT"
+if [[ "$BUILD_DMG" == "true" ]]; then
+    echo "DMG:             src-tauri/target/release/bundle/dmg/Orchestrator_*.dmg"
+    echo "Stable DMG:      src-tauri/target/release/bundle/dmg/Orchestrator_aarch64.dmg"
+fi
+if [[ "$BUILD_PKG" == "true" ]]; then
+    echo "PKG (App Store): $PKG_OUTPUT"
+fi
+
+# Ensure the script exits with success when build completes
+exit 0
