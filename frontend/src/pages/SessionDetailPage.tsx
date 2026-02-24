@@ -27,6 +27,7 @@ export default function SessionDetailPage() {
   const isRdev = session?.host?.includes('/') ?? false
   
   const { readClipboard } = useSmartPaste()
+  const terminalFocusRef = useRef<(() => void) | null>(null)
 
   // Tunnel state for rdev workers
   const [tunnels, setTunnels] = useState<Record<string, TunnelInfo>>({})
@@ -286,6 +287,7 @@ export default function SessionDetailPage() {
       }
     } finally {
       setPasting(false)
+      terminalFocusRef.current?.()
     }
   }, [id, pasting, readClipboard, notify])
 
@@ -403,7 +405,7 @@ export default function SessionDetailPage() {
 
       {/* Terminal fills the rest */}
       <div className="sd-terminal-area">
-        <TerminalView sessionId={session.id} sessionStatus={session.status} disableScrollback={isRdev} onImagePaste={handleImagePaste} onTextPaste={handleTextPaste} />
+        <TerminalView sessionId={session.id} sessionStatus={session.status} disableScrollback={isRdev} onFocusRef={(fn) => { terminalFocusRef.current = fn }} onImagePaste={handleImagePaste} onTextPaste={handleTextPaste} />
       </div>
 
       {/* Footer with task link */}

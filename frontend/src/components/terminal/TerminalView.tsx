@@ -11,6 +11,7 @@ interface Props {
   sessionStatus?: string  // Session status from parent (e.g., 'connecting', 'working')
   disableScrollback?: boolean  // Disable scrollback history (for rdev sessions with screen)
   onInputRef?: (fn: (text: string) => void) => void  // Expose function to inject text into terminal
+  onFocusRef?: (fn: () => void) => void  // Expose function to focus the terminal
   onImagePaste?: (file: File) => void  // Handle image paste from Cmd+V
   onTextPaste?: (text: string) => void  // Handle long text paste from Cmd+V
 }
@@ -21,7 +22,7 @@ type ConnectionState = 'connected' | 'disconnected' | 'reconnecting'
 const RECONNECT_DELAYS = [1000, 2000, 5000, 10000, 10000]
 const MAX_RECONNECT_ATTEMPTS = 5
 
-export default function TerminalView({ sessionId, sessionStatus, disableScrollback, onInputRef, onImagePaste, onTextPaste }: Props) {
+export default function TerminalView({ sessionId, sessionStatus, disableScrollback, onInputRef, onFocusRef, onImagePaste, onTextPaste }: Props) {
   const termRef = useRef<HTMLDivElement>(null)
   const terminalRef = useRef<Terminal | null>(null)
   const wsRef = useRef<WebSocket | null>(null)
@@ -239,6 +240,11 @@ export default function TerminalView({ sessionId, sessionStatus, disableScrollba
           ws.send(JSON.stringify({ type: 'input', data: text }))
         }
       })
+    }
+
+    // Expose function to focus the terminal
+    if (onFocusRef) {
+      onFocusRef(() => terminal.focus())
     }
 
     // Track focus state

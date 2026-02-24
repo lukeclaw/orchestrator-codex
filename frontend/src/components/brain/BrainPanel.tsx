@@ -32,6 +32,7 @@ export default function BrainPanel({
   const [pasting, setPasting] = useState(false)
   const isDragging = useRef(false)
   const terminalInputRef = useRef<((text: string) => void) | null>(null)
+  const terminalFocusRef = useRef<(() => void) | null>(null)
   const { readClipboard } = useSmartPaste()
 
   // Poll brain status
@@ -125,6 +126,7 @@ export default function BrainPanel({
       }
     } finally {
       setPasting(false)
+      terminalFocusRef.current?.()
     }
   }
 
@@ -280,6 +282,7 @@ export default function BrainPanel({
           onStart={handleStart}
           onStop={handleStop}
           onTerminalInputRef={(fn: (text: string) => void) => { terminalInputRef.current = fn }}
+          onTerminalFocusRef={(fn: () => void) => { terminalFocusRef.current = fn }}
           onImagePaste={handleImagePaste}
           onTextPaste={handleTextPaste}
         />
