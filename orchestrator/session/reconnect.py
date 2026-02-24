@@ -159,6 +159,83 @@ def _ensure_tunnel(session, tunnel_manager, repo, conn):
 # =============================================================================
 
 
+def _cleanup_stale_claude_session_local(session_id: str):
+    """Delete stale Claude session files for the given session ID locally.
+
+    This resolves the deadlock where ``-r`` fails ("No conversation found")
+    *and* ``--session-id`` fails ("already in use").  The ``.jsonl`` file
+    exists (so ``--session-id`` refuses to overwrite) but is corrupt or empty
+    (so ``-r`` cannot load it).  Deleting it lets ``--session-id`` succeed.
+
+    Also kills any orphaned Claude processes still referencing this session ID.
+    """
+    import glob
+    import re
+
+    # 1. Delete stale .jsonl session files
+    claude_dir = os.path.expanduser("~/.claude/projects")
+    pattern_path = os.path.join(claude_dir, "*", f"{session_id}.jsonl")
+    for f in glob.glob(pattern_path):
+        try:
+            os.remove(f)
+            logger.info("Deleted stale Claude session file: %s", f)
+        except Exception:
+            logger.debug("Failed to delete %s", f, exc_info=True)
+
+    # 2. Kill orphaned processes (secondary defense)
+    try:
+        result = subprocess.run(
+            ["ps", "aux"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        proc_pattern = re.compile(r"claude\s+(-r|--|--settings)")
+        for line in result.stdout.splitlines():
+            if session_id in line and proc_pattern.search(line):
+                parts = line.split()
+                if len(parts) >= 2:
+                    pid = parts[1]
+                    logger.info(
+                        "Killing orphaned local Claude process pid=%s for session %s: %s",
+                        pid,
+                        session_id,
+                        line.strip()[:120],
+                    )
+                    subprocess.run(["kill", pid], capture_output=True, timeout=5)
+    except Exception:
+        logger.debug("_cleanup_stale_claude_session_local: process kill failed", exc_info=True)
+
+
+def _cleanup_stale_claude_session_remote(host: str, session_id: str):
+    """Delete stale Claude session files and kill orphaned processes on a remote host.
+
+    Same purpose as ``_cleanup_stale_claude_session_local`` but executed via SSH.
+    """
+    try:
+        cleanup_cmd = (
+            # Delete stale session files
+            f"find ~/.claude/projects -name '{session_id}.jsonl' -delete 2>/dev/null; "
+            # Kill orphaned Claude processes
+            f"ps aux | grep -v grep "
+            f"| grep -E 'claude (-r|--|--settings)' "
+            f"| grep '{session_id}' "
+            f"| awk '{{print $2}}' "
+            f"| xargs -r kill 2>/dev/null || true"
+        )
+        subprocess.run(
+            ["ssh", "-o", "ConnectTimeout=10", "-o", "BatchMode=yes", host, cleanup_cmd],
+            capture_output=True,
+            text=True,
+            timeout=15,
+        )
+        logger.info(
+            "Cleaned up stale Claude session on %s for session %s", host, session_id
+        )
+    except Exception:
+        logger.debug("_cleanup_stale_claude_session_remote failed", exc_info=True)
+
+
 def _check_claude_session_exists_remote(host: str, session_id: str) -> bool:
     """Check if a Claude session file exists on remote host via SSH.
 
@@ -374,6 +451,11 @@ def _launch_claude_in_screen(
         time.sleep(0.5)
         send_keys(tmux_sess, tmux_win, "", enter=True)
         time.sleep(0.5)
+
+        # Clean up stale session file + orphaned processes.
+        # Without this, --session-id fails with "already in use".
+        _cleanup_stale_claude_session_remote(session.host, target_id)
+        time.sleep(1)
 
         # Retry with --session-id (creates a new conversation)
         fallback_arg = f"--session-id {target_id}"
@@ -990,6 +1072,11 @@ def reconnect_local_worker(
             time.sleep(0.5)
             send_keys(tmux_sess, tmux_win, "", enter=True)
             time.sleep(0.5)
+
+            # Clean up stale session file + orphaned processes.
+            # Without this, --session-id fails with "already in use".
+            _cleanup_stale_claude_session_local(target_id)
+            time.sleep(1)
 
             # Retry with --session-id (creates a new conversation)
             fallback_arg = f"--session-id {target_id}"
