@@ -17,6 +17,7 @@ router = APIRouter()
 def get_images_dir() -> Path:
     """Return the persistent images directory."""
     from orchestrator import paths
+
     img_dir = paths.images_dir()
     img_dir.mkdir(parents=True, exist_ok=True)
     return img_dir
@@ -102,6 +103,71 @@ def cleanup_images(images_dir: Path, max_size_mb: int = 200):
         total -= oldest.stat().st_size
         oldest.unlink()
         logger.info("Cleaned up old image: %s", oldest.name)
+
+
+@router.get("/clipboard")
+def read_clipboard():
+    """Read the system clipboard and return its contents.
+
+    Returns text via ``pbpaste`` and images via ``osascript`` (JXA) so the
+    frontend can avoid ``navigator.clipboard`` which triggers a macOS
+    WKWebView permission popup.
+    """
+    import subprocess
+
+    # --- Text -----------------------------------------------------------
+    text: str | None = None
+    try:
+        result = subprocess.run(
+            ["pbpaste"],
+            capture_output=True,
+            text=True,
+            timeout=3,
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            text = result.stdout
+    except Exception:
+        logger.debug("pbpaste failed", exc_info=True)
+
+    # --- Image ----------------------------------------------------------
+    image_base64: str | None = None
+    jxa_script = """\
+ObjC.import('AppKit');
+var pb = $.NSPasteboard.generalPasteboard;
+var pngData = pb.dataForType($.NSPasteboardTypePNG);
+if (!pngData.isNil()) {
+    pngData.base64EncodedStringWithOptions(0).js;
+} else {
+    var tiffData = pb.dataForType($.NSPasteboardTypeTIFF);
+    if (!tiffData.isNil()) {
+        var rep = $.NSBitmapImageRep.imageRepWithData(tiffData);
+        var png = rep.representationUsingTypeProperties($.NSBitmapImageFileTypePNG, $());
+        png.base64EncodedStringWithOptions(0).js;
+    } else {
+        '';
+    }
+}"""
+    try:
+        result = subprocess.run(
+            ["osascript", "-l", "JavaScript", "-e", jxa_script],
+            capture_output=True,
+            text=True,
+            timeout=3,
+        )
+        if result.returncode == 0:
+            b64 = result.stdout.strip()
+            if b64:
+                image_base64 = b64
+    except Exception:
+        logger.debug("osascript clipboard image read failed", exc_info=True)
+
+    if not text and not image_base64:
+        raise HTTPException(status_code=204, detail="Clipboard is empty")
+
+    return {
+        "text": text,
+        "image_base64": image_base64,
+    }
 
 
 class PasteImageRequest(BaseModel):
