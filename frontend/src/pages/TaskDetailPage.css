@@ -691,9 +691,8 @@
   display: flex;
   flex-direction: column;
   gap: 4px;
-  flex: 1;
   overflow-y: auto;
-  min-height: 100px;
+  max-height: 400px;
 }
 
 .tdp-subtask-row {

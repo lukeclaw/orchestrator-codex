@@ -30,7 +30,7 @@ export default function TaskDetailPage() {
   const navigate = useNavigate()
   const { tasks, sessions, projects, refresh } = useApp()
   const notify = useNotify()
-  const { readClipboard, peekClipboardForLink } = useSmartPaste()
+  const { readClipboard } = useSmartPaste()
 
   const task = tasks.find(t => t.id === id) || null
   const project = task ? projects.find(p => p.id === task.project_id) : null
@@ -67,15 +67,6 @@ export default function TaskDetailPage() {
   const [workerPreview, setWorkerPreview] = useState('')
   const [workerActionPending, setWorkerActionPending] = useState(false)
   const [pasting, setPasting] = useState(false)
-  const [clipboardValid, setClipboardValid] = useState(false)
-
-  // Check clipboard on focus to enable/disable paste button
-  useEffect(() => {
-    const check = () => { peekClipboardForLink().then(setClipboardValid) }
-    check()
-    window.addEventListener('focus', check)
-    return () => window.removeEventListener('focus', check)
-  }, [peekClipboardForLink])
 
   // Reset all editing states when navigating to a different task
   useEffect(() => {
@@ -722,8 +713,8 @@ export default function TaskDetailPage() {
                   <button
                     className="tdp-edit-btn"
                     onClick={handlePasteToLinks}
-                    disabled={pasting || !clipboardValid}
-                    title={clipboardValid ? 'Paste image or URL from clipboard' : 'Clipboard does not contain an image or URL'}
+                    disabled={pasting}
+                    title="Paste image or URL from clipboard"
                   >
                     {pasting ? 'Pasting...' : 'Paste'}
                   </button>
