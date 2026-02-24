@@ -198,7 +198,7 @@ class TestPauseVsAutoReconnect:
             ),
             patch("orchestrator.terminal.ssh.is_remote_host", return_value=False),
             patch("orchestrator.terminal.manager.tmux_target", return_value=("orch", "w1")),
-            patch("orchestrator.session.reconnect.reconnect_local_worker"),
+            patch("orchestrator.session.reconnect.reconnect_local_worker", return_value=True),
         ):
             from orchestrator.session.reconnect import trigger_reconnect
 
@@ -275,7 +275,7 @@ class TestDeletedSessionDuringHealthCheck:
             ),
             patch("orchestrator.terminal.ssh.is_remote_host", return_value=False),
             patch("orchestrator.terminal.manager.tmux_target", return_value=("orch", "w1")),
-            patch("orchestrator.session.reconnect.reconnect_local_worker"),
+            patch("orchestrator.session.reconnect.reconnect_local_worker", return_value=True),
         ):
             from orchestrator.session.reconnect import trigger_reconnect
 
@@ -874,18 +874,17 @@ class TestConnectingStuckDetection:
 
 
 class TestLocalReconnectStatusOnFailure:
-    """Race 8: trigger_reconnect for local workers calls reconnect_local_worker,
-    and on failure the status is set to 'disconnected'.  But reconnect_local_worker
-    itself (line 838) just returns without setting any status on failure.
+    """Race 8: trigger_reconnect for local workers calls reconnect_local_worker.
 
-    The caller (trigger_reconnect, line 928-930) catches the exception and
-    sets 'disconnected'.  However, if reconnect_local_worker fails silently
-    (returns without raising), trigger_reconnect still sets 'waiting' (line 926).
+    reconnect_local_worker returns True on success and False on silent failure
+    (e.g. lock not acquired, Claude failed to start).  trigger_reconnect checks
+    this return value and sets 'waiting' only on True, 'disconnected' on False.
+    Exceptions are caught separately and also result in 'disconnected'.
     """
 
-    def test_local_reconnect_silent_failure_results_in_waiting(self):
-        """If reconnect_local_worker returns without error, trigger_reconnect
-        sets 'waiting' even if the reconnect didn't actually succeed."""
+    def test_local_reconnect_silent_failure_stays_disconnected(self):
+        """If reconnect_local_worker returns False (silent failure),
+        trigger_reconnect sets 'disconnected' instead of 'waiting'."""
         tracker = StatusTracker()
         db = MagicMock()
         session = _make_session(status="disconnected")
@@ -897,19 +896,18 @@ class TestLocalReconnectStatusOnFailure:
             ),
             patch("orchestrator.terminal.ssh.is_remote_host", return_value=False),
             patch("orchestrator.terminal.manager.tmux_target", return_value=("orch", "w1")),
-            # reconnect_local_worker returns normally (no error raised)
-            # but internally it may have failed to start Claude (line 838)
-            patch("orchestrator.session.reconnect.reconnect_local_worker"),
+            # reconnect_local_worker returns False (Claude failed to start)
+            patch("orchestrator.session.reconnect.reconnect_local_worker", return_value=False),
         ):
             from orchestrator.session.reconnect import trigger_reconnect
 
             result = trigger_reconnect(session, db, api_port=8093)
 
-        # trigger_reconnect sets "connecting" then "waiting"
+        # trigger_reconnect sets "connecting" then "disconnected" (not "waiting")
         assert "connecting" in tracker.statuses
-        assert "waiting" in tracker.statuses
-        # But Claude may not actually be running -- the status is misleading
-        assert result["ok"] is True
+        assert "disconnected" in tracker.statuses
+        assert "waiting" not in tracker.statuses
+        assert result["ok"] is False
 
     def test_local_reconnect_exception_sets_disconnected(self):
         """If reconnect_local_worker raises, trigger_reconnect sets 'disconnected'."""
@@ -938,9 +936,9 @@ class TestLocalReconnectStatusOnFailure:
         assert "disconnected" in tracker.statuses
         assert result["ok"] is False
 
-    def test_reconnect_local_worker_returns_silently_on_already_running(self):
-        """reconnect_local_worker returns without setting any status when
-        Claude is found still running (line 757)."""
+    def test_reconnect_local_worker_returns_true_on_already_running(self):
+        """reconnect_local_worker returns True when Claude is found already
+        running (no need to relaunch)."""
         session = _make_session(status="disconnected")
 
         with (
@@ -961,12 +959,10 @@ class TestLocalReconnectStatusOnFailure:
             mock_lock_fn.return_value = mock_lock
             from orchestrator.session.reconnect import reconnect_local_worker
 
-            # This just returns -- no status update, no error
-            reconnect_local_worker(session, "orchestrator", "worker-1", 8093, "/tmp/test")
+            result = reconnect_local_worker(session, "orchestrator", "worker-1", 8093, "/tmp/test")
 
-        # The function returned without updating status.
-        # If trigger_reconnect wraps this call and then sets "waiting",
-        # the status becomes "waiting" even though nothing was reconnected.
+        # Returns True — Claude is alive, trigger_reconnect will set "waiting"
+        assert result is True
 
 
 # ===================================================================

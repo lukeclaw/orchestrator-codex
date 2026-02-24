@@ -249,6 +249,10 @@ def _verify_claude_started(
     seconds.  If the TUI never appears it usually means ``claude -r`` failed
     with an error like "No conversation found with session ID: …".
 
+    NOTE: This check is unreliable inside GNU Screen sessions because screen
+    itself uses the alternate screen buffer — ``#{alternate_on}`` is always 1.
+    Use ``_verify_claude_running_via_ssh`` for verification inside screen.
+
     Returns:
         (started, error_output) — *started* is True when the TUI is detected.
         When False, *error_output* contains the last terminal lines for diagnosis.
@@ -262,6 +266,43 @@ def _verify_claude_started(
     # TUI never appeared — capture output to check for errors
     output = capture_output(tmux_sess, tmux_win, lines=15)
     return False, output
+
+
+def _verify_claude_running_via_ssh(
+    host: str,
+    session_id: str,
+    timeout: int = 15,
+    poll_interval: float = 3.0,
+) -> tuple[bool, str]:
+    """Verify Claude is actually running on remote by checking the process via SSH.
+
+    Unlike ``_verify_claude_started`` (which checks the alternate screen buffer),
+    this uses a subprocess SSH connection to look for the Claude process.  This is
+    necessary inside GNU Screen sessions where ``#{alternate_on}`` is always 1,
+    making TUI detection unreliable.
+
+    Returns:
+        (running, reason) — *running* is True when the Claude process is found.
+    """
+    from orchestrator.session.health import check_screen_and_claude_remote
+
+    last_status = ""
+    last_reason = ""
+    start = time.time()
+    while time.time() - start < timeout:
+        time.sleep(poll_interval)
+        status, reason = check_screen_and_claude_remote(
+            host,
+            session_id,
+            tmux_sess=None,
+            tmux_win=None,
+        )
+        last_status = status
+        last_reason = reason
+        if status == "alive":
+            return True, ""
+
+    return False, f"Process check: {last_status} - {last_reason}"
 
 
 def _launch_claude_in_screen(
@@ -316,11 +357,13 @@ def _launch_claude_in_screen(
     claude_cmd = f"claude {' '.join(claude_args)}"
     send_keys(tmux_sess, tmux_win, claude_cmd, enter=True)
 
-    # Verify Claude actually started — recover if -r failed
-    started, error_output = _verify_claude_started(tmux_sess, tmux_win)
+    # Verify Claude actually started — use SSH process check because TUI detection
+    # (alternate_on) is unreliable inside screen sessions (screen itself uses
+    # alternate screen buffer, so alternate_on is always 1).
+    started, error_output = _verify_claude_running_via_ssh(session.host, session.id)
     if not started:
         logger.warning(
-            "Reconnect %s: Claude failed to start (arg=%s, output=%s). "
+            "Reconnect %s: Claude failed to start (arg=%s, check=%s). "
             "Retrying with --session-id to create a fresh session.",
             session.name,
             session_arg,
@@ -347,11 +390,11 @@ def _launch_claude_in_screen(
         logger.info("Reconnect %s: retrying with: %s", session.name, fallback_arg)
         send_keys(tmux_sess, tmux_win, claude_cmd_retry, enter=True)
 
-        # Check the retry — if this also fails, let the health check loop handle it
-        retry_started, retry_output = _verify_claude_started(tmux_sess, tmux_win)
+        # Check the retry with SSH process check
+        retry_started, retry_output = _verify_claude_running_via_ssh(session.host, session.id)
         if not retry_started:
             logger.error(
-                "Reconnect %s: retry also failed (output=%s). Giving up.",
+                "Reconnect %s: retry also failed (%s). Giving up.",
                 session.name,
                 retry_output[:300],
             )
@@ -849,11 +892,21 @@ def reconnect_remote_worker(
 # =============================================================================
 
 
-def reconnect_local_worker(session, tmux_sess: str, tmux_win: str, api_port: int, tmp_dir: str):
+def reconnect_local_worker(
+    session,
+    tmux_sess: str,
+    tmux_win: str,
+    api_port: int,
+    tmp_dir: str,
+) -> bool:
     """Reconnect a local worker with TUI guard.
 
     Local workers have no SSH/screen/tunnel.  The main concern is avoiding
     sending commands into a running Claude TUI.
+
+    Returns:
+        True if Claude was successfully (re)started, False otherwise.
+        Exceptions still propagate to the caller for unexpected errors.
     """
     from orchestrator.session.health import check_claude_process_local
     from orchestrator.terminal.manager import ensure_window
@@ -861,7 +914,7 @@ def reconnect_local_worker(session, tmux_sess: str, tmux_win: str, api_port: int
     lock = get_reconnect_lock(session.id)
     if not lock.acquire(timeout=5):
         logger.warning("Reconnect local %s: another reconnect in progress, skipping", session.name)
-        return
+        return False
 
     try:
         os.makedirs(tmp_dir, exist_ok=True)
@@ -872,7 +925,7 @@ def reconnect_local_worker(session, tmux_sess: str, tmux_win: str, api_port: int
             alive, _ = check_claude_process_local(session.id)
             if alive:
                 logger.info("Reconnect local %s: Claude still running, nothing to do", session.name)
-                return
+                return True
             # TUI showing but Claude dead — exit dead TUI
             send_keys(tmux_sess, tmux_win, "C-c", enter=False)
             time.sleep(0.5)
@@ -962,11 +1015,12 @@ def reconnect_local_worker(session, tmux_sess: str, tmux_win: str, api_port: int
                     session.name,
                     retry_output[:300],
                 )
-                return
+                return False
 
         logger.info(
             "Launched Claude Code for local worker %s (session_id=%s)", session.name, session.id
         )
+        return True
     finally:
         lock.release()
 
@@ -1064,9 +1118,12 @@ def trigger_reconnect(
     else:
         # Local worker — reconnect synchronously
         try:
-            reconnect_local_worker(session, tmux_sess, tmux_win, api_port, tmp_dir)
-            repo.update_session(db, session.id, status="waiting")
-            return {"ok": True, "async": False}
+            success = reconnect_local_worker(session, tmux_sess, tmux_win, api_port, tmp_dir)
+            if success:
+                repo.update_session(db, session.id, status="waiting")
+            else:
+                repo.update_session(db, session.id, status="disconnected")
+            return {"ok": success, "async": False}
         except Exception as e:
             logger.exception("Local reconnect failed for %s", session.name)
             repo.update_session(db, session.id, status="disconnected")
