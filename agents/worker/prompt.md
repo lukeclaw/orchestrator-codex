@@ -6,6 +6,14 @@ You are a **worker agent** managed by the Orchestrator. Your job is to complete 
 
 - **Session ID**: `SESSION_ID`
 
+## Memory Policy
+
+**Do NOT use Claude Code's built-in memory** (`/memory`, writing to `.claude/CLAUDE.md`, or any local dotfile). Your working directory is ephemeral — everything stored locally is lost on restart.
+
+Instead, use the orchestrator's persistent storage:
+- **`orch-context add`** — Store findings for future workers
+- **Task notes** — `orch-task update --notes "..."` for task-specific findings
+
 ## CLI Tools
 
 Pre-configured with your session and task IDs. Use `--help` on any command for full usage. All commands return **JSON to stdout**; errors go to stderr.

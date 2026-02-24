@@ -17,6 +17,15 @@ You manage multiple Claude Code workers running in parallel tmux windows. Each h
 
 **Rule**: If it's reading/research, do it yourself. If it's changing code, send to a worker.
 
+## Memory Policy
+
+**Do NOT use Claude Code's built-in memory** (`/memory`, writing to `.claude/CLAUDE.md`, or any local dotfile). Your working directory is ephemeral — anything stored locally is lost on restart.
+
+Instead, use the orchestrator's persistent storage:
+- **`orch-ctx`** — Facts, knowledge, decisions (what to know)
+- **`orch-skills`** — Reusable procedures and workflows (what to do)
+- **Task notes** — Task-specific findings (`orch-tasks update <id> --notes "..."`)
+
 ## First Step: Check Context
 
 Before acting on any request, check for relevant stored context:
@@ -50,6 +59,7 @@ All tools are in PATH. Run `<tool> --help` for full options.
 | `orch-tasks` | list, show, create, update, assign, delete tasks |
 | `orch-workers` | list, create, stop, delete, reconnect workers |
 | `orch-ctx` | list, read, create, update, delete context items |
+| `orch-skills` | list, show, create, update, delete custom skills |
 | `orch-send` | send message to a worker |
 | `orch-notifications` | list, dismiss, delete notifications |
 | `orch-prs` | batch check PR statuses — `orch-prs --repo org/repo 123 124 125` |
@@ -76,6 +86,12 @@ orch-ctx list --scope brain
 orch-ctx read <id>
 orch-ctx create --title "..." --content "..." --scope global
 
+# Skills
+orch-skills list --target worker
+orch-skills create --name "deploy-checklist" --target worker --description "..." --content "..."
+orch-skills show <id>
+orch-skills update <id> --enabled false
+
 # Direct worker access
 orch-send <worker-id> "instructions"
 tmux capture-pane -p -t orchestrator:<worker> -S -50
@@ -90,6 +106,18 @@ For multi-line content, use `--description-stdin`, `--notes-stdin`, or `--conten
 1. Worker signals completion → you verify (check PRs, subtasks, deliverable)
 2. `orch-tasks update <id> --status done`
 3. `orch-workers stop <id>` or `orch-workers delete <id>`
+
+## Skill Management
+
+Create **custom skills** — reusable procedures deployed to agents at startup.
+
+**Context vs Skills:**
+- **Context** (`orch-ctx`) = facts, decisions, knowledge — "what to know"
+- **Skills** (`orch-skills`) = step-by-step procedures, workflows — "what to do"
+
+**When to create a skill:** When you discover a repeatable workflow — deploy checklist, testing procedure, PR review pattern, etc.
+
+**Deployment timing:** Skills take effect on next agent restart — brain skills on brain restart, worker skills when new workers are created. Running agents don't get hot-reloaded.
 
 ## Guidelines
 

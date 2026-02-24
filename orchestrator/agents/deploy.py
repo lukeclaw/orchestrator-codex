@@ -16,7 +16,7 @@ _SHARED_HOOKS_DIR = os.path.join(_AGENTS_DIR, "shared", "hooks")
 
 # Script names for iteration
 WORKER_SCRIPT_NAMES = ["orch-task", "orch-subtask", "orch-worker", "orch-context", "orch-notify", "orch-tunnel", "orch-prs"]
-BRAIN_SCRIPT_NAMES = ["orch-workers", "orch-projects", "orch-tasks", "orch-ctx", "orch-send", "orch-notifications", "orch-tunnel", "orch-prs"]
+BRAIN_SCRIPT_NAMES = ["orch-workers", "orch-projects", "orch-tasks", "orch-ctx", "orch-skills", "orch-send", "orch-notifications", "orch-tunnel", "orch-prs"]
 
 
 def get_path_export_command(bin_dir: str) -> str:

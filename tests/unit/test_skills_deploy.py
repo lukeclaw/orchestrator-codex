@@ -200,3 +200,82 @@ class TestPromptInjection:
         result = get_brain_prompt(custom_skills_section="")
         assert result is not None
         assert "{{CUSTOM_SKILLS}}" not in result
+
+
+class TestBrainPromptContent:
+    """Verify brain prompt contains required sections."""
+
+    def test_brain_prompt_has_memory_policy(self):
+        from orchestrator.agents.deploy import get_brain_prompt
+
+        result = get_brain_prompt()
+        assert result is not None
+        assert "## Memory Policy" in result
+        assert "Do NOT use Claude Code's built-in memory" in result
+        assert "orch-ctx" in result
+        assert "orch-skills" in result
+
+    def test_brain_prompt_has_orch_skills_in_cli_table(self):
+        from orchestrator.agents.deploy import get_brain_prompt
+
+        result = get_brain_prompt()
+        assert result is not None
+        assert "| `orch-skills`" in result
+
+    def test_brain_prompt_has_skill_management_section(self):
+        from orchestrator.agents.deploy import get_brain_prompt
+
+        result = get_brain_prompt()
+        assert result is not None
+        assert "## Skill Management" in result
+        assert "Context vs Skills" in result
+        assert "When to create a skill" in result
+        assert "Deployment timing" in result
+
+    def test_brain_prompt_has_skills_key_commands(self):
+        from orchestrator.agents.deploy import get_brain_prompt
+
+        result = get_brain_prompt()
+        assert result is not None
+        assert "orch-skills list --target worker" in result
+        assert "orch-skills create" in result
+        assert "orch-skills show" in result
+
+
+class TestWorkerPromptContent:
+    """Verify worker prompt contains required sections."""
+
+    def test_worker_prompt_has_memory_policy(self):
+        from orchestrator.agents.deploy import get_worker_prompt
+
+        result = get_worker_prompt("test-session")
+        assert result is not None
+        assert "## Memory Policy" in result
+        assert "Do NOT use Claude Code's built-in memory" in result
+        assert "orch-context add" in result
+        assert "orch-task update --notes" in result
+
+    def test_worker_prompt_does_not_have_orch_skills(self):
+        """Workers should not have orch-skills — only brain manages skills."""
+        from orchestrator.agents.deploy import get_worker_prompt
+
+        result = get_worker_prompt("test-session")
+        assert result is not None
+        assert "orch-skills" not in result
+
+
+class TestBrainSettingsPermissions:
+    """Verify brain settings.json has correct permissions."""
+
+    def test_settings_has_orch_skills_permission(self):
+        import json
+
+        settings_path = os.path.join(
+            os.path.dirname(__file__),
+            "..", "..", "agents", "brain", "settings.json",
+        )
+        with open(settings_path) as f:
+            settings = json.load(f)
+
+        permissions = settings["permissions"]["allow"]
+        assert "Bash(orch-skills *)" in permissions

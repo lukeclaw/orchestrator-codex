@@ -82,6 +82,54 @@ class TestBrainCliScripts:
             assert "reconnect <id>" in content
             assert "cmd_reconnect()" in content
 
+    def test_brain_skills_script_has_all_commands(self):
+        """Verify orch-skills has list, show, create, update, delete commands."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            bin_dir = deploy_brain_scripts(tmpdir)
+            content = _read_script(bin_dir, "orch-skills")
+            assert "cmd_list()" in content
+            assert "cmd_show()" in content
+            assert "cmd_create()" in content
+            assert "cmd_update()" in content
+            assert "cmd_delete()" in content
+
+    def test_brain_skills_script_has_content_stdin(self):
+        """Verify orch-skills supports --content-stdin option."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            bin_dir = deploy_brain_scripts(tmpdir)
+            content = _read_script(bin_dir, "orch-skills")
+            assert "--content-stdin" in content
+            assert "content_stdin" in content
+
+    def test_brain_skills_script_has_enabled_flag(self):
+        """Verify orch-skills supports --enabled flag for update."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            bin_dir = deploy_brain_scripts(tmpdir)
+            content = _read_script(bin_dir, "orch-skills")
+            assert "--enabled" in content
+            assert "enabled" in content
+            assert "$enabled" in content
+
+    def test_brain_skills_script_has_target_filter(self):
+        """Verify orch-skills list supports --target filter."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            bin_dir = deploy_brain_scripts(tmpdir)
+            content = _read_script(bin_dir, "orch-skills")
+            assert "--target" in content
+            assert "target=$target" in content
+
+    def test_brain_skills_script_has_search_filter(self):
+        """Verify orch-skills list supports --search filter."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            bin_dir = deploy_brain_scripts(tmpdir)
+            content = _read_script(bin_dir, "orch-skills")
+            assert "--search" in content
+            assert "search=$search" in content
+
+    def test_brain_script_names_includes_orch_skills(self):
+        """Verify orch-skills is in BRAIN_SCRIPT_NAMES."""
+        assert "orch-skills" in BRAIN_SCRIPT_NAMES
+
 
 class TestWorkerCliScripts:
     """Tests for worker CLI script deployment."""
@@ -294,6 +342,11 @@ class TestJsonEscapingInScripts:
             # orch-ctx
             ctx = _read_script(bin_dir, "orch-ctx")
             assert 'escaped_content=$(json_encode "$content")' in ctx
+
+            # orch-skills
+            skills = _read_script(bin_dir, "orch-skills")
+            assert 'escaped_name=$(json_encode "$name")' in skills
+            assert 'escaped_content=$(json_encode "$content")' in skills
 
     def test_worker_scripts_escape_fields(self):
         """Verify worker scripts use json_encode for text fields."""

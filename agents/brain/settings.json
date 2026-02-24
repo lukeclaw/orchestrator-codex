@@ -13,6 +13,7 @@
       "Bash(orch-workers *)",
       "Bash(orch-projects *)",
       "Bash(orch-ctx *)",
+      "Bash(orch-skills *)",
       "Bash(orch-notifications *)",
       "Bash(orch-send *)",
       "Bash(orch-tunnel *)",
