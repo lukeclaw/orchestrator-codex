@@ -5,8 +5,9 @@ When SSH/screen/Claude are all running fine but the tunnel disconnects,
 we should only reconnect the tunnel without typing into the Claude console.
 """
 
+from unittest.mock import MagicMock, patch
+
 import pytest
-from unittest.mock import patch, MagicMock
 
 
 class TestReconnectTunnelOnly:
@@ -151,11 +152,12 @@ class TestReconnectRemoteWorkerTunnelOnlyPath:
 class TestHealthCheckAutoReconnectTunnel:
     """Test that health check auto-reconnects dead tunnels via tunnel_manager."""
 
+    @patch("orchestrator.session.health.repo")
+    @patch("orchestrator.session.health.check_screen_and_claude_remote")
+    @patch("orchestrator.session.health.is_remote_host")
     @patch("orchestrator.api.routes.sessions.repo")
-    @patch("orchestrator.api.routes.sessions.check_screen_and_claude_remote")
-    @patch("orchestrator.api.routes.sessions.is_remote_host")
     def test_health_check_auto_reconnects_tunnel(
-        self, mock_is_remote, mock_screen_claude, mock_repo, db
+        self, mock_route_repo, mock_is_remote, mock_screen_claude, mock_health_repo, db
     ):
         """Health check should auto-reconnect tunnel when Claude running but tunnel dead."""
         from orchestrator.api.routes.sessions import health_check_session
@@ -169,7 +171,7 @@ class TestHealthCheckAutoReconnectTunnel:
         mock_session.host = "subs-mt/test-vm"
 
         mock_session.status = "waiting"
-        mock_repo.get_session.return_value = mock_session
+        mock_route_repo.get_session.return_value = mock_session
 
         mock_tm = MagicMock()
         mock_tm.is_alive.return_value = False
@@ -184,11 +186,12 @@ class TestHealthCheckAutoReconnectTunnel:
         assert result["tunnel_reconnected"] is True
         mock_tm.restart_tunnel.assert_called_once_with("test-session-id", "test-worker", "subs-mt/test-vm")
 
+    @patch("orchestrator.session.health.repo")
+    @patch("orchestrator.session.health.check_screen_and_claude_remote")
+    @patch("orchestrator.session.health.is_remote_host")
     @patch("orchestrator.api.routes.sessions.repo")
-    @patch("orchestrator.api.routes.sessions.check_screen_and_claude_remote")
-    @patch("orchestrator.api.routes.sessions.is_remote_host")
     def test_health_check_reports_failure_when_tunnel_reconnect_fails(
-        self, mock_is_remote, mock_screen_claude, mock_repo, db
+        self, mock_route_repo, mock_is_remote, mock_screen_claude, mock_health_repo, db
     ):
         """Health check should report failure if tunnel auto-reconnect fails."""
         from orchestrator.api.routes.sessions import health_check_session
@@ -202,7 +205,7 @@ class TestHealthCheckAutoReconnectTunnel:
         mock_session.host = "subs-mt/test-vm"
 
         mock_session.status = "waiting"
-        mock_repo.get_session.return_value = mock_session
+        mock_route_repo.get_session.return_value = mock_session
 
         mock_tm = MagicMock()
         mock_tm.is_alive.return_value = False

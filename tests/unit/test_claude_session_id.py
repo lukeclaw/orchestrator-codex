@@ -4,12 +4,10 @@ Covers: migration, repository, API, hook generation, and reconnect logic.
 """
 
 import os
-import pytest
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
 from orchestrator.state.models import Session
 from orchestrator.state.repositories import sessions as repo
-
 
 # =============================================================================
 # Migration tests
@@ -86,7 +84,7 @@ class TestSessionUpdateAPI:
     @patch('orchestrator.api.routes.sessions.repo')
     def test_patch_with_claude_session_id(self, mock_repo, db):
         """PATCH should pass claude_session_id through to repo."""
-        from orchestrator.api.routes.sessions import update_session, SessionUpdate
+        from orchestrator.api.routes.sessions import SessionUpdate, update_session
 
         mock_session = MagicMock()
         mock_session.id = "test-id"
@@ -111,7 +109,7 @@ class TestSessionUpdateAPI:
     @patch('orchestrator.api.routes.sessions.repo')
     def test_patch_with_status_and_claude_session_id(self, mock_repo, db):
         """PATCH with both status and claude_session_id should pass both."""
-        from orchestrator.api.routes.sessions import update_session, SessionUpdate
+        from orchestrator.api.routes.sessions import SessionUpdate, update_session
 
         mock_session = MagicMock()
         mock_session.id = "test-id"
@@ -441,19 +439,20 @@ class TestClaudeLaunchRecovery:
 class TestLocalLaunchSessionId:
     """Test that local worker launch includes --session-id."""
 
+    @patch('orchestrator.terminal.session.setup_local_worker')
     @patch('orchestrator.api.routes.sessions.threading')
     @patch('orchestrator.api.routes.sessions.ensure_window')
     @patch('orchestrator.api.routes.sessions.repo')
-    @patch('orchestrator.api.routes.sessions.is_rdev_host')
-    @patch('orchestrator.api.routes.sessions.send_keys')
+    @patch('orchestrator.api.routes.sessions.is_remote_host')
     def test_local_launch_includes_session_id(
-        self, mock_send_keys, mock_is_rdev, mock_repo, mock_ensure_window, mock_threading, db
+        self, mock_is_remote, mock_repo, mock_ensure_window, mock_threading, mock_setup, db
     ):
-        """Local worker launch should include --session-id in claude args."""
-        from orchestrator.api.routes.sessions import create_session, SessionCreate
+        """Local worker launch should include --session-id via setup_local_worker."""
+        from orchestrator.api.routes.sessions import SessionCreate, create_session
 
-        mock_is_rdev.return_value = False
+        mock_is_remote.return_value = False
         mock_ensure_window.return_value = "orchestrator:test-worker"
+        mock_setup.return_value = {"ok": True}
 
         mock_session = MagicMock()
         mock_session.id = "test-session-id"
@@ -469,11 +468,10 @@ class TestLocalLaunchSessionId:
 
         create_session(body, mock_request, db=db)
 
-        # Find the send_keys call that launches claude
-        claude_launch_calls = [
-            c for c in mock_send_keys.call_args_list
-            if "claude" in str(c) and "--session-id" in str(c)
-        ]
-        assert len(claude_launch_calls) >= 1, (
-            f"Expected claude launch with --session-id, got calls: {mock_send_keys.call_args_list}"
+        # Verify setup_local_worker was called with correct session_id
+        mock_setup.assert_called_once()
+        call_kwargs = mock_setup.call_args
+        # session_id is the second positional arg
+        assert call_kwargs[0][1] == "test-session-id", (
+            f"Expected session_id='test-session-id', got call: {call_kwargs}"
         )

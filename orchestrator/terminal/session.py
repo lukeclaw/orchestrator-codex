@@ -7,16 +7,26 @@ import logging
 import os
 import random
 import shlex
+import shutil
 import sqlite3
 import subprocess
 import time
 
+from orchestrator.agents import (
+    deploy_worker_scripts,
+    generate_worker_hooks,
+    get_path_export_command,
+    get_worker_prompt,
+)
+from orchestrator.agents.deploy import (
+    deploy_custom_skills,
+    format_custom_skills_for_prompt,
+    get_worker_skills_dir,
+)
 from orchestrator.state.models import Session
 from orchestrator.state.repositories import sessions as sessions_repo
 from orchestrator.terminal import manager as tmux
 from orchestrator.terminal import ssh
-from orchestrator.agents import deploy_worker_scripts, generate_worker_hooks, get_path_export_command, get_worker_prompt, WORKER_SCRIPT_NAMES
-from orchestrator.agents.deploy import get_worker_skills_dir, deploy_custom_skills, format_custom_skills_for_prompt
 
 logger = logging.getLogger(__name__)
 
@@ -120,19 +130,19 @@ def _verify_message_sent(
     """
     # Give Claude Code a moment to process the Enter
     time.sleep(0.3)
-    
+
     # Capture recent output
     output = tmux.capture_output(tmux_session, window_name, lines=10)
-    
+
     # Get the last few lines to check for stuck input
     lines = output.strip().split('\n')
     if not lines:
         return True  # Empty output, assume sent
-    
+
     # Check the last line - if it contains a substantial portion of the message,
     # it's likely stuck in the input buffer
     last_line = lines[-1].strip()
-    
+
     # For long messages, check if the last line contains a significant chunk of the message
     # (input line would show the end of the pasted message)
     if len(message) > 50:
@@ -141,11 +151,11 @@ def _verify_message_sent(
         # Normalize whitespace for comparison
         message_tail_normalized = ' '.join(message_tail.split())
         last_line_normalized = ' '.join(last_line.split())
-        
+
         if len(last_line_normalized) > 20 and message_tail_normalized[-50:] in last_line_normalized:
             logger.debug("Message appears stuck in input - last line matches message tail")
             return False
-    
+
     # Also check if the cursor line appears to have unsubmitted content
     # Claude Code shows ">" prompt when waiting for input
     # If we see significant text after the prompt, message may be stuck
@@ -153,7 +163,7 @@ def _verify_message_sent(
         # There's substantial text after the prompt - likely stuck
         logger.debug("Message appears stuck - text after prompt: %s...", last_line[:50])
         return False
-    
+
     return True
 
 
@@ -194,13 +204,13 @@ def send_to_session(
     for attempt in range(max_enter_retries):
         if not tmux.send_keys(tmux_session, name, "", enter=True):
             return False
-        
+
         # Verify the message was sent
         if _verify_message_sent(tmux_session, name, message):
             if attempt > 0:
                 logger.info("Message sent successfully after %d Enter retries", attempt + 1)
             return True
-        
+
         # Message appears stuck, wait and retry Enter
         if attempt < max_enter_retries - 1:
             logger.warning(
@@ -208,7 +218,7 @@ def send_to_session(
                 attempt + 1, max_enter_retries
             )
             time.sleep(retry_delay)
-    
+
     # All retries exhausted
     logger.error("Failed to send message after %d Enter attempts", max_enter_retries)
     return False
@@ -279,7 +289,7 @@ def _install_screen_if_needed(tmux_session: str, window_name: str) -> bool:
             break
     else:
         logger.warning("Screen installation may not have completed within 60s")
-    
+
     # Verify installation
     verify_result = check_yes_no(
         tmux.send_keys, tmux.capture_output,
@@ -288,11 +298,11 @@ def _install_screen_if_needed(tmux_session: str, window_name: str) -> bool:
         prefix="SCREEN_VFY"
     )
     logger.debug("Screen verify result: %r", verify_result)
-    
+
     if verify_result is True:
         logger.info("Screen installed successfully")
         return True
-    
+
     logger.warning("Failed to install screen (verify result: %r)", verify_result)
     return False
 
@@ -329,14 +339,14 @@ def _copy_dir_to_remote_ssh(local_dir: str, host: str, remote_dir: str) -> bool:
         if mkdir_result.returncode != 0:
             logger.error("Failed to create remote dir %s: %s", remote_dir, mkdir_result.stderr)
             return False
-        
+
         # Pipe tar directly through SSH - no base64, no tmux, no screen
         # tar on local | ssh host "tar extract on remote"
         tar_proc = subprocess.Popen(
             ["tar", "czf", "-", "-C", local_dir, "."],
             stdout=subprocess.PIPE,
         )
-        
+
         ssh_proc = subprocess.Popen(
             ["ssh", "-o", "ConnectTimeout=10", "-o", "BatchMode=yes", host,
              f"tar xzf - -C {remote_dir}"],
@@ -344,17 +354,17 @@ def _copy_dir_to_remote_ssh(local_dir: str, host: str, remote_dir: str) -> bool:
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
         )
-        
+
         # Allow tar_proc to receive SIGPIPE if ssh_proc exits
         tar_proc.stdout.close()
-        
+
         stdout, stderr = ssh_proc.communicate(timeout=60)
         tar_proc.wait()
-        
+
         if ssh_proc.returncode != 0:
             logger.error("SSH tar extract failed: %s", stderr.decode())
             return False
-        
+
         logger.info("Copied %s to %s:%s via direct SSH", local_dir, host, remote_dir)
         return True
 
@@ -385,7 +395,7 @@ def _copy_dir_to_remote(
     # Create remote directory
     tmux.send_keys(tmux_session, window_name, f"mkdir -p {remote_dir}", enter=True)
     time.sleep(0.3)
-    
+
     # Pack and send via heredoc (more reliable than echo for large content)
     result = subprocess.run(
         ["tar", "czf", "-", "-C", local_dir, "."],
@@ -393,24 +403,24 @@ def _copy_dir_to_remote(
         check=True,
     )
     encoded = base64.b64encode(result.stdout).decode("ascii")
-    
+
     # Always use chunked file approach for reliability
     chunk_size = 4000  # Much smaller chunks for tmux reliability
     chunks = [encoded[i:i+chunk_size] for i in range(0, len(encoded), chunk_size)]
-    
-    tmux.send_keys(tmux_session, window_name, f"rm -f /tmp/_orch_transfer.b64", enter=True)
+
+    tmux.send_keys(tmux_session, window_name, "rm -f /tmp/_orch_transfer.b64", enter=True)
     time.sleep(0.1)
-    
+
     for chunk in chunks:
-        tmux.send_keys(tmux_session, window_name, 
+        tmux.send_keys(tmux_session, window_name,
             f"echo -n '{chunk}' >> /tmp/_orch_transfer.b64", enter=True)
         time.sleep(0.05)
-    
+
     tmux.send_keys(tmux_session, window_name,
         f"base64 -d /tmp/_orch_transfer.b64 | tar xzf - -C {remote_dir} && rm -f /tmp/_orch_transfer.b64",
         enter=True)
     time.sleep(0.5)
-    
+
     logger.info("Copied %s to remote %s via tar+base64 (tmux)", local_dir, remote_dir)
 
 
@@ -478,15 +488,15 @@ def setup_remote_worker(
             tmux.send_keys(tmux_session, name, "claude update", enter=True)
             time.sleep(5)  # Wait for update to complete
             logger.info("Configured PATH and updated Claude for %s", name)
-        
+
         # 3c. Install screen if needed
         if not _install_screen_if_needed(tmux_session, name):
             logger.warning("Screen not available, falling back to direct execution")
             # Continue without screen - less resilient but still functional
-        
+
         # 3d. Kill any orphaned screen session from previous runs
         _kill_orphaned_screen(tmux_session, name, screen_name)
-        
+
         # 4. Enter screen session early - all remaining commands run inside screen
         # This protects the entire setup process from SSH disconnections
         tmux.send_keys(tmux_session, name, f"screen -S {screen_name}", enter=True)
@@ -501,7 +511,7 @@ def setup_remote_worker(
             api_base=f"http://127.0.0.1:{api_port}",
         )
         logger.info("Deployed CLI scripts in %s", bin_dir)
-        
+
         # Generate hooks/settings in local tmp dir
         local_configs_dir = os.path.join(local_tmp_dir, "configs")
         os.makedirs(local_configs_dir, exist_ok=True)
@@ -511,7 +521,7 @@ def setup_remote_worker(
             api_base=f"http://127.0.0.1:{api_port}",
         )
         logger.info("Generated hooks settings in %s", local_configs_dir)
-        
+
         # Write prompt.md to local tmp dir
         custom_skills_section = format_custom_skills_for_prompt(custom_skills or [])
         worker_prompt = get_worker_prompt(session_id, custom_skills_section=custom_skills_section)
@@ -519,7 +529,7 @@ def setup_remote_worker(
         if worker_prompt:
             with open(os.path.join(local_tmp_dir, "prompt.md"), "w") as f:
                 f.write(worker_prompt)
-        
+
         # Copy worker skills to local tmp dir for transfer (inside .claude/commands/)
         skills_src = get_worker_skills_dir()
         local_skills_dir = os.path.join(local_tmp_dir, ".claude", "commands")
@@ -546,19 +556,19 @@ def setup_remote_worker(
         if custom_skills:
             deploy_custom_skills(local_skills_dir, custom_skills)
             logger.info("Prepared %d custom skills for transfer", len(custom_skills))
-        
+
         # 6. Copy entire directory to remote via direct SSH (bypasses tmux/screen)
         if not _copy_dir_to_remote_ssh(local_tmp_dir, host, remote_tmp_dir):
             raise RuntimeError(f"Failed to copy files to remote via SSH: {host}:{remote_tmp_dir}")
-        
+
         logger.info("Copied files to remote via direct SSH: %s", remote_tmp_dir)
-        
+
         # Make scripts executable
         tmux.send_keys(tmux_session, name, f"chmod +x {remote_tmp_dir}/bin/*", enter=True)
         time.sleep(0.3)
         tmux.send_keys(tmux_session, name, f"chmod +x {remote_tmp_dir}/configs/hooks/*.sh 2>/dev/null || true", enter=True)
         time.sleep(0.3)
-        
+
         # Export PATH
         path_export = get_path_export_command(f"{remote_tmp_dir}/bin")
         tmux.send_keys(tmux_session, name, path_export, enter=True)
@@ -569,7 +579,7 @@ def setup_remote_worker(
         if work_dir:
             tmux.send_keys(tmux_session, name, f"cd {work_dir}", enter=True)
             time.sleep(0.3)
-        
+
         # Deploy skills to ~/.claude/commands/ (global user skills directory)
         # NOTE: --add-dir flag doesn't work reliably in recent Claude Code versions,
         # so we copy skills directly to the user's global ~/.claude/commands/ folder
@@ -582,20 +592,20 @@ def setup_remote_worker(
             tmux.send_keys(tmux_session, name, f"cp {remote_tmp_dir}/.claude/commands/*.md {global_skills_dest}/ 2>/dev/null || true", enter=True)
             time.sleep(0.3)
             logger.info("Deployed skills to %s for rdev worker %s", global_skills_dest, name)
-        
+
         # 8. Launch Claude (inside screen)
         settings_file = f"{remote_tmp_dir}/configs/settings.json"
-        
+
         claude_args = [
             f"--settings {settings_file}",
             "--dangerously-skip-permissions",
             f"--session-id {session_id}",
         ]
-        
+
         # Use $(cat prompt.md) to load prompt from file instead of pasting content
         if worker_prompt:
             claude_args.append(f'--append-system-prompt "$(cat {remote_prompt_path})"')
-        
+
         claude_cmd = f"claude {' '.join(claude_args)}"
         tmux.send_keys(tmux_session, name, claude_cmd, enter=True)
         logger.info("Launched Claude Code in screen session '%s' for remote worker %s (work_dir=%s)",
@@ -611,6 +621,115 @@ def setup_remote_worker(
                 tunnel_manager.stop_tunnel(session_id)
             except Exception:
                 pass
+        return {"ok": False, "error": str(e)}
+
+
+def setup_local_worker(
+    conn: sqlite3.Connection,
+    session_id: str,
+    name: str,
+    tmux_session: str = "orchestrator",
+    api_port: int = 8093,
+    work_dir: str | None = None,
+    tmp_dir: str | None = None,
+    custom_skills: list[dict] | None = None,
+    disabled_builtin_names: set[str] | None = None,
+) -> dict:
+    """Set up a local worker: deploy scripts, hooks, skills, prompt, launch Claude.
+
+    This is the local equivalent of ``setup_remote_worker``.  Everything runs
+    on the local machine — no SSH, no screen, no tunnel.
+
+    Returns {"ok": True} on success, or {"ok": False, "error": "..."} on failure.
+    """
+    local_tmp_dir = tmp_dir or f"/tmp/orchestrator/workers/{name}"
+
+    try:
+        os.makedirs(local_tmp_dir, exist_ok=True)
+        api_base = f"http://127.0.0.1:{api_port}"
+
+        # 1. Deploy CLI scripts
+        bin_dir = deploy_worker_scripts(
+            worker_dir=local_tmp_dir,
+            session_id=session_id,
+            api_base=api_base,
+        )
+        logger.info("Deployed CLI scripts for local worker %s in %s", name, bin_dir)
+
+        # 2. Generate Claude Code hooks
+        configs_dir = os.path.join(local_tmp_dir, "configs")
+        os.makedirs(configs_dir, exist_ok=True)
+        generate_worker_hooks(
+            worker_dir=configs_dir,
+            session_id=session_id,
+            api_base=api_base,
+        )
+        logger.info("Generated hooks settings for local worker %s", name)
+
+        # 3. Deploy skills (built-in + custom)
+        skills_src = get_worker_skills_dir()
+        if skills_src and os.path.isdir(skills_src) and work_dir:
+            skills_dest = os.path.join(work_dir, ".claude", "commands")
+            # Clear stale skill files before repopulating
+            if os.path.isdir(skills_dest):
+                for f in os.listdir(skills_dest):
+                    if f.endswith(".md"):
+                        os.remove(os.path.join(skills_dest, f))
+            os.makedirs(skills_dest, exist_ok=True)
+            for skill_file in os.listdir(skills_src):
+                if skill_file.endswith(".md"):
+                    skill_name = os.path.splitext(skill_file)[0]
+                    if disabled_builtin_names and skill_name in disabled_builtin_names:
+                        continue
+                    shutil.copy2(
+                        os.path.join(skills_src, skill_file),
+                        os.path.join(skills_dest, skill_file),
+                    )
+            logger.info("Deployed %d built-in skills to %s for local worker %s",
+                        len([f for f in os.listdir(skills_dest) if f.endswith(".md")]),
+                        skills_dest, name)
+
+        if custom_skills and work_dir:
+            skills_dest = os.path.join(work_dir, ".claude", "commands")
+            deploy_custom_skills(skills_dest, custom_skills)
+            logger.info("Deployed %d custom worker skills for local worker %s", len(custom_skills), name)
+
+        # 4. Write worker prompt to file
+        custom_skills_section = format_custom_skills_for_prompt(custom_skills or [])
+        worker_prompt = get_worker_prompt(session_id, custom_skills_section=custom_skills_section)
+        prompt_file = os.path.join(local_tmp_dir, "prompt.md")
+        if worker_prompt:
+            with open(prompt_file, "w") as f:
+                f.write(worker_prompt)
+            logger.info("Wrote worker prompt to %s", prompt_file)
+
+        # 5. Build and send claude command
+        cmd_parts = []
+        if work_dir:
+            cmd_parts.append(f"cd {work_dir}")
+
+        path_export = get_path_export_command(os.path.join(local_tmp_dir, "bin"))
+        cmd_parts.append(path_export)
+
+        settings_file = os.path.join(local_tmp_dir, "configs", "settings.json")
+        claude_args = [
+            "--dangerously-skip-permissions",
+            f"--settings {shlex.quote(settings_file)}",
+            f"--session-id {session_id}",
+        ]
+        if worker_prompt:
+            claude_args.append(f'--append-system-prompt "$(cat {shlex.quote(prompt_file)})"')
+
+        cmd_parts.append(f"claude {' '.join(claude_args)}")
+
+        cmd = " && ".join(cmd_parts)
+        tmux.send_keys(tmux_session, name, cmd, enter=True)
+        logger.info("Launched Claude for local worker %s (work_dir=%s)", name, work_dir)
+
+        return {"ok": True}
+
+    except Exception as e:
+        logger.exception("Failed to set up local worker %s", name)
         return {"ok": False, "error": str(e)}
 
 

@@ -1,8 +1,8 @@
 """Unit tests for session lifecycle operations (create/delete/stop)."""
 
+from unittest.mock import MagicMock, patch
+
 import pytest
-from unittest.mock import patch, MagicMock, call
-import threading
 
 
 class TestSessionCreate:
@@ -16,11 +16,11 @@ class TestSessionCreate:
         self, mock_is_remote, mock_repo, mock_ensure_window, mock_threading, db
     ):
         """Creating a local session should create tmux window and return session."""
-        from orchestrator.api.routes.sessions import create_session, SessionCreate
-        
+        from orchestrator.api.routes.sessions import SessionCreate, create_session
+
         mock_is_remote.return_value = False
         mock_ensure_window.return_value = "orchestrator:test-worker"
-        
+
         mock_session = MagicMock()
         mock_session.id = "test-session-id"
         mock_session.name = "test-worker"
@@ -33,33 +33,33 @@ class TestSessionCreate:
         mock_session.last_status_changed_at = "2024-01-01"
         mock_session.session_type = "local"
         mock_repo.create_session.return_value = mock_session
-        
+
         body = SessionCreate(name="test-worker", host="localhost")
         mock_request = MagicMock()
         mock_request.app.state.config = {"tmux_session_name": "orchestrator", "api_port": 8093}
-        
+
         with patch('orchestrator.api.routes.sessions.send_keys'):
             result = create_session(body, mock_request, db=db)
-        
+
         assert result["name"] == "test-worker"
         mock_ensure_window.assert_called_once()
         mock_repo.create_session.assert_called_once()
 
-    @patch('orchestrator.api.routes.sessions.deploy_worker_scripts')
+    @patch('orchestrator.terminal.session.setup_local_worker')
     @patch('orchestrator.api.routes.sessions.threading')
     @patch('orchestrator.api.routes.sessions.ensure_window')
     @patch('orchestrator.api.routes.sessions.repo')
     @patch('orchestrator.api.routes.sessions.is_remote_host')
     def test_create_local_session_tmux_failure_graceful(
-        self, mock_is_remote, mock_repo, mock_ensure_window, mock_threading, mock_deploy, db
+        self, mock_is_remote, mock_repo, mock_ensure_window, mock_threading, mock_setup, db
     ):
         """If tmux window creation fails, session should still be created."""
-        from orchestrator.api.routes.sessions import create_session, SessionCreate
-        
+        from orchestrator.api.routes.sessions import SessionCreate, create_session
+
         mock_is_remote.return_value = False
         mock_ensure_window.side_effect = Exception("tmux error")
-        mock_deploy.return_value = "/tmp/mock/bin"
-        
+        mock_setup.return_value = {"ok": True}
+
         mock_session = MagicMock()
         mock_session.id = "test-session-id"
         mock_session.name = "test-worker"
@@ -67,14 +67,13 @@ class TestSessionCreate:
         mock_session.status = "idle"
 
         mock_repo.create_session.return_value = mock_session
-        
+
         body = SessionCreate(name="test-worker", host="localhost")
         mock_request = MagicMock()
-        mock_request.app.state.config = {"tmux_session_name": "orchestrator", "api_port": 8093}
-        
-        with patch('orchestrator.api.routes.sessions.send_keys'):
-            result = create_session(body, mock_request, db=db)
-        
+        mock_request.app.state.config = {"server": {"port": 8093}}
+
+        result = create_session(body, mock_request, db=db)
+
         # Session should still be created even if tmux fails
         assert result is not None
         mock_repo.create_session.assert_called_once()
@@ -87,11 +86,11 @@ class TestSessionCreate:
         self, mock_is_remote, mock_repo, mock_ensure_window, mock_threading, db
     ):
         """Creating an rdev session should return with 'connecting' status."""
-        from orchestrator.api.routes.sessions import create_session, SessionCreate
-        
+        from orchestrator.api.routes.sessions import SessionCreate, create_session
+
         mock_is_remote.return_value = True
         mock_ensure_window.return_value = "orchestrator:test-rdev"
-        
+
         mock_session = MagicMock()
         mock_session.id = "test-session-id"
         mock_session.name = "test-rdev"
@@ -99,13 +98,13 @@ class TestSessionCreate:
         mock_session.status = "connecting"
 
         mock_repo.create_session.return_value = mock_session
-        
+
         body = SessionCreate(name="test-rdev", host="user/rdev-vm")
         mock_request = MagicMock()
         mock_request.app.state.config = {"tmux_session_name": "orchestrator", "api_port": 8093}
-        
+
         result = create_session(body, mock_request, db=db)
-        
+
         # Status should be updated to connecting before background thread starts
         mock_repo.update_session.assert_called()
 
@@ -117,24 +116,24 @@ class TestSessionCreate:
         self, mock_is_remote, mock_repo, mock_ensure_window, mock_threading, db
     ):
         """Creating an rdev session should spawn a background thread for setup."""
-        from orchestrator.api.routes.sessions import create_session, SessionCreate
-        
+        from orchestrator.api.routes.sessions import SessionCreate, create_session
+
         mock_is_remote.return_value = True
         mock_ensure_window.return_value = "orchestrator:test-rdev"
-        
+
         mock_session = MagicMock()
         mock_session.id = "test-session-id"
         mock_session.name = "test-rdev"
         mock_session.host = "user/rdev-vm"
         mock_session.status = "idle"
         mock_repo.create_session.return_value = mock_session
-        
+
         body = SessionCreate(name="test-rdev", host="user/rdev-vm")
         mock_request = MagicMock()
         mock_request.app.state.config = {"tmux_session_name": "orchestrator", "api_port": 8093}
-        
+
         create_session(body, mock_request, db=db)
-        
+
         # Should have created a thread
         mock_threading.Thread.assert_called_once()
         mock_threading.Thread.return_value.start.assert_called_once()
@@ -147,25 +146,25 @@ class TestSessionCreate:
         self, mock_is_remote, mock_repo, mock_ensure_window, mock_threading, db
     ):
         """Worker names with / or \\ should be sanitized."""
-        from orchestrator.api.routes.sessions import create_session, SessionCreate
-        
+        from orchestrator.api.routes.sessions import SessionCreate, create_session
+
         mock_is_remote.return_value = False
         mock_ensure_window.return_value = "orchestrator:test_worker"
-        
+
         mock_session = MagicMock()
         mock_session.id = "test-session-id"
         mock_session.name = "test_worker"
         mock_session.host = "localhost"
         mock_session.status = "idle"
         mock_repo.create_session.return_value = mock_session
-        
+
         # Name with path separator
         body = SessionCreate(name="test/worker", host="localhost")
         mock_request = MagicMock()
         mock_request.app.state.config = {"tmux_session_name": "orchestrator", "api_port": 8093}
-        
+
         create_session(body, mock_request, db=db)
-        
+
         # ensure_window should be called with sanitized name
         call_args = mock_ensure_window.call_args
         assert "/" not in call_args[0][1], "Worker name should be sanitized"
@@ -328,7 +327,7 @@ class TestSessionStop:
     def test_stop_session_updates_status_to_idle(self, mock_repo, mock_list_tasks, mock_update_task, db):
         """Stopping a session should update status to 'idle'."""
         from orchestrator.api.routes.sessions import stop_session
-        
+
         mock_session = MagicMock()
         mock_session.id = "test-session-id"
         mock_session.name = "test-worker"
@@ -337,11 +336,11 @@ class TestSessionStop:
 
         mock_repo.get_session.return_value = mock_session
         mock_list_tasks.return_value = []
-        
+
         with patch('orchestrator.api.routes.sessions.send_keys'):
             with patch('orchestrator.terminal.manager.send_keys_literal'):
                 stop_session("test-session-id", db=db)
-        
+
         # Status should be updated to idle
         update_calls = mock_repo.update_session.call_args_list
         assert any('idle' in str(c) for c in update_calls), "Should update status to idle"
@@ -352,7 +351,7 @@ class TestSessionStop:
     def test_stop_session_unassigns_non_done_tasks(self, mock_repo, mock_list_tasks, mock_update_task, db):
         """Stopping a session should unassign tasks that are not done."""
         from orchestrator.api.routes.sessions import stop_session
-        
+
         mock_session = MagicMock()
         mock_session.id = "test-session-id"
         mock_session.name = "test-worker"
@@ -360,17 +359,17 @@ class TestSessionStop:
         mock_session.status = "working"
 
         mock_repo.get_session.return_value = mock_session
-        
+
         # One in_progress task
         mock_task = MagicMock()
         mock_task.id = "task-1"
         mock_task.status = "in_progress"
         mock_list_tasks.return_value = [mock_task]
-        
+
         with patch('orchestrator.api.routes.sessions.send_keys'):
             with patch('orchestrator.terminal.manager.send_keys_literal'):
                 stop_session("test-session-id", db=db)
-        
+
         # Task should be unassigned
         mock_update_task.assert_called()
 
@@ -380,7 +379,7 @@ class TestSessionStop:
     def test_stop_session_preserves_done_task_status(self, mock_repo, mock_list_tasks, mock_update_task, db):
         """Stopping a session should NOT reset tasks that are already done."""
         from orchestrator.api.routes.sessions import stop_session
-        
+
         mock_session = MagicMock()
         mock_session.id = "test-session-id"
         mock_session.name = "test-worker"
@@ -388,17 +387,17 @@ class TestSessionStop:
         mock_session.status = "working"
 
         mock_repo.get_session.return_value = mock_session
-        
+
         # One done task
         mock_task = MagicMock()
         mock_task.id = "task-1"
         mock_task.status = "done"
         mock_list_tasks.return_value = [mock_task]
-        
+
         with patch('orchestrator.api.routes.sessions.send_keys'):
             with patch('orchestrator.terminal.manager.send_keys_literal'):
                 stop_session("test-session-id", db=db)
-        
+
         # Task status should remain done (None means don't change)
         if mock_update_task.called:
             call_kwargs = mock_update_task.call_args[1]

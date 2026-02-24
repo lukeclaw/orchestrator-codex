@@ -2,48 +2,37 @@
 
 import logging
 import os
-import random
 import re
 import shutil
-import subprocess
 import threading
 import time
-from typing import Any
+from datetime import UTC
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from orchestrator.api.deps import get_db
+from orchestrator.session import (
+    WORKER_BASE_DIR,
+    check_all_workers_health,
+    check_and_update_worker_health,
+    cleanup_reconnect_lock,
+    is_reconnectable,
+    trigger_reconnect,
+)
 from orchestrator.state.repositories import sessions as repo
 from orchestrator.terminal.manager import (
-    capture_output,
     capture_pane_with_escapes,
     ensure_window,
     kill_window,
     send_keys,
     tmux_target,
 )
-from orchestrator.terminal.ssh import is_remote_host, is_rdev_host
-from orchestrator.agents import deploy_worker_scripts, generate_worker_hooks, get_path_export_command, get_worker_prompt
-from orchestrator.agents.deploy import get_worker_skills_dir, format_custom_skills_for_prompt, deploy_custom_skills
-from orchestrator.session import (
-    is_reconnectable,
-    get_screen_session_name,
-    check_claude_process_local,
-    check_screen_and_claude_remote,
-    check_screen_exists_via_tmux,
-    cleanup_reconnect_lock,
-    reconnect_remote_worker,
-    reconnect_local_worker,
-)
-from orchestrator.api.ws_terminal import is_user_active
+from orchestrator.terminal.ssh import is_remote_host
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
-
-WORKER_BASE_DIR = "/tmp/orchestrator/workers"
 
 
 class SessionCreate(BaseModel):
@@ -72,20 +61,20 @@ def _time_ago(iso_timestamp: str | None) -> str | None:
     if not iso_timestamp:
         return None
     try:
-        from datetime import datetime, timezone
-        
+        from datetime import datetime
+
         # Parse ISO timestamp
         ts = iso_timestamp.replace("Z", "+00:00")
         dt = datetime.fromisoformat(ts)
-        
+
         # If no timezone info, assume it's local time (legacy data) and make aware
         if dt.tzinfo is None:
             dt = dt.astimezone()  # Interpret as local, then make aware
-        
-        now = datetime.now(timezone.utc)
-        delta = now - dt.astimezone(timezone.utc)
+
+        now = datetime.now(UTC)
+        delta = now - dt.astimezone(UTC)
         seconds = int(delta.total_seconds())
-        
+
         if seconds < 0:
             return "just now"  # Future timestamps (clock skew)
         elif seconds < 60:
@@ -159,11 +148,11 @@ def get_session(session_id: str, db=Depends(get_db)):
 @router.post("/sessions/{session_id}/viewed")
 def record_session_viewed(session_id: str, db=Depends(get_db)):
     """Record that the user viewed this session's detail page."""
-    from datetime import datetime, timezone
+    from datetime import datetime
     s = repo.get_session(db, session_id)
     if s is None:
         raise HTTPException(404, "Session not found")
-    repo.update_session(db, session_id, last_viewed_at=datetime.now(timezone.utc).isoformat())
+    repo.update_session(db, session_id, last_viewed_at=datetime.now(UTC).isoformat())
     return {"ok": True}
 
 
@@ -182,51 +171,21 @@ def toggle_auto_reconnect(session_id: str, request: Request, db=Depends(get_db))
 
     # If enabling and worker is currently in a reconnectable state, reconnect now
     if new_value and is_reconnectable(s.status):
-        tmux_sess, tmux_win = tmux_target(s.name)
         config = getattr(request.app.state, "config", {})
         api_port = config.get("server", {}).get("port", 8093)
-        tmp_dir = os.path.join(WORKER_BASE_DIR, s.name)
+        db_path = getattr(request.app.state, "db_path", None)
+        tunnel_manager = getattr(request.app.state, "tunnel_manager", None)
 
-        repo.update_session(db, session_id, status="connecting")
-
-        if is_remote_host(s.host):
-            db_path = getattr(request.app.state, "db_path", None)
-            tunnel_manager = getattr(request.app.state, "tunnel_manager", None)
-
-            def _bg_reconnect():
-                from orchestrator.state.db import get_connection
-                bg_conn = get_connection(db_path) if db_path else db
-                try:
-                    reconnect_remote_worker(
-                        bg_conn, s, tmux_sess, tmux_win, api_port, tmp_dir, repo,
-                        tunnel_manager=tunnel_manager,
-                    )
-                    logger.info("Auto-reconnect (toggle): %s reconnected", s.name)
-                except Exception:
-                    logger.exception("Auto-reconnect (toggle) failed for %s", s.name)
-                    try:
-                        repo.update_session(bg_conn, s.id, status="disconnected")
-                    except Exception:
-                        pass
-                finally:
-                    if db_path and bg_conn is not db:
-                        bg_conn.close()
-
-            thread = threading.Thread(target=_bg_reconnect, daemon=True)
-            thread.start()
-        else:
-            try:
-                reconnect_local_worker(s, tmux_sess, tmux_win, api_port, tmp_dir)
-                repo.update_session(db, session_id, status="waiting")
-            except Exception:
-                logger.exception("Auto-reconnect (toggle) failed for local worker %s", s.name)
-                repo.update_session(db, session_id, status="disconnected")
+        trigger_reconnect(
+            s, db, db_path=db_path, api_port=api_port,
+            tunnel_manager=tunnel_manager,
+        )
 
     return {"ok": True, "auto_reconnect": new_value}
 
 
 def _sanitize_worker_name(name: str) -> str:
-    """Sanitize worker name to avoid folder structure issues.
+    r"""Sanitize worker name to avoid folder structure issues.
     
     Replaces / and \ with _ since these affect directory paths.
     """
@@ -237,7 +196,7 @@ def _sanitize_worker_name(name: str) -> str:
 def create_session(body: SessionCreate, request: Request, db=Depends(get_db)):
     # Sanitize name to avoid folder structure issues
     sanitized_name = _sanitize_worker_name(body.name)
-    
+
     # Set up tmp directory for CLI scripts and configs (before tmux window so we can use it as cwd)
     tmp_dir = os.path.join(WORKER_BASE_DIR, sanitized_name)
     os.makedirs(tmp_dir, exist_ok=True)
@@ -320,98 +279,25 @@ def create_session(body: SessionCreate, request: Request, db=Depends(get_db)):
         # The session record is already persisted, so deploy/launch errors are
         # non-fatal: log them but still return success to the client.
         try:
+            from orchestrator.state.repositories import skills as skills_repo
+            from orchestrator.terminal.session import setup_local_worker
+
             config = getattr(request.app.state, "config", {})
             api_port = config.get("server", {}).get("port", 8093)
 
-            # Deploy CLI scripts in tmp_dir/bin/
-            bin_dir = deploy_worker_scripts(
-                worker_dir=tmp_dir,
-                session_id=s.id,
-                api_base=f"http://127.0.0.1:{api_port}",
-            )
-            logger.info("Deployed CLI scripts for local worker %s in %s", sanitized_name, bin_dir)
-
-            # Generate Claude Code hooks in tmp_dir/configs/
-            configs_dir = os.path.join(tmp_dir, "configs")
-            os.makedirs(configs_dir, exist_ok=True)
-            generate_worker_hooks(
-                worker_dir=configs_dir,
-                session_id=s.id,
-                api_base=f"http://127.0.0.1:{api_port}",
-            )
-            logger.info("Generated hooks settings for local worker %s", sanitized_name)
-
-            # Deploy worker skills to .claude/commands/ in work_dir (skip disabled)
-            from orchestrator.state.repositories import skills as skills_repo
-            disabled_builtins = skills_repo.list_disabled_builtin_skills(db, "worker")
-            skills_src = get_worker_skills_dir()
-            if skills_src and os.path.isdir(skills_src) and work_dir:
-                skills_dest = os.path.join(work_dir, ".claude", "commands")
-                # Clear stale skill files before repopulating
-                if os.path.isdir(skills_dest):
-                    for f in os.listdir(skills_dest):
-                        if f.endswith(".md"):
-                            os.remove(os.path.join(skills_dest, f))
-                os.makedirs(skills_dest, exist_ok=True)
-                for skill_file in os.listdir(skills_src):
-                    if skill_file.endswith(".md"):
-                        skill_name = os.path.splitext(skill_file)[0]
-                        if (skill_name, "worker") in disabled_builtins:
-                            continue
-                        shutil.copy2(
-                            os.path.join(skills_src, skill_file),
-                            os.path.join(skills_dest, skill_file),
-                        )
-                logger.info("Deployed %d built-in skills to %s for local worker %s",
-                           len([f for f in os.listdir(skills_dest) if f.endswith(".md")]),
-                           skills_dest, sanitized_name)
-
-            # Deploy custom worker skills from DB (enabled only)
             custom_skills = skills_repo.list_skills(db, target="worker", enabled_only=True)
             custom_skills_dicts = [{"name": sk.name, "description": sk.description, "content": sk.content} for sk in custom_skills]
-            if custom_skills_dicts and work_dir:
-                skills_dest = os.path.join(work_dir, ".claude", "commands")
-                deploy_custom_skills(skills_dest, custom_skills_dicts)
-                logger.info("Deployed %d custom worker skills for local worker %s", len(custom_skills_dicts), sanitized_name)
+            disabled_builtins = {name for name, _ in skills_repo.list_disabled_builtin_skills(db, "worker")}
 
-            custom_skills_section = format_custom_skills_for_prompt(custom_skills_dicts)
-
-            # Write worker prompt to file in tmp_dir (avoids pasting large content through tmux)
-            worker_prompt = get_worker_prompt(s.id, custom_skills_section=custom_skills_section)
-            prompt_file = os.path.join(tmp_dir, "prompt.md")
-            if worker_prompt:
-                with open(prompt_file, "w") as f:
-                    f.write(worker_prompt)
-                logger.info("Wrote worker prompt to %s", prompt_file)
-
-            # cd to working directory, export PATH, and launch claude with --settings
-            import shlex
-            cmd_parts = []
-
-            # cd to work_dir if specified, otherwise stay in current dir
-            if work_dir:
-                cmd_parts.append(f"cd {work_dir}")
-
-            # Export PATH to include CLI scripts
-            path_export = get_path_export_command(os.path.join(tmp_dir, "bin"))
-            cmd_parts.append(path_export)
-
-            # Build claude command with --settings for hooks
-            settings_file = os.path.join(tmp_dir, "configs", "settings.json")
-            claude_args = [
-                "--dangerously-skip-permissions",
-                f"--settings {shlex.quote(settings_file)}",
-                f"--session-id {s.id}",
-            ]
-
-            if worker_prompt:
-                claude_args.append(f'--append-system-prompt "$(cat {shlex.quote(prompt_file)})"')
-
-            cmd_parts.append(f"claude {' '.join(claude_args)}")
-
-            cmd = " && ".join(cmd_parts)
-            send_keys(tmux_session_name, sanitized_name, cmd, enter=True)
-            logger.info("Launched claude for local worker %s (work_dir=%s)", sanitized_name, work_dir)
+            setup_local_worker(
+                db, s.id, sanitized_name,
+                tmux_session=tmux_session_name,
+                api_port=api_port,
+                work_dir=work_dir,
+                tmp_dir=tmp_dir,
+                custom_skills=custom_skills_dicts,
+                disabled_builtin_names=disabled_builtins,
+            )
         except Exception:
             logger.warning("Could not deploy/launch local worker %s", sanitized_name, exc_info=True)
 
@@ -423,7 +309,7 @@ def update_session(session_id: str, body: SessionUpdate, db=Depends(get_db)):
     s = repo.get_session(db, session_id)
     if s is None:
         raise HTTPException(404, "Session not found")
-    
+
     old_status = s.status
     updated = repo.update_session(
         db, session_id,
@@ -431,7 +317,7 @@ def update_session(session_id: str, body: SessionUpdate, db=Depends(get_db)):
         takeover_mode=body.takeover_mode,
         claude_session_id=body.claude_session_id,
     )
-    
+
     # Publish event for WebSocket broadcast if status changed
     if body.status and body.status != old_status:
         from orchestrator.core.events import Event, publish
@@ -444,7 +330,7 @@ def update_session(session_id: str, body: SessionUpdate, db=Depends(get_db)):
                 "new_status": body.status,
             },
         ))
-    
+
     return {"id": updated.id, "status": updated.status}
 
 
@@ -808,7 +694,7 @@ def prepare_session_for_task(session_id: str, db=Depends(get_db)):
         # 1. Send Escape to exit any mode/stop current action
         send_keys(tmux_sess, tmux_win, "Escape", enter=False)
         time.sleep(0.3)
-        
+
         # 2. Send Ctrl-C to cancel any running terminal command
         import subprocess
         subprocess.run(
@@ -816,12 +702,12 @@ def prepare_session_for_task(session_id: str, db=Depends(get_db)):
             capture_output=True, timeout=2
         )
         time.sleep(0.5)
-        
+
         # 3. Send /clear to reset Claude Code context
         from orchestrator.terminal.manager import send_keys_literal
         send_keys_literal(tmux_sess, tmux_win, "/clear")
         send_keys(tmux_sess, tmux_win, "", enter=True)
-        
+
         logger.info("Prepared session %s for new task assignment", s.name)
     except Exception:
         logger.warning("Could not fully prepare session %s", s.name, exc_info=True)
@@ -854,52 +740,20 @@ def reconnect_session(session_id: str, request: Request, db=Depends(get_db)):
     if not is_reconnectable(s.status):
         return {"ok": False, "error": f"Session is not in reconnectable state (status: {s.status})"}
 
-    tmux_sess, tmux_win = tmux_target(s.name)
-
     config = getattr(request.app.state, "config", {})
     api_port = config.get("server", {}).get("port", 8093)
-    tmp_dir = os.path.join(WORKER_BASE_DIR, s.name)
+    db_path = getattr(request.app.state, "db_path", None)
+    tunnel_manager = getattr(request.app.state, "tunnel_manager", None)
 
-    if is_remote_host(s.host):
-        # Remote worker — check tunnel and SSH, re-establish if needed, then launch claude
-        db_path = getattr(request.app.state, "db_path", None)
-        tunnel_manager = getattr(request.app.state, "tunnel_manager", None)
-        repo.update_session(db, session_id, status="connecting")
-
-        def _background_reconnect():
-            from orchestrator.state.db import get_connection
-            bg_conn = get_connection(db_path) if db_path else db
-            try:
-                reconnect_remote_worker(
-                    bg_conn, s, tmux_sess, tmux_win, api_port, tmp_dir, repo,
-                    tunnel_manager=tunnel_manager,
-                )
-                logger.info("Remote worker %s reconnected", s.name)
-            except Exception as e:
-                logger.exception("Remote reconnect failed for %s", s.name)
-                try:
-                    repo.update_session(bg_conn, s.id, status="disconnected")
-                except Exception:
-                    pass
-            finally:
-                if db_path and bg_conn is not db:
-                    bg_conn.close()
-
-        thread = threading.Thread(target=_background_reconnect, daemon=True)
-        thread.start()
-        return {"ok": True, "message": f"Reconnecting remote worker {s.name}..."}
-
-    else:
-        # Local worker — just relaunch claude
-        repo.update_session(db, session_id, status="connecting")
-        try:
-            reconnect_local_worker(s, tmux_sess, tmux_win, api_port, tmp_dir)
-            repo.update_session(db, session_id, status="waiting")
-            return {"ok": True, "message": f"Session {s.name} reconnected"}
-        except Exception as e:
-            logger.exception("Local reconnect failed for %s", s.name)
-            repo.update_session(db, session_id, status="disconnected")
-            return {"ok": False, "error": str(e)}
+    result = trigger_reconnect(
+        s, db, db_path=db_path, api_port=api_port,
+        tunnel_manager=tunnel_manager,
+    )
+    if result.get("ok"):
+        if result.get("async"):
+            return {"ok": True, "message": f"Reconnecting worker {s.name}..."}
+        return {"ok": True, "message": f"Worker {s.name} reconnected"}
+    return result
 
 
 @router.post("/sessions/{session_id}/health-check")
@@ -926,103 +780,8 @@ def health_check_session(session_id: str, request: Request, db=Depends(get_db)):
     if s is None:
         raise HTTPException(404, "Session not found")
 
-    tmux_sess, tmux_win = tmux_target(s.name)
-
-    # Check if remote or local worker
-    if is_remote_host(s.host):
-        # Use detailed screen check for remote workers
-        screen_status, reason = check_screen_and_claude_remote(s.host, session_id, tmux_sess, tmux_win)
-
-        # Check tunnel via ReverseTunnelManager (deterministic process check)
-        tunnel_manager = getattr(request.app.state, "tunnel_manager", None)
-        tunnel_alive = tunnel_manager.is_alive(session_id) if tunnel_manager else False
-
-        if screen_status == "alive":
-            # Screen and Claude both running
-            if not tunnel_alive:
-                # Claude running but tunnel dead - auto-restart tunnel
-                logger.info("Health check: %s has Claude running but tunnel dead, restarting tunnel", s.name)
-
-                if tunnel_manager:
-                    new_pid = tunnel_manager.restart_tunnel(s.id, s.name, s.host)
-                    if new_pid:
-                        repo.update_session(db, session_id, tunnel_pid=new_pid)
-                        logger.info("Health check: %s tunnel restarted (pid=%d)", s.name, new_pid)
-                        if s.status in ("screen_detached", "error", "disconnected"):
-                            repo.update_session(db, session_id, status="waiting")
-                        return {
-                            "alive": True,
-                            "status": "waiting",
-                            "reason": f"{reason}, tunnel was dead but auto-restarted",
-                            "screen_status": screen_status,
-                            "tunnel_alive": True,
-                            "tunnel_reconnected": True,
-                        }
-
-                # Tunnel restart failed
-                reason = f"{reason}, but tunnel is dead and restart failed"
-                if s.status not in ("screen_detached", "connecting"):
-                    repo.update_session(db, session_id, status="screen_detached")
-                return {
-                    "alive": False,
-                    "status": "screen_detached",
-                    "reason": reason,
-                    "screen_status": screen_status,
-                    "tunnel_alive": False,
-                    "needs_reconnect": True,
-                }
-            # All good - screen, Claude, and tunnel alive
-            # If status was screen_detached/error/disconnected, update to waiting (Claude is running)
-            if s.status in ("screen_detached", "error", "disconnected"):
-                repo.update_session(db, session_id, status="waiting")
-                logger.info("Health check: %s recovered from %s to waiting", s.name, s.status)
-                return {"alive": True, "status": "waiting", "reason": reason, "screen_status": screen_status, "tunnel_alive": True}
-            return {"alive": True, "status": s.status, "reason": reason, "screen_status": screen_status, "tunnel_alive": True}
-        elif screen_status == "screen_detached":
-            # SSH failed but screen might still be running - this needs reconnect to resume work
-            if s.status not in ("screen_detached", "connecting"):
-                repo.update_session(db, session_id, status="screen_detached")
-                logger.info("Health check: %s marked as screen_detached (%s)", s.name, reason)
-            return {
-                "alive": False,  # Not usable without reconnect
-                "status": "screen_detached", 
-                "reason": reason, 
-                "screen_status": screen_status,
-                "needs_reconnect": True,  # Signal that reconnect can restore this worker
-            }
-        elif screen_status == "screen_only":
-            # Screen exists but Claude crashed - can restart Claude in screen
-            if s.status != "error":
-                repo.update_session(db, session_id, status="error")
-                logger.info("Health check: %s marked as error - Claude crashed in screen (%s)", s.name, reason)
-            return {
-                "alive": False, 
-                "status": "error", 
-                "reason": reason, 
-                "screen_status": screen_status,
-                "needs_reconnect": True,  # Can restart Claude in existing screen
-            }
-        else:  # dead
-            if s.status != "disconnected":
-                repo.update_session(db, session_id, status="disconnected")
-                logger.info("Health check: %s marked as disconnected (%s)", s.name, reason)
-            return {
-                "alive": False, 
-                "status": "disconnected", 
-                "reason": reason, 
-                "screen_status": screen_status,
-                "needs_reconnect": True,  # Full restart needed
-            }
-    else:
-        alive, reason = check_claude_process_local(session_id)
-        
-        if not alive:
-            if s.status != "disconnected":
-                repo.update_session(db, session_id, status="disconnected")
-                logger.info("Health check: %s marked as disconnected (%s)", s.name, reason)
-            return {"alive": False, "status": "disconnected", "reason": reason, "needs_reconnect": True}
-        
-        return {"alive": True, "status": s.status, "reason": reason}
+    tunnel_manager = getattr(request.app.state, "tunnel_manager", None)
+    return check_and_update_worker_health(db, s, tunnel_manager)
 
 
 @router.post("/sessions/health-check-all")
@@ -1047,133 +806,16 @@ def health_check_all_sessions(request: Request, db=Depends(get_db)):
     """
     sessions = repo.list_sessions(db, session_type="worker")
 
-    results = {"checked": 0, "disconnected": [], "screen_detached": [], "error": [], "alive": [], "skipped_active": [], "auto_reconnected": []}
+    config = getattr(request.app.state, "config", {})
+    api_port = config.get("server", {}).get("port", 8093)
+    db_path = getattr(request.app.state, "db_path", None)
+    tunnel_manager = getattr(request.app.state, "tunnel_manager", None)
 
-    # Collect workers that need auto-reconnect
-    auto_reconnect_candidates = []
-
-    for s in sessions:
-        if s.status == "disconnected":
-            # Already disconnected - check if auto-reconnect should kick in
-            if s.auto_reconnect:
-                auto_reconnect_candidates.append(s)
-            continue
-        if s.status == "connecting":
-            # Check if connecting for too long (stuck setup thread)
-            if s.last_status_changed_at:
-                from datetime import datetime, timezone
-                try:
-                    ts = s.last_status_changed_at.replace("Z", "+00:00")
-                    dt = datetime.fromisoformat(ts)
-                    if dt.tzinfo is None:
-                        dt = dt.astimezone()
-                    elapsed = (datetime.now(timezone.utc) - dt.astimezone(timezone.utc)).total_seconds()
-                    if elapsed > 600:  # 10 minutes
-                        repo.update_session(db, s.id, status="disconnected")
-                        logger.warning("Health check: %s stuck in connecting for %dm, marking disconnected", s.name, int(elapsed // 60))
-                        results["disconnected"].append(s.name)
-                        if s.auto_reconnect:
-                            auto_reconnect_candidates.append(s)
-                except Exception:
-                    pass
-            continue  # Skip further checks for connecting workers
-
-        results["checked"] += 1
-        tmux_sess, tmux_win = tmux_target(s.name)
-
-        try:
-            if is_remote_host(s.host):
-                # Use detailed screen check for remote workers - pass tmux info to check worker SSH
-                screen_status, reason = check_screen_and_claude_remote(s.host, s.id, tmux_sess, tmux_win)
-
-                if screen_status == "alive":
-                    results["alive"].append(s.name)
-                elif screen_status == "screen_detached":
-                    if s.status not in ("screen_detached", "connecting"):
-                        repo.update_session(db, s.id, status="screen_detached")
-                        logger.info("Health check: %s marked as screen_detached (%s)", s.name, reason)
-                    results["screen_detached"].append(s.name)
-                    if s.auto_reconnect:
-                        auto_reconnect_candidates.append(s)
-                elif screen_status == "screen_only":
-                    if s.status != "error":
-                        repo.update_session(db, s.id, status="error")
-                        logger.info("Health check: %s marked as error - Claude crashed (%s)", s.name, reason)
-                    results["error"].append(s.name)
-                    if s.auto_reconnect:
-                        auto_reconnect_candidates.append(s)
-                else:  # dead
-                    repo.update_session(db, s.id, status="disconnected")
-                    results["disconnected"].append(s.name)
-                    logger.info("Health check: %s marked as disconnected (%s)", s.name, reason)
-                    if s.auto_reconnect:
-                        auto_reconnect_candidates.append(s)
-            else:
-                alive, reason = check_claude_process_local(s.id)
-
-                if not alive:
-                    repo.update_session(db, s.id, status="disconnected")
-                    results["disconnected"].append(s.name)
-                    logger.info("Health check: %s marked as disconnected (%s)", s.name, reason)
-                    if s.auto_reconnect:
-                        auto_reconnect_candidates.append(s)
-                else:
-                    results["alive"].append(s.name)
-        except Exception as e:
-            # Can't check - assume alive for now
-            logger.warning("Health check failed for %s: %s", s.name, e)
-            results["alive"].append(s.name)
-
-    # Auto-reconnect workers that have the flag enabled
-    if auto_reconnect_candidates:
-        config = getattr(request.app.state, "config", {})
-        api_port = config.get("server", {}).get("port", 8093)
-        db_path = getattr(request.app.state, "db_path", None)
-        tunnel_manager = getattr(request.app.state, "tunnel_manager", None)
-
-        for s in auto_reconnect_candidates:
-            logger.info("Auto-reconnect: triggering reconnect for %s", s.name)
-            tmux_sess, tmux_win = tmux_target(s.name)
-            tmp_dir = os.path.join(WORKER_BASE_DIR, s.name)
-
-            try:
-                repo.update_session(db, s.id, status="connecting")
-
-                if is_remote_host(s.host):
-                    def _bg_reconnect(session=s, ts=tmux_sess, tw=tmux_win):
-                        from orchestrator.state.db import get_connection
-                        bg_conn = get_connection(db_path) if db_path else db
-                        try:
-                            reconnect_remote_worker(
-                                bg_conn, session, ts, tw, api_port, tmp_dir, repo,
-                                tunnel_manager=tunnel_manager,
-                            )
-                            logger.info("Auto-reconnect: %s reconnected", session.name)
-                        except Exception:
-                            logger.exception("Auto-reconnect failed for %s", session.name)
-                            try:
-                                repo.update_session(bg_conn, session.id, status="disconnected")
-                            except Exception:
-                                pass
-                        finally:
-                            if db_path and bg_conn is not db:
-                                bg_conn.close()
-
-                    thread = threading.Thread(target=_bg_reconnect, daemon=True)
-                    thread.start()
-                else:
-                    try:
-                        reconnect_local_worker(s, tmux_sess, tmux_win, api_port, tmp_dir)
-                        repo.update_session(db, s.id, status="waiting")
-                    except Exception:
-                        logger.exception("Auto-reconnect failed for local worker %s", s.name)
-                        repo.update_session(db, s.id, status="disconnected")
-
-                results["auto_reconnected"].append(s.name)
-            except Exception as e:
-                logger.warning("Auto-reconnect: failed to start reconnect for %s: %s", s.name, e)
-
-    return results
+    return check_all_workers_health(
+        db, sessions,
+        db_path=db_path, api_port=api_port,
+        tunnel_manager=tunnel_manager,
+    )
 
 
 # =============================================================================
@@ -1193,24 +835,24 @@ def create_session_tunnel(session_id: str, body: TunnelRequest, db=Depends(get_d
     rdev host's port, allowing local browser/tools to access services on rdev.
     """
     from orchestrator.session.tunnel import create_tunnel
-    
+
     s = repo.get_session(db, session_id)
     if s is None:
         raise HTTPException(404, "Session not found")
     if not is_remote_host(s.host):
         raise HTTPException(400, "Tunnel only supported for remote workers")
-    
+
     local_port = body.local_port or body.port
     remote_port = body.port
-    
+
     success, result = create_tunnel(s.host, remote_port, local_port)
-    
+
     if not success:
         error_msg = result.get("error", "Unknown error")
         if "already tunneled" in error_msg:
             raise HTTPException(409, error_msg)
         raise HTTPException(500, error_msg)
-    
+
     return {"ok": True, **result}
 
 
@@ -1218,14 +860,14 @@ def create_session_tunnel(session_id: str, body: TunnelRequest, db=Depends(get_d
 def close_session_tunnel(session_id: str, port: int, db=Depends(get_db)):
     """Close a specific port tunnel for this session."""
     from orchestrator.session.tunnel import close_tunnel
-    
+
     s = repo.get_session(db, session_id)
     if s is None:
         raise HTTPException(404, "Session not found")
-    
+
     # Only allow closing tunnels that belong to this session's host
     success, message = close_tunnel(port, host=s.host)
-    
+
     return {"ok": success, "message": message}
 
 
@@ -1233,14 +875,14 @@ def close_session_tunnel(session_id: str, port: int, db=Depends(get_db)):
 def list_session_tunnels(session_id: str, db=Depends(get_db)):
     """List active tunnels for a session (real-time via process scan)."""
     from orchestrator.session.tunnel import get_tunnels_for_host
-    
+
     s = repo.get_session(db, session_id)
     if s is None:
         raise HTTPException(404, "Session not found")
-    
+
     if not is_remote_host(s.host):
         return {"tunnels": {}}
-    
+
     tunnels = get_tunnels_for_host(s.host)
     return {
         "tunnels": {
@@ -1258,6 +900,6 @@ def list_session_tunnels(session_id: str, db=Depends(get_db)):
 def list_all_tunnels(db=Depends(get_db)):
     """List all active SSH port-forward tunnels (for brain/admin)."""
     from orchestrator.session.tunnel import discover_active_tunnels
-    
+
     tunnels = discover_active_tunnels(force_refresh=True)
     return {"tunnels": tunnels}

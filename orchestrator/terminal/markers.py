@@ -40,8 +40,8 @@ from __future__ import annotations
 import logging
 import random
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Callable
 
 logger = logging.getLogger(__name__)
 
@@ -69,27 +69,27 @@ class MarkerCommand:
     command: str
     prefix: str = "MRK"
     marker_id: int = field(default_factory=_generate_marker_id)
-    
+
     @property
     def start_marker(self) -> str:
         return f"__{self.prefix}_START_{self.marker_id}__"
-    
+
     @property
     def end_marker(self) -> str:
         return f"__{self.prefix}_END_{self.marker_id}__"
-    
+
     @property
     def full_command(self) -> str:
         """The command wrapped with echo markers."""
         return f"echo {self.start_marker} && {self.command} && echo {self.end_marker}"
-    
+
     def parse_result(self, output: str) -> str | None:
         """Parse the command result from terminal output.
         
         Returns the content between markers (stripped), or None if markers not found.
         """
         return parse_between_markers(output, self.start_marker, self.end_marker)
-    
+
     def check_contains(self, output: str, value: str) -> bool:
         """Check if the parsed result contains a specific value.
         
@@ -153,7 +153,7 @@ def parse_first_line(output: str, start_marker: str, end_marker: str) -> str | N
     result = parse_between_markers(output, start_marker, end_marker)
     if result is None:
         return None
-    
+
     for line in result.splitlines():
         if line.strip():
             return line.strip()
@@ -244,15 +244,15 @@ def wait_for_completion(
     """
     cmd = MarkerCommand("echo DONE", prefix="WAIT")
     send_keys_fn(tmux_sess, tmux_win, cmd.full_command, enter=True)
-    
+
     start_time = time.time()
     while time.time() - start_time < timeout:
         time.sleep(poll_interval)
         output = capture_fn(tmux_sess, tmux_win, lines=15)
-        
+
         if cmd.check_contains(output, "DONE"):
             return True
-    
+
     logger.warning("Command did not complete within %d seconds", timeout)
     return False
 
@@ -266,6 +266,8 @@ def check_yes_no(
     prefix: str = "CHK",
     wait_time: float = 2.0,
     retry_wait: float = 3.0,
+    timeout: float | None = None,
+    poll_interval: float = 1.0,
 ) -> bool | None:
     """Run a yes/no check command and return the result.
     
@@ -278,37 +280,45 @@ def check_yes_no(
         tmux_win: tmux window name
         check_command: Command that returns 0 on success (e.g., "which screen")
         prefix: Marker prefix
-        wait_time: Initial wait time
-        retry_wait: Additional wait if markers not found
+        wait_time: Initial wait before first poll (kept for backward compat)
+        retry_wait: Unused, kept for backward compatibility
+        timeout: Total time to wait for result (default: wait_time + retry_wait)
+        poll_interval: Time between capture attempts after initial wait
         
     Returns:
         True if command succeeded, False if failed, None if couldn't determine
     """
+    if timeout is None:
+        timeout = wait_time + retry_wait
+
     cmd = MarkerCommand(
         f"({check_command}) && echo YES || echo NO",
         prefix=prefix
     )
-    
+
     send_keys_fn(tmux_sess, tmux_win, cmd.full_command, enter=True)
     time.sleep(wait_time)
-    output = capture_fn(tmux_sess, tmux_win, lines=15)
-    
-    result = cmd.parse_result(output)
-    
-    if result is None:
-        # Markers not found, wait more
-        time.sleep(retry_wait)
+
+    # Poll for markers until timeout (capture-first so we check at boundary)
+    deadline = time.time() + (timeout - wait_time)
+    result = None
+    while True:
         output = capture_fn(tmux_sess, tmux_win, lines=15)
         result = cmd.parse_result(output)
-    
+        if result is not None:
+            break
+        if time.time() >= deadline:
+            break
+        time.sleep(poll_interval)
+
     if result is None:
         logger.warning("Could not parse yes/no result for command: %s", check_command)
         return None
-    
+
     if "YES" in result:
         return True
     if "NO" in result:
         return False
-    
+
     logger.warning("Unexpected yes/no result: %r", result)
     return None

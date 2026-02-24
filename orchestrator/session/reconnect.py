@@ -26,13 +26,13 @@ import subprocess
 import threading
 import time
 
-from orchestrator.terminal.manager import capture_output, send_keys, kill_window
-from orchestrator.terminal.session import _copy_dir_to_remote_ssh
-from orchestrator.session.health import (
-    get_screen_session_name,
-    check_tui_running_in_pane,
-)
 from orchestrator.agents import get_path_export_command, get_worker_prompt
+from orchestrator.session.health import (
+    check_tui_running_in_pane,
+    get_screen_session_name,
+)
+from orchestrator.terminal.manager import capture_output, kill_window, send_keys
+from orchestrator.terminal.session import _copy_dir_to_remote_ssh
 
 logger = logging.getLogger(__name__)
 
@@ -355,7 +355,13 @@ def _ensure_local_configs_exist(tmp_dir: str, session_id: str, api_base: str = "
     This handles both missing files (orchestrator restart) and stale files (template updates).
     """
     import shutil
-    from orchestrator.agents.deploy import generate_worker_hooks, deploy_worker_scripts, get_worker_skills_dir, deploy_custom_skills
+
+    from orchestrator.agents.deploy import (
+        deploy_custom_skills,
+        deploy_worker_scripts,
+        generate_worker_hooks,
+        get_worker_skills_dir,
+    )
 
     configs_dir = os.path.join(tmp_dir, "configs")
     os.makedirs(configs_dir, exist_ok=True)
@@ -592,10 +598,10 @@ def reconnect_remote_worker(conn, session, tmux_sess: str, tmux_win: str, api_po
       5. Check screen/Claude status (safe: at shell prompt)
       6. Act: reattach / reattach+launch / create+launch
     """
+    from orchestrator.session.health import check_screen_and_claude_remote, check_worker_ssh_alive
     from orchestrator.terminal import ssh
     from orchestrator.terminal.manager import ensure_window
     from orchestrator.terminal.session import _install_screen_if_needed
-    from orchestrator.session.health import check_screen_and_claude_remote, check_worker_ssh_alive
 
     remote_tmp_dir = f"/tmp/orchestrator/workers/{session.name}"
     screen_name = get_screen_session_name(session.id)
@@ -732,8 +738,8 @@ def reconnect_local_worker(session, tmux_sess: str, tmux_win: str, api_port: int
     Local workers have no SSH/screen/tunnel.  The main concern is avoiding
     sending commands into a running Claude TUI.
     """
-    from orchestrator.terminal.manager import ensure_window
     from orchestrator.session.health import check_claude_process_local
+    from orchestrator.terminal.manager import ensure_window
 
     lock = get_reconnect_lock(session.id)
     if not lock.acquire(timeout=5):
@@ -838,3 +844,88 @@ def reconnect_local_worker(session, tmux_sess: str, tmux_win: str, api_port: int
 
 # Backward-compat alias
 reconnect_rdev_worker = reconnect_remote_worker
+
+
+# =============================================================================
+# High-Level Reconnect Orchestration
+# =============================================================================
+
+WORKER_BASE_DIR = "/tmp/orchestrator/workers"
+
+
+def trigger_reconnect(
+    session,
+    db,
+    db_path: str | None = None,
+    api_port: int = 8093,
+    tunnel_manager=None,
+) -> dict:
+    """Trigger reconnection for a worker session.
+
+    Unified entry point that replaces the duplicated reconnect orchestration
+    previously copy-pasted across manual reconnect, toggle auto-reconnect,
+    and health-check-all endpoints.
+
+    For remote workers: sets status to 'connecting', spawns a background
+    thread, and returns immediately.  The thread creates its own DB
+    connection, calls ``reconnect_remote_worker``, and handles errors.
+
+    For local workers: reconnects synchronously (blocking).
+
+    Args:
+        session: Session model object (must have id, name, host).
+        db: Current SQLite connection (used for immediate status update).
+        db_path: Path to DB file — background threads open their own
+            connection via this path.  Required for remote workers.
+        api_port: Orchestrator API port (default 8093).
+        tunnel_manager: ReverseTunnelManager instance (remote workers).
+
+    Returns:
+        {"ok": True} if reconnect started/succeeded.
+        {"ok": False, "error": "..."} on failure.
+    """
+    from orchestrator.state.repositories import sessions as repo
+    from orchestrator.terminal.manager import tmux_target
+    from orchestrator.terminal.ssh import is_remote_host
+
+    tmux_sess, tmux_win = tmux_target(session.name)
+    tmp_dir = os.path.join(WORKER_BASE_DIR, session.name)
+
+    repo.update_session(db, session.id, status="connecting")
+
+    if is_remote_host(session.host):
+        # Remote worker — reconnect in a background thread so the API
+        # request returns immediately.  All loop-variable-sensitive values
+        # are bound via default parameters to avoid closure bugs.
+        def _bg_reconnect(_session=session, _ts=tmux_sess, _tw=tmux_win, _td=tmp_dir):
+            from orchestrator.state.db import get_connection
+            bg_conn = get_connection(db_path) if db_path else db
+            try:
+                reconnect_remote_worker(
+                    bg_conn, _session, _ts, _tw, api_port, _td, repo,
+                    tunnel_manager=tunnel_manager,
+                )
+                logger.info("Reconnect succeeded for %s", _session.name)
+            except Exception:
+                logger.exception("Reconnect failed for %s", _session.name)
+                try:
+                    repo.update_session(bg_conn, _session.id, status="disconnected")
+                except Exception:
+                    pass
+            finally:
+                if db_path and bg_conn is not db:
+                    bg_conn.close()
+
+        thread = threading.Thread(target=_bg_reconnect, daemon=True)
+        thread.start()
+        return {"ok": True, "async": True}
+    else:
+        # Local worker — reconnect synchronously
+        try:
+            reconnect_local_worker(session, tmux_sess, tmux_win, api_port, tmp_dir)
+            repo.update_session(db, session.id, status="waiting")
+            return {"ok": True, "async": False}
+        except Exception as e:
+            logger.exception("Local reconnect failed for %s", session.name)
+            repo.update_session(db, session.id, status="disconnected")
+            return {"ok": False, "error": str(e)}
