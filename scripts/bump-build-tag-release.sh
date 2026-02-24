@@ -50,7 +50,7 @@ echo "✔ latest.json generated."
 echo "==> Adding all changes to git..."
 git add -A
 echo "==> Committing changes..."
-git commit -m "chore: bump version to $VERSION"
+git diff --cached --quiet || git commit -m "chore: bump version to $VERSION"
 echo "==> Tagging version v$VERSION..."
 git tag "v$VERSION"
 echo "==> Pushing to remote..."

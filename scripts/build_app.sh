@@ -91,9 +91,21 @@ if [[ "$BUILD_DMG" == "true" ]]; then
     sleep 10
     echo ""
 
+    # Save updater artifacts before dmg build wipes the macos bundle dir
+    MACOS_BUNDLE_DIR="src-tauri/target/release/bundle/macos"
+    UPDATER_BACKUP=$(mktemp -d)
+    cp "$MACOS_BUNDLE_DIR"/*.tar.gz "$UPDATER_BACKUP/" 2>/dev/null || true
+    cp "$MACOS_BUNDLE_DIR"/*.tar.gz.sig "$UPDATER_BACKUP/" 2>/dev/null || true
+
     echo "--- [DMG] Step 2c: Bundling DMG ---"
     cargo tauri build --bundles dmg
     echo ""
+
+    # Restore updater artifacts if wiped by dmg build
+    for f in "$UPDATER_BACKUP"/*.tar.gz "$UPDATER_BACKUP"/*.tar.gz.sig; do
+        [[ -f "$f" ]] && cp "$f" "$MACOS_BUNDLE_DIR/"
+    done
+    rm -rf "$UPDATER_BACKUP"
 
     echo "--- [DMG] Step 3: Copying DMG to stable name ---"
     DMG_DIR="src-tauri/target/release/bundle/dmg"
