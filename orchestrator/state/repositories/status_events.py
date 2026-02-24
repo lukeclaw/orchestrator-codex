@@ -1,12 +1,12 @@
 """Repository for status_events table — append-only event log for trends."""
 
 import sqlite3
-from datetime import datetime, timezone, timedelta
+from datetime import UTC, datetime, timedelta
 
-from orchestrator.utils import utc_now_iso
-from orchestrator.state.repositories import tasks as tasks_repo
-from orchestrator.state.repositories import sessions as sessions_repo
 from orchestrator.state.repositories import projects as projects_repo
+from orchestrator.state.repositories import sessions as sessions_repo
+from orchestrator.state.repositories import tasks as tasks_repo
+from orchestrator.utils import utc_now_iso
 
 
 def insert_event(
@@ -95,7 +95,7 @@ def query_worker_hours(conn: sqlite3.Connection, since_date: str) -> list[dict]:
             workers[wid] = []
         workers[wid].append((r["new_status"], r["timestamp"]))
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     hours_by_date: dict[str, float] = {}
 
     for events in workers.values():
@@ -124,7 +124,7 @@ def _parse_ts(ts_str: str) -> datetime:
         return datetime.fromisoformat(ts_str)
     except ValueError:
         # Fallback for timestamps without timezone
-        return datetime.fromisoformat(ts_str).replace(tzinfo=timezone.utc)
+        return datetime.fromisoformat(ts_str).replace(tzinfo=UTC)
 
 
 def _add_interval(hours_by_date: dict[str, float], start: datetime, end: datetime) -> None:
@@ -228,8 +228,8 @@ def query_worker_hours_detail(conn: sqlite3.Connection, date: str) -> list[dict]
             workers[wid] = []
         workers[wid].append((r["new_status"], r["timestamp"]))
 
-    now = datetime.now(timezone.utc)
-    target_start = datetime.strptime(date, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+    now = datetime.now(UTC)
+    target_start = datetime.strptime(date, "%Y-%m-%d").replace(tzinfo=UTC)
     target_end = target_start + timedelta(days=1)
 
     items = []
@@ -328,6 +328,6 @@ def query_heatmap_detail(conn: sqlite3.Connection, day_of_week: int, hour: int, 
 
 def cleanup_old_events(conn: sqlite3.Connection, retention_days: int = 180) -> None:
     """Delete events older than retention_days."""
-    cutoff = (datetime.now(timezone.utc) - timedelta(days=retention_days)).isoformat()
+    cutoff = (datetime.now(UTC) - timedelta(days=retention_days)).isoformat()
     conn.execute("DELETE FROM status_events WHERE timestamp < ?", (cutoff,))
     conn.commit()

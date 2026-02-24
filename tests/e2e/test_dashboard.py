@@ -8,7 +8,6 @@ from __future__ import annotations
 
 from tests.e2e.conftest import screenshot
 
-
 # ---------------------------------------------------------------------------
 # 01. Dashboard loads
 # ---------------------------------------------------------------------------

@@ -5,8 +5,6 @@ Uses worker-isolated session names from conftest.py for parallel execution.
 
 import time
 
-import pytest
-
 from orchestrator.terminal import manager as tmux
 
 

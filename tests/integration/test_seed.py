@@ -6,8 +6,8 @@ from pathlib import Path
 # Ensure scripts/ is importable
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
-from scripts.seed_db import seed_all
 from orchestrator.state.repositories.config import get_config, list_config
+from scripts.seed_db import seed_all
 
 
 def test_seed_populates_config(db):

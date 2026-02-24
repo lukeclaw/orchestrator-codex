@@ -2,13 +2,11 @@
 
 import base64
 import time
-from pathlib import Path
 from unittest.mock import patch
 
 import pytest
 
-from orchestrator.api.routes.paste import save_image, cleanup_images
-
+from orchestrator.api.routes.paste import cleanup_images, save_image
 
 # A minimal 1x1 red PNG (68 bytes)
 TINY_PNG = (

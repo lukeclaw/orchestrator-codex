@@ -7,8 +7,8 @@ import yaml
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-from orchestrator.api.deps import get_db
 from orchestrator.agents.deploy import get_brain_skills_dir, get_worker_skills_dir
+from orchestrator.api.deps import get_db
 from orchestrator.state.repositories import skills as repo
 
 router = APIRouter()

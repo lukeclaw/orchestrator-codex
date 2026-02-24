@@ -12,16 +12,12 @@ import asyncio
 import json
 import os
 import stat
-import tempfile
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from orchestrator.terminal.pty_stream import (
-    FIFO_DIR,
-    STARTUP_TIMEOUT,
-    TERMINAL_STREAM_MODE,
     PtyStreamPool,
     PtyStreamReader,
     _parse_tmux_version,
@@ -30,7 +26,6 @@ from orchestrator.terminal.pty_stream import (
     set_tmux_version_cache,
     suppress_control_mode_output,
 )
-
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -764,7 +759,6 @@ class TestWsTerminalPipePanePath:
     async def test_backpressure_triggers_snapshot_recovery(self):
         """Buffer exceeding SNAPSHOT_RECOVERY_THRESHOLD should trigger sync."""
         from orchestrator.api.ws_terminal import (
-            SNAPSHOT_RECOVERY_THRESHOLD,
             terminal_websocket,
         )
 

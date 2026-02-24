@@ -23,7 +23,7 @@ def reset_cache():
 
 class TestRegexPatternEdgeCases:
     """Tests for the SSH command regex pattern edge cases."""
-    
+
     # The pattern from tunnel.py
     pattern = re.compile(r'ssh\s+.*-N\s+.*-L\s+(\d+):localhost:(\d+)\s+.*?(\S+)\s*$')
 
@@ -87,7 +87,7 @@ class TestReservedPorts:
         ports2 = tunnel.get_reserved_ports()
         assert ports1 == ports2
         assert ports1 is not ports2  # Different objects
-        
+
         # Modifying returned set shouldn't affect original
         ports1.add(9999)
         assert 9999 not in tunnel.RESERVED_PORTS
@@ -145,12 +145,12 @@ yuqiu    12346   0.0  0.0 408628368   1234 s000  S+   10:00AM   0:00.01 ssh -N -
         with patch("subprocess.run") as mock_run, \
              patch("os.kill") as mock_kill:
             mock_run.return_value = MagicMock(stdout=ps_output, returncode=0)
-            
+
             # First kill succeeds, second fails with permission error
             mock_kill.side_effect = [None, PermissionError("denied")]
-            
+
             closed = tunnel.cleanup_tunnels_for_host("user/rdev-vm")
-            
+
             # Should count the one that succeeded
             assert closed == 1
 
@@ -165,14 +165,14 @@ yuqiu    12345   0.0  0.0 408628368   1234 s000  S+   10:00AM   0:00.01 ssh -N -
 """
         with patch("subprocess.run") as mock_run:
             mock_run.return_value = MagicMock(stdout=ps_output, returncode=0)
-            
+
             tunnels1 = tunnel.discover_active_tunnels(force_refresh=True)
             tunnels2 = tunnel.discover_active_tunnels()
-            
+
             # Should be equal but not same object
             assert tunnels1 == tunnels2
             assert tunnels1 is not tunnels2
-            
+
             # Modifying returned dict shouldn't affect cache
             tunnels1[9999] = {"test": True}
             tunnels3 = tunnel.discover_active_tunnels()
@@ -185,25 +185,26 @@ class TestAPIErrorHandling:
     def test_create_tunnel_api_with_reserved_port(self):
         """API should return appropriate error for reserved port."""
         from fastapi.testclient import TestClient
+
         from orchestrator.api.app import create_app
         from orchestrator.state.db import get_connection
         from orchestrator.state.migrations.runner import apply_migrations
         from orchestrator.state.repositories import sessions as repo
-        
+
         conn = get_connection(":memory:")
         apply_migrations(conn)
-        
+
         # Create rdev session
         session = repo.create_session(conn, "test-worker", "user/rdev-vm", "/tmp/work")
-        
+
         app = create_app(db=conn)
         with TestClient(app) as client:
             response = client.post(
                 f"/api/sessions/{session.id}/tunnel",
                 json={"port": 8093}
             )
-            
+
             assert response.status_code == 500
             assert "reserved" in response.json()["detail"].lower()
-        
+
         conn.close()

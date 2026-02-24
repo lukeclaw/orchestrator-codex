@@ -5,7 +5,6 @@ This ensures consistent status management across the codebase.
 """
 
 from enum import Enum
-from typing import Set
 
 
 class SessionStatus(str, Enum):
@@ -21,7 +20,7 @@ class SessionStatus(str, Enum):
 
 
 # Define valid transitions: from_status -> set of allowed to_statuses
-VALID_TRANSITIONS: dict[SessionStatus, Set[SessionStatus]] = {
+VALID_TRANSITIONS: dict[SessionStatus, set[SessionStatus]] = {
     SessionStatus.IDLE: {
         SessionStatus.CONNECTING,  # Starting rdev setup
         SessionStatus.WORKING,     # Local worker starts working
@@ -74,7 +73,7 @@ VALID_TRANSITIONS: dict[SessionStatus, Set[SessionStatus]] = {
 }
 
 # States that allow reconnection
-RECONNECTABLE_STATES: Set[SessionStatus] = {
+RECONNECTABLE_STATES: set[SessionStatus] = {
     SessionStatus.DISCONNECTED,
     SessionStatus.SCREEN_DETACHED,
     SessionStatus.ERROR,
@@ -112,7 +111,7 @@ def is_valid_transition(current: SessionStatus | str, target: SessionStatus | st
             target = SessionStatus(target)
         except ValueError:
             return False
-    
+
     allowed = VALID_TRANSITIONS.get(current, set())
     return target in allowed
 
@@ -134,10 +133,10 @@ def validate_transition(current: SessionStatus | str, target: SessionStatus | st
         current = SessionStatus(current)
     if isinstance(target, str):
         target = SessionStatus(target)
-    
+
     if not is_valid_transition(current, target):
         raise InvalidTransitionError(current, target)
-    
+
     return target
 
 
@@ -155,7 +154,7 @@ def is_reconnectable(status: SessionStatus | str) -> bool:
             status = SessionStatus(status)
         except ValueError:
             return False
-    
+
     return status in RECONNECTABLE_STATES
 
 

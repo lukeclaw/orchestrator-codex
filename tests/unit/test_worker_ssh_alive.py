@@ -1,7 +1,7 @@
 """Tests for pane-scoped SSH alive check in orchestrator.session.health."""
 
 import unittest
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
 from orchestrator.session.health import (
     _get_pane_pid,

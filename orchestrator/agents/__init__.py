@@ -1,15 +1,15 @@
 """Agent deployment utilities for worker and brain CLI scripts."""
 
 from orchestrator.agents.deploy import (
-    deploy_worker_scripts,
+    BRAIN_SCRIPT_NAMES,
+    WORKER_SCRIPT_NAMES,
     deploy_brain_scripts,
-    get_worker_prompt,
+    deploy_worker_scripts,
+    generate_brain_hooks,
+    generate_worker_hooks,
     get_brain_prompt,
     get_path_export_command,
-    generate_worker_hooks,
-    generate_brain_hooks,
-    WORKER_SCRIPT_NAMES,
-    BRAIN_SCRIPT_NAMES,
+    get_worker_prompt,
 )
 
 __all__ = [

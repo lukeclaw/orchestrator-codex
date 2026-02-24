@@ -3,14 +3,14 @@
 import pytest
 
 from orchestrator.session.state_machine import (
-    SessionStatus,
-    VALID_TRANSITIONS,
     RECONNECTABLE_STATES,
+    VALID_TRANSITIONS,
     InvalidTransitionError,
+    SessionStatus,
+    get_status_value,
+    is_reconnectable,
     is_valid_transition,
     validate_transition,
-    is_reconnectable,
-    get_status_value,
 )
 
 
@@ -19,7 +19,7 @@ class TestSessionStatus:
 
     def test_all_statuses_defined(self):
         """All expected statuses should be defined."""
-        expected = {"idle", "connecting", "working", "paused", "waiting", 
+        expected = {"idle", "connecting", "working", "paused", "waiting",
                     "screen_detached", "error", "disconnected"}
         actual = {s.value for s in SessionStatus}
         assert actual == expected

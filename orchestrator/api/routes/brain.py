@@ -7,17 +7,21 @@ import shutil
 import time
 import uuid
 from datetime import datetime
-from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
+from orchestrator.agents import deploy_brain_scripts, generate_brain_hooks, get_path_export_command
+from orchestrator.agents.deploy import (
+    deploy_custom_skills,
+    format_custom_skills_for_prompt,
+    get_brain_prompt,
+    get_brain_skills_dir,
+)
 from orchestrator.api.deps import get_db
 from orchestrator.state.repositories import sessions as sessions_repo
 from orchestrator.terminal import manager as tmux
 from orchestrator.terminal.session import send_to_session
-from orchestrator.agents import deploy_brain_scripts, get_path_export_command, generate_brain_hooks
-from orchestrator.agents.deploy import get_brain_prompt, get_brain_skills_dir, format_custom_skills_for_prompt, deploy_custom_skills
 
 logger = logging.getLogger(__name__)
 
@@ -26,7 +30,11 @@ router = APIRouter()
 BRAIN_SESSION_NAME = "brain"
 TMUX_SESSION = "orchestrator"
 
-from orchestrator.api.websocket import get_current_focus, set_current_focus, request_focus_from_frontend
+from orchestrator.api.websocket import (
+    get_current_focus,
+    request_focus_from_frontend,
+    set_current_focus,
+)
 
 
 def _get_brain_session(db):
@@ -193,7 +201,7 @@ def stop_brain(db=Depends(get_db)):
         return {"ok": True, "message": "Brain not running"}
 
     brain_dir = "/tmp/orchestrator/brain"
-    
+
     try:
         # Send Ctrl-C three times to force-exit Claude Code
         for _ in range(3):
@@ -201,11 +209,11 @@ def stop_brain(db=Depends(get_db)):
             time.sleep(0.3)
         sessions_repo.update_session(db, session.id, status="disconnected")
         logger.info("Orchestrator brain stopped")
-    except Exception as e:
+    except Exception:
         logger.exception("Failed to stop brain")
         # Force-update status even if tmux command failed
         sessions_repo.update_session(db, session.id, status="disconnected")
-    
+
     # Clean up brain tmp directory so next start is clean
     try:
         if os.path.exists(brain_dir):
@@ -213,7 +221,7 @@ def stop_brain(db=Depends(get_db)):
             logger.info("Cleaned up brain directory: %s", brain_dir)
     except Exception as e:
         logger.warning("Could not clean up brain directory %s: %s", brain_dir, e)
-    
+
     return {"ok": True, "message": "Brain stopped"}
 
 
@@ -279,7 +287,7 @@ def brain_sync(db=Depends(get_db)):
 class PasteImageRequest(BaseModel):
     """Request body for pasting an image from clipboard."""
     image_data: str  # Base64-encoded image data (with or without data URL prefix)
-    filename: Optional[str] = None  # Optional custom filename
+    filename: str | None = None  # Optional custom filename
 
 
 @router.post("/brain/paste-image")
@@ -292,11 +300,11 @@ def paste_image(req: PasteImageRequest, db=Depends(get_db)):
     session = _get_brain_session(db)
     if session is None or session.status in ("disconnected",):
         raise HTTPException(400, "Brain is not running")
-    
+
     # Parse the base64 data (handle data URL prefix if present)
     image_data = req.image_data
     file_ext = "png"  # Default extension
-    
+
     if image_data.startswith("data:"):
         # Extract mime type and base64 data from data URL
         # Format: data:image/png;base64,<base64data>
@@ -310,17 +318,17 @@ def paste_image(req: PasteImageRequest, db=Depends(get_db)):
                 file_ext = ext_map.get(mime_type, "png")
         except ValueError:
             pass  # Keep defaults if parsing fails
-    
+
     # Decode base64 data
     try:
         image_bytes = base64.b64decode(image_data)
     except Exception as e:
         raise HTTPException(400, f"Invalid base64 image data: {e}")
-    
+
     # Create tmp directory inside brain working directory
     brain_tmp_dir = "/tmp/orchestrator/brain/tmp"
     os.makedirs(brain_tmp_dir, exist_ok=True)
-    
+
     # Generate filename with timestamp for uniqueness
     if req.filename:
         # Sanitize custom filename
@@ -332,9 +340,9 @@ def paste_image(req: PasteImageRequest, db=Depends(get_db)):
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         short_id = uuid.uuid4().hex[:6]
         filename = f"clipboard_{timestamp}_{short_id}.{file_ext}"
-    
+
     file_path = os.path.join(brain_tmp_dir, filename)
-    
+
     # Handle filename collision by appending counter
     counter = 1
     base_path = file_path
@@ -342,7 +350,7 @@ def paste_image(req: PasteImageRequest, db=Depends(get_db)):
         name, ext = os.path.splitext(base_path)
         file_path = f"{name}_{counter}{ext}"
         counter += 1
-    
+
     # Write the image file
     try:
         with open(file_path, "wb") as f:
@@ -351,7 +359,7 @@ def paste_image(req: PasteImageRequest, db=Depends(get_db)):
     except Exception as e:
         logger.exception("Failed to save clipboard image")
         raise HTTPException(500, f"Failed to save image: {e}")
-    
+
     return {
         "ok": True,
         "file_path": file_path,

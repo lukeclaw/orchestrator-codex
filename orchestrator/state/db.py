@@ -14,10 +14,11 @@ from __future__ import annotations
 import logging
 import sqlite3
 import time
+from collections.abc import Callable
 from contextlib import contextmanager
 from functools import wraps
 from pathlib import Path
-from typing import Callable, TypeVar
+from typing import TypeVar
 
 logger = logging.getLogger(__name__)
 
@@ -59,11 +60,11 @@ class ConnectionFactory:
     
     Provides connection-per-request pattern for better concurrency.
     """
-    
+
     def __init__(self, db_path: str | Path):
         self.db_path = Path(db_path)
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
-    
+
     def create(self) -> sqlite3.Connection:
         """Create a new connection."""
         conn = sqlite3.connect(str(self.db_path), check_same_thread=False)
@@ -73,7 +74,7 @@ class ConnectionFactory:
         conn.execute(f"PRAGMA busy_timeout={DEFAULT_BUSY_TIMEOUT_MS}")
         conn.execute("PRAGMA synchronous=NORMAL")
         return conn
-    
+
     @contextmanager
     def connection(self):
         """Context manager for connection-per-request pattern."""

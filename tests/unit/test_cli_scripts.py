@@ -9,15 +9,16 @@ These tests verify that:
 import os
 import subprocess
 import tempfile
+
 import pytest
 
 from orchestrator.agents import (
+    BRAIN_SCRIPT_NAMES,
+    WORKER_SCRIPT_NAMES,
     deploy_brain_scripts,
     deploy_worker_scripts,
     generate_brain_hooks,
     generate_worker_hooks,
-    BRAIN_SCRIPT_NAMES,
-    WORKER_SCRIPT_NAMES,
 )
 
 
@@ -34,7 +35,7 @@ class TestBrainCliScripts:
         """Verify all expected scripts are created with correct permissions."""
         with tempfile.TemporaryDirectory() as tmpdir:
             bin_dir = deploy_brain_scripts(tmpdir, "http://localhost:8093")
-            
+
             # Check all expected scripts plus lib.sh
             for script_name in BRAIN_SCRIPT_NAMES + ["lib.sh"]:
                 script_path = os.path.join(bin_dir, script_name)
@@ -89,7 +90,7 @@ class TestWorkerCliScripts:
         """Verify all expected worker scripts are created."""
         with tempfile.TemporaryDirectory() as tmpdir:
             bin_dir = deploy_worker_scripts(tmpdir, "session-123", "http://localhost:8093")
-            
+
             # Check all expected scripts plus lib.sh
             for script_name in WORKER_SCRIPT_NAMES + ["lib.sh"]:
                 script_path = os.path.join(bin_dir, script_name)
@@ -277,19 +278,19 @@ class TestJsonEscapingInScripts:
         """Verify brain scripts use json_encode for text fields."""
         with tempfile.TemporaryDirectory() as tmpdir:
             bin_dir = deploy_brain_scripts(tmpdir)
-            
+
             # orch-workers
             workers = _read_script(bin_dir, "orch-workers")
             assert 'escaped_name=$(json_encode "$name")' in workers
-            
+
             # orch-projects
             projects = _read_script(bin_dir, "orch-projects")
             assert 'escaped_name=$(json_encode "$name")' in projects
-            
+
             # orch-tasks
             tasks = _read_script(bin_dir, "orch-tasks")
             assert 'escaped_title=$(json_encode "$title")' in tasks
-            
+
             # orch-ctx
             ctx = _read_script(bin_dir, "orch-ctx")
             assert 'escaped_content=$(json_encode "$content")' in ctx
@@ -298,11 +299,11 @@ class TestJsonEscapingInScripts:
         """Verify worker scripts use json_encode for text fields."""
         with tempfile.TemporaryDirectory() as tmpdir:
             bin_dir = deploy_worker_scripts(tmpdir, "session-123")
-            
+
             # orch-task
             task = _read_script(bin_dir, "orch-task")
             assert 'escaped_notes=$(json_encode "$notes")' in task
-            
+
             # orch-subtask
             subtask = _read_script(bin_dir, "orch-subtask")
             assert 'escaped_title=$(json_encode "$title")' in subtask
@@ -428,13 +429,13 @@ class TestWorkerHooksGeneration:
             configs_dir = os.path.join(tmpdir, "configs")
             os.makedirs(configs_dir)
             generate_worker_hooks(configs_dir, "test-session-123", "http://localhost:8093")
-            
+
             settings_path = os.path.join(configs_dir, "settings.json")
             assert os.path.exists(settings_path), "settings.json should exist"
-            
+
             with open(settings_path) as f:
                 content = f.read()
-            
+
             # Verify key settings from template
             assert '"CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION": "false"' in content
             assert '"spinnerTipsEnabled": false' in content
@@ -446,7 +447,7 @@ class TestWorkerHooksGeneration:
             configs_dir = os.path.join(tmpdir, "configs")
             os.makedirs(configs_dir)
             generate_worker_hooks(configs_dir, "test-session-456", "http://localhost:9000")
-            
+
             hook_path = os.path.join(configs_dir, "hooks", "update-status.sh")
             assert os.path.exists(hook_path), "update-status.sh should exist"
             assert os.access(hook_path, os.X_OK), "update-status.sh should be executable"
@@ -457,11 +458,11 @@ class TestWorkerHooksGeneration:
             configs_dir = os.path.join(tmpdir, "configs")
             os.makedirs(configs_dir)
             generate_worker_hooks(configs_dir, "my-unique-session-789", "http://localhost:8093")
-            
+
             hook_path = os.path.join(configs_dir, "hooks", "update-status.sh")
             with open(hook_path) as f:
                 content = f.read()
-            
+
             assert "my-unique-session-789" in content
             assert "{{SESSION_ID}}" not in content, "Placeholder should be substituted"
 
@@ -471,11 +472,11 @@ class TestWorkerHooksGeneration:
             configs_dir = os.path.join(tmpdir, "configs")
             os.makedirs(configs_dir)
             generate_worker_hooks(configs_dir, "session-123", "http://custom-host:9999")
-            
+
             hook_path = os.path.join(configs_dir, "hooks", "update-status.sh")
             with open(hook_path) as f:
                 content = f.read()
-            
+
             assert "http://custom-host:9999" in content
             assert "{{API_BASE}}" not in content, "Placeholder should be substituted"
 
@@ -485,11 +486,11 @@ class TestWorkerHooksGeneration:
             configs_dir = os.path.join(tmpdir, "configs")
             os.makedirs(configs_dir)
             generate_worker_hooks(configs_dir, "session-123", "http://localhost:8093")
-            
+
             settings_path = os.path.join(configs_dir, "settings.json")
             with open(settings_path) as f:
                 content = f.read()
-            
+
             # The hook path should be the actual path, not the placeholder
             expected_hook_path = os.path.join(configs_dir, "hooks", "update-status.sh")
             assert expected_hook_path in content
@@ -501,7 +502,7 @@ class TestWorkerHooksGeneration:
             configs_dir = os.path.join(tmpdir, "configs")
             os.makedirs(configs_dir)
             generate_worker_hooks(configs_dir, "session-123", "http://localhost:8093")
-            
+
             safety_path = os.path.join(configs_dir, "hooks", "check-command.sh")
             assert os.path.exists(safety_path), "check-command.sh should be deployed"
             assert os.access(safety_path, os.X_OK), "check-command.sh should be executable"
@@ -512,11 +513,11 @@ class TestWorkerHooksGeneration:
             configs_dir = os.path.join(tmpdir, "configs")
             os.makedirs(configs_dir)
             generate_worker_hooks(configs_dir, "session-123", "http://localhost:8093")
-            
+
             settings_path = os.path.join(configs_dir, "settings.json")
             with open(settings_path) as f:
                 content = f.read()
-            
+
             expected_safety_path = os.path.join(configs_dir, "hooks", "check-command.sh")
             assert expected_safety_path in content
             assert "{{SAFETY_HOOK_PATH}}" not in content, "Placeholder should be substituted"
@@ -528,7 +529,7 @@ class TestBrainHooksGeneration:
         """Verify check-command.sh safety hook is deployed and executable."""
         with tempfile.TemporaryDirectory() as tmpdir:
             generate_brain_hooks(tmpdir)
-            
+
             safety_path = os.path.join(tmpdir, "hooks", "check-command.sh")
             assert os.path.exists(safety_path), "check-command.sh should be deployed"
             assert os.access(safety_path, os.X_OK), "check-command.sh should be executable"
@@ -537,7 +538,7 @@ class TestBrainHooksGeneration:
         """Verify inject-focus.sh hook is deployed and executable."""
         with tempfile.TemporaryDirectory() as tmpdir:
             generate_brain_hooks(tmpdir)
-            
+
             hook_path = os.path.join(tmpdir, "hooks", "inject-focus.sh")
             assert os.path.exists(hook_path), "inject-focus.sh should be deployed"
             assert os.access(hook_path, os.X_OK), "inject-focus.sh should be executable"
@@ -546,10 +547,10 @@ class TestBrainHooksGeneration:
         """Verify all placeholders are substituted in settings.json."""
         with tempfile.TemporaryDirectory() as tmpdir:
             settings_path = generate_brain_hooks(tmpdir)
-            
+
             with open(settings_path) as f:
                 content = f.read()
-            
+
             assert "{{SAFETY_HOOK_PATH}}" not in content
             assert "{{INJECT_FOCUS_PATH}}" not in content
             assert os.path.join(tmpdir, "hooks", "check-command.sh") in content
@@ -564,16 +565,16 @@ class TestWorkerHooksOverwrite:
         with tempfile.TemporaryDirectory() as tmpdir:
             configs_dir = os.path.join(tmpdir, "configs")
             os.makedirs(configs_dir)
-            
+
             # First generation
             generate_worker_hooks(configs_dir, "old-session", "http://localhost:8093")
-            
+
             # Second generation with different session ID
             generate_worker_hooks(configs_dir, "new-session", "http://localhost:8093")
-            
+
             hook_path = os.path.join(configs_dir, "hooks", "update-status.sh")
             with open(hook_path) as f:
                 content = f.read()
-            
+
             assert "new-session" in content
             assert "old-session" not in content, "Old session ID should be overwritten"

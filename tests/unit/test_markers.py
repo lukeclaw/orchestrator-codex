@@ -1,16 +1,15 @@
 """Tests for marker-based terminal command utilities."""
 
-import pytest
 from unittest.mock import MagicMock, patch
 
 from orchestrator.terminal.markers import (
     MarkerCommand,
+    check_result_contains,
+    check_yes_no,
     parse_between_markers,
     parse_first_line,
-    check_result_contains,
     send_marker_command,
     wait_for_completion,
-    check_yes_no,
 )
 
 
@@ -227,7 +226,7 @@ class TestWaitForCompletion:
         """Should return True when DONE marker is found."""
         mock_send = MagicMock()
         call_count = [0]
-        
+
         def capture_side_effect(sess, win, lines=15):
             call_count[0] += 1
             call_args = str(mock_send.call_args)
@@ -239,28 +238,28 @@ class TestWaitForCompletion:
 DONE
 __WAIT_END_{marker_id}__"""
             return ""
-        
+
         mock_capture = MagicMock(side_effect=capture_side_effect)
-        
+
         result = wait_for_completion(
             mock_send, mock_capture,
             "orchestrator", "test-worker",
             timeout=10, poll_interval=0.1
         )
-        
+
         assert result is True
 
     def test_returns_false_on_timeout(self):
         """Should return False when timeout reached."""
         mock_send = MagicMock()
         mock_capture = MagicMock(return_value="")
-        
+
         result = wait_for_completion(
             mock_send, mock_capture,
             "orchestrator", "test-worker",
             timeout=0.5, poll_interval=0.1
         )
-        
+
         assert result is False
 
 
@@ -270,7 +269,7 @@ class TestCheckYesNo:
     def test_returns_true_for_yes(self):
         """Should return True when command succeeds (YES)."""
         mock_send = MagicMock()
-        
+
         def capture_side_effect(sess, win, lines=15):
             call_args = str(mock_send.call_args)
             import re
@@ -282,22 +281,22 @@ class TestCheckYesNo:
 YES
 __CHK_END_{marker_id}__"""
             return ""
-        
+
         mock_capture = MagicMock(side_effect=capture_side_effect)
-        
+
         result = check_yes_no(
             mock_send, mock_capture,
             "orchestrator", "test-worker",
             "which screen",
             wait_time=0.01
         )
-        
+
         assert result is True
 
     def test_returns_false_for_no(self):
         """Should return False when command fails (NO)."""
         mock_send = MagicMock()
-        
+
         def capture_side_effect(sess, win, lines=15):
             call_args = str(mock_send.call_args)
             import re
@@ -308,22 +307,22 @@ __CHK_END_{marker_id}__"""
 NO
 __CHK_END_{marker_id}__"""
             return ""
-        
+
         mock_capture = MagicMock(side_effect=capture_side_effect)
-        
+
         result = check_yes_no(
             mock_send, mock_capture,
             "orchestrator", "test-worker",
             "which nonexistent",
             wait_time=0.01
         )
-        
+
         assert result is False
 
     def test_command_echo_doesnt_cause_false_positive(self):
         """YES in command echo should NOT cause True result."""
         mock_send = MagicMock()
-        
+
         def capture_side_effect(sess, win, lines=15):
             call_args = str(mock_send.call_args)
             import re
@@ -336,15 +335,15 @@ __CHK_START_{marker_id}__
 NO
 __CHK_END_{marker_id}__"""
             return ""
-        
+
         mock_capture = MagicMock(side_effect=capture_side_effect)
-        
+
         result = check_yes_no(
             mock_send, mock_capture,
             "orchestrator", "test-worker",
             "which screen",
             wait_time=0.01
         )
-        
+
         # Should be False, not True (even though YES is in the full output)
         assert result is False

@@ -25,9 +25,8 @@ import logging
 import os
 import re
 import stat
-import time
+from collections.abc import Awaitable, Callable
 from pathlib import Path
-from typing import Awaitable, Callable
 
 from orchestrator.terminal.control import _strip_tmux_sequences
 

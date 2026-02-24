@@ -2,11 +2,9 @@
 
 import base64
 import logging
-import os
 import uuid
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
@@ -24,7 +22,7 @@ def get_images_dir() -> Path:
     return img_dir
 
 
-def save_image(image_data: str, filename: Optional[str] = None) -> dict:
+def save_image(image_data: str, filename: str | None = None) -> dict:
     """Save a base64-encoded image to data/images/.
 
     Returns dict with ok, url (relative path), and filename.

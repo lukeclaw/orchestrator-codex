@@ -1,15 +1,13 @@
 """Unit tests for terminal/file_sync.py."""
 
 import subprocess
-from unittest.mock import patch, MagicMock
-
-import pytest
+from unittest.mock import MagicMock, patch
 
 from orchestrator.terminal.file_sync import (
     get_worker_tmp_dir,
-    sync_file_to_remote,
-    sync_file_from_remote,
     sync_dir_to_remote,
+    sync_file_from_remote,
+    sync_file_to_remote,
 )
 
 

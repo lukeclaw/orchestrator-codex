@@ -18,10 +18,10 @@ def generate_task_prefix(name: str) -> str:
     import re
     words = re.split(r'[\s\-_]+', name.strip())
     words = [w for w in words if w]  # Remove empty strings
-    
+
     if not words:
         return "TSK"
-    
+
     if len(words) >= 3:
         # Take first letter of first 3 words
         prefix = ''.join(w[0] for w in words[:3])
@@ -31,7 +31,7 @@ def generate_task_prefix(name: str) -> str:
     else:
         # Single word: take first 3 letters
         prefix = words[0][:3]
-    
+
     return prefix.upper()
 
 

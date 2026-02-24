@@ -4,10 +4,10 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from orchestrator.api.deps import get_db
-from orchestrator.state.repositories import projects as repo
-from orchestrator.state.repositories import tasks as tasks_repo
-from orchestrator.state.repositories import sessions as sessions_repo
 from orchestrator.state.repositories import context as context_repo
+from orchestrator.state.repositories import projects as repo
+from orchestrator.state.repositories import sessions as sessions_repo
+from orchestrator.state.repositories import tasks as tasks_repo
 
 router = APIRouter()
 
@@ -23,14 +23,14 @@ def _get_project_stats(db, project_id: str) -> dict:
         "done": len([t for t in all_tasks if t.status == "done"]),
         "blocked": len([t for t in all_tasks if t.status == "blocked"]),
     }
-    
+
     # Subtask stats - all tasks with a parent_task_id
     all_subtasks = tasks_repo.list_tasks(db, project_id=project_id, has_parent=True)
     subtask_stats = {
         "total": len(all_subtasks),
         "done": len([t for t in all_subtasks if t.status == "done"]),
     }
-    
+
     # Worker stats - sessions assigned to tasks in this project
     assigned_session_ids = set(t.assigned_session_id for t in all_tasks if t.assigned_session_id)
     workers = []
@@ -38,7 +38,7 @@ def _get_project_stats(db, project_id: str) -> dict:
         session = sessions_repo.get_session(db, sid)
         if session:
             workers.append({"id": session.id, "name": session.name, "status": session.status})
-    
+
     worker_stats = {
         "total": len(workers),
         "working": len([w for w in workers if w["status"] == "working"]),
@@ -46,13 +46,13 @@ def _get_project_stats(db, project_id: str) -> dict:
         "waiting": len([w for w in workers if w["status"] == "waiting"]),
         "details": workers,  # Include individual worker details
     }
-    
+
     # Context stats
     context_items = context_repo.list_context(db, project_id=project_id)
     context_stats = {
         "total": len(context_items),
     }
-    
+
     return {
         "tasks": task_stats,
         "subtasks": subtask_stats,
@@ -128,17 +128,17 @@ def delete_project(project_id: str, db=Depends(get_db)):
     p = repo.get_project(db, project_id)
     if p is None:
         raise HTTPException(404, "Project not found")
-    
+
     # Cascade delete: first delete all tasks (which will cascade to subtasks)
     project_tasks = tasks_repo.list_tasks(db, project_id=project_id, parent_task_id=None)
     for task in project_tasks:
         tasks_repo.delete_task(db, task.id)  # This cascades to subtasks
-    
+
     # Delete all context items for this project
     project_context = context_repo.list_context(db, project_id=project_id)
     for ctx in project_context:
         context_repo.delete_context_item(db, ctx.id)
-    
+
     # Finally delete the project itself
     repo.delete_project(db, project_id)
     return {"ok": True, "deleted_tasks": len(project_tasks), "deleted_context": len(project_context)}

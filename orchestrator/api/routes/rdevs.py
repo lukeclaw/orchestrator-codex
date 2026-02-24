@@ -49,7 +49,7 @@ async def _background_refresh_loop() -> None:
         logger.info("Initial rdev cache refresh completed")
     except Exception:
         logger.warning("Initial rdev cache refresh failed", exc_info=True)
-    
+
     # Then refresh every 30 minutes
     while True:
         await asyncio.sleep(RDEV_BACKGROUND_REFRESH_INTERVAL)
@@ -101,7 +101,7 @@ def _fetch_rdev_list() -> list[dict]:
             timeout=30,
         )
         output = result.stdout
-        
+
         # Parse the table output
         # Format: Name | State | Cluster Name | Created | Last Accessed | Server URL
         lines = output.strip().split('\n')
@@ -109,16 +109,16 @@ def _fetch_rdev_list() -> list[dict]:
             # Skip header, separator lines, and info messages
             if '|' not in line or line.startswith('-') or 'Name' in line and 'State' in line:
                 continue
-            
+
             parts = [p.strip() for p in line.split('|')]
             if len(parts) >= 2:
                 name = parts[0].strip()
                 state = parts[1].strip() if len(parts) > 1 else ''
-                
+
                 # Skip empty or invalid entries
                 if not name or '/' not in name:
                     continue
-                
+
                 rdevs.append({
                     "name": name,
                     "state": state,
@@ -132,7 +132,7 @@ def _fetch_rdev_list() -> list[dict]:
         logger.warning("rdev command not found")
     except Exception:
         logger.warning("Failed to run rdev list", exc_info=True)
-    
+
     return rdevs
 
 
@@ -143,10 +143,10 @@ def list_rdevs(refresh: bool = False, db=Depends(get_db)):
     Uses server-side cache with 1 hour TTL. Pass refresh=true to force refresh.
     """
     global _rdev_cache
-    
+
     now = time.time()
     cache_age = now - _rdev_cache["timestamp"]
-    
+
     # Use cache if valid and not forcing refresh
     if not refresh and cache_age < RDEV_CACHE_TTL and _rdev_cache["data"]:
         rdevs = _rdev_cache["data"]
@@ -157,11 +157,11 @@ def list_rdevs(refresh: bool = False, db=Depends(get_db)):
         _rdev_cache["data"] = rdevs
         _rdev_cache["timestamp"] = now
         logger.info("Refreshed rdev list cache (%d instances)", len(rdevs))
-    
+
     # Always check current session state for in_use status
     sessions = repo.list_sessions(db)
     used_hosts = {s.host for s in sessions}
-    
+
     # Return copies with in_use status and worker info (don't modify cache)
     result = []
     for rdev in rdevs:
@@ -175,7 +175,7 @@ def list_rdevs(refresh: bool = False, db=Depends(get_db)):
                 item["worker_id"] = s.id
                 break
         result.append(item)
-    
+
     return result
 
 
@@ -218,18 +218,18 @@ async def create_rdev(body: RdevCreate):
         rdev_full_name = f"{body.mp_name}/{body.rdev_name}"
     else:
         rdev_full_name = body.mp_name
-    
+
     cmd = ["rdev", "create", rdev_full_name, "-s"]  # -s for silent (only output name)
-    
+
     if body.branch:
         cmd.extend(["--branch", body.branch])
     if body.flavor:
         cmd.extend(["--flavor", body.flavor])
-    
+
     logger.info("Creating rdev (background): %s", " ".join(cmd))
     loop = asyncio.get_event_loop()
     loop.run_in_executor(None, _run_create_rdev, cmd, rdev_full_name)
-    
+
     return {"ok": True, "status": "creating", "name": rdev_full_name}
 
 
@@ -249,7 +249,7 @@ def delete_rdev(rdev_name: str, db=Depends(get_db)):
                 f"Cannot delete rdev '{rdev_name}': worker '{s.name}' is still assigned. "
                 "Remove the worker first."
             )
-    
+
     try:
         logger.info("Deleting rdev: %s", rdev_name)
         result = subprocess.run(
@@ -258,19 +258,19 @@ def delete_rdev(rdev_name: str, db=Depends(get_db)):
             text=True,
             timeout=60,
         )
-        
+
         if result.returncode != 0:
             error_msg = result.stderr.strip() or result.stdout.strip() or "Unknown error"
             logger.error("rdev delete failed: %s", error_msg)
             raise HTTPException(400, f"Failed to delete rdev: {error_msg}")
-        
+
         # Invalidate cache
         global _rdev_cache
         _rdev_cache["timestamp"] = 0
-        
+
         logger.info("Deleted rdev: %s", rdev_name)
         return {"ok": True}
-        
+
     except subprocess.TimeoutExpired:
         logger.error("rdev delete timed out for %s", rdev_name)
         raise HTTPException(504, "rdev delete timed out")
@@ -292,19 +292,19 @@ def restart_rdev(rdev_name: str):
             text=True,
             timeout=120,
         )
-        
+
         if result.returncode != 0:
             error_msg = result.stderr.strip() or result.stdout.strip() or "Unknown error"
             logger.error("rdev restart failed: %s", error_msg)
             raise HTTPException(400, f"Failed to restart rdev: {error_msg}")
-        
+
         # Invalidate cache
         global _rdev_cache
         _rdev_cache["timestamp"] = 0
-        
+
         logger.info("Restarted rdev: %s", rdev_name)
         return {"ok": True}
-        
+
     except subprocess.TimeoutExpired:
         logger.error("rdev restart timed out for %s", rdev_name)
         raise HTTPException(504, "rdev restart timed out")
@@ -326,19 +326,19 @@ def stop_rdev(rdev_name: str):
             text=True,
             timeout=60,
         )
-        
+
         if result.returncode != 0:
             error_msg = result.stderr.strip() or result.stdout.strip() or "Unknown error"
             logger.error("rdev stop failed: %s", error_msg)
             raise HTTPException(400, f"Failed to stop rdev: {error_msg}")
-        
+
         # Invalidate cache
         global _rdev_cache
         _rdev_cache["timestamp"] = 0
-        
+
         logger.info("Stopped rdev: %s", rdev_name)
         return {"ok": True}
-        
+
     except subprocess.TimeoutExpired:
         logger.error("rdev stop timed out for %s", rdev_name)
         raise HTTPException(504, "rdev stop timed out")

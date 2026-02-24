@@ -14,31 +14,31 @@ def main():
         sys.exit(1)
 
     conn = sqlite3.connect(str(DB_PATH), timeout=30)
-    
+
     # List current sessions
     print("Current sessions:")
     sessions = conn.execute("SELECT id, name, status FROM sessions").fetchall()
     for row in sessions:
         print(f"  id={row[0]}, name={row[1]}, status={row[2]}")
-    
+
     if not sessions:
         print("No sessions found.")
         conn.close()
         return
-    
+
     # Get names to delete (sessions without tmux windows)
     stale_names = ["c1", "brain", "worker-alpha"]
-    
+
     # Delete stale sessions
     cursor = conn.execute(
-        "DELETE FROM sessions WHERE name IN (?, ?, ?)", 
+        "DELETE FROM sessions WHERE name IN (?, ?, ?)",
         stale_names
     )
     deleted = cursor.rowcount
     conn.commit()
-    
+
     print(f"\nDeleted {deleted} stale session(s).")
-    
+
     # Show remaining
     remaining = conn.execute("SELECT id, name, status FROM sessions").fetchall()
     if remaining:
@@ -47,7 +47,7 @@ def main():
             print(f"  id={row[0]}, name={row[1]}, status={row[2]}")
     else:
         print("No sessions remaining.")
-    
+
     conn.close()
 
 

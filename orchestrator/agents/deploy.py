@@ -4,7 +4,6 @@ This module handles copying static scripts from agents/ to worker/brain tmp dire
 and generating dynamic configuration (hooks, settings) with session-specific values.
 """
 
-import json
 import os
 import shutil
 import stat
@@ -45,7 +44,7 @@ def deploy_worker_scripts(
     """
     bin_dir = os.path.join(worker_dir, "bin")
     os.makedirs(bin_dir, exist_ok=True)
-    
+
     # Copy lib.sh with environment variable values injected
     lib_content = f'''#!/bin/bash
 # Worker CLI library - shared functions for worker scripts
@@ -100,12 +99,12 @@ json_encode() {{
     fi
 }}
 '''
-    
+
     lib_path = os.path.join(bin_dir, "lib.sh")
     with open(lib_path, "w") as f:
         f.write(lib_content)
     os.chmod(lib_path, os.stat(lib_path).st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
-    
+
     # Copy static scripts from agents/worker/bin/
     src_bin_dir = os.path.join(_AGENTS_DIR, "worker", "bin")
     for script_name in WORKER_SCRIPT_NAMES:
@@ -114,7 +113,7 @@ json_encode() {{
         if os.path.exists(src_path):
             shutil.copy2(src_path, dst_path)
             os.chmod(dst_path, os.stat(dst_path).st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
-    
+
     return bin_dir
 
 
@@ -133,7 +132,7 @@ def deploy_brain_scripts(
     """
     bin_dir = os.path.join(brain_dir, "bin")
     os.makedirs(bin_dir, exist_ok=True)
-    
+
     # Create lib.sh with environment variable defaults
     lib_content = f'''#!/bin/bash
 # Brain CLI library - shared functions for brain scripts
@@ -185,12 +184,12 @@ build_json() {{
     echo "$json"
 }}
 '''
-    
+
     lib_path = os.path.join(bin_dir, "lib.sh")
     with open(lib_path, "w") as f:
         f.write(lib_content)
     os.chmod(lib_path, os.stat(lib_path).st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
-    
+
     # Copy static scripts from agents/brain/bin/
     src_bin_dir = os.path.join(_AGENTS_DIR, "brain", "bin")
     for script_name in BRAIN_SCRIPT_NAMES:
@@ -199,7 +198,7 @@ build_json() {{
         if os.path.exists(src_path):
             shutil.copy2(src_path, dst_path)
             os.chmod(dst_path, os.stat(dst_path).st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
-    
+
     return bin_dir
 
 
@@ -335,40 +334,40 @@ def generate_worker_hooks(
     """
     hooks_dir = os.path.join(worker_dir, "hooks")
     os.makedirs(hooks_dir, exist_ok=True)
-    
+
     # Copy hook script template and substitute placeholders
     src_hook_path = os.path.join(_AGENTS_DIR, "worker", "hooks", "update-status.sh")
     hook_script_path = os.path.join(hooks_dir, "update-status.sh")
-    
+
     with open(src_hook_path) as f:
         hook_content = f.read()
-    
+
     hook_content = hook_content.replace("{{SESSION_ID}}", session_id)
     hook_content = hook_content.replace("{{API_BASE}}", api_base)
-    
+
     with open(hook_script_path, "w") as f:
         f.write(hook_content)
     os.chmod(hook_script_path, os.stat(hook_script_path).st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
-    
+
     # Copy safety gate hook from shared location (stateless, agent-agnostic)
     src_safety_path = os.path.join(_SHARED_HOOKS_DIR, "check-command.sh")
     safety_hook_path = os.path.join(hooks_dir, "check-command.sh")
     shutil.copy2(src_safety_path, safety_hook_path)
     os.chmod(safety_hook_path, os.stat(safety_hook_path).st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
-    
+
     # Copy settings.json template and substitute placeholders
     src_settings_path = os.path.join(_AGENTS_DIR, "worker", "settings.json")
     dst_settings_path = os.path.join(worker_dir, "settings.json")
-    
+
     with open(src_settings_path) as f:
         settings_content = f.read()
-    
+
     settings_content = settings_content.replace("{{HOOK_SCRIPT_PATH}}", hook_script_path)
     settings_content = settings_content.replace("{{SAFETY_HOOK_PATH}}", safety_hook_path)
-    
+
     with open(dst_settings_path, "w") as f:
         f.write(settings_content)
-    
+
     return worker_dir
 
 
@@ -388,32 +387,32 @@ def generate_brain_hooks(
     # Deploy hook scripts
     hooks_dir = os.path.join(brain_dir, "hooks")
     os.makedirs(hooks_dir, exist_ok=True)
-    
+
     src_hook_path = os.path.join(_AGENTS_DIR, "brain", "hooks", "inject-focus.sh")
     inject_hook_path = os.path.join(hooks_dir, "inject-focus.sh")
     shutil.copy2(src_hook_path, inject_hook_path)
     os.chmod(inject_hook_path, os.stat(inject_hook_path).st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
-    
+
     # Copy safety gate hook from shared location (stateless, agent-agnostic)
     src_safety_path = os.path.join(_SHARED_HOOKS_DIR, "check-command.sh")
     safety_hook_path = os.path.join(hooks_dir, "check-command.sh")
     shutil.copy2(src_safety_path, safety_hook_path)
     os.chmod(safety_hook_path, os.stat(safety_hook_path).st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
-    
+
     # Copy settings.json template and substitute placeholders
     claude_dir = os.path.join(brain_dir, ".claude")
     os.makedirs(claude_dir, exist_ok=True)
-    
+
     src_settings_path = os.path.join(_AGENTS_DIR, "brain", "settings.json")
     settings_path = os.path.join(claude_dir, "settings.json")
-    
+
     with open(src_settings_path) as f:
         settings_content = f.read()
-    
+
     settings_content = settings_content.replace("{{INJECT_FOCUS_PATH}}", inject_hook_path)
     settings_content = settings_content.replace("{{SAFETY_HOOK_PATH}}", safety_hook_path)
-    
+
     with open(settings_path, "w") as f:
         f.write(settings_content)
-    
+
     return settings_path

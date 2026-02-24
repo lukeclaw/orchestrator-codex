@@ -5,7 +5,7 @@ Tests cover:
 - API endpoint (GET /api/trends/detail) with all chart types and error handling
 """
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from unittest.mock import patch
 
 import pytest
@@ -75,7 +75,7 @@ def populated_db(db):
 class TestQueryThroughputDetail:
     def test_returns_completed_tasks_for_date(self, populated_db):
         conn = populated_db["conn"]
-        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        today = datetime.now(UTC).strftime("%Y-%m-%d")
 
         items = status_events.query_throughput_detail(conn, today)
         # t1 (task) and sub1 (subtask) both marked done
@@ -89,7 +89,7 @@ class TestQueryThroughputDetail:
     def test_task_enrichment(self, populated_db):
         conn = populated_db["conn"]
         t1 = populated_db["tasks"]["t1"]
-        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        today = datetime.now(UTC).strftime("%Y-%m-%d")
 
         items = status_events.query_throughput_detail(conn, today)
         task_item = next(i for i in items if i["entity_id"] == t1.id)
@@ -104,7 +104,7 @@ class TestQueryThroughputDetail:
         conn = populated_db["conn"]
         sub1 = populated_db["tasks"]["sub1"]
         t1 = populated_db["tasks"]["t1"]
-        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        today = datetime.now(UTC).strftime("%Y-%m-%d")
 
         items = status_events.query_throughput_detail(conn, today)
         sub_item = next(i for i in items if i["entity_id"] == sub1.id)
@@ -117,7 +117,7 @@ class TestQueryThroughputDetail:
 
     def test_empty_for_different_date(self, populated_db):
         conn = populated_db["conn"]
-        yesterday = (datetime.now(timezone.utc) - timedelta(days=1)).strftime("%Y-%m-%d")
+        yesterday = (datetime.now(UTC) - timedelta(days=1)).strftime("%Y-%m-%d")
         items = status_events.query_throughput_detail(conn, yesterday)
         assert items == []
 
@@ -127,10 +127,10 @@ class TestQueryThroughputDetail:
         db.execute(
             """INSERT INTO status_events (entity_type, entity_id, old_status, new_status, is_subtask, timestamp)
                VALUES ('task', 'deleted-task-id', 'in_progress', 'done', 0, ?)""",
-            (datetime.now(timezone.utc).isoformat(),),
+            (datetime.now(UTC).isoformat(),),
         )
         db.commit()
-        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        today = datetime.now(UTC).strftime("%Y-%m-%d")
         items = status_events.query_throughput_detail(db, today)
         assert len(items) == 1
         assert items[0]["title"] == "Unknown"
@@ -140,7 +140,7 @@ class TestQueryThroughputDetail:
 class TestQueryWorkerHoursDetail:
     def test_returns_worker_intervals(self, populated_db):
         conn = populated_db["conn"]
-        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        today = datetime.now(UTC).strftime("%Y-%m-%d")
 
         items = status_events.query_worker_hours_detail(conn, today)
         # w1 went working->idle, w2 went working (still open)
@@ -158,7 +158,7 @@ class TestQueryWorkerHoursDetail:
     def test_session_name_enrichment(self, populated_db):
         conn = populated_db["conn"]
         w1 = populated_db["sessions"]["w1"]
-        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        today = datetime.now(UTC).strftime("%Y-%m-%d")
 
         items = status_events.query_worker_hours_detail(conn, today)
         w1_item = next((i for i in items if i["session_id"] == w1.id), None)
@@ -168,7 +168,7 @@ class TestQueryWorkerHoursDetail:
     def test_current_task_populated(self, populated_db):
         conn = populated_db["conn"]
         w1 = populated_db["sessions"]["w1"]
-        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        today = datetime.now(UTC).strftime("%Y-%m-%d")
 
         items = status_events.query_worker_hours_detail(conn, today)
         w1_item = next((i for i in items if i["session_id"] == w1.id), None)
@@ -185,7 +185,7 @@ class TestQueryWorkerHoursDetail:
 
     def test_intervals_have_start_end(self, populated_db):
         conn = populated_db["conn"]
-        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        today = datetime.now(UTC).strftime("%Y-%m-%d")
 
         items = status_events.query_worker_hours_detail(conn, today)
         for item in items:
@@ -199,7 +199,7 @@ class TestQueryWorkerHoursDetail:
 
     def test_sorted_by_hours_descending(self, populated_db):
         conn = populated_db["conn"]
-        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        today = datetime.now(UTC).strftime("%Y-%m-%d")
 
         items = status_events.query_worker_hours_detail(conn, today)
         if len(items) >= 2:
@@ -210,7 +210,7 @@ class TestQueryWorkerHoursDetail:
 class TestQueryHeatmapDetail:
     def test_returns_events_for_cell(self, populated_db):
         conn = populated_db["conn"]
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         dow = int(now.strftime("%w"))  # 0=Sun
         hour = now.hour
         since = (now - timedelta(days=7)).strftime("%Y-%m-%d")
@@ -221,7 +221,7 @@ class TestQueryHeatmapDetail:
 
     def test_event_structure(self, populated_db):
         conn = populated_db["conn"]
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         dow = int(now.strftime("%w"))
         hour = now.hour
         since = (now - timedelta(days=7)).strftime("%Y-%m-%d")
@@ -235,7 +235,7 @@ class TestQueryHeatmapDetail:
 
     def test_session_name_enrichment(self, populated_db):
         conn = populated_db["conn"]
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         dow = int(now.strftime("%w"))
         hour = now.hour
         since = (now - timedelta(days=7)).strftime("%Y-%m-%d")
@@ -247,7 +247,7 @@ class TestQueryHeatmapDetail:
 
     def test_empty_for_wrong_hour(self, populated_db):
         conn = populated_db["conn"]
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         dow = int(now.strftime("%w"))
         # Pick an hour that differs from now
         wrong_hour = (now.hour + 12) % 24
@@ -258,7 +258,7 @@ class TestQueryHeatmapDetail:
 
     def test_ordered_by_timestamp_desc(self, populated_db):
         conn = populated_db["conn"]
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         dow = int(now.strftime("%w"))
         hour = now.hour
         since = (now - timedelta(days=7)).strftime("%Y-%m-%d")
@@ -293,7 +293,7 @@ class TestTrendsDetailAPI:
 
     def test_throughput_detail(self, client):
         self._setup_data(client)
-        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        today = datetime.now(UTC).strftime("%Y-%m-%d")
         resp = client.get(f"/api/trends/detail?chart=throughput&date={today}")
         assert resp.status_code == 200
         data = resp.json()
@@ -304,7 +304,7 @@ class TestTrendsDetailAPI:
 
     def test_worker_hours_detail(self, client):
         self._setup_data(client)
-        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        today = datetime.now(UTC).strftime("%Y-%m-%d")
         resp = client.get(f"/api/trends/detail?chart=worker_hours&date={today}")
         assert resp.status_code == 200
         data = resp.json()
@@ -313,7 +313,7 @@ class TestTrendsDetailAPI:
 
     def test_heatmap_detail(self, client):
         self._setup_data(client)
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         dow = int(now.strftime("%w"))
         hour = now.hour
         resp = client.get(
@@ -361,7 +361,7 @@ class TestTrendsDetailAPI:
     def test_heatmap_uses_range_param(self, client):
         """Range parameter controls the since_date for heatmap queries."""
         self._setup_data(client)
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         dow = int(now.strftime("%w"))
         hour = now.hour
 

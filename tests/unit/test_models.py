@@ -1,6 +1,5 @@
 """Tests for data model creation and properties."""
 
-import json
 
 from orchestrator.state.models import (
     Config,

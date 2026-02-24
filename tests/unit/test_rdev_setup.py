@@ -1,9 +1,9 @@
 """Tests for remote worker setup orchestration."""
 
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
-from scripts.seed_db import seed_all
 from orchestrator.terminal.session import setup_remote_worker
+from scripts.seed_db import seed_all
 
 
 class TestSetupRemoteWorker:

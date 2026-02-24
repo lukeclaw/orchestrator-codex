@@ -1,12 +1,10 @@
 """Tests for database migrations — fresh creation and idempotent re-runs."""
 
-import sqlite3
 
 from orchestrator.state.db import get_memory_connection
 from orchestrator.state.migrations.runner import (
     apply_migrations,
     get_current_version,
-    get_pending_migrations,
 )
 
 

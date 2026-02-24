@@ -3,7 +3,7 @@
 Tests the FastAPI routes for tunnel management.
 """
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 from fastapi.testclient import TestClient
@@ -60,12 +60,12 @@ class TestCreateTunnelEndpoint:
                 "pid": 12345,
                 "host": "user/rdev-vm",
             })
-            
+
             response = client.post(
                 f"/api/sessions/{rdev_session.id}/tunnel",
                 json={"port": 4200}
             )
-            
+
             assert response.status_code == 200
             data = response.json()
             assert data["ok"] is True
@@ -78,7 +78,7 @@ class TestCreateTunnelEndpoint:
             f"/api/sessions/{local_session.id}/tunnel",
             json={"port": 4200}
         )
-        
+
         assert response.status_code == 400
         assert "only supported for remote" in response.json()["detail"].lower()
 
@@ -88,7 +88,7 @@ class TestCreateTunnelEndpoint:
             "/api/sessions/unknown-id/tunnel",
             json={"port": 4200}
         )
-        
+
         assert response.status_code == 404
 
     def test_returns_409_for_port_conflict(self, client, rdev_session):
@@ -97,12 +97,12 @@ class TestCreateTunnelEndpoint:
             mock_create.return_value = (False, {
                 "error": "Port 4200 already tunneled to other/host"
             })
-            
+
             response = client.post(
                 f"/api/sessions/{rdev_session.id}/tunnel",
                 json={"port": 4200}
             )
-            
+
             assert response.status_code == 409
 
     def test_returns_500_for_ssh_failure(self, client, rdev_session):
@@ -111,12 +111,12 @@ class TestCreateTunnelEndpoint:
             mock_create.return_value = (False, {
                 "error": "SSH tunnel failed to start"
             })
-            
+
             response = client.post(
                 f"/api/sessions/{rdev_session.id}/tunnel",
                 json={"port": 4200}
             )
-            
+
             assert response.status_code == 500
 
 
@@ -127,22 +127,22 @@ class TestCloseTunnelEndpoint:
         """Should close existing tunnel."""
         with patch("orchestrator.session.tunnel.close_tunnel") as mock_close:
             mock_close.return_value = (True, "Tunnel closed")
-            
+
             response = client.delete(
                 f"/api/sessions/{rdev_session.id}/tunnel/4200"
             )
-            
+
             assert response.status_code == 200
             data = response.json()
             assert data["ok"] is True
-            
+
             # Verify host was passed for ownership check
             mock_close.assert_called_once_with(4200, host="user/rdev-vm")
 
     def test_returns_404_for_unknown_session(self, client):
         """Should return 404 for non-existent session."""
         response = client.delete("/api/sessions/unknown-id/tunnel/4200")
-        
+
         assert response.status_code == 404
 
 
@@ -156,9 +156,9 @@ class TestListSessionTunnelsEndpoint:
                 4200: {"remote_port": 4200, "pid": 12345, "host": "user/rdev-vm"},
                 3000: {"remote_port": 3000, "pid": 12346, "host": "user/rdev-vm"},
             }
-            
+
             response = client.get(f"/api/sessions/{rdev_session.id}/tunnels")
-            
+
             assert response.status_code == 200
             data = response.json()
             assert "4200" in data["tunnels"]
@@ -167,14 +167,14 @@ class TestListSessionTunnelsEndpoint:
     def test_returns_empty_for_local_session(self, client, local_session):
         """Should return empty tunnels for non-rdev worker."""
         response = client.get(f"/api/sessions/{local_session.id}/tunnels")
-        
+
         assert response.status_code == 200
         assert response.json()["tunnels"] == {}
 
     def test_returns_404_for_unknown_session(self, client):
         """Should return 404 for non-existent session."""
         response = client.get("/api/sessions/unknown-id/tunnels")
-        
+
         assert response.status_code == 404
 
 
@@ -188,14 +188,14 @@ class TestListAllTunnelsEndpoint:
                 4200: {"remote_port": 4200, "pid": 12345, "host": "user/rdev-vm"},
                 3000: {"remote_port": 3000, "pid": 12346, "host": "other/host"},
             }
-            
+
             response = client.get("/api/tunnels")
-            
+
             assert response.status_code == 200
             data = response.json()
             # JSON keys are strings
             assert "4200" in data["tunnels"] or 4200 in data["tunnels"]
             assert "3000" in data["tunnels"] or 3000 in data["tunnels"]
-            
+
             # Should force refresh
             mock_discover.assert_called_once_with(force_refresh=True)

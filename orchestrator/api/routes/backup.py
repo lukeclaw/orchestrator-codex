@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from datetime import UTC
 
 from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel
@@ -69,10 +70,10 @@ async def _scheduled_backup_loop(db_path: str) -> None:
 
                 last_run_str = config_repo.get_config_value(conn, _KEY_LAST_RUN)
                 if last_run_str:
-                    from datetime import datetime, timezone
+                    from datetime import datetime
                     try:
                         last_run = datetime.fromisoformat(last_run_str)
-                        now = datetime.now(timezone.utc)
+                        now = datetime.now(UTC)
                         elapsed_hours = (now - last_run).total_seconds() / 3600
                         if elapsed_hours < schedule_hours:
                             continue

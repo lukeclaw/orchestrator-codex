@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 import logging
+import mimetypes
 import os
 import sqlite3
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-import mimetypes
 # Prevent Python from scanning /etc/ or other system paths
 mimetypes.init(files=[])
 from fastapi import FastAPI
@@ -16,7 +16,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from orchestrator import paths
-from orchestrator.state.db import get_connection, ConnectionFactory
+from orchestrator.state.db import ConnectionFactory, get_connection
 from orchestrator.state.migrations.runner import apply_migrations
 
 logger = logging.getLogger(__name__)
@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan: startup and shutdown."""
-    from orchestrator.core.lifecycle import startup_check, shutdown, recover_tunnels
+    from orchestrator.core.lifecycle import recover_tunnels, shutdown, startup_check
     from orchestrator.core.orchestrator import Orchestrator
     from orchestrator.core.state_manager import StateManager
     from orchestrator.session.tunnel import ReverseTunnelManager
@@ -75,7 +75,7 @@ async def lifespan(app: FastAPI):
 
     # Clean up old images if data/images/ exceeds size cap
     try:
-        from orchestrator.api.routes.paste import get_images_dir, cleanup_images
+        from orchestrator.api.routes.paste import cleanup_images, get_images_dir
         images_dir = get_images_dir()
         cleanup_images(images_dir)
     except Exception:

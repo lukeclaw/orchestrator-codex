@@ -3,6 +3,7 @@
 
 import re
 import sys
+
 sys.path.insert(0, '/Users/yuqiu/projects/my_assistant/orchestrator')
 
 from orchestrator.state.db import get_connection
@@ -40,7 +41,7 @@ def main():
             'SELECT id, title, task_index FROM tasks WHERE project_id = ? AND parent_task_id IS NULL ORDER BY created_at',
             (proj['id'],)
         ).fetchall()
-        
+
         idx = 1
         for t in tasks:
             if t['task_index'] is None:
@@ -48,19 +49,19 @@ def main():
                 title_preview = t['title'][:30] if len(t['title']) > 30 else t['title']
                 print(f'  Task "{title_preview}" -> {proj["task_prefix"]}-{idx}')
             idx += 1
-        
+
         # Now handle subtasks for each parent
         parent_tasks = conn.execute(
             'SELECT id, task_index FROM tasks WHERE project_id = ? AND parent_task_id IS NULL',
             (proj['id'],)
         ).fetchall()
-        
+
         for parent in parent_tasks:
             subtasks = conn.execute(
                 'SELECT id, title, task_index FROM tasks WHERE parent_task_id = ? ORDER BY created_at',
                 (parent['id'],)
             ).fetchall()
-            
+
             sub_idx = 1
             for st in subtasks:
                 if st['task_index'] is None:

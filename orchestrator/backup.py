@@ -14,7 +14,7 @@ import re
 import shutil
 import sqlite3
 import tempfile
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pyzipper
@@ -33,7 +33,7 @@ _BACKUP_PATTERN = re.compile(
 
 def _timestamp_for_filename() -> str:
     """Return a filesystem-safe UTC timestamp like '2026-02-19T17-00-00Z'."""
-    now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H-%M-%SZ")
+    now = datetime.now(UTC).strftime("%Y-%m-%dT%H-%M-%SZ")
     return now
 
 

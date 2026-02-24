@@ -5,8 +5,8 @@ import sqlite3
 import uuid
 
 from orchestrator.state.db import transaction, with_retry
-from orchestrator.utils import utc_now_iso
 from orchestrator.state.models import Session
+from orchestrator.utils import utc_now_iso
 
 logger = logging.getLogger(__name__)
 
@@ -44,12 +44,12 @@ def list_sessions(
     if session_type:
         conditions.append("session_type = ?")
         params.append(session_type)
-    
+
     query = "SELECT * FROM sessions"
     if conditions:
         query += " WHERE " + " AND ".join(conditions)
     query += " ORDER BY name"
-    
+
     rows = conn.execute(query, params).fetchall()
     return [Session(**dict(r)) for r in rows]
 

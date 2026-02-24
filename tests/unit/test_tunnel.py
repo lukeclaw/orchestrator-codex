@@ -4,7 +4,6 @@ Tests the tunnel discovery, creation, and cleanup functionality.
 Uses mocking to avoid actual subprocess calls for fast execution.
 """
 
-import os
 import signal
 from unittest.mock import MagicMock, patch
 
@@ -33,9 +32,9 @@ yuqiu    12345   0.0  0.0 408628368   1234 s000  S+   10:00AM   0:00.01 ssh -N -
 """
         with patch("subprocess.run") as mock_run:
             mock_run.return_value = MagicMock(stdout=ps_output, returncode=0)
-            
+
             tunnels = tunnel.discover_active_tunnels(force_refresh=True)
-            
+
             assert 4200 in tunnels
             assert tunnels[4200]["pid"] == 12345
             assert tunnels[4200]["remote_port"] == 4200
@@ -49,9 +48,9 @@ yuqiu    12346   0.0  0.0 408628368   1234 s000  S+   10:00AM   0:00.01 ssh -N -
 """
         with patch("subprocess.run") as mock_run:
             mock_run.return_value = MagicMock(stdout=ps_output, returncode=0)
-            
+
             tunnels = tunnel.discover_active_tunnels(force_refresh=True)
-            
+
             assert len(tunnels) == 2
             assert 4200 in tunnels
             assert 3000 in tunnels
@@ -64,9 +63,9 @@ yuqiu    12346   0.0  0.0 408628368   1234 s000  S+   10:00AM   0:00.01 ssh -N -
 """
         with patch("subprocess.run") as mock_run:
             mock_run.return_value = MagicMock(stdout=ps_output, returncode=0)
-            
+
             tunnels = tunnel.discover_active_tunnels(force_refresh=True)
-            
+
             assert len(tunnels) == 1
             assert 4200 in tunnels
 
@@ -78,9 +77,9 @@ yuqiu    12346   0.0  0.0 408628368   1234 s000  S+   10:00AM   0:00.01 ssh -N -
 """
         with patch("subprocess.run") as mock_run:
             mock_run.return_value = MagicMock(stdout=ps_output, returncode=0)
-            
+
             tunnels = tunnel.discover_active_tunnels(force_refresh=True)
-            
+
             assert len(tunnels) == 1
             assert 4200 in tunnels
 
@@ -91,9 +90,9 @@ yuqiu    12345   0.0  0.0 408628368   1234 s000  S+   10:00AM   0:00.01 vim file
 """
         with patch("subprocess.run") as mock_run:
             mock_run.return_value = MagicMock(stdout=ps_output, returncode=0)
-            
+
             tunnels = tunnel.discover_active_tunnels(force_refresh=True)
-            
+
             assert tunnels == {}
 
     def test_uses_cache_within_ttl(self):
@@ -103,15 +102,15 @@ yuqiu    12345   0.0  0.0 408628368   1234 s000  S+   10:00AM   0:00.01 ssh -N -
 """
         with patch("subprocess.run") as mock_run:
             mock_run.return_value = MagicMock(stdout=ps_output, returncode=0)
-            
+
             # First call populates cache
             tunnels1 = tunnel.discover_active_tunnels()
             assert mock_run.call_count == 1
-            
+
             # Second call uses cache
             tunnels2 = tunnel.discover_active_tunnels()
             assert mock_run.call_count == 1  # No additional call
-            
+
             assert tunnels1 == tunnels2
 
     def test_force_refresh_bypasses_cache(self):
@@ -121,30 +120,30 @@ yuqiu    12345   0.0  0.0 408628368   1234 s000  S+   10:00AM   0:00.01 ssh -N -
 """
         with patch("subprocess.run") as mock_run:
             mock_run.return_value = MagicMock(stdout=ps_output, returncode=0)
-            
+
             tunnel.discover_active_tunnels()
             tunnel.discover_active_tunnels(force_refresh=True)
-            
+
             assert mock_run.call_count == 2
 
     def test_handles_subprocess_timeout(self):
         """Should handle subprocess timeout gracefully."""
         import subprocess
-        
+
         with patch("subprocess.run") as mock_run:
             mock_run.side_effect = subprocess.TimeoutExpired("ps", 5)
-            
+
             tunnels = tunnel.discover_active_tunnels(force_refresh=True)
-            
+
             assert tunnels == {}
 
     def test_handles_subprocess_error(self):
         """Should handle subprocess errors gracefully."""
         with patch("subprocess.run") as mock_run:
             mock_run.side_effect = Exception("Unexpected error")
-            
+
             tunnels = tunnel.discover_active_tunnels(force_refresh=True)
-            
+
             assert tunnels == {}
 
 
@@ -159,9 +158,9 @@ yuqiu    12346   0.0  0.0 408628368   1234 s000  S+   10:00AM   0:00.01 ssh -N -
 """
         with patch("subprocess.run") as mock_run:
             mock_run.return_value = MagicMock(stdout=ps_output, returncode=0)
-            
+
             tunnels = tunnel.get_tunnels_for_host("user/rdev-vm")
-            
+
             assert len(tunnels) == 1
             assert 4200 in tunnels
             assert 3000 not in tunnels
@@ -173,9 +172,9 @@ yuqiu    12345   0.0  0.0 408628368   1234 s000  S+   10:00AM   0:00.01 ssh -N -
 """
         with patch("subprocess.run") as mock_run:
             mock_run.return_value = MagicMock(stdout=ps_output, returncode=0)
-            
+
             tunnels = tunnel.get_tunnels_for_host("unknown/host")
-            
+
             assert tunnels == {}
 
 
@@ -189,9 +188,9 @@ yuqiu    12345   0.0  0.0 408628368   1234 s000  S+   10:00AM   0:00.01 ssh -N -
 """
         with patch("subprocess.run") as mock_run:
             mock_run.return_value = MagicMock(stdout=ps_output, returncode=0)
-            
+
             info = tunnel.find_tunnel_by_port(4200)
-            
+
             assert info is not None
             assert info["pid"] == 12345
             assert info["host"] == "user/rdev-vm"
@@ -203,9 +202,9 @@ yuqiu    12345   0.0  0.0 408628368   1234 s000  S+   10:00AM   0:00.01 ssh -N -
 """
         with patch("subprocess.run") as mock_run:
             mock_run.return_value = MagicMock(stdout=ps_output, returncode=0)
-            
+
             info = tunnel.find_tunnel_by_port(3000)
-            
+
             assert info is None
 
 
@@ -216,7 +215,7 @@ class TestIsProcessAlive:
         """Should return True for running process."""
         with patch("os.kill") as mock_kill:
             mock_kill.return_value = None  # os.kill returns None on success
-            
+
             assert tunnel.is_process_alive(12345) is True
             mock_kill.assert_called_once_with(12345, 0)
 
@@ -224,14 +223,14 @@ class TestIsProcessAlive:
         """Should return False for dead process."""
         with patch("os.kill") as mock_kill:
             mock_kill.side_effect = ProcessLookupError()
-            
+
             assert tunnel.is_process_alive(12345) is False
 
     def test_permission_denied(self):
         """Should return False when permission denied."""
         with patch("os.kill") as mock_kill:
             mock_kill.side_effect = PermissionError()
-            
+
             assert tunnel.is_process_alive(12345) is False
 
 
@@ -315,21 +314,21 @@ class TestCreateTunnel:
              patch.object(tunnel, "is_port_available", return_value=True):
             # No existing tunnels
             mock_run.return_value = MagicMock(stdout="", returncode=0)
-            
+
             # Mock the new SSH process
             mock_proc = MagicMock()
             mock_proc.pid = 99999
             mock_proc.poll.return_value = None  # Process still running
             mock_popen.return_value = mock_proc
-            
+
             success, result = tunnel.create_tunnel("user/rdev-vm", 4200)
-            
+
             assert success is True
             assert result["local_port"] == 4200
             assert result["remote_port"] == 4200
             assert result["pid"] == 99999
             assert result["host"] == "user/rdev-vm"
-            
+
             mock_popen.assert_called_once()
             call_args = mock_popen.call_args[0][0]
             assert "ssh" in call_args
@@ -347,9 +346,9 @@ yuqiu    12345   0.0  0.0 408628368   1234 s000  S+   10:00AM   0:00.01 ssh -N -
              patch("os.kill") as mock_kill:
             mock_run.return_value = MagicMock(stdout=ps_output, returncode=0)
             mock_kill.return_value = None  # Process is alive
-            
+
             success, result = tunnel.create_tunnel("user/rdev-vm", 4200)
-            
+
             assert success is True
             assert result["existing"] is True
             assert result["pid"] == 12345
@@ -361,19 +360,19 @@ yuqiu    12345   0.0  0.0 408628368   1234 s000  S+   10:00AM   0:00.01 ssh -N -
              patch.object(tunnel, "is_port_available", side_effect=[False, True]):
             # No existing SSH tunnels
             mock_run.return_value = MagicMock(stdout="", returncode=0)
-            
+
             mock_proc = MagicMock()
             mock_proc.pid = 99999
             mock_proc.poll.return_value = None
             mock_popen.return_value = mock_proc
-            
+
             success, result = tunnel.create_tunnel("user/rdev-vm", 4200)
-            
+
             assert success is True
             # local_port should be 4201 (4200 was occupied, search starts at 4201)
             assert result["local_port"] == 4201
             assert result["remote_port"] == 4200
-            
+
             # Verify SSH command uses the new port
             call_args = mock_popen.call_args[0][0]
             assert "4201:localhost:4200" in call_args
@@ -384,9 +383,9 @@ yuqiu    12345   0.0  0.0 408628368   1234 s000  S+   10:00AM   0:00.01 ssh -N -
              patch.object(tunnel, "is_port_available", return_value=False), \
              patch.object(tunnel, "find_available_port", return_value=None):
             mock_run.return_value = MagicMock(stdout="", returncode=0)
-            
+
             success, result = tunnel.create_tunnel("user/rdev-vm", 4200)
-            
+
             assert success is False
             assert "occupied" in result["error"]
 
@@ -395,7 +394,7 @@ yuqiu    12345   0.0  0.0 408628368   1234 s000  S+   10:00AM   0:00.01 ssh -N -
         success, result = tunnel.create_tunnel("user/rdev-vm", 0)
         assert success is False
         assert "Port must be" in result["error"]
-        
+
         success, result = tunnel.create_tunnel("user/rdev-vm", 70000)
         assert success is False
         assert "Port must be" in result["error"]
@@ -419,16 +418,16 @@ yuqiu    12345   0.0  0.0 408628368   1234 s000  S+   10:00AM   0:00.01 ssh -N -
              patch("subprocess.Popen") as mock_popen, \
              patch.object(tunnel, "is_port_available", return_value=True):
             mock_run.return_value = MagicMock(stdout="", returncode=0)
-            
+
             # Mock SSH process that fails immediately
             mock_proc = MagicMock()
             mock_proc.pid = 99999
             mock_proc.poll.return_value = 1  # Process exited
             mock_proc.returncode = 1
             mock_popen.return_value = mock_proc
-            
+
             success, result = tunnel.create_tunnel("user/rdev-vm", 4200)
-            
+
             assert success is False
             assert "failed to start" in result["error"]
 
@@ -438,14 +437,14 @@ yuqiu    12345   0.0  0.0 408628368   1234 s000  S+   10:00AM   0:00.01 ssh -N -
              patch("subprocess.Popen") as mock_popen, \
              patch.object(tunnel, "is_port_available", return_value=True):
             mock_run.return_value = MagicMock(stdout="", returncode=0)
-            
+
             mock_proc = MagicMock()
             mock_proc.pid = 99999
             mock_proc.poll.return_value = None
             mock_popen.return_value = mock_proc
-            
+
             success, result = tunnel.create_tunnel("user/rdev-vm", 4200, local_port=8080)
-            
+
             assert success is True
             assert result["local_port"] == 8080
             assert result["remote_port"] == 4200
@@ -462,9 +461,9 @@ yuqiu    12345   0.0  0.0 408628368   1234 s000  S+   10:00AM   0:00.01 ssh -N -
         with patch("subprocess.run") as mock_run, \
              patch("os.kill") as mock_kill:
             mock_run.return_value = MagicMock(stdout=ps_output, returncode=0)
-            
+
             success, message = tunnel.close_tunnel(4200)
-            
+
             assert success is True
             mock_kill.assert_called_once_with(12345, signal.SIGTERM)
 
@@ -472,9 +471,9 @@ yuqiu    12345   0.0  0.0 408628368   1234 s000  S+   10:00AM   0:00.01 ssh -N -
         """Should return False for port without tunnel."""
         with patch("subprocess.run") as mock_run:
             mock_run.return_value = MagicMock(stdout="", returncode=0)
-            
+
             success, message = tunnel.close_tunnel(4200)
-            
+
             assert success is False
             assert "No tunnel found" in message
 
@@ -485,9 +484,9 @@ yuqiu    12345   0.0  0.0 408628368   1234 s000  S+   10:00AM   0:00.01 ssh -N -
 """
         with patch("subprocess.run") as mock_run:
             mock_run.return_value = MagicMock(stdout=ps_output, returncode=0)
-            
+
             success, message = tunnel.close_tunnel(4200, host="user/rdev-vm")
-            
+
             assert success is False
             assert "belongs to" in message
 
@@ -500,9 +499,9 @@ yuqiu    12345   0.0  0.0 408628368   1234 s000  S+   10:00AM   0:00.01 ssh -N -
              patch("os.kill") as mock_kill:
             mock_run.return_value = MagicMock(stdout=ps_output, returncode=0)
             mock_kill.side_effect = ProcessLookupError()
-            
+
             success, message = tunnel.close_tunnel(4200)
-            
+
             assert success is True
             assert "already dead" in message
 
@@ -520,9 +519,9 @@ yuqiu    12347   0.0  0.0 408628368   1234 s000  S+   10:00AM   0:00.01 ssh -N -
         with patch("subprocess.run") as mock_run, \
              patch("os.kill") as mock_kill:
             mock_run.return_value = MagicMock(stdout=ps_output, returncode=0)
-            
+
             closed = tunnel.cleanup_tunnels_for_host("user/rdev-vm")
-            
+
             assert closed == 2
             # Should have killed both 12345 and 12346, but not 12347
             kill_calls = [call[0][0] for call in mock_kill.call_args_list]
@@ -534,9 +533,9 @@ yuqiu    12347   0.0  0.0 408628368   1234 s000  S+   10:00AM   0:00.01 ssh -N -
         """Should return 0 when host has no tunnels."""
         with patch("subprocess.run") as mock_run:
             mock_run.return_value = MagicMock(stdout="", returncode=0)
-            
+
             closed = tunnel.cleanup_tunnels_for_host("user/rdev-vm")
-            
+
             assert closed == 0
 
 
@@ -547,7 +546,7 @@ class TestInvalidateCache:
         """Should reset cache timestamp to trigger refresh."""
         tunnel._cache_timestamp = 9999999
         tunnel._tunnel_cache = {"cached": "data"}
-        
+
         tunnel.invalidate_cache()
-        
+
         assert tunnel._cache_timestamp == 0

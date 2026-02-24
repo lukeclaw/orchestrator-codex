@@ -1,6 +1,5 @@
 """Shared test fixtures."""
 
-import sqlite3
 
 import pytest
 

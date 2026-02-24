@@ -95,7 +95,7 @@ def parse_between_markers(output: str, start_marker: str, end_marker: str) -> li
     lines = output.split('\n')
     result_lines = []
     in_section = False
-    
+
     for line in lines:
         stripped = line.strip()
         if stripped == start_marker or start_marker in stripped:
@@ -105,7 +105,7 @@ def parse_between_markers(output: str, start_marker: str, end_marker: str) -> li
             break
         if in_section and stripped:
             result_lines.append(stripped)
-    
+
     return result_lines
 
 
@@ -121,7 +121,7 @@ def parse_hostname_from_markers(output: str, start_marker: str, end_marker: str)
     lines = output.split('\n')
     start_line_idx = None
     end_line_idx = None
-    
+
     for i, line in enumerate(lines):
         stripped = line.strip()
         if stripped == start_marker:
@@ -129,10 +129,10 @@ def parse_hostname_from_markers(output: str, start_marker: str, end_marker: str)
         elif stripped == end_marker and start_line_idx is not None:
             end_line_idx = i
             break
-    
+
     if start_line_idx is None or end_line_idx is None:
         return None
-    
+
     hostname_lines = [l.strip() for l in lines[start_line_idx + 1:end_line_idx] if l.strip()]
     if hostname_lines:
         return hostname_lines[0]
@@ -140,8 +140,8 @@ def parse_hostname_from_markers(output: str, start_marker: str, end_marker: str)
 
 
 def check_screen_status_from_output(
-    output: str, 
-    start_marker: str, 
+    output: str,
+    start_marker: str,
     end_marker: str
 ) -> tuple[bool, bool]:
     """Parse screen check output using markers.
@@ -156,10 +156,10 @@ def check_screen_status_from_output(
     """
     screen_exists = False
     claude_running = False
-    
+
     lines = output.split('\n')
     in_result_section = False
-    
+
     for line in lines:
         stripped = line.strip()
         if start_marker in stripped:
@@ -172,7 +172,7 @@ def check_screen_status_from_output(
                 screen_exists = True
             elif stripped == "CLAUDE_RUNNING":
                 claude_running = True
-    
+
     return screen_exists, claude_running
 
 

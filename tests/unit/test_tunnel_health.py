@@ -9,7 +9,7 @@ Covers:
 
 import asyncio
 import signal
-from unittest.mock import MagicMock, patch, call
+from unittest.mock import MagicMock, call, patch
 
 import pytest
 
@@ -63,8 +63,9 @@ class TestProbeTunnelConnectivity:
     @patch("orchestrator.session.health.subprocess.run")
     def test_returns_false_on_timeout(self, mock_run):
         """Should return False when SSH+curl times out."""
-        from orchestrator.session.health import probe_tunnel_connectivity
         import subprocess
+
+        from orchestrator.session.health import probe_tunnel_connectivity
 
         mock_run.side_effect = subprocess.TimeoutExpired(cmd="ssh", timeout=8)
 
@@ -152,8 +153,9 @@ class TestFindTunnelPids:
     @patch("orchestrator.session.health.subprocess.run")
     def test_returns_empty_on_timeout(self, mock_run):
         """Should return empty list on subprocess timeout."""
-        from orchestrator.session.health import find_tunnel_pids
         import subprocess
+
+        from orchestrator.session.health import find_tunnel_pids
 
         mock_run.side_effect = subprocess.TimeoutExpired(cmd="ps", timeout=5)
 

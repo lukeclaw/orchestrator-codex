@@ -1,6 +1,5 @@
 """Integration tests for context API endpoints."""
 
-from unittest.mock import patch
 
 import pytest
 from fastapi.testclient import TestClient

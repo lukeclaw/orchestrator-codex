@@ -1,12 +1,10 @@
 """Integration tests for all repositories against real SQLite."""
 
 from orchestrator.state.repositories import (
-    config as config_repo,
     projects,
     sessions,
     tasks,
 )
-
 
 # --- Sessions ---
 

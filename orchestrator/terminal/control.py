@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import Callable
+from collections.abc import Callable
 
 logger = logging.getLogger(__name__)
 
@@ -229,7 +229,7 @@ class TmuxControlConnection:
             self._process.terminate()
             try:
                 await asyncio.wait_for(self._process.wait(), timeout=2.0)
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 self._process.kill()
             self._process = None
 
@@ -485,7 +485,7 @@ async def capture_pane_with_cursor_async(session: str, window: str) -> tuple[str
     # Run both captures concurrently
     content_task = capture_pane_async(session, window)
     cursor_task = get_cursor_position_async(session, window)
-    
+
     content, (cursor_x, cursor_y) = await asyncio.gather(content_task, cursor_task)
     return content, cursor_x, cursor_y
 
@@ -512,13 +512,13 @@ async def capture_pane_with_cursor_atomic_async(session: str, window: str) -> tu
             stderr=asyncio.subprocess.PIPE,
         )
         stdout, stderr = await proc.communicate()
-        
+
         # If tmux command failed, return empty
         if proc.returncode != 0:
             return "", 0, 0
-            
+
         output = stdout.decode('utf-8', errors='replace')
-        
+
         # Parse the combined output
         if "===CURSOR_POSITION===" in output:
             content, cursor_line = output.rsplit("===CURSOR_POSITION===\n", 1)
@@ -526,10 +526,10 @@ async def capture_pane_with_cursor_atomic_async(session: str, window: str) -> tu
             if len(parts) == 2:
                 cursor_x, cursor_y = int(parts[0]), int(parts[1])
                 return content, cursor_x, cursor_y
-        
+
         # Fallback if parsing fails
         return "", 0, 0
-        
+
     except Exception as e:
         logger.error("Failed atomic capture: %s", e)
         return "", 0, 0
@@ -560,13 +560,13 @@ async def capture_pane_with_history_async(
             stderr=asyncio.subprocess.PIPE,
         )
         stdout, _ = await proc.communicate()
-        
+
         # If tmux command failed, return empty
         if proc.returncode != 0:
             return "", 0, 0, 0
-            
+
         output = stdout.decode('utf-8', errors='replace')
-        
+
         # Parse the combined output
         if "===CURSOR_POSITION===" in output:
             content, cursor_line = output.rsplit("===CURSOR_POSITION===\n", 1)
@@ -577,10 +577,10 @@ async def capture_pane_with_history_async(
                 history_size = int(parts[2]) if len(parts) >= 3 else 0
                 total_lines = content.count('\n') + 1
                 return content, cursor_x, cursor_y, total_lines
-        
+
         # Fallback if parsing fails
         return "", 0, 0, 0
-        
+
     except Exception as e:
         logger.error("Failed history capture: %s", e)
         return "", 0, 0, 0

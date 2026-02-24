@@ -1,7 +1,7 @@
 """Trends API: historical throughput, worker heatmap, and worker-hours."""
 
 import sqlite3
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
@@ -19,7 +19,7 @@ def get_trends(
     conn: sqlite3.Connection = Depends(get_db),
 ):
     days = VALID_RANGES.get(range, 7)
-    since = (datetime.now(timezone.utc) - timedelta(days=days)).strftime("%Y-%m-%d")
+    since = (datetime.now(UTC) - timedelta(days=days)).strftime("%Y-%m-%d")
 
     throughput = status_events.query_throughput(conn, since)
     heatmap = status_events.query_worker_heatmap(conn, since)
@@ -58,7 +58,7 @@ def get_trend_detail(
         if day_of_week is None or hour is None:
             raise HTTPException(status_code=400, detail="day_of_week and hour are required for heatmap detail")
         days = VALID_RANGES.get(range, 7)
-        since = (datetime.now(timezone.utc) - timedelta(days=days)).strftime("%Y-%m-%d")
+        since = (datetime.now(UTC) - timedelta(days=days)).strftime("%Y-%m-%d")
         items = status_events.query_heatmap_detail(conn, day_of_week, hour, since)
         return {"chart": chart, "day_of_week": day_of_week, "hour": hour, "items": items}
 

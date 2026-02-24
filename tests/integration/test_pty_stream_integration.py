@@ -16,19 +16,15 @@ from __future__ import annotations
 import asyncio
 import os
 import shutil
-import time
 from pathlib import Path
 
 import pytest
 
 from orchestrator.terminal.pty_stream import (
-    FIFO_DIR,
     PtyStreamPool,
     PtyStreamReader,
     get_tmux_version,
     reset_tmux_version_cache,
-    set_tmux_version_cache,
-    suppress_control_mode_output,
 )
 
 pytestmark = [
@@ -218,7 +214,7 @@ class TestPtyStreamReaderIntegration:
             # Wait for EOF
             try:
                 await asyncio.wait_for(eof_triggered.wait(), timeout=5.0)
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 # EOF may not trigger on all platforms; that's OK
                 pass
 

@@ -15,9 +15,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import sqlite3
-from collections import deque
-from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -25,7 +22,7 @@ from orchestrator.core.events import Event, subscribe
 from orchestrator.state.db import ConnectionFactory
 
 if TYPE_CHECKING:
-    from orchestrator.state.models import Session
+    pass
 
 logger = logging.getLogger(__name__)
 
@@ -43,7 +40,7 @@ class StateManager:
         self._event_queue: asyncio.Queue[Event] = asyncio.Queue()
         self._running = False
         self._task: asyncio.Task | None = None
-        
+
         # Subscribe to events that require DB writes
         subscribe("session.state_changed", self._queue_event)
 
@@ -80,7 +77,7 @@ class StateManager:
                     event = await asyncio.wait_for(
                         self._event_queue.get(), timeout=1.0
                     )
-                except asyncio.TimeoutError:
+                except TimeoutError:
                     continue
 
                 await self._handle_event(event)
@@ -102,7 +99,7 @@ class StateManager:
         """Update session status in DB when state changes."""
         session_name = event.data.get("session")
         new_state = event.data.get("new_state")
-        
+
         if not session_name or not new_state:
             return
 
@@ -118,7 +115,7 @@ class StateManager:
         """
         with self.conn_factory.connection() as conn:
             from orchestrator.state.repositories import sessions as sessions_repo
-            
+
             session = sessions_repo.get_session_by_name(conn, session_name)
             if session:
                 # last_status_changed_at is auto-updated by update_session when status changes

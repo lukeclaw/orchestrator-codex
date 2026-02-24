@@ -8,9 +8,9 @@ import sqlite3
 from pathlib import Path
 
 from orchestrator.core.events import Event, subscribe
+from orchestrator.session.tunnel_monitor import tunnel_health_loop
 from orchestrator.state.db import ConnectionFactory
 from orchestrator.terminal.monitor import monitor_loop
-from orchestrator.session.tunnel_monitor import tunnel_health_loop
 
 logger = logging.getLogger(__name__)
 

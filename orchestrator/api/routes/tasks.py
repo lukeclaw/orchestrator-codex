@@ -7,9 +7,9 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 
 from orchestrator.api.deps import get_db
-from orchestrator.state.repositories import tasks as repo
-from orchestrator.state.repositories import sessions as sessions_repo
 from orchestrator.state.repositories import projects as projects_repo
+from orchestrator.state.repositories import sessions as sessions_repo
+from orchestrator.state.repositories import tasks as repo
 from orchestrator.utils import derive_tag_from_url
 
 logger = logging.getLogger(__name__)
@@ -46,17 +46,17 @@ def _get_task_key(t, db) -> str | None:
     """Generate human-readable task key like UTI-1 or UTI-1-1 for subtasks."""
     if t.task_index is None:
         return None
-    
+
     project = projects_repo.get_project(db, t.project_id)
     if not project or not project.task_prefix:
         return None
-    
+
     if t.parent_task_id:
         # Subtask: get parent's index
         parent = repo.get_task(db, t.parent_task_id)
         if parent and parent.task_index is not None:
             return f"{project.task_prefix}-{parent.task_index}-{t.task_index}"
-    
+
     return f"{project.task_prefix}-{t.task_index}"
 
 
@@ -95,7 +95,7 @@ def list_tasks(
     # Parse comma-separated status values
     status_list = status.split(",") if status else None
     exclude_list = exclude_status.split(",") if exclude_status else None
-    
+
     kwargs = dict(
         project_id=project_id,
         status=status_list,
@@ -149,7 +149,7 @@ def update_task(task_id: str, body: TaskUpdate, request: Request, db=Depends(get
         raise HTTPException(404, "Task not found")
 
     old_assigned = t.assigned_session_id
-    
+
     # Check if assigned_session_id was explicitly set in the request (including to null)
     assigned_session_explicitly_set = "assigned_session_id" in body.model_fields_set
     new_assigned = body.assigned_session_id if assigned_session_explicitly_set else old_assigned
@@ -218,10 +218,10 @@ def delete_task(task_id: str, db=Depends(get_db)):
     task = repo.get_task(db, task_id)
     if task is None:
         raise HTTPException(404, "Task not found")
-    
+
     # Collect all session IDs to unassign (this task + subtasks)
     sessions_to_unassign = set()
-    
+
     def collect_assigned_sessions(tid: str):
         t = repo.get_task(db, tid)
         if t and t.assigned_session_id:
@@ -230,9 +230,9 @@ def delete_task(task_id: str, db=Depends(get_db)):
         subtasks = repo.list_tasks(db, parent_task_id=tid)
         for st in subtasks:
             collect_assigned_sessions(st.id)
-    
+
     collect_assigned_sessions(task_id)
-    
+
     # Unassign workers and set them to idle (keep them alive for reuse)
     for session_id in sessions_to_unassign:
         try:
@@ -243,7 +243,7 @@ def delete_task(task_id: str, db=Depends(get_db)):
             logger.info("Unassigned worker session %s (now idle) for deleted task %s", session_id, task_id)
         except Exception:
             logger.warning("Could not unassign worker session %s", session_id, exc_info=True)
-    
+
     # Now delete the task (and subtasks via cascading delete)
     repo.delete_task(db, task_id)
     return {"ok": True, "unassigned_sessions": list(sessions_to_unassign)}

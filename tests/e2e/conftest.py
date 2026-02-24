@@ -181,7 +181,7 @@ def browser_instance():
 
     browser.close()
     pw.stop()
-    
+
     # Clean up screenshots after all tests complete
     if SCREENSHOT_DIR.exists():
         for f in SCREENSHOT_DIR.glob("*.png"):

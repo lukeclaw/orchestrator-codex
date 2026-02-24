@@ -27,7 +27,7 @@ def _run(coro):
     there may already be a running event loop. Using a thread ensures isolation.
     """
     import concurrent.futures
-    
+
     def run_in_thread():
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
@@ -36,7 +36,7 @@ def _run(coro):
         finally:
             loop.close()
             asyncio.set_event_loop(None)
-    
+
     with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
         future = executor.submit(run_in_thread)
         return future.result(timeout=30)
@@ -57,11 +57,11 @@ class TestAtomicCapture:
     def test_captures_content_and_cursor(self, tmux_window):
         """Atomic capture should return content and cursor position."""
         session, window = tmux_window
-        
+
         content, cursor_x, cursor_y = _run(
             capture_pane_with_cursor_atomic_async(session, window)
         )
-        
+
         # Should have some content (at least a shell prompt)
         assert isinstance(content, str)
         # Cursor position should be valid integers
@@ -73,15 +73,15 @@ class TestAtomicCapture:
     def test_captures_typed_content(self, tmux_window):
         """Atomic capture should include content we type."""
         session, window = tmux_window
-        
+
         # Type something
         tmux.send_keys(session, window, "echo ATOMIC_TEST_123", enter=False)
         time.sleep(0.1)
-        
+
         content, cursor_x, cursor_y = _run(
             capture_pane_with_cursor_atomic_async(session, window)
         )
-        
+
         assert "ATOMIC_TEST_123" in content
         # Cursor should be at the end of what we typed
         assert cursor_x > 0
@@ -89,11 +89,11 @@ class TestAtomicCapture:
     def test_cursor_position_consistency(self, tmux_window):
         """Multiple captures should give consistent cursor when content unchanged."""
         session, window = tmux_window
-        
+
         # Type something and wait
         tmux.send_keys(session, window, "echo stable", enter=False)
         time.sleep(0.2)
-        
+
         # Capture multiple times
         results = []
         for _ in range(3):
@@ -102,7 +102,7 @@ class TestAtomicCapture:
             )
             results.append((content, cursor_x, cursor_y))
             time.sleep(0.05)
-        
+
         # All captures should have same cursor position
         cursors = [(r[1], r[2]) for r in results]
         assert all(c == cursors[0] for c in cursors), f"Cursor positions varied: {cursors}"
@@ -114,11 +114,11 @@ class TestHistoryCapture:
     def test_captures_with_history(self, tmux_window):
         """History capture should return content and metadata."""
         session, window = tmux_window
-        
+
         content, cursor_x, cursor_y, total_lines = _run(
             capture_pane_with_history_async(session, window)
         )
-        
+
         assert isinstance(content, str)
         assert isinstance(cursor_x, int)
         assert isinstance(cursor_y, int)
@@ -128,18 +128,18 @@ class TestHistoryCapture:
     def test_captures_scrollback(self, tmux_window):
         """History capture should include scrollback content."""
         session, window = tmux_window
-        
+
         # Generate some output to create scrollback
         for i in range(5):
             tmux.send_keys(session, window, f"echo LINE_{i}", enter=True)
             time.sleep(0.1)
-        
+
         time.sleep(0.3)
-        
+
         content, _, _, total_lines = _run(
             capture_pane_with_history_async(session, window, scrollback_lines=100)
         )
-        
+
         # Should have captured all the lines
         for i in range(5):
             assert f"LINE_{i}" in content, f"Missing LINE_{i} in captured content"
@@ -147,12 +147,12 @@ class TestHistoryCapture:
     def test_respects_scrollback_limit(self, tmux_window):
         """History capture should respect the scrollback_lines parameter."""
         session, window = tmux_window
-        
+
         # Small scrollback should still work
         content, cursor_x, cursor_y, total_lines = _run(
             capture_pane_with_history_async(session, window, scrollback_lines=10)
         )
-        
+
         assert isinstance(content, str)
         assert cursor_x >= 0
         assert cursor_y >= 0
@@ -166,7 +166,7 @@ class TestNonexistentTarget:
         content, cursor_x, cursor_y = _run(
             capture_pane_with_cursor_atomic_async("nonexistent", "window")
         )
-        
+
         # Should return defaults, not crash
         assert content == ""
         assert cursor_x == 0
@@ -177,7 +177,7 @@ class TestNonexistentTarget:
         content, cursor_x, cursor_y, total_lines = _run(
             capture_pane_with_history_async("nonexistent", "window")
         )
-        
+
         # Should return defaults, not crash
         assert cursor_x == 0
         assert cursor_y == 0

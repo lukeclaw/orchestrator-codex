@@ -308,7 +308,7 @@ def _handle_attach(user_input: str, config: dict):
 
     console.print(f"[bold]To attach to session {name}, run:[/bold]")
     console.print(f"  tmux select-window -t {tmux_session}:{name}")
-    console.print(f"\nOr attach to the full orchestrator session:")
+    console.print("\nOr attach to the full orchestrator session:")
     console.print(f"  tmux attach -t {tmux_session}")
 
 

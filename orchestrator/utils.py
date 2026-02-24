@@ -4,7 +4,7 @@ This module provides common helpers to ensure consistency across the codebase.
 """
 
 import re
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 
 def utc_now_iso() -> str:
@@ -16,7 +16,7 @@ def utc_now_iso() -> str:
     Returns:
         ISO 8601 string like "2026-02-13T05:30:00+00:00"
     """
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 # URL pattern → tag mapping. Order matters: first match wins.

@@ -18,14 +18,13 @@ import subprocess
 import threading
 import time
 from dataclasses import dataclass, field
-from typing import Dict, Optional, Tuple
 
 from orchestrator.session.health import probe_tunnel_connectivity
 
 logger = logging.getLogger(__name__)
 
 # In-memory cache (rebuilt from process scan)
-_tunnel_cache: Dict[int, dict] = {}
+_tunnel_cache: dict[int, dict] = {}
 _cache_timestamp: float = 0
 CACHE_TTL = 5.0  # seconds
 
@@ -61,7 +60,7 @@ def is_port_available(port: int) -> bool:
             return False
 
 
-def find_available_port(preferred: int, max_attempts: int = 100) -> Optional[int]:
+def find_available_port(preferred: int, max_attempts: int = 100) -> int | None:
     """Find an available port, starting from preferred and incrementing.
     
     Args:
@@ -82,18 +81,18 @@ def find_available_port(preferred: int, max_attempts: int = 100) -> Optional[int
     return None
 
 
-def discover_active_tunnels(force_refresh: bool = False) -> Dict[int, dict]:
+def discover_active_tunnels(force_refresh: bool = False) -> dict[int, dict]:
     """Scan for active SSH port-forward tunnels via ps.
     
     Returns:
         {local_port: {"pid": int, "remote_port": int, "host": str}}
     """
     global _tunnel_cache, _cache_timestamp
-    
+
     now = time.time()
     if not force_refresh and (now - _cache_timestamp) < CACHE_TTL and _tunnel_cache:
         return _tunnel_cache.copy()
-    
+
     tunnels = {}
     try:
         result = subprocess.run(
@@ -102,26 +101,26 @@ def discover_active_tunnels(force_refresh: bool = False) -> Dict[int, dict]:
             text=True,
             timeout=5
         )
-        
+
         # Pattern: ssh -N -L <local_port>:localhost:<remote_port> <host>
         # Example: ssh -N -L 4200:localhost:4200 user/rdev-vm
         # Also handle: ssh -N -L 4200:localhost:4200 -o Option=value host
         pattern = re.compile(r'ssh\s+.*-N\s+.*-L\s+(\d+):localhost:(\d+)\s+.*?(\S+)\s*$')
-        
+
         for line in result.stdout.split('\n'):
             if 'ssh' not in line or '-L' not in line or '-N' not in line:
                 continue
-            
+
             # Skip grep processes
             if 'grep' in line:
                 continue
-            
+
             match = pattern.search(line)
             if match:
                 local_port = int(match.group(1))
                 remote_port = int(match.group(2))
                 host = match.group(3)
-                
+
                 # Extract PID (second column in ps aux)
                 parts = line.split()
                 if len(parts) > 1:
@@ -132,7 +131,7 @@ def discover_active_tunnels(force_refresh: bool = False) -> Dict[int, dict]:
                             "remote_port": remote_port,
                             "host": host,
                         }
-                        logger.debug("Discovered tunnel: local:%d -> %s:%d (pid=%d)", 
+                        logger.debug("Discovered tunnel: local:%d -> %s:%d (pid=%d)",
                                     local_port, host, remote_port, pid)
                     except ValueError:
                         pass
@@ -140,7 +139,7 @@ def discover_active_tunnels(force_refresh: bool = False) -> Dict[int, dict]:
         logger.warning("Tunnel discovery timed out")
     except Exception as e:
         logger.warning("Tunnel discovery failed: %s", e)
-    
+
     _tunnel_cache = tunnels
     _cache_timestamp = now
     return tunnels.copy()
@@ -152,7 +151,7 @@ def invalidate_cache() -> None:
     _cache_timestamp = 0
 
 
-def get_tunnels_for_host(host: str) -> Dict[int, dict]:
+def get_tunnels_for_host(host: str) -> dict[int, dict]:
     """Get all tunnels for a specific rdev host.
     
     Args:
@@ -168,7 +167,7 @@ def get_tunnels_for_host(host: str) -> Dict[int, dict]:
     }
 
 
-def find_tunnel_by_port(local_port: int) -> Optional[dict]:
+def find_tunnel_by_port(local_port: int) -> dict | None:
     """Find tunnel info for a specific local port.
     
     Args:
@@ -190,7 +189,7 @@ def is_process_alive(pid: int) -> bool:
         return False
 
 
-def create_tunnel(host: str, remote_port: int, local_port: Optional[int] = None) -> Tuple[bool, dict]:
+def create_tunnel(host: str, remote_port: int, local_port: int | None = None) -> tuple[bool, dict]:
     """Create an SSH port-forward tunnel.
     
     If the requested local port is occupied, automatically finds the next
@@ -208,15 +207,15 @@ def create_tunnel(host: str, remote_port: int, local_port: Optional[int] = None)
     """
     requested_port = local_port or remote_port
     local_port = requested_port
-    
+
     # Validate port range
     if not (1 <= local_port <= 65535) or not (1 <= remote_port <= 65535):
         return False, {"error": "Port must be between 1 and 65535"}
-    
+
     # Check for reserved ports (e.g., 8093 used by reverse tunnel for API)
     if local_port in RESERVED_PORTS:
         return False, {"error": f"Port {local_port} is reserved for orchestrator internal use (reverse tunnel)"}
-    
+
     # Check if an existing SSH tunnel already covers this exact request
     existing = find_tunnel_by_port(local_port)
     if existing:
@@ -230,7 +229,7 @@ def create_tunnel(host: str, remote_port: int, local_port: Optional[int] = None)
                     "host": host,
                     "existing": True,
                 }
-    
+
     # Check if the local port is actually available (any process, not just SSH tunnels)
     if not is_port_available(local_port):
         new_port = find_available_port(local_port + 1)
@@ -238,7 +237,7 @@ def create_tunnel(host: str, remote_port: int, local_port: Optional[int] = None)
             return False, {"error": f"Port {local_port} is occupied and no available port found nearby"}
         logger.info("Port %d is occupied, using %d instead", local_port, new_port)
         local_port = new_port
-    
+
     # Spawn SSH tunnel in background
     try:
         proc = subprocess.Popen(
@@ -246,20 +245,20 @@ def create_tunnel(host: str, remote_port: int, local_port: Optional[int] = None)
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )
-        
+
         # Give it a moment to fail if it's going to
         time.sleep(0.2)
-        
+
         if proc.poll() is not None:
             # Process already exited - failed to establish
             return False, {"error": f"SSH tunnel failed to start (exit code: {proc.returncode})"}
-        
+
         # Invalidate cache
         invalidate_cache()
-        
-        logger.info("Created tunnel local:%d -> %s:%d (pid=%d)", 
+
+        logger.info("Created tunnel local:%d -> %s:%d (pid=%d)",
                    local_port, host, remote_port, proc.pid)
-        
+
         return True, {
             "local_port": local_port,
             "remote_port": remote_port,
@@ -271,7 +270,7 @@ def create_tunnel(host: str, remote_port: int, local_port: Optional[int] = None)
         return False, {"error": str(e)}
 
 
-def close_tunnel(local_port: int, host: Optional[str] = None) -> Tuple[bool, str]:
+def close_tunnel(local_port: int, host: str | None = None) -> tuple[bool, str]:
     """Close an SSH tunnel on a specific port.
     
     Args:
@@ -282,14 +281,14 @@ def close_tunnel(local_port: int, host: Optional[str] = None) -> Tuple[bool, str
         (success: bool, message: str)
     """
     tunnel = find_tunnel_by_port(local_port)
-    
+
     if not tunnel:
         return False, f"No tunnel found on port {local_port}"
-    
+
     # Verify host if provided
     if host and tunnel["host"] != host:
         return False, f"Port {local_port} belongs to {tunnel['host']}, not {host}"
-    
+
     pid = tunnel["pid"]
     try:
         os.kill(pid, signal.SIGTERM)

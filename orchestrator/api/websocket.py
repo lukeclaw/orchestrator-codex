@@ -9,7 +9,7 @@ from typing import Any
 
 from starlette.websockets import WebSocket, WebSocketDisconnect
 
-from orchestrator.core.events import Event, subscribe, unsubscribe
+from orchestrator.core.events import Event, subscribe
 
 logger = logging.getLogger(__name__)
 
@@ -35,29 +35,29 @@ def set_current_focus(url: str | None) -> None:
 async def request_focus_from_frontend(timeout: float = 1.0) -> str | None:
     """Request current URL from frontend via WebSocket and wait for response."""
     global _focus_event
-    
+
     if not _clients:
         return _current_focus_url  # No clients, return cached
-    
+
     _focus_event = asyncio.Event()
-    
+
     # Request focus from all connected clients
     await broadcast({"type": "request_focus"})
-    
+
     try:
         await asyncio.wait_for(_focus_event.wait(), timeout=timeout)
-    except asyncio.TimeoutError:
+    except TimeoutError:
         pass
     finally:
         _focus_event = None
-    
+
     return _current_focus_url
 
 
 async def websocket_endpoint(websocket: WebSocket):
     """Handle WebSocket connections for real-time dashboard updates."""
     global _current_focus_url, _focus_event
-    
+
     await websocket.accept()
     _clients.add(websocket)
     logger.info("WebSocket client connected (total: %d)", len(_clients))
@@ -69,7 +69,7 @@ async def websocket_endpoint(websocket: WebSocket):
             try:
                 msg = json.loads(data)
                 msg_type = msg.get("type")
-                
+
                 if msg_type == "ping":
                     await websocket.send_json({"type": "pong"})
                 elif msg_type == "focus_response":
