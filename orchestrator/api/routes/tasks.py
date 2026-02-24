@@ -133,6 +133,8 @@ def create_task(body: TaskCreate, db=Depends(get_db)):
         parent = repo.get_task(db, body.parent_task_id)
         if parent is None:
             raise HTTPException(404, "Parent task not found")
+        if parent.parent_task_id:
+            raise HTTPException(400, "Nested subtasks are not allowed")
         if not project_id:
             project_id = parent.project_id
     t = repo.create_task(

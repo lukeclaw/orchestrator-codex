@@ -91,18 +91,19 @@ export default function TaskDetailPage() {
       setStatus(task.status)
       setPriority(task.priority)
       setAssignedSession(task.assigned_session_id || '')
-      setLinks(task.links || [])
-      
+      const isEditingLinks = showAddLink || editingLinkUrl !== null
+      if (!isEditingLinks) setLinks(task.links || [])
+
       api<Task[]>(`/api/tasks?parent_task_id=${task.id}&include_subtask_stats=false`)
         .then(setSubtasks)
         .catch(() => setSubtasks([]))
-      
+
       // Fetch notifications for this task
       api<Notification[]>(`/api/notifications?task_id=${task.id}&dismissed=false`)
         .then(setNotifications)
         .catch(() => setNotifications([]))
     }
-  }, [task, isEditingTitle, isEditingDesc, isEditingNotes])
+  }, [task, isEditingTitle, isEditingDesc, isEditingNotes, showAddLink, editingLinkUrl])
 
   const assignedWorker = sessions.find(s => s.id === task?.assigned_session_id)
 
@@ -777,8 +778,8 @@ export default function TaskDetailPage() {
             )}
           </div>
 
-          {/* Subtasks Card */}
-          <div className="tdp-card tdp-subtasks-card">
+          {/* Subtasks Card (hidden for subtasks to prevent nesting) */}
+          {!isSubtask && <div className="tdp-card tdp-subtasks-card">
             <div className="tdp-card-header">
               <h3 className="clickable" onClick={() => setSubtasksExpanded(!subtasksExpanded)}>
                 <span className={`expand-icon ${subtasksExpanded ? 'expanded' : ''}`}>▶</span>
@@ -883,7 +884,7 @@ export default function TaskDetailPage() {
             {subtasksExpanded && subtasks.length === 0 && !showAddSubtask && (
               <p className="tdp-empty-text">No subtasks yet</p>
             )}
-          </div>
+          </div>}
 
           {/* Notifications Card */}
           {notifications.length > 0 && (
