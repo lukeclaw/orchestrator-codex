@@ -1,12 +1,14 @@
-"""Unit tests for paste image utilities (save_image, cleanup_images)."""
+"""Unit tests for paste image utilities (save_image, cleanup_images) and clipboard endpoint."""
 
 import base64
+import subprocess
 import time
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
+from fastapi import HTTPException
 
-from orchestrator.api.routes.paste import cleanup_images, save_image
+from orchestrator.api.routes.paste import cleanup_images, read_clipboard, save_image
 
 # A minimal 1x1 red PNG (68 bytes)
 TINY_PNG = (
@@ -131,3 +133,102 @@ class TestCleanupImages:
         # Should not crash on subdirectories
         cleanup_images(d, max_size_mb=0)
         assert subdir.exists()  # Subdirs not deleted
+
+
+def _mock_run(pbpaste_stdout="", pbpaste_rc=0, osascript_stdout="", osascript_rc=0):
+    """Build a side_effect for subprocess.run that routes by command name."""
+
+    def side_effect(cmd, **_kwargs):
+        result = MagicMock(spec=subprocess.CompletedProcess)
+        if cmd[0] == "pbpaste":
+            result.returncode = pbpaste_rc
+            result.stdout = pbpaste_stdout
+        elif cmd[0] == "osascript":
+            result.returncode = osascript_rc
+            result.stdout = osascript_stdout
+        else:
+            raise ValueError(f"Unexpected command: {cmd}")
+        return result
+
+    return side_effect
+
+
+class TestReadClipboard:
+    """Tests for the read_clipboard (GET /api/clipboard) endpoint logic."""
+
+    def test_text_only(self):
+        with patch("orchestrator.api.routes.paste.subprocess.run",
+                    side_effect=_mock_run(pbpaste_stdout="hello world")):
+            result = read_clipboard()
+        assert result["text"] == "hello world"
+        assert result["image_base64"] is None
+
+    def test_image_only(self):
+        with patch("orchestrator.api.routes.paste.subprocess.run",
+                    side_effect=_mock_run(osascript_stdout=TINY_PNG_B64)):
+            result = read_clipboard()
+        assert result["text"] is None
+        assert result["image_base64"] == TINY_PNG_B64
+
+    def test_both_text_and_image(self):
+        with patch("orchestrator.api.routes.paste.subprocess.run",
+                    side_effect=_mock_run(
+                        pbpaste_stdout="some text",
+                        osascript_stdout=TINY_PNG_B64,
+                    )):
+            result = read_clipboard()
+        assert result["text"] == "some text"
+        assert result["image_base64"] == TINY_PNG_B64
+
+    def test_empty_clipboard_raises_204(self):
+        with patch("orchestrator.api.routes.paste.subprocess.run",
+                    side_effect=_mock_run()):
+            with pytest.raises(HTTPException) as exc_info:
+                read_clipboard()
+            assert exc_info.value.status_code == 204
+
+    def test_whitespace_only_text_treated_as_empty(self):
+        with patch("orchestrator.api.routes.paste.subprocess.run",
+                    side_effect=_mock_run(pbpaste_stdout="   \n  ")):
+            with pytest.raises(HTTPException) as exc_info:
+                read_clipboard()
+            assert exc_info.value.status_code == 204
+
+    def test_pbpaste_failure_falls_through(self):
+        """If pbpaste fails, image path still works."""
+        def side_effect(cmd, **_kwargs):
+            if cmd[0] == "pbpaste":
+                raise OSError("pbpaste not found")
+            result = MagicMock(spec=subprocess.CompletedProcess)
+            result.returncode = 0
+            result.stdout = TINY_PNG_B64
+            return result
+
+        with patch("orchestrator.api.routes.paste.subprocess.run",
+                    side_effect=side_effect):
+            result = read_clipboard()
+        assert result["text"] is None
+        assert result["image_base64"] == TINY_PNG_B64
+
+    def test_osascript_failure_falls_through(self):
+        """If osascript fails, text path still works."""
+        def side_effect(cmd, **_kwargs):
+            if cmd[0] == "osascript":
+                raise OSError("osascript not found")
+            result = MagicMock(spec=subprocess.CompletedProcess)
+            result.returncode = 0
+            result.stdout = "clipboard text"
+            return result
+
+        with patch("orchestrator.api.routes.paste.subprocess.run",
+                    side_effect=side_effect):
+            result = read_clipboard()
+        assert result["text"] == "clipboard text"
+        assert result["image_base64"] is None
+
+    def test_pbpaste_nonzero_exit_ignored(self):
+        with patch("orchestrator.api.routes.paste.subprocess.run",
+                    side_effect=_mock_run(pbpaste_rc=1, osascript_stdout=TINY_PNG_B64)):
+            result = read_clipboard()
+        assert result["text"] is None
+        assert result["image_base64"] == TINY_PNG_B64

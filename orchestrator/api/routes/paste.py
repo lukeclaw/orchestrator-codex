@@ -2,6 +2,7 @@
 
 import base64
 import logging
+import subprocess
 import uuid
 from datetime import datetime
 from pathlib import Path
@@ -113,8 +114,6 @@ def read_clipboard():
     frontend can avoid ``navigator.clipboard`` which triggers a macOS
     WKWebView permission popup.
     """
-    import subprocess
-
     # --- Text -----------------------------------------------------------
     text: str | None = None
     try:
