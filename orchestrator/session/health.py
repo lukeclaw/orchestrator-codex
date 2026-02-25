@@ -11,6 +11,7 @@ import subprocess
 import time
 from datetime import UTC
 
+from orchestrator.api.ws_terminal import is_user_active
 from orchestrator.state.repositories import sessions as repo
 from orchestrator.terminal.manager import tmux_target
 from orchestrator.terminal.ssh import is_remote_host
@@ -636,7 +637,7 @@ def check_all_workers_health(
     results = {
         "checked": 0, "disconnected": [], "screen_detached": [],
         "error": [], "alive": [], "skipped_active": [],
-        "auto_reconnected": [],
+        "auto_reconnected": [], "deferred": [],
     }
 
     auto_reconnect_candidates = []
@@ -690,6 +691,13 @@ def check_all_workers_health(
 
     # Auto-reconnect eligible workers
     for s in auto_reconnect_candidates:
+        if is_user_active(s.id):
+            logger.info(
+                "Auto-reconnect: deferring %s — user active in pane",
+                s.name,
+            )
+            results["deferred"].append(s.name)
+            continue
         try:
             logger.info("Auto-reconnect: triggering reconnect for %s", s.name)
             trigger_reconnect(

@@ -16,6 +16,7 @@ import unittest
 from unittest.mock import MagicMock, patch
 
 from orchestrator.session.health import (
+    check_all_workers_health,
     check_and_update_worker_health,
     check_screen_and_claude_remote,
 )
@@ -329,3 +330,63 @@ class TestPaneAttachmentDetection(unittest.TestCase):
         assert result["tunnel_reconnected"] is True
         assert result["tunnel_alive"] is True
         mock_tui.assert_called_once()
+
+
+class TestAutoReconnectDeferral(unittest.TestCase):
+    """Tests for deferring auto-reconnect when user is actively typing."""
+
+    def _make_detached_session(self, **overrides):
+        defaults = {
+            "id": SESSION_ID,
+            "name": "worker-ld3",
+            "host": HOST,
+            "work_dir": "/tmp/work",
+            "status": "screen_detached",
+            "auto_reconnect": True,
+        }
+        defaults.update(overrides)
+        return Session(**defaults)
+
+    @patch(f"{_HEALTH}.is_user_active", return_value=True)
+    @patch(f"{_HEALTH}.check_and_update_worker_health")
+    @patch(f"{_HEALTH}.repo")
+    def test_defers_reconnect_when_user_active(
+        self, mock_repo, mock_health, mock_active,
+    ):
+        """User active → reconnect skipped, session appears in deferred list."""
+        session = self._make_detached_session()
+        mock_health.return_value = {
+            "alive": False, "status": "screen_detached",
+            "reason": "detached", "needs_reconnect": True,
+        }
+        db = MagicMock()
+
+        with patch("orchestrator.session.reconnect.trigger_reconnect") as mock_reconnect:
+            results = check_all_workers_health(db, [session])
+
+        assert session.name in results["deferred"]
+        assert session.name not in results["auto_reconnected"]
+        mock_reconnect.assert_not_called()
+        mock_active.assert_called_once_with(session.id)
+
+    @patch(f"{_HEALTH}.is_user_active", return_value=False)
+    @patch(f"{_HEALTH}.check_and_update_worker_health")
+    @patch(f"{_HEALTH}.repo")
+    def test_proceeds_with_reconnect_when_user_inactive(
+        self, mock_repo, mock_health, mock_active,
+    ):
+        """User not active → reconnect fires normally."""
+        session = self._make_detached_session()
+        mock_health.return_value = {
+            "alive": False, "status": "screen_detached",
+            "reason": "detached", "needs_reconnect": True,
+        }
+        db = MagicMock()
+
+        with patch("orchestrator.session.reconnect.trigger_reconnect") as mock_reconnect:
+            results = check_all_workers_health(db, [session])
+
+        assert session.name in results["auto_reconnected"]
+        assert session.name not in results["deferred"]
+        mock_reconnect.assert_called_once()
+        mock_active.assert_called_once_with(session.id)
