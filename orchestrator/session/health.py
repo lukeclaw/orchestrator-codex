@@ -375,9 +375,15 @@ def check_screen_and_claude_remote(
         #   2. `ps aux | grep "screen .* <name>"` (process-based — always works,
         #      matches both `screen -S` from initial creation and `screen -rd` from reconnect)
         # Either match counts as "screen exists".
+        #
+        # NOTE: The ps grep uses case-insensitive match (-i) because GNU Screen
+        # renames the session manager process to uppercase "SCREEN".  It also
+        # drops the space before {screen_name} and uses `.*` to bridge both
+        # `screen -S <name>` (space-separated) and `screen -rd <pid>.<name>`
+        # (dot-separated) forms.
         check_cmd = (
             f"screen -ls 2>/dev/null | grep -q '{screen_name}' && echo 'SCREEN_EXISTS' || echo 'NO_SCREEN'; "
-            f"ps aux | grep -v grep | grep -q '[s]creen .* {screen_name}' && echo 'SCREEN_PS_EXISTS' || echo 'NO_SCREEN_PS'; "
+            f"ps aux | grep -v grep | grep -qi '[s]creen.*{screen_name}' && echo 'SCREEN_PS_EXISTS' || echo 'NO_SCREEN_PS'; "
             f"ps aux | grep -v grep | grep -E 'claude (-r|--|--settings)' | grep -q '{session_id}' && echo 'CLAUDE_RUNNING' || echo 'NO_CLAUDE'"
         )
 
@@ -422,6 +428,18 @@ def check_screen_and_claude_remote(
             return "alive", "Screen session exists and Claude is running"
         elif screen_exists and not claude_running:
             return "screen_only", "Screen session exists but Claude not running"
+        elif not screen_exists and claude_running:
+            # Claude is running but screen session not found. This happens when the
+            # screen parent process died (OOM, system cleanup) but Claude survived as
+            # an orphaned process with its PTY intact. Treat as alive since Claude is
+            # still functional.
+            logger.warning(
+                "SSH health check for %s: Claude running but screen not found "
+                "(screen_name=%s) — likely orphaned after screen parent died. "
+                "stdout=%r, stderr=%r",
+                host, screen_name, output[:200], stderr[:100],
+            )
+            return "alive", f"Claude is running without screen (screen session '{screen_name}' not found — likely orphaned)"
         else:
             # Log at warning level when marking as dead - helps diagnose false negatives
             logger.warning(
