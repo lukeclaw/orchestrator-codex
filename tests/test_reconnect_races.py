@@ -921,7 +921,9 @@ class TestTriggerReconnectIntegrationRace:
 
     @patch("orchestrator.terminal.ssh.is_remote_host", return_value=True)
     @patch("orchestrator.terminal.manager.subprocess")
-    def test_multiple_reconnects_serialize_via_lock(self, mock_subprocess, mock_is_remote, race_db):
+    def test_multiple_reconnects_serialize_via_lock(
+        self, mock_subprocess, mock_is_remote, tmp_path
+    ):
         """Multiple trigger_reconnect calls for the same session should
         serialize through the per-session lock, not run in parallel.
 
@@ -929,6 +931,12 @@ class TestTriggerReconnectIntegrationRace:
         (just like the real function does) so that serialization is tested.
         """
         from orchestrator.session.reconnect import get_reconnect_lock, trigger_reconnect
+        from orchestrator.state.db import get_connection
+        from orchestrator.state.migrations.runner import apply_migrations
+
+        db_path = str(tmp_path / "test.db")
+        race_db = get_connection(db_path)
+        apply_migrations(race_db)
 
         s = repo.create_session(race_db, "race-worker", "user/rdev-vm")
         repo.update_session(race_db, s.id, status="disconnected")
@@ -962,13 +970,14 @@ class TestTriggerReconnectIntegrationRace:
                 r = trigger_reconnect(
                     session,
                     race_db,
-                    db_path=":memory:",
+                    db_path=db_path,
                     api_port=8093,
                 )
                 assert r["ok"] is True
 
-        # Wait for all bg threads to finish (daemon threads + lock contention)
-        time.sleep(8)
+            # Wait for all bg threads to finish (daemon threads + lock contention)
+            # Must stay inside the patch block so bg threads see the mock
+            time.sleep(8)
 
         # Count how many actually started
         starts = [e for e in execution_order if e[0] == "start"]

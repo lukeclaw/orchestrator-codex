@@ -17,12 +17,14 @@ from orchestrator.terminal.control import (
     capture_pane_with_history_async,
 )
 
+pytestmark = pytest.mark.allow_subprocess
+
 TEST_WINDOW = "test-win"
 
 
 def _run(coro):
     """Run coroutine in a separate thread to avoid event loop conflicts.
-    
+
     When running alongside E2E tests with session-scoped playwright fixtures,
     there may already be a running event loop. Using a thread ensures isolation.
     """
@@ -58,9 +60,7 @@ class TestAtomicCapture:
         """Atomic capture should return content and cursor position."""
         session, window = tmux_window
 
-        content, cursor_x, cursor_y = _run(
-            capture_pane_with_cursor_atomic_async(session, window)
-        )
+        content, cursor_x, cursor_y = _run(capture_pane_with_cursor_atomic_async(session, window))
 
         # Should have some content (at least a shell prompt)
         assert isinstance(content, str)
@@ -78,9 +78,7 @@ class TestAtomicCapture:
         tmux.send_keys(session, window, "echo ATOMIC_TEST_123", enter=False)
         time.sleep(0.1)
 
-        content, cursor_x, cursor_y = _run(
-            capture_pane_with_cursor_atomic_async(session, window)
-        )
+        content, cursor_x, cursor_y = _run(capture_pane_with_cursor_atomic_async(session, window))
 
         assert "ATOMIC_TEST_123" in content
         # Cursor should be at the end of what we typed

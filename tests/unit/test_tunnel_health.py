@@ -7,7 +7,6 @@ Covers:
 - Periodic tunnel health monitor loop (subprocess-based)
 """
 
-import asyncio
 import signal
 from unittest.mock import MagicMock, call, patch
 
@@ -277,7 +276,7 @@ class TestTunnelHealthLoop:
     """Tests for the periodic tunnel health monitoring loop (subprocess-based)."""
 
     @patch("orchestrator.session.tunnel_monitor.sessions_repo")
-    def test_check_all_tunnels_skips_local(self, mock_repo):
+    async def test_check_all_tunnels_skips_local(self, mock_repo):
         """Should skip local workers (host=localhost)."""
         from orchestrator.session.tunnel_monitor import _check_all_tunnels
 
@@ -289,12 +288,12 @@ class TestTunnelHealthLoop:
 
         mock_tm = MagicMock()
 
-        asyncio.run(_check_all_tunnels(MagicMock(), mock_tm))
+        await _check_all_tunnels(MagicMock(), mock_tm)
 
         mock_tm.is_alive.assert_not_called()
 
     @patch("orchestrator.session.tunnel_monitor.sessions_repo")
-    def test_check_all_tunnels_skips_disconnected(self, mock_repo):
+    async def test_check_all_tunnels_skips_disconnected(self, mock_repo):
         """Should skip disconnected workers."""
         from orchestrator.session.tunnel_monitor import _check_all_tunnels
 
@@ -306,12 +305,12 @@ class TestTunnelHealthLoop:
 
         mock_tm = MagicMock()
 
-        asyncio.run(_check_all_tunnels(MagicMock(), mock_tm))
+        await _check_all_tunnels(MagicMock(), mock_tm)
 
         mock_tm.is_alive.assert_not_called()
 
     @patch("orchestrator.session.tunnel_monitor.sessions_repo")
-    def test_check_all_tunnels_skips_connecting(self, mock_repo):
+    async def test_check_all_tunnels_skips_connecting(self, mock_repo):
         """Should skip workers in connecting state."""
         from orchestrator.session.tunnel_monitor import _check_all_tunnels
 
@@ -323,12 +322,12 @@ class TestTunnelHealthLoop:
 
         mock_tm = MagicMock()
 
-        asyncio.run(_check_all_tunnels(MagicMock(), mock_tm))
+        await _check_all_tunnels(MagicMock(), mock_tm)
 
         mock_tm.is_alive.assert_not_called()
 
     @patch("orchestrator.session.tunnel_monitor.sessions_repo")
-    def test_check_all_tunnels_skips_alive(self, mock_repo):
+    async def test_check_all_tunnels_skips_alive(self, mock_repo):
         """Should not restart when tunnel is alive."""
         from orchestrator.session.tunnel_monitor import _check_all_tunnels
 
@@ -342,13 +341,13 @@ class TestTunnelHealthLoop:
         mock_tm = MagicMock()
         mock_tm.is_alive.return_value = True
 
-        asyncio.run(_check_all_tunnels(MagicMock(), mock_tm))
+        await _check_all_tunnels(MagicMock(), mock_tm)
 
         mock_tm.is_alive.assert_called_once_with("sess-1")
         mock_tm.restart_tunnel.assert_not_called()
 
     @patch("orchestrator.session.tunnel_monitor.sessions_repo")
-    def test_check_all_tunnels_restarts_dead(self, mock_repo):
+    async def test_check_all_tunnels_restarts_dead(self, mock_repo):
         """Should restart tunnel via tunnel_manager when dead."""
         from orchestrator.session.tunnel_monitor import _check_all_tunnels
 
@@ -363,13 +362,13 @@ class TestTunnelHealthLoop:
         mock_tm.is_alive.return_value = False
         mock_tm.restart_tunnel.return_value = 99999
 
-        asyncio.run(_check_all_tunnels(MagicMock(), mock_tm))
+        await _check_all_tunnels(MagicMock(), mock_tm)
 
         mock_tm.is_alive.assert_called_once_with("sess-1")
         mock_tm.restart_tunnel.assert_called_once_with("sess-1", "w1", "user/rdev-vm")
 
     @patch("orchestrator.session.tunnel_monitor.sessions_repo")
-    def test_check_all_tunnels_updates_db_on_restart(self, mock_repo):
+    async def test_check_all_tunnels_updates_db_on_restart(self, mock_repo):
         """Should update tunnel_pid in DB after successful restart."""
         from orchestrator.session.tunnel_monitor import _check_all_tunnels
 
@@ -385,12 +384,12 @@ class TestTunnelHealthLoop:
         mock_tm.is_alive.return_value = False
         mock_tm.restart_tunnel.return_value = 12345
 
-        asyncio.run(_check_all_tunnels(mock_conn, mock_tm))
+        await _check_all_tunnels(mock_conn, mock_tm)
 
         mock_repo.update_session.assert_called_once_with(mock_conn, "sess-1", tunnel_pid=12345)
 
     @patch("orchestrator.session.tunnel_monitor.sessions_repo")
-    def test_check_all_tunnels_no_db_update_on_restart_failure(self, mock_repo):
+    async def test_check_all_tunnels_no_db_update_on_restart_failure(self, mock_repo):
         """Should not update DB when restart returns None."""
         from orchestrator.session.tunnel_monitor import _check_all_tunnels
 
@@ -405,7 +404,7 @@ class TestTunnelHealthLoop:
         mock_tm.is_alive.return_value = False
         mock_tm.restart_tunnel.return_value = None
 
-        asyncio.run(_check_all_tunnels(MagicMock(), mock_tm))
+        await _check_all_tunnels(MagicMock(), mock_tm)
 
         mock_repo.update_session.assert_not_called()
 

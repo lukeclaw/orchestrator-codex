@@ -31,6 +31,7 @@ from orchestrator.terminal.pty_stream import (
 # Fixtures
 # ---------------------------------------------------------------------------
 
+
 @pytest.fixture(autouse=True)
 def _reset_singletons():
     """Reset module-level caches and singletons between tests."""
@@ -52,6 +53,7 @@ def tmp_fifo_dir(tmp_path):
 # ---------------------------------------------------------------------------
 # tmux version detection
 # ---------------------------------------------------------------------------
+
 
 class TestTmuxVersionParsing:
     """Test _parse_tmux_version with various version strings."""
@@ -116,6 +118,7 @@ class TestTmuxVersionDetection:
 # ---------------------------------------------------------------------------
 # PtyStreamReader
 # ---------------------------------------------------------------------------
+
 
 class TestPtyStreamReader:
     """Tests for PtyStreamReader FIFO lifecycle and behavior."""
@@ -263,6 +266,7 @@ class TestPtyStreamReader:
 # PtyStreamPool
 # ---------------------------------------------------------------------------
 
+
 class TestPtyStreamPool:
     """Tests for PtyStreamPool subscriber management and fan-out."""
 
@@ -400,15 +404,21 @@ class TestPtyStreamPool:
         """A slow subscriber should not block delivery to others."""
         pool = PtyStreamPool()
 
-        slow_cb = AsyncMock(side_effect=asyncio.sleep(1.0))
+        async def _slow(*a, **kw):
+            await asyncio.sleep(0.3)
+
+        slow_cb = AsyncMock(side_effect=_slow)
         fast_cb = AsyncMock()
         pool._consumers["%5"] = {slow_cb, fast_cb}
 
         await pool._dispatch("%5", b"hello")
         # Fast callback should complete quickly
-        await asyncio.sleep(0.1)
+        await asyncio.sleep(0.05)
 
         fast_cb.assert_awaited_once_with(b"hello")
+
+        # Let slow callback finish to avoid unawaited-coroutine warning
+        await asyncio.sleep(0.35)
 
     async def test_eof_removes_reader(self, tmp_fifo_dir):
         """_on_reader_eof should remove the dead reader."""
@@ -481,6 +491,7 @@ class TestPtyStreamPool:
 # suppress_control_mode_output
 # ---------------------------------------------------------------------------
 
+
 class TestSuppressControlModeOutput:
     """Test the refresh-client -f no-output helper."""
 
@@ -507,6 +518,7 @@ class TestSuppressControlModeOutput:
 # ---------------------------------------------------------------------------
 # ws_terminal integration: pipe-pane path
 # ---------------------------------------------------------------------------
+
 
 class FakeWebSocket:
     """Minimal WebSocket mock that records sent frames."""
@@ -535,6 +547,7 @@ class FakeWebSocket:
         msg = await self._incoming.get()
         if msg is None:
             from fastapi import WebSocketDisconnect
+
             raise WebSocketDisconnect()
         return msg
 
@@ -834,6 +847,4 @@ class TestWsTerminalPipePanePath:
                 pass
 
             recovery_syncs = sync_count - initial_syncs
-            assert recovery_syncs >= 1, (
-                f"Expected snapshot recovery sync, got {recovery_syncs}"
-            )
+            assert recovery_syncs >= 1, f"Expected snapshot recovery sync, got {recovery_syncs}"

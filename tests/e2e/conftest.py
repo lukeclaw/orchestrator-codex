@@ -22,31 +22,34 @@ PROJECT_ROOT = Path(__file__).parent.parent.parent
 
 
 def pytest_collection_modifyitems(items):
-    """Give E2E tests a longer timeout (60s) since they involve server startup and browser interaction."""
+    """E2E tests need longer timeouts and real I/O (server, browser)."""
     for item in items:
         if not item.get_closest_marker("timeout"):
             item.add_marker(pytest.mark.timeout(60))
+        item.add_marker(pytest.mark.allow_subprocess)
+        item.add_marker(pytest.mark.allow_network)
+
 
 # ---------------------------------------------------------------------------
 # Worker Isolation (for pytest-xdist parallel execution)
 # ---------------------------------------------------------------------------
 
 
-@pytest.fixture(scope="session")
+@pytest.fixture(scope="module")
 def worker_id(request):
     """Get xdist worker ID for isolation, or 'master' if running sequentially."""
-    if hasattr(request.config, 'workerinput'):
-        return request.config.workerinput['workerid']
-    return 'master'
+    if hasattr(request.config, "workerinput"):
+        return request.config.workerinput["workerid"]
+    return "master"
 
 
-@pytest.fixture(scope="session")
+@pytest.fixture(scope="module")
 def server_port(worker_id):
     """Unique port per worker to avoid collisions in parallel runs."""
-    if worker_id == 'master':
+    if worker_id == "master":
         return 8099
     # gw0 -> 8100, gw1 -> 8101, etc.
-    worker_num = int(worker_id.replace('gw', ''))
+    worker_num = int(worker_id.replace("gw", ""))
     return 8100 + worker_num
 
 
@@ -55,10 +58,10 @@ def server_port(worker_id):
 # ---------------------------------------------------------------------------
 
 
-@pytest.fixture(scope="session")
+@pytest.fixture(scope="module")
 def e2e_db_path(worker_id):
     """Create a temporary SQLite DB with migrations + seed data for E2E tests.
-    
+
     Each xdist worker gets its own isolated database.
     """
     sys.path.insert(0, str(PROJECT_ROOT))
@@ -93,11 +96,12 @@ def e2e_db_path(worker_id):
 
     yield path
 
-    # Cleanup
-    try:
-        os.unlink(path)
-    except OSError:
-        pass
+    # Cleanup DB and WAL/SHM journal files
+    for suffix in ("", "-wal", "-shm"):
+        try:
+            os.unlink(path + suffix)
+        except OSError:
+            pass
 
 
 # ---------------------------------------------------------------------------
@@ -105,10 +109,10 @@ def e2e_db_path(worker_id):
 # ---------------------------------------------------------------------------
 
 
-@pytest.fixture(scope="session")
+@pytest.fixture(scope="module")
 def server(e2e_db_path, server_port):
     """Start a uvicorn subprocess and wait for it to be ready.
-    
+
     Each xdist worker gets its own server on a unique port.
     """
     import httpx
@@ -121,11 +125,15 @@ def server(e2e_db_path, server_port):
 
     proc = subprocess.Popen(
         [
-            sys.executable, "-m", "uvicorn",
+            sys.executable,
+            "-m",
+            "uvicorn",
             "orchestrator.api.app:create_app",
             "--factory",
-            "--port", str(server_port),
-            "--host", "127.0.0.1",
+            "--port",
+            str(server_port),
+            "--host",
+            "127.0.0.1",
         ],
         env=env,
         cwd=str(PROJECT_ROOT),
@@ -148,7 +156,9 @@ def server(e2e_db_path, server_port):
         proc.kill()
         stdout = proc.stdout.read().decode() if proc.stdout else ""
         stderr = proc.stderr.read().decode() if proc.stderr else ""
-        pytest.fail(f"Server did not start on port {server_port}.\nstdout: {stdout}\nstderr: {stderr}")
+        pytest.fail(
+            f"Server did not start on port {server_port}.\nstdout: {stdout}\nstderr: {stderr}"
+        )
 
     yield base_url
 
@@ -167,9 +177,15 @@ def server(e2e_db_path, server_port):
 SCREENSHOT_DIR = Path(__file__).parent.parent.parent / "tmp" / "screenshots"
 
 
-@pytest.fixture(scope="session")
+@pytest.fixture(scope="module")
 def browser_instance():
-    """Launch a single browser for all tests."""
+    """Launch a browser for the e2e test module.
+
+    Uses *module* scope (not session) so that Playwright's internal event-loop
+    greenlet is torn down before pytest-asyncio tries to create ``Runner``
+    instances for later async tests.  Since there is only a single e2e test
+    module this has no practical performance impact.
+    """
     from playwright.sync_api import sync_playwright
 
     SCREENSHOT_DIR.mkdir(parents=True, exist_ok=True)
@@ -181,6 +197,14 @@ def browser_instance():
 
     browser.close()
     pw.stop()
+
+    # Playwright's sync_api uses greenlets that leave the asyncio running-loop
+    # flag set at the C level.  Clear it so pytest-asyncio works afterwards.
+    import asyncio
+
+    asyncio._set_running_loop(None)
+    # Replace any stale event loop with a fresh one
+    asyncio.set_event_loop(asyncio.new_event_loop())
 
     # Clean up screenshots after all tests complete
     if SCREENSHOT_DIR.exists():
@@ -199,7 +223,9 @@ def page(browser_instance, server):
 
     # Collect console errors
     pg._console_errors = []
-    pg.on("console", lambda msg: pg._console_errors.append(msg.text) if msg.type == "error" else None)
+    pg.on(
+        "console", lambda msg: pg._console_errors.append(msg.text) if msg.type == "error" else None
+    )
 
     pg.goto(server + "/")
     pg.wait_for_load_state("networkidle")

@@ -17,6 +17,7 @@ import asyncio
 import os
 import shutil
 from pathlib import Path
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -35,7 +36,6 @@ pytestmark = [
 # Test tmux session name (unique to avoid conflicts)
 TEST_SESSION = f"pty_test_{os.getpid()}"
 TEST_WINDOW = "0"
-FIFO_TEST_DIR = f"/tmp/orchestrator_pty_test_{os.getpid()}"
 
 
 @pytest.fixture(autouse=True)
@@ -46,6 +46,14 @@ def _reset_caches():
     yield
     reset_tmux_version_cache()
     PtyStreamPool.reset_instance()
+
+
+@pytest.fixture
+def fifo_test_dir(tmp_path):
+    """Provide a tmp_path-based FIFO directory so nothing leaks to /tmp/."""
+    d = str(tmp_path / "orchestrator_pty_test")
+    os.makedirs(d, mode=0o700, exist_ok=True)
+    return d
 
 
 def _tmux_available() -> bool:
@@ -61,7 +69,15 @@ def _skip_without_tmux():
 async def _create_test_session():
     """Create a tmux session for testing."""
     proc = await asyncio.create_subprocess_exec(
-        "tmux", "new-session", "-d", "-s", TEST_SESSION, "-x", "80", "-y", "24",
+        "tmux",
+        "new-session",
+        "-d",
+        "-s",
+        TEST_SESSION,
+        "-x",
+        "80",
+        "-y",
+        "24",
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
     )
@@ -76,7 +92,10 @@ async def _create_test_session():
 async def _destroy_test_session():
     """Kill the test tmux session."""
     proc = await asyncio.create_subprocess_exec(
-        "tmux", "kill-session", "-t", TEST_SESSION,
+        "tmux",
+        "kill-session",
+        "-t",
+        TEST_SESSION,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
     )
@@ -86,8 +105,12 @@ async def _destroy_test_session():
 async def _get_pane_id() -> str:
     """Get the pane ID for the test window."""
     proc = await asyncio.create_subprocess_exec(
-        "tmux", "list-panes", "-t", f"{TEST_SESSION}:{TEST_WINDOW}",
-        "-F", "#{pane_id}",
+        "tmux",
+        "list-panes",
+        "-t",
+        f"{TEST_SESSION}:{TEST_WINDOW}",
+        "-F",
+        "#{pane_id}",
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
     )
@@ -98,7 +121,12 @@ async def _get_pane_id() -> str:
 async def _send_keys(keys: str):
     """Send keys to the test pane."""
     proc = await asyncio.create_subprocess_exec(
-        "tmux", "send-keys", "-t", f"{TEST_SESSION}:{TEST_WINDOW}", keys, "Enter",
+        "tmux",
+        "send-keys",
+        "-t",
+        f"{TEST_SESSION}:{TEST_WINDOW}",
+        keys,
+        "Enter",
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
     )
@@ -117,7 +145,7 @@ async def tmux_session():
 class TestPtyStreamReaderIntegration:
     """End-to-end tests with real tmux."""
 
-    async def test_receives_output(self, tmux_session):
+    async def test_receives_output(self, tmux_session, fifo_test_dir):
         """Should receive output bytes when a command runs in the pane."""
         pane_id = await _get_pane_id()
         received: list[bytes] = []
@@ -128,7 +156,7 @@ class TestPtyStreamReaderIntegration:
         reader = PtyStreamReader(TEST_SESSION, TEST_WINDOW, pane_id)
 
         with pytest.MonkeyPatch.context() as mp:
-            mp.setattr("orchestrator.terminal.pty_stream.FIFO_DIR", FIFO_TEST_DIR)
+            mp.setattr("orchestrator.terminal.pty_stream.FIFO_DIR", fifo_test_dir)
 
             started = await reader.start(on_data)
             assert started, "PtyStreamReader failed to start"
@@ -148,41 +176,44 @@ class TestPtyStreamReaderIntegration:
         )
 
         # FIFO should be cleaned up
-        fifo_dir = Path(FIFO_TEST_DIR)
+        fifo_dir = Path(fifo_test_dir)
         if fifo_dir.exists():
             fifos = list(fifo_dir.glob("*.fifo"))
             assert len(fifos) == 0, f"Stale FIFOs remain: {fifos}"
 
-    async def test_stop_cleans_up_fifo(self, tmux_session):
+    async def test_stop_cleans_up_fifo(self, tmux_session, fifo_test_dir):
         """stop() should remove the FIFO and stop pipe-pane."""
         pane_id = await _get_pane_id()
 
         reader = PtyStreamReader(TEST_SESSION, TEST_WINDOW, pane_id)
 
         with pytest.MonkeyPatch.context() as mp:
-            mp.setattr("orchestrator.terminal.pty_stream.FIFO_DIR", FIFO_TEST_DIR)
+            mp.setattr("orchestrator.terminal.pty_stream.FIFO_DIR", fifo_test_dir)
 
             started = await reader.start(AsyncMock())
             assert started
 
             # Verify FIFO exists
-            fifo_dir = Path(FIFO_TEST_DIR)
+            fifo_dir = Path(fifo_test_dir)
             fifos = list(fifo_dir.glob("*.fifo"))
             assert len(fifos) == 1
 
             await reader.stop()
 
         # FIFO should be gone
-        fifo_dir = Path(FIFO_TEST_DIR)
+        fifo_dir = Path(fifo_test_dir)
         if fifo_dir.exists():
             fifos = list(fifo_dir.glob("*.fifo"))
             assert len(fifos) == 0
 
-    async def test_eof_on_pane_destroy(self, tmux_session):
+    async def test_eof_on_pane_destroy(self, tmux_session, fifo_test_dir):
         """Destroying the pane should trigger EOF callback."""
         # Create a second window so killing one doesn't kill the session
         proc = await asyncio.create_subprocess_exec(
-            "tmux", "new-window", "-t", TEST_SESSION,
+            "tmux",
+            "new-window",
+            "-t",
+            TEST_SESSION,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
@@ -197,7 +228,7 @@ class TestPtyStreamReaderIntegration:
         reader = PtyStreamReader(TEST_SESSION, TEST_WINDOW, pane_id)
 
         with pytest.MonkeyPatch.context() as mp:
-            mp.setattr("orchestrator.terminal.pty_stream.FIFO_DIR", FIFO_TEST_DIR)
+            mp.setattr("orchestrator.terminal.pty_stream.FIFO_DIR", fifo_test_dir)
 
             started = await reader.start(AsyncMock(), eof_callback=on_eof)
             if not started:
@@ -205,7 +236,10 @@ class TestPtyStreamReaderIntegration:
 
             # Kill the window — should trigger EOF
             proc = await asyncio.create_subprocess_exec(
-                "tmux", "kill-window", "-t", f"{TEST_SESSION}:{TEST_WINDOW}",
+                "tmux",
+                "kill-window",
+                "-t",
+                f"{TEST_SESSION}:{TEST_WINDOW}",
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )
@@ -231,7 +265,7 @@ class TestPtyStreamReaderIntegration:
 class TestPtyStreamPoolIntegration:
     """Integration tests for the pool with real tmux."""
 
-    async def test_pool_subscribe_unsubscribe(self, tmux_session):
+    async def test_pool_subscribe_unsubscribe(self, tmux_session, fifo_test_dir):
         """Pool subscribe/unsubscribe lifecycle with real tmux."""
         pane_id = await _get_pane_id()
         received: list[bytes] = []
@@ -242,11 +276,9 @@ class TestPtyStreamPoolIntegration:
         pool = PtyStreamPool()
 
         with pytest.MonkeyPatch.context() as mp:
-            mp.setattr("orchestrator.terminal.pty_stream.FIFO_DIR", FIFO_TEST_DIR)
+            mp.setattr("orchestrator.terminal.pty_stream.FIFO_DIR", fifo_test_dir)
 
-            success = await pool.subscribe(
-                pane_id, TEST_SESSION, TEST_WINDOW, on_data
-            )
+            success = await pool.subscribe(pane_id, TEST_SESSION, TEST_WINDOW, on_data)
             assert success, "Pool subscribe failed"
 
             # Generate output
@@ -258,7 +290,7 @@ class TestPtyStreamPoolIntegration:
         all_bytes = b"".join(received)
         assert b"POOL_TEST_67890" in all_bytes
 
-    async def test_pool_two_subscribers(self, tmux_session):
+    async def test_pool_two_subscribers(self, tmux_session, fifo_test_dir):
         """Two subscribers should both receive the same bytes."""
         pane_id = await _get_pane_id()
         received1: list[bytes] = []
@@ -273,14 +305,10 @@ class TestPtyStreamPoolIntegration:
         pool = PtyStreamPool()
 
         with pytest.MonkeyPatch.context() as mp:
-            mp.setattr("orchestrator.terminal.pty_stream.FIFO_DIR", FIFO_TEST_DIR)
+            mp.setattr("orchestrator.terminal.pty_stream.FIFO_DIR", fifo_test_dir)
 
-            s1 = await pool.subscribe(
-                pane_id, TEST_SESSION, TEST_WINDOW, on_data1
-            )
-            s2 = await pool.subscribe(
-                pane_id, TEST_SESSION, TEST_WINDOW, on_data2
-            )
+            s1 = await pool.subscribe(pane_id, TEST_SESSION, TEST_WINDOW, on_data1)
+            s2 = await pool.subscribe(pane_id, TEST_SESSION, TEST_WINDOW, on_data2)
             assert s1 and s2
 
             await _send_keys("echo TWO_SUBS_TEST")
@@ -293,7 +321,3 @@ class TestPtyStreamPoolIntegration:
         all2 = b"".join(received2)
         assert b"TWO_SUBS_TEST" in all1
         assert b"TWO_SUBS_TEST" in all2
-
-
-# Use unittest.mock.AsyncMock as a simple callback when we don't care about args
-from unittest.mock import AsyncMock

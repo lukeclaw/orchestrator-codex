@@ -15,7 +15,6 @@ and concurrent access patterns are exercised.
 
 from __future__ import annotations
 
-import asyncio
 import signal
 import threading
 import time
@@ -971,7 +970,7 @@ class TestRaceDeepProbeStaleResult:
     """Deep probe result may be stale by the time it's acted on."""
 
     @patch("orchestrator.session.tunnel_monitor.sessions_repo")
-    def test_stale_probe_triggers_unnecessary_restart(self, mock_repo):
+    async def test_stale_probe_triggers_unnecessary_restart(self, mock_repo):
         """A slow probe returns 'unhealthy' but tunnel was already restarted."""
         from orchestrator.session.tunnel_monitor import _check_all_tunnels
 
@@ -993,7 +992,7 @@ class TestRaceDeepProbeStaleResult:
         mock_conn = MagicMock()
 
         # Run with deep_probe=True
-        asyncio.run(_check_all_tunnels(mock_conn, mock_tm, deep_probe=True))
+        await _check_all_tunnels(mock_conn, mock_tm, deep_probe=True)
 
         # The stale probe result triggers a restart even though another
         # thread may have already fixed it

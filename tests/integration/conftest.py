@@ -7,15 +7,16 @@ Supports parallel execution via pytest-xdist by providing worker-isolated
 tmux session names.
 """
 
-import pytest
+import subprocess
 
-from orchestrator.terminal import manager as tmux
+import pytest
 
 
 @pytest.fixture(scope="function")
 def event_loop_policy():
     """Use default event loop policy for integration tests."""
     import asyncio
+
     return asyncio.DefaultEventLoopPolicy()
 
 
@@ -27,9 +28,9 @@ def event_loop_policy():
 @pytest.fixture(scope="session")
 def worker_id(request):
     """Get xdist worker ID for isolation, or 'master' if running sequentially."""
-    if hasattr(request.config, 'workerinput'):
-        return request.config.workerinput['workerid']
-    return 'master'
+    if hasattr(request.config, "workerinput"):
+        return request.config.workerinput["workerid"]
+    return "master"
 
 
 @pytest.fixture(scope="module")
@@ -46,8 +47,21 @@ def tmux_control_session(worker_id):
 
 @pytest.fixture(autouse=True)
 def cleanup_test_sessions(request, worker_id):
-    """Clean up any test tmux sessions after tests complete."""
+    """Clean up any test tmux sessions after tests that use real tmux."""
     yield
-    # Clean up both possible session names for this worker
-    tmux.kill_session(f"orch-test-{worker_id}")
-    tmux.kill_session(f"orch-control-{worker_id}")
+    if not request.node.get_closest_marker("allow_subprocess"):
+        return
+    # Use the real subprocess.run (guards are patched via monkeypatch and
+    # already restored by this point in teardown, but import the saved
+    # reference just in case).
+    from tests.conftest import _real_run
+
+    for name in (f"orch-test-{worker_id}", f"orch-control-{worker_id}"):
+        try:
+            _real_run(
+                ["tmux", "kill-session", "-t", name],
+                capture_output=True,
+                timeout=5,
+            )
+        except (subprocess.TimeoutExpired, FileNotFoundError):
+            pass
