@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
-import { api } from '../api/client'
+import { api, openUrl } from '../api/client'
 import { useNotify } from '../context/NotificationContext'
 import { useApp } from '../context/AppContext'
 import { useSmartPaste } from '../hooks/useSmartPaste'
@@ -429,9 +429,8 @@ export default function SessionDetailPage() {
                 <a
                   key={port}
                   href={`http://localhost:${port}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
                   className="sd-tunnel-badge"
+                  onClick={e => { e.preventDefault(); openUrl(`http://localhost:${port}`) }}
                   title={`Port forwarding: localhost:${port} → rdev:${port}`}
                 >
                   :{port}

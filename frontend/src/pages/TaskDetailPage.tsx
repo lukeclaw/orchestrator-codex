@@ -864,10 +864,8 @@ export default function TaskDetailPage() {
                       {st.links && st.links.length > 0 && (
                         <a
                           href={st.links[0].url}
-                          target="_blank"
-                          rel="noopener noreferrer"
                           className="subtask-link-btn"
-                          onClick={e => e.stopPropagation()}
+                          onClick={e => { e.preventDefault(); e.stopPropagation(); openUrl(st.links[0].url) }}
                           title={st.links.length > 1 ? `${st.links[0].url} (+${st.links.length - 1} more)` : st.links[0].url}
                         >
                           ↗{st.links.length > 1 && <span className="link-more">...</span>}

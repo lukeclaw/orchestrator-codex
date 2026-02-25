@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import type { Session, Task } from '../../api/types'
-import { api } from '../../api/client'
+import { api, openUrl } from '../../api/client'
 import { useNotify } from '../../context/NotificationContext'
 import { timeAgo } from '../common/TimeAgo'
 import { IconTrash, IconPause, IconPlay, IconStop, IconRefresh, IconBrain } from '../common/Icons'
@@ -290,10 +290,8 @@ export default function WorkerCard({
                 <a
                   key={port}
                   href={`http://localhost:${port}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
                   className="wc-tunnel-badge"
-                  onClick={e => e.stopPropagation()}
+                  onClick={e => { e.preventDefault(); e.stopPropagation(); openUrl(`http://localhost:${port}`) }}
                   title={`Port forwarding: localhost:${port} → rdev:${port}`}
                 >
                   :{port}
