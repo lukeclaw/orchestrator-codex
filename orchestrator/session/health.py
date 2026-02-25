@@ -199,9 +199,10 @@ def check_tui_running_in_pane(tmux_sess: str, tmux_win: str) -> bool:
     This is a tmux QUERY (display-message), NOT send-keys.
     Completely non-intrusive. Safe to call anytime.
 
-    Claude Code (built on Ink/React) and GNU Screen both use the alternate
-    screen buffer, so ``#{alternate_on}`` == "1" means a TUI is active and
-    we must not send shell commands to the pane.
+    Note: Claude Code does NOT use the alternate screen buffer — only GNU
+    Screen does.  For remote workers, ``#{alternate_on}`` == "1" means the
+    pane is attached to a screen session, while "0" means the pane is at
+    a bare shell prompt (screen detached or not running).
     """
     try:
         target = f"{tmux_sess}:{tmux_win}"
@@ -512,37 +513,60 @@ def check_and_update_worker_health(db, session, tunnel_manager=None) -> dict:
         tunnel_alive = tunnel_manager.is_alive(session.id) if tunnel_manager else False
 
         if screen_status == "alive":
+            # --- Ensure tunnel is alive ---
+            tunnel_reconnected = False
             if not tunnel_alive:
-                # Claude running but tunnel dead — auto-restart tunnel
                 logger.info("Health check: %s has Claude running but tunnel dead, restarting tunnel", session.name)
                 if tunnel_manager:
                     new_pid = tunnel_manager.restart_tunnel(session.id, session.name, session.host)
                     if new_pid:
                         repo.update_session(db, session.id, tunnel_pid=new_pid)
                         logger.info("Health check: %s tunnel restarted (pid=%d)", session.name, new_pid)
-                        if session.status in ("screen_detached", "error", "disconnected"):
-                            repo.update_session(db, session.id, status="waiting")
-                        return {
-                            "alive": True, "status": "waiting",
-                            "reason": f"{reason}, tunnel was dead but auto-restarted",
-                            "screen_status": screen_status,
-                            "tunnel_alive": True, "tunnel_reconnected": True,
-                        }
-                # Tunnel restart failed
-                reason = f"{reason}, but tunnel is dead and restart failed"
+                        tunnel_alive = True
+                        tunnel_reconnected = True
+                        # Don't return — fall through to TUI check
+
+                if not tunnel_alive:
+                    # Tunnel dead and could not be restarted
+                    reason = f"{reason}, but tunnel is dead and restart failed"
+                    if session.status not in ("screen_detached", "connecting"):
+                        repo.update_session(db, session.id, status="screen_detached")
+                    return {
+                        "alive": False, "status": "screen_detached", "reason": reason,
+                        "screen_status": screen_status, "tunnel_alive": False,
+                        "needs_reconnect": True,
+                    }
+
+            # --- Tunnel alive. Check if pane is attached to screen ---
+            # On remote workers, alternate_on=1 means inside GNU Screen,
+            # alternate_on=0 means at shell prompt (screen detached).
+            tui_active = check_tui_running_in_pane(tmux_sess, tmux_win)
+            if not tui_active:
                 if session.status not in ("screen_detached", "connecting"):
                     repo.update_session(db, session.id, status="screen_detached")
+                    logger.info(
+                        "Health check: %s alive but pane not attached to screen, "
+                        "marking screen_detached for auto-reattach", session.name,
+                    )
                 return {
-                    "alive": False, "status": "screen_detached", "reason": reason,
-                    "screen_status": screen_status, "tunnel_alive": False,
-                    "needs_reconnect": True,
+                    "alive": False, "status": "screen_detached",
+                    "reason": f"{reason} — pane not attached to screen",
+                    "screen_status": screen_status, "tunnel_alive": tunnel_alive,
+                    "needs_reconnect": True, "tunnel_reconnected": tunnel_reconnected,
                 }
-            # All good
+
+            # --- All good: screen + Claude alive, tunnel alive, pane attached ---
             if session.status in ("screen_detached", "error", "disconnected"):
                 repo.update_session(db, session.id, status="waiting")
                 logger.info("Health check: %s recovered from %s to waiting", session.name, session.status)
-                return {"alive": True, "status": "waiting", "reason": reason, "screen_status": screen_status, "tunnel_alive": True}
-            return {"alive": True, "status": session.status, "reason": reason, "screen_status": screen_status, "tunnel_alive": True}
+            result = {
+                "alive": True, "status": session.status, "reason": reason,
+                "screen_status": screen_status, "tunnel_alive": True,
+            }
+            if tunnel_reconnected:
+                result["tunnel_reconnected"] = True
+                result["status"] = "waiting"
+            return result
 
         elif screen_status == "screen_detached":
             if session.status not in ("screen_detached", "connecting"):

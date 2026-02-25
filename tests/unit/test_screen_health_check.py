@@ -1,4 +1,4 @@
-"""Tests for check_screen_and_claude_remote in orchestrator.session.health.
+"""Tests for check_screen_and_claude_remote and pane-attachment detection.
 
 Covers:
 - Screen detection via both `screen -ls` and `ps aux` methods
@@ -8,13 +8,18 @@ Covers:
 - Safety net: Claude running without screen (orphaned process)
 - SSH failure handling (auth, timeout, connection refused)
 - SSH alive pre-check gating
+- Pane attachment detection via check_and_update_worker_health
 """
 
 import subprocess
 import unittest
 from unittest.mock import MagicMock, patch
 
-from orchestrator.session.health import check_screen_and_claude_remote
+from orchestrator.session.health import (
+    check_and_update_worker_health,
+    check_screen_and_claude_remote,
+)
+from orchestrator.state.models import Session
 
 SESSION_ID = "b98879e8-1c79-4776-8b18-adc698fb661f"
 SCREEN_NAME = f"claude-{SESSION_ID}"
@@ -211,3 +216,116 @@ class TestGrepPatternMatchesScreenFormats(unittest.TestCase):
         )
         status, _ = check_screen_and_claude_remote(HOST, SESSION_ID)
         assert status == "alive"
+
+
+# ---------------------------------------------------------------------------
+# Helpers for check_and_update_worker_health tests
+# ---------------------------------------------------------------------------
+
+def _make_remote_session(**overrides) -> Session:
+    """Create a remote Session suitable for check_and_update_worker_health."""
+    defaults = {
+        "id": SESSION_ID,
+        "name": "worker-ld3",
+        "host": HOST,
+        "work_dir": "/tmp/work",
+        "status": "working",
+    }
+    defaults.update(overrides)
+    return Session(**defaults)
+
+
+# Common patch targets for check_and_update_worker_health tests
+_HEALTH = "orchestrator.session.health"
+_SCREEN_ALIVE = ("alive", "Screen + Claude running")
+
+
+class TestPaneAttachmentDetection(unittest.TestCase):
+    """Tests for auto-detecting detached screen via pane attachment check.
+
+    When check_screen_and_claude_remote reports "alive" (screen + Claude
+    running on the remote host), the health check should additionally verify
+    that the local tmux pane is actually attached to screen (alternate_on=1).
+    If not, the worker is marked screen_detached for auto-reattach.
+    """
+
+    @patch(f"{_HEALTH}.check_tui_running_in_pane", return_value=False)
+    @patch(f"{_HEALTH}.check_screen_and_claude_remote", return_value=_SCREEN_ALIVE)
+    @patch(f"{_HEALTH}.repo")
+    def test_alive_but_pane_not_attached_returns_screen_detached(
+        self, mock_repo, mock_screen_check, mock_tui,
+    ):
+        """screen_status=alive + TUI not active → screen_detached + needs_reconnect."""
+        session = _make_remote_session()
+        tunnel_mgr = MagicMock()
+        tunnel_mgr.is_alive.return_value = True
+
+        result = check_and_update_worker_health(MagicMock(), session, tunnel_manager=tunnel_mgr)
+
+        assert result["alive"] is False
+        assert result["status"] == "screen_detached"
+        assert result["needs_reconnect"] is True
+        assert "pane not attached" in result["reason"]
+        mock_tui.assert_called_once()
+
+    @patch(f"{_HEALTH}.check_tui_running_in_pane", return_value=True)
+    @patch(f"{_HEALTH}.check_screen_and_claude_remote", return_value=_SCREEN_ALIVE)
+    @patch(f"{_HEALTH}.repo")
+    def test_alive_and_pane_attached_returns_alive(
+        self, mock_repo, mock_screen_check, mock_tui,
+    ):
+        """screen_status=alive + TUI active → alive."""
+        session = _make_remote_session()
+        tunnel_mgr = MagicMock()
+        tunnel_mgr.is_alive.return_value = True
+
+        result = check_and_update_worker_health(MagicMock(), session, tunnel_manager=tunnel_mgr)
+
+        assert result["alive"] is True
+        assert result["tunnel_alive"] is True
+        mock_tui.assert_called_once()
+
+    @patch(f"{_HEALTH}.check_tui_running_in_pane", return_value=False)
+    @patch(f"{_HEALTH}.check_screen_and_claude_remote", return_value=_SCREEN_ALIVE)
+    @patch(f"{_HEALTH}.repo")
+    def test_tunnel_restart_success_still_checks_tui(
+        self, mock_repo, mock_screen_check, mock_tui,
+    ):
+        """Tunnel dead → restart succeeds → TUI not active → screen_detached.
+
+        Ensures the tunnel restart success path doesn't short-circuit past
+        the TUI check.
+        """
+        session = _make_remote_session()
+        tunnel_mgr = MagicMock()
+        tunnel_mgr.is_alive.return_value = False  # tunnel initially dead
+        tunnel_mgr.restart_tunnel.return_value = 12345  # restart succeeds
+
+        result = check_and_update_worker_health(MagicMock(), session, tunnel_manager=tunnel_mgr)
+
+        assert result["alive"] is False
+        assert result["status"] == "screen_detached"
+        assert result["needs_reconnect"] is True
+        assert result["tunnel_reconnected"] is True
+        assert result["tunnel_alive"] is True
+        mock_tui.assert_called_once()
+
+    @patch(f"{_HEALTH}.check_tui_running_in_pane", return_value=True)
+    @patch(f"{_HEALTH}.check_screen_and_claude_remote", return_value=_SCREEN_ALIVE)
+    @patch(f"{_HEALTH}.repo")
+    def test_tunnel_restart_success_and_tui_active_returns_alive(
+        self, mock_repo, mock_screen_check, mock_tui,
+    ):
+        """Tunnel dead → restart succeeds → TUI active → alive + tunnel_reconnected."""
+        session = _make_remote_session()
+        tunnel_mgr = MagicMock()
+        tunnel_mgr.is_alive.return_value = False
+        tunnel_mgr.restart_tunnel.return_value = 12345
+
+        result = check_and_update_worker_health(MagicMock(), session, tunnel_manager=tunnel_mgr)
+
+        assert result["alive"] is True
+        assert result["status"] == "waiting"
+        assert result["tunnel_reconnected"] is True
+        assert result["tunnel_alive"] is True
+        mock_tui.assert_called_once()
