@@ -1,6 +1,6 @@
 [package]
 name = "claude-orchestrator"
-version = "0.2.14"
+version = "0.2.15"
 description = "Orchestrator — manage multiple Claude Code sessions"
 edition = "2021"
 
