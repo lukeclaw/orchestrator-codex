@@ -29,22 +29,31 @@ def insert_event(
 def query_throughput(conn: sqlite3.Connection, since_date: str) -> list[dict]:
     """Completed tasks/subtasks per day since the given date.
 
+    Groups by local-timezone date so chart labels match the user's calendar.
     Returns [{date, tasks, subtasks}] sorted by date ascending.
     """
     rows = conn.execute(
-        """SELECT
-               date(timestamp) as day,
-               SUM(CASE WHEN is_subtask = 0 THEN 1 ELSE 0 END) as tasks,
-               SUM(CASE WHEN is_subtask = 1 THEN 1 ELSE 0 END) as subtasks
+        """SELECT is_subtask, timestamp
            FROM status_events
            WHERE entity_type = 'task'
              AND new_status = 'done'
              AND timestamp >= ?
-           GROUP BY day
-           ORDER BY day""",
+           ORDER BY timestamp""",
         (since_date,),
     ).fetchall()
-    return [{"date": r["day"], "tasks": r["tasks"], "subtasks": r["subtasks"]} for r in rows]
+
+    by_day: dict[str, dict] = {}
+    for r in rows:
+        ts = _parse_ts(r["timestamp"])
+        day = ts.astimezone().strftime("%Y-%m-%d")  # Local date
+        if day not in by_day:
+            by_day[day] = {"date": day, "tasks": 0, "subtasks": 0}
+        if r["is_subtask"]:
+            by_day[day]["subtasks"] += 1
+        else:
+            by_day[day]["tasks"] += 1
+
+    return sorted(by_day.values(), key=lambda x: x["date"])
 
 
 def query_worker_heatmap(conn: sqlite3.Connection, since_date: str) -> list[dict]:
@@ -128,13 +137,17 @@ def _parse_ts(ts_str: str) -> datetime:
 
 
 def _add_interval(hours_by_date: dict[str, float], start: datetime, end: datetime) -> None:
-    """Add a working interval to hours_by_date, splitting at midnight boundaries."""
+    """Add a working interval to hours_by_date, splitting at local midnight boundaries."""
     if start >= end:
         return
 
+    # Convert to local timezone so hours are attributed to the user's local date
+    start = start.astimezone()
+    end = end.astimezone()
+
     current = start
     while current < end:
-        # End of current day (midnight)
+        # End of current day (local midnight)
         next_midnight = (current + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
         interval_end = min(end, next_midnight)
         day_key = current.strftime("%Y-%m-%d")
@@ -158,20 +171,24 @@ def _get_task_key(task, conn) -> str | None:
 
 
 def query_throughput_detail(conn: sqlite3.Connection, date: str) -> list[dict]:
-    """Completed tasks/subtasks for a specific date with enriched task data.
+    """Completed tasks/subtasks for a specific date (local timezone) with enriched task data.
 
     Returns [{entity_id, is_subtask, timestamp, title, task_key, status,
               parent_task_id, parent_title, parent_task_key}].
     """
+    # Fetch a wider range and filter by local date in Python
     rows = conn.execute(
         """SELECT entity_id, is_subtask, timestamp
            FROM status_events
            WHERE entity_type = 'task'
              AND new_status = 'done'
-             AND date(timestamp) = ?
+             AND timestamp >= date(?, '-1 day')
+             AND timestamp < date(?, '+2 days')
            ORDER BY timestamp""",
-        (date,),
+        (date, date),
     ).fetchall()
+    # Filter to events whose local date matches the requested date
+    rows = [r for r in rows if _parse_ts(r["timestamp"]).astimezone().strftime("%Y-%m-%d") == date]
 
     items = []
     for r in rows:
@@ -202,22 +219,28 @@ def query_throughput_detail(conn: sqlite3.Connection, date: str) -> list[dict]:
 
 
 def query_worker_hours_detail(conn: sqlite3.Connection, date: str) -> list[dict]:
-    """Per-worker hour breakdown for a specific date.
+    """Per-worker hour breakdown for a specific date (local timezone).
 
     Returns [{session_id, session_name, total_hours,
               intervals: [{start, end}], current_task: {id, title}|null}].
     """
-    # Fetch events from prev day through target date to capture cross-midnight intervals
-    prev_date = (datetime.strptime(date, "%Y-%m-%d") - timedelta(days=1)).strftime("%Y-%m-%d")
+    # Interpret date as local timezone midnight boundaries
+    target_start = datetime.strptime(date, "%Y-%m-%d").astimezone()
+    target_end = target_start + timedelta(days=1)
+
+    # Fetch events with margin to capture cross-midnight and timezone-offset intervals.
+    # Convert to UTC for SQL string comparison (DB timestamps are UTC ISO strings).
+    fetch_since = (target_start - timedelta(days=1)).astimezone(UTC).isoformat()
+    fetch_until = (target_end + timedelta(hours=1)).astimezone(UTC).isoformat()
     rows = conn.execute(
         """SELECT entity_id, new_status, timestamp
            FROM status_events
            WHERE entity_type = 'session'
              AND session_type = 'worker'
              AND timestamp >= ?
-             AND timestamp < date(?, '+1 day')
+             AND timestamp < ?
            ORDER BY entity_id, timestamp""",
-        (prev_date, date),
+        (fetch_since, fetch_until),
     ).fetchall()
 
     # Group events by worker
@@ -229,8 +252,6 @@ def query_worker_hours_detail(conn: sqlite3.Connection, date: str) -> list[dict]
         workers[wid].append((r["new_status"], r["timestamp"]))
 
     now = datetime.now(UTC)
-    target_start = datetime.strptime(date, "%Y-%m-%d").replace(tzinfo=UTC)
-    target_end = target_start + timedelta(days=1)
 
     items = []
     for wid, events in workers.items():
@@ -318,7 +339,7 @@ def query_heatmap_detail(conn: sqlite3.Connection, day_of_week: int, hour: int, 
         session_name = session.name if session else r["entity_id"]
         ts = _parse_ts(r["timestamp"])
         items.append({
-            "date": ts.strftime("%Y-%m-%d"),
+            "date": ts.astimezone().strftime("%Y-%m-%d"),  # Local date
             "session_id": r["entity_id"],
             "session_name": session_name,
             "timestamp": r["timestamp"],

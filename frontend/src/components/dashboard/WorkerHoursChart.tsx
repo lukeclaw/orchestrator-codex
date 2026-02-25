@@ -8,6 +8,14 @@ interface Props {
   onPointClick?: (date: string) => void
 }
 
+/** Format a Date as YYYY-MM-DD in local timezone. */
+function localYMD(d: Date): string {
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
+}
+
 /** Fill missing days with zeros for continuous x-axis. */
 function fillDays(data: WorkerHoursDay[], rangeDays: number): WorkerHoursDay[] {
   const map = new Map(data.map(d => [d.date, d]))
@@ -16,7 +24,7 @@ function fillDays(data: WorkerHoursDay[], rangeDays: number): WorkerHoursDay[] {
   for (let i = rangeDays - 1; i >= 0; i--) {
     const d = new Date(now)
     d.setDate(d.getDate() - i)
-    const key = d.toISOString().slice(0, 10)
+    const key = localYMD(d)
     result.push(map.get(key) || { date: key, hours: 0 })
   }
   return result
@@ -35,7 +43,7 @@ export default function WorkerHoursChart({ data, range, onPointClick }: Props) {
 
   // Today's hours and this week total
   const stats = useMemo(() => {
-    const today = new Date().toISOString().slice(0, 10)
+    const today = localYMD(new Date())
     const todayHours = filled.find(d => d.date === today)?.hours || 0
     const weekTotal = filled.slice(-7).reduce((s, d) => s + d.hours, 0)
     return { todayHours: todayHours.toFixed(1), weekTotal: weekTotal.toFixed(1) }
