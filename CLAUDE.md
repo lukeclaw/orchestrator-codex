@@ -26,4 +26,4 @@ Verify all changes with tests. Aim for full coverage of new and modified code pa
 
 ## Design Docs
 
-The UI design document is at `docs/005-ui-design.md`. Keep it updated when making UI changes.
+The design documents are at `docs/` folder. Keep it updated for relavent topics, and add new topics for major changes or feature additions.

@@ -129,6 +129,7 @@ uv run uvicorn orchestrator.api.app:create_app --factory --reload --port 8093
 
 **Terminal 2 — Tauri + Vite:**
 ```bash
+cd src-tauri
 cargo tauri dev
 ```
 
