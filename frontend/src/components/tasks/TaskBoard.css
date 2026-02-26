@@ -1,8 +1,8 @@
 .task-board {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-rows: minmax(300px, 60vh);
   gap: 12px;
-  min-height: 300px;
   width: 100%;
   overflow-x: auto;
 }
@@ -15,6 +15,7 @@
   flex-direction: column;
   min-height: 0;
   min-width: 0;
+  overflow: hidden;
 }
 
 .tb-column-header {
@@ -75,12 +76,42 @@
   color: #f85149;
 }
 
+.tb-column-body-wrapper {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.tb-column-body-wrapper::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 32px;
+  background: linear-gradient(to bottom, transparent, var(--bg));
+  pointer-events: none;
+  z-index: 1;
+  opacity: 0;
+  transition: opacity 0.2s;
+  border-radius: 0 0 var(--radius-lg) var(--radius-lg);
+}
+
+.tb-column-body-wrapper.has-overflow::after {
+  opacity: 1;
+}
+
 .tb-column-body {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
   padding: 8px;
   display: flex;
   flex-direction: column;
   gap: 6px;
-  flex: 1;
   overflow-y: auto;
 }
 

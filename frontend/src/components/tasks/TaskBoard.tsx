@@ -1,3 +1,4 @@
+import { useRef, useEffect, useCallback, useState } from 'react'
 import type { Task } from '../../api/types'
 import TaskCard from './TaskCard'
 import './TaskBoard.css'
@@ -14,6 +15,36 @@ interface Props {
   onTaskClick?: (task: Task) => void
 }
 
+function ColumnBody({ tasks, onTaskClick }: { tasks: Task[]; onTaskClick?: (task: Task) => void }) {
+  const scrollRef = useRef<HTMLDivElement>(null)
+  const [hasOverflow, setHasOverflow] = useState(false)
+
+  const checkOverflow = useCallback(() => {
+    const el = scrollRef.current
+    if (el) setHasOverflow(el.scrollHeight > el.clientHeight)
+  }, [])
+
+  useEffect(() => {
+    checkOverflow()
+    const ro = new ResizeObserver(checkOverflow)
+    if (scrollRef.current) ro.observe(scrollRef.current)
+    return () => ro.disconnect()
+  }, [checkOverflow, tasks.length])
+
+  return (
+    <div className={`tb-column-body-wrapper${hasOverflow ? ' has-overflow' : ''}`}>
+      <div className="tb-column-body" ref={scrollRef}>
+        {tasks.length > 0
+          ? tasks.map(t => (
+              <TaskCard key={t.id} task={t} onClick={() => onTaskClick?.(t)} />
+            ))
+          : <p className="empty-state" style={{ padding: 12 }}>No tasks</p>
+        }
+      </div>
+    </div>
+  )
+}
+
 export default function TaskBoard({ tasks, onTaskClick }: Props) {
   return (
     <div className="task-board">
@@ -25,14 +56,7 @@ export default function TaskBoard({ tasks, onTaskClick }: Props) {
               <span className="tb-column-title">{col.label}</span>
               <span className={`tb-column-count status-${col.key}`}>{colTasks.length}</span>
             </div>
-            <div className="tb-column-body">
-              {colTasks.length > 0
-                ? colTasks.map(t => (
-                    <TaskCard key={t.id} task={t} onClick={() => onTaskClick?.(t)} />
-                  ))
-                : <p className="empty-state" style={{ padding: 12 }}>No tasks</p>
-              }
-            </div>
+            <ColumnBody tasks={colTasks} onTaskClick={onTaskClick} />
           </div>
         )
       })}
