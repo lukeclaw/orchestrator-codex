@@ -567,6 +567,65 @@ and recreated, guaranteeing a clean process group.
 - If the second attempt also fails, the host is likely unreachable
 - The health check loop will trigger another reconnect later
 
+### Scenario 12: Reverse tunnel connects but port forwarding silently fails (`ClearAllForwardings` bug)
+
+```
+Symptom: Workers show "Error: Connection failed - cannot reach orchestrator
+API at http://127.0.0.1:8093" even though the tunnel SSH process is alive
+(proc.poll() returns None) and the interactive rdev ssh works fine.
+
+Tunnel logs show repeated "Welcome to CBL-Mariner" + "Permanently added"
+entries with NO error messages — the SSH connects and authenticates
+successfully every time, but port 8093 is never bound on the remote.
+```
+
+**Root cause:** The SSH command included `-o ClearAllForwardings=yes` which,
+despite its documentation suggesting it only clears config-file forwardings,
+also clears command-line `-R` flags on OpenSSH 10.2+ (macOS Sequoia). The
+SSH man page actually confirms this:
+
+> Specifies that all local, remote, and dynamic port forwardings specified
+> in the configuration files **or on the command line** be cleared.
+
+The result: the tunnel SSH connected, authenticated, and sat idle with `-N` —
+but never requested the `-R 8093:127.0.0.1:8093` port forwarding. The process
+stayed alive (passing `proc.poll()` health checks) while doing nothing.
+
+**Why this was hard to detect:**
+- `proc.poll()` showed the tunnel as "alive" (SSH was connected, just not forwarding)
+- The tunnel stderr log showed successful connections (banners, host keys) with no errors
+- The deep connectivity probe (every 5 min) could detect it, but by then the tunnel
+  monitor had already restarted the tunnel, creating a rapid connect-die-restart cycle
+- The `ExitOnForwardFailure=yes` option did NOT trigger because the forwarding was
+  never *requested* (cleared before the request was sent), so there was nothing to fail
+
+**Fix:** Remove `-o ClearAllForwardings=yes` from the tunnel SSH command. The original
+intent was to clear `LocalForward` entries from the rdev SSH config, but this is not
+worth the risk of silently breaking the `-R` forwarding. The rdev config `LocalForward`
+entries (if any) will attempt to bind locally; if the port is in use, they'll fail
+harmlessly (or trigger `ExitOnForwardFailure` — a visible, diagnosable failure).
+
+**Key learning — how to verify tunnel forwarding is actually working:**
+```bash
+# On local: run with -v to see if forwarding is requested
+ssh -v -o ... -N -R 8093:127.0.0.1:8093 host 2>&1 | grep -i forward
+# Expected: "remote forward success for: listen 8093"
+# Bug: no forwarding-related lines at all
+
+# On remote: check if port is bound
+ss -tlnp | grep 8093
+# Expected: LISTEN on 127.0.0.1:8093
+# Bug: nothing
+
+# Automated: the start_tunnel() 3-second startup check only verifies
+# proc.poll() (process alive), NOT that the forwarding is active.
+# A future improvement: probe the remote port after startup.
+```
+
+**Test:** `test_ssh_command_must_not_include_clear_all_forwardings` in
+`tests/unit/test_tunnel.py` asserts `ClearAllForwardings` is never in the
+SSH command, with an explanatory message linking back to this scenario.
+
 ---
 
 ## 7. Files to Modify
@@ -625,6 +684,7 @@ and recreated, guaranteeing a clean process group.
 - **`_clean_pane_for_ssh` escalation**: Escalates to kill+recreate when pane is unresponsive after Ctrl-C
 - **Reconnect Step 3 retry**: Retries with kill+recreate on first timeout; raises after both fail
 - **`setup_remote_worker` retry**: Same retry pattern for initial setup
+- **Tunnel SSH command safety**: `ClearAllForwardings` must NOT be in the command (breaks `-R`); `-R` must be present with correct port
 
 ### Manual Integration Tests
 
@@ -638,3 +698,4 @@ and recreated, guaranteeing a clean process group.
 | Dead Claude in screen | Kill Claude process on remote | Step 5 finds screen+no Claude, Step 6 relaunches |
 | Stale alternate screen | SSH dies while screen was attached | `_clean_pane_for_ssh` handles stale TUI |
 | Stuck rdev ssh | `rdev ssh` hangs, ignores Ctrl-C | `_verify_pane_responsive` detects, pane killed+recreated, SSH retried |
+| Tunnel forwarding verification | After tunnel starts, check `ss -tlnp \| grep 8093` on remote | Port 8093 is bound on remote; `ssh -v` shows "remote forward success" |

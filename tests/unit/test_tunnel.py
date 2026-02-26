@@ -571,8 +571,16 @@ class TestReverseTunnelStartupVerification:
 
     @patch("orchestrator.session.tunnel.time.sleep")
     @patch("orchestrator.session.tunnel.subprocess.Popen")
-    def test_ssh_command_includes_clear_all_forwardings(self, mock_popen, mock_sleep, tmp_path):
-        """SSH args should include ClearAllForwardings=yes."""
+    def test_ssh_command_must_not_include_clear_all_forwardings(
+        self, mock_popen, mock_sleep, tmp_path
+    ):
+        """ClearAllForwardings=yes silently clears the -R flag on OpenSSH 10.2+.
+
+        This caused a critical production bug where the tunnel SSH connected
+        and authenticated successfully but never set up the remote port
+        forwarding — proc.poll() showed "alive" while the remote port was
+        never bound.  See docs/009-reconnect-redesign.md Scenario 12.
+        """
         mock_proc = MagicMock()
         mock_proc.pid = 100
         mock_proc.poll.return_value = None  # survives startup
@@ -582,10 +590,27 @@ class TestReverseTunnelStartupVerification:
         mgr.start_tunnel("s1", "worker-1", "user/vm")
 
         cmd = mock_popen.call_args[0][0]
-        # Find the index of ClearAllForwardings
-        assert "-o" in cmd
-        idx = cmd.index("ClearAllForwardings=yes")
-        assert cmd[idx - 1] == "-o"
+        assert "ClearAllForwardings=yes" not in cmd, (
+            "ClearAllForwardings=yes clears -R from the command line on "
+            "OpenSSH 10.2+, breaking the reverse tunnel silently"
+        )
+
+    @patch("orchestrator.session.tunnel.time.sleep")
+    @patch("orchestrator.session.tunnel.subprocess.Popen")
+    def test_ssh_command_includes_reverse_forward(self, mock_popen, mock_sleep, tmp_path):
+        """The -R flag must be present for the reverse tunnel to work."""
+        mock_proc = MagicMock()
+        mock_proc.pid = 100
+        mock_proc.poll.return_value = None
+        mock_popen.return_value = mock_proc
+
+        mgr = self._make_manager(tmp_path)
+        mgr.start_tunnel("s1", "worker-1", "user/vm")
+
+        cmd = mock_popen.call_args[0][0]
+        assert "-R" in cmd
+        r_idx = cmd.index("-R")
+        assert cmd[r_idx + 1] == "8093:127.0.0.1:8093"
 
     @patch("orchestrator.session.tunnel.time.sleep")
     @patch("orchestrator.session.tunnel.subprocess.Popen")

@@ -478,6 +478,12 @@ class ReverseTunnelManager:
             logger.error("Cannot open tunnel log %s: %s", log_path, e)
             log_file = None
 
+        # NOTE: Do NOT use ClearAllForwardings=yes here. Despite the intent to
+        # clear config-file LocalForward entries, it also clears the -R flag
+        # from the command line (confirmed in OpenSSH 10.2). This causes the
+        # tunnel to connect successfully but never set up port forwarding —
+        # a silent failure where proc.poll() shows "alive" but the remote
+        # port is never bound.
         cmd = [
             "ssh",
             "-o",
@@ -490,8 +496,6 @@ class ReverseTunnelManager:
             "ServerAliveCountMax=3",
             "-o",
             "ExitOnForwardFailure=yes",
-            "-o",
-            "ClearAllForwardings=yes",
             "-N",
             "-R",
             f"{remote_port}:127.0.0.1:{local_port}",
