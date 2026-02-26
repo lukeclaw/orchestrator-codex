@@ -484,6 +484,16 @@ class ReverseTunnelManager:
         # tunnel to connect successfully but never set up port forwarding —
         # a silent failure where proc.poll() shows "alive" but the remote
         # port is never bound.
+        #
+        # NOTE: Do NOT use ExitOnForwardFailure=yes here. The rdev CLI writes
+        # LocalForward entries into ~/.ssh/config.rdev (e.g. LocalForward
+        # 0.0.0.0:8080 127.0.0.1:8080). SSH inherits these even for our
+        # "ssh -N -R" command. If that local port is already bound by another
+        # rdev's tunnel, the bind fails and ExitOnForwardFailure kills the
+        # entire SSH session — including the -R reverse tunnel we need.
+        # Instead, we check the log after startup to distinguish fatal errors
+        # (remote forwarding failure) from non-fatal ones (inherited
+        # LocalForward conflict).
         cmd = [
             "ssh",
             "-o",
@@ -494,8 +504,6 @@ class ReverseTunnelManager:
             "ServerAliveInterval=30",
             "-o",
             "ServerAliveCountMax=3",
-            "-o",
-            "ExitOnForwardFailure=yes",
             "-N",
             "-R",
             f"{remote_port}:127.0.0.1:{local_port}",
@@ -516,9 +524,16 @@ class ReverseTunnelManager:
                 log_file.close()
             return None
 
-        # Verify SSH survived startup. SSH config conflicts (e.g.
-        # LocalForward on an already-bound port with ExitOnForwardFailure)
-        # cause the process to exit within ~1s.
+        # Record log position before startup so we only inspect new output.
+        log_start_pos = 0
+        if log_path:
+            try:
+                log_start_pos = os.path.getsize(log_path)
+            except OSError:
+                log_start_pos = 0
+
+        # Verify SSH survived startup. Hard failures (auth, connection
+        # refused, etc.) cause the process to exit within ~1-2s.
         time.sleep(3)
         exit_code = proc.poll()
         if exit_code is not None:
@@ -535,6 +550,40 @@ class ReverseTunnelManager:
             if log_file:
                 log_file.close()
             return None
+
+        # Process is alive — inspect the log for forwarding errors.
+        new_log = self._read_log_since(log_path, log_start_pos)
+        if new_log:
+            if "remote port forwarding failed" in new_log.lower():
+                # The -R forward we actually need has failed. Fatal.
+                logger.error(
+                    "Tunnel for %s: remote port forwarding failed, killing process (pid=%d)",
+                    session_name,
+                    proc.pid,
+                )
+                proc.terminate()
+                try:
+                    proc.wait(timeout=3)
+                except subprocess.TimeoutExpired:
+                    proc.kill()
+                with self._lock:
+                    self._failure_counts[session_id] = (
+                        self._failure_counts.get(session_id, 0) + 1
+                    )
+                    self._last_errors[session_id] = "remote port forwarding failed"
+                if log_file:
+                    log_file.close()
+                return None
+
+            if "could not request local forwarding" in new_log.lower():
+                # An inherited LocalForward from ~/.ssh/config.rdev failed.
+                # This is non-fatal — the -R reverse tunnel is fine.
+                logger.warning(
+                    "Tunnel for %s: inherited LocalForward failed (non-fatal, "
+                    "reverse tunnel OK). Log: %s",
+                    session_name,
+                    new_log.strip()[:200],
+                )
 
         entry = _TunnelEntry(
             proc=proc,
@@ -890,6 +939,25 @@ class ReverseTunnelManager:
                 entry.proc.wait(timeout=1)
             except (subprocess.TimeoutExpired, ChildProcessError):
                 pass
+
+    @staticmethod
+    def _read_log_since(log_path: str, start_pos: int) -> str | None:
+        """Read log content written after *start_pos* bytes.
+
+        Returns the new content as a string, or None if nothing was written
+        (or the file is unreadable).
+        """
+        try:
+            with open(log_path, "rb") as f:
+                f.seek(0, 2)  # seek to end
+                end_pos = f.tell()
+                if end_pos <= start_pos:
+                    return None
+                f.seek(start_pos)
+                data = f.read(end_pos - start_pos)
+                return data.decode("utf-8", errors="replace")
+        except OSError:
+            return None
 
     @staticmethod
     def _read_last_log_line(log_path: str) -> str | None:

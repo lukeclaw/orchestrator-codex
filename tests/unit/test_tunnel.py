@@ -594,6 +594,10 @@ class TestReverseTunnelStartupVerification:
             "ClearAllForwardings=yes clears -R from the command line on "
             "OpenSSH 10.2+, breaking the reverse tunnel silently"
         )
+        assert "ExitOnForwardFailure=yes" not in cmd, (
+            "ExitOnForwardFailure=yes kills the entire SSH session when an "
+            "inherited LocalForward port conflicts, destroying the -R tunnel"
+        )
 
     @patch("orchestrator.session.tunnel.time.sleep")
     @patch("orchestrator.session.tunnel.subprocess.Popen")
@@ -724,4 +728,88 @@ class TestReverseTunnelStartupVerification:
     def test_read_last_log_line_missing_file(self, tmp_path):
         """_read_last_log_line should return None for missing files."""
         result = tunnel.ReverseTunnelManager._read_last_log_line(str(tmp_path / "nope.log"))
+        assert result is None
+
+    @patch("orchestrator.session.tunnel.time.sleep")
+    @patch("orchestrator.session.tunnel.subprocess.Popen")
+    def test_survives_local_forward_failure(self, mock_popen, mock_sleep, tmp_path):
+        """Inherited LocalForward conflict is non-fatal — reverse tunnel still works."""
+        mock_proc = MagicMock()
+        mock_proc.pid = 700
+        mock_proc.poll.return_value = None  # process alive
+        mock_popen.return_value = mock_proc
+
+        log_path = tmp_path / "worker-1.log"
+
+        # Simulate SSH writing to the log during the sleep period.
+        def write_log_during_sleep(_seconds):
+            with open(log_path, "a") as f:
+                f.write("Warning: Could not request local forwarding.\n")
+
+        mock_sleep.side_effect = write_log_during_sleep
+
+        mgr = self._make_manager(tmp_path)
+        result = mgr.start_tunnel("s1", "worker-1", "user/vm")
+
+        assert result == 700
+        # No failure should be recorded
+        assert mgr._failure_counts.get("s1", 0) == 0
+
+    @patch("orchestrator.session.tunnel.time.sleep")
+    @patch("orchestrator.session.tunnel.subprocess.Popen")
+    def test_fails_on_remote_forward_failure(self, mock_popen, mock_sleep, tmp_path):
+        """Remote port forwarding failure is fatal — tunnel must be killed."""
+        mock_proc = MagicMock()
+        mock_proc.pid = 800
+        mock_proc.poll.return_value = None  # process alive (SSH stays connected)
+        mock_proc.wait.return_value = 0
+        mock_popen.return_value = mock_proc
+
+        log_path = tmp_path / "worker-1.log"
+
+        # Simulate SSH writing to the log during the sleep period.
+        def write_log_during_sleep(_seconds):
+            with open(log_path, "a") as f:
+                f.write(
+                    "Warning: remote port forwarding failed for listen port 8093\n"
+                )
+
+        mock_sleep.side_effect = write_log_during_sleep
+
+        mgr = self._make_manager(tmp_path)
+        result = mgr.start_tunnel("s1", "worker-1", "user/vm")
+
+        assert result is None
+        assert mgr._failure_counts["s1"] == 1
+        assert mgr._last_errors["s1"] == "remote port forwarding failed"
+        mock_proc.terminate.assert_called_once()
+
+    def test_read_log_since(self, tmp_path):
+        """_read_log_since should return only content written after start_pos."""
+        log = tmp_path / "test.log"
+        log.write_text("old line 1\nold line 2\n")
+        start_pos = log.stat().st_size
+
+        # Append new content
+        with open(log, "a") as f:
+            f.write("new line 1\nnew line 2\n")
+
+        result = tunnel.ReverseTunnelManager._read_log_since(str(log), start_pos)
+        assert result == "new line 1\nnew line 2\n"
+        assert "old line" not in result
+
+    def test_read_log_since_no_new_content(self, tmp_path):
+        """_read_log_since should return None when no new content was written."""
+        log = tmp_path / "test.log"
+        log.write_text("existing content\n")
+        start_pos = log.stat().st_size
+
+        result = tunnel.ReverseTunnelManager._read_log_since(str(log), start_pos)
+        assert result is None
+
+    def test_read_log_since_missing_file(self, tmp_path):
+        """_read_log_since should return None for missing files."""
+        result = tunnel.ReverseTunnelManager._read_log_since(
+            str(tmp_path / "nope.log"), 0
+        )
         assert result is None
