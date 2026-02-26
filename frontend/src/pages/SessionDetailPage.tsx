@@ -7,6 +7,7 @@ import { useSmartPaste } from '../hooks/useSmartPaste'
 import TerminalView from '../components/terminal/TerminalView'
 import { IconPause, IconPlay, IconStop, IconRefresh, IconTrash, IconSync, IconBrain } from '../components/common/Icons'
 import ConfirmPopover from '../components/common/ConfirmPopover'
+import AssignTaskModal from '../components/tasks/AssignTaskModal'
 import './SessionDetailPage.css'
 
 interface TunnelInfo {
@@ -37,6 +38,7 @@ export default function SessionDetailPage() {
   const [error, setError] = useState('')
   const [actionPending, setActionPending] = useState(false)
   const [pasting, setPasting] = useState(false)
+  const [showAssignTask, setShowAssignTask] = useState(false)
 
   // Record that user viewed this session
   useEffect(() => {
@@ -421,7 +423,9 @@ export default function SessionDetailPage() {
               <span className="sd-task-title">{tasks[0].title}</span>
             </Link>
           ) : (
-            <span className="sd-task-empty">No task assigned</span>
+            <button className="sd-assign-task-btn" onClick={() => setShowAssignTask(true)}>
+              + Assign task
+            </button>
           )}
           {Object.keys(tunnels).length > 0 && (
             <div className="sd-tunnels">
@@ -467,6 +471,14 @@ export default function SessionDetailPage() {
           </button>
         </div>
       </div>
+      {id && session && (
+        <AssignTaskModal
+          open={showAssignTask}
+          onClose={() => setShowAssignTask(false)}
+          sessionId={id}
+          sessionName={session.name}
+        />
+      )}
     </div>
   )
 }

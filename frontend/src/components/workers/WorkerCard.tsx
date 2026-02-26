@@ -6,6 +6,7 @@ import { useNotify } from '../../context/NotificationContext'
 import { timeAgo } from '../common/TimeAgo'
 import { IconTrash, IconPause, IconPlay, IconStop, IconRefresh, IconBrain } from '../common/Icons'
 import ConfirmPopover from '../common/ConfirmPopover'
+import AssignTaskModal from '../tasks/AssignTaskModal'
 import './WorkerCard.css'
 
 interface Props {
@@ -27,6 +28,7 @@ export default function WorkerCard({
   const notify = useNotify()
   const [removing, setRemoving] = useState(false)
   const [actionPending, setActionPending] = useState(false)
+  const [showAssignTask, setShowAssignTask] = useState(false)
   const [tunnels, setTunnels] = useState<Record<string, TunnelInfo>>({})
   const tunnelIntervalRef = useRef<ReturnType<typeof setInterval> | undefined>(undefined)
   const sessionIdRef = useRef(session.id)
@@ -282,7 +284,9 @@ export default function WorkerCard({
               <span className="wc-task-title">{assignedTask.title}</span>
             </Link>
           ) : (
-            <span className="wc-task-empty">No task assigned</span>
+            <button className="wc-assign-task-btn" onClick={e => { e.stopPropagation(); setShowAssignTask(true) }}>
+              + Assign task
+            </button>
           )}
           {Object.keys(tunnels).length > 0 && (
             <div className="wc-tunnels">
@@ -302,6 +306,12 @@ export default function WorkerCard({
         </div>
         <span className="wc-activity" title="Last viewed">{timeAgo(session.last_viewed_at || session.created_at)}</span>
       </div>
+      <AssignTaskModal
+        open={showAssignTask}
+        onClose={() => setShowAssignTask(false)}
+        sessionId={session.id}
+        sessionName={session.name}
+      />
     </div>
   )
 }

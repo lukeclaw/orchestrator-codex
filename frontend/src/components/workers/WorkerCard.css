@@ -236,6 +236,22 @@
   font-style: italic;
 }
 
+.wc-assign-task-btn {
+  font-size: 11px;
+  color: var(--green, #3fb950);
+  background: rgba(63, 185, 80, 0.08);
+  border: 1px dashed rgba(63, 185, 80, 0.4);
+  border-radius: 4px;
+  padding: 2px 8px;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.wc-assign-task-btn:hover {
+  background: rgba(63, 185, 80, 0.18);
+  border-color: rgba(63, 185, 80, 0.7);
+}
+
 .wc-activity {
   white-space: nowrap;
   flex-shrink: 0;

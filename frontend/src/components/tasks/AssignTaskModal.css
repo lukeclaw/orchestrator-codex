@@ -1,0 +1,130 @@
+/* Hint bar at top of modal body */
+.atm-hint {
+  padding: 12px 20px;
+  background: rgba(88, 166, 255, 0.1);
+  border-bottom: 1px solid var(--border);
+  font-size: 13px;
+  color: #58a6ff;
+}
+
+/* Scrollable body */
+.atm-body {
+  padding: 12px;
+  max-height: 50vh;
+  overflow-y: auto;
+}
+
+/* Empty state */
+.atm-empty {
+  text-align: center;
+  padding: 32px 16px;
+  color: var(--text-muted);
+  font-size: 13px;
+  font-style: italic;
+}
+
+/* Project group */
+.atm-project-group {
+  margin-bottom: 8px;
+}
+
+.atm-project-header {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  padding: 8px 14px 4px;
+}
+
+/* Task option row */
+.atm-task-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  background: var(--bg);
+  border: 1px solid transparent;
+  border-radius: 8px;
+  cursor: pointer;
+  text-align: left;
+  width: 100%;
+  transition: all 0.15s;
+  margin-bottom: 4px;
+}
+
+.atm-task-option:hover:not(:disabled) {
+  background: var(--surface-hover);
+  border-color: var(--border);
+}
+
+.atm-task-option:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Priority pill */
+.atm-priority {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2px 6px;
+  border-radius: 4px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.atm-priority.priority-H {
+  background: rgba(248, 81, 73, 0.15);
+  color: #f85149;
+}
+
+.atm-priority.priority-M {
+  background: rgba(210, 153, 34, 0.15);
+  color: #d29922;
+}
+
+.atm-priority.priority-L {
+  background: rgba(63, 185, 80, 0.15);
+  color: #3fb950;
+}
+
+/* Task key */
+.atm-task-key {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--accent);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+/* Task title */
+.atm-task-title {
+  flex: 1;
+  font-size: 13px;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+/* Status badge */
+.atm-status {
+  font-size: 10px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  white-space: nowrap;
+  flex-shrink: 0;
+  text-transform: capitalize;
+}
+
+.atm-status.status-todo {
+  background: rgba(139, 148, 158, 0.15);
+  color: #8b949e;
+}
+
+.atm-status.status-in_progress {
+  background: rgba(88, 166, 255, 0.15);
+  color: #58a6ff;
+}
