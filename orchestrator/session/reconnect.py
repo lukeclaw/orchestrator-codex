@@ -32,6 +32,7 @@ from orchestrator.session.health import (
     get_screen_session_name,
 )
 from orchestrator.terminal.manager import capture_output, kill_window, send_keys
+from orchestrator.terminal.markers import MarkerCommand
 from orchestrator.terminal.session import _copy_dir_to_remote_ssh, _kill_orphaned_screen
 
 logger = logging.getLogger(__name__)
@@ -109,6 +110,37 @@ def _detach_from_screen(tmux_sess: str, tmux_win: str):
     time.sleep(0.5)
 
 
+def _verify_pane_responsive(
+    tmux_sess: str, tmux_win: str, timeout: float = 3.0, poll_interval: float = 0.5
+) -> bool:
+    """Check if the pane responds to a marker command within *timeout* seconds.
+
+    Sends ``echo OK`` wrapped with :class:`MarkerCommand` markers and polls
+    for the marker in captured output.  Returns ``True`` if the pane echoed
+    the expected marker (i.e. it is at a shell prompt and responsive), or
+    ``False`` if the marker never appeared (pane is stuck).
+    """
+    cmd = MarkerCommand("echo OK", prefix="PANE_CHK")
+    send_keys(tmux_sess, tmux_win, cmd.full_command, enter=True)
+
+    elapsed = 0.0
+    while elapsed < timeout:
+        time.sleep(poll_interval)
+        elapsed += poll_interval
+        output = capture_output(tmux_sess, tmux_win, lines=15)
+        result = cmd.parse_result(output)
+        if result is not None and "OK" in result:
+            return True
+
+    logger.warning(
+        "_verify_pane_responsive: pane %s:%s did not respond within %.1fs",
+        tmux_sess,
+        tmux_win,
+        timeout,
+    )
+    return False
+
+
 def _clean_pane_for_ssh(tmux_sess: str, tmux_win: str, cwd: str | None = None):
     """Prepare a pane for SSH reconnection.
 
@@ -139,6 +171,16 @@ def _clean_pane_for_ssh(tmux_sess: str, tmux_win: str, cwd: str | None = None):
     time.sleep(0.3)
     send_keys(tmux_sess, tmux_win, "", enter=True)
     time.sleep(0.5)
+
+    # Verify the pane actually responded (catches stuck `rdev ssh` that ignores Ctrl-C)
+    if not _verify_pane_responsive(tmux_sess, tmux_win):
+        logger.info(
+            "_clean_pane_for_ssh: pane %s:%s unresponsive after Ctrl-C, killing and recreating",
+            tmux_sess,
+            tmux_win,
+        )
+        kill_window(tmux_sess, tmux_win)
+        ensure_window(tmux_sess, tmux_win, cwd=cwd)
 
 
 def _ensure_tunnel(session, tunnel_manager, repo, conn):
@@ -229,9 +271,7 @@ def _cleanup_stale_claude_session_remote(host: str, session_id: str):
             text=True,
             timeout=15,
         )
-        logger.info(
-            "Cleaned up stale Claude session on %s for session %s", host, session_id
-        )
+        logger.info("Cleaned up stale Claude session on %s for session %s", host, session_id)
     except Exception:
         logger.debug("_cleanup_stale_claude_session_remote failed", exc_info=True)
 
@@ -887,7 +927,19 @@ def reconnect_remote_worker(
             _clean_pane_for_ssh(tmux_sess, tmux_win, cwd=tmp_dir)
             ssh.remote_connect(tmux_sess, tmux_win, session.host)
             if not ssh.wait_for_prompt(tmux_sess, tmux_win, timeout=60):
-                raise RuntimeError(f"Timed out waiting for shell prompt on {session.host}")
+                # First attempt failed — kill pane and retry once with a clean slate
+                logger.warning(
+                    "Reconnect %s: Step 3 — first SSH attempt timed out, killing pane and retrying",
+                    session.name,
+                )
+                kill_window(tmux_sess, tmux_win)
+                ensure_window(tmux_sess, tmux_win, cwd=tmp_dir)
+                ssh.remote_connect(tmux_sess, tmux_win, session.host)
+                if not ssh.wait_for_prompt(tmux_sess, tmux_win, timeout=60):
+                    raise RuntimeError(
+                        f"Timed out waiting for shell prompt on {session.host} "
+                        f"(after kill+recreate retry)"
+                    )
             time.sleep(1)
         # ✓ We are now guaranteed at a remote shell prompt.
 

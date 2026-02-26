@@ -1081,6 +1081,10 @@ class TestCleanPaneFullFlow:
                 "orchestrator.session.reconnect.send_keys",
                 side_effect=mock_send_keys,
             ),
+            patch(
+                "orchestrator.session.reconnect._verify_pane_responsive",
+                return_value=True,
+            ),
         ):
             _clean_pane_for_ssh("orch", "w1")
 
@@ -1111,6 +1115,10 @@ class TestCleanPaneFullFlow:
             patch(
                 "orchestrator.session.reconnect.send_keys",
                 side_effect=mock_send_keys,
+            ),
+            patch(
+                "orchestrator.session.reconnect._verify_pane_responsive",
+                return_value=True,
             ),
         ):
             _clean_pane_for_ssh("orch", "w1")

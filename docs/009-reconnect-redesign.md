@@ -204,10 +204,12 @@ Acquired at Step 0 with `timeout=5`. If another reconnect is running for the sam
 
 ### 3.3 `_clean_pane_for_ssh()` Helper
 
-Prepares a pane for SSH reconnection. Only called when we've determined SSH is dead, but handles the edge case where a dead SSH left the pane in alternate screen mode:
+Prepares a pane for SSH reconnection. Only called when we've determined SSH is dead, but handles two edge cases:
+1. Dead SSH left the pane in alternate screen mode (TUI case)
+2. `rdev ssh` hangs and ignores Ctrl-C (normal case, caught by responsiveness check)
 
 ```python
-def _clean_pane_for_ssh(tmux_sess, tmux_win):
+def _clean_pane_for_ssh(tmux_sess, tmux_win, cwd=None):
     # Edge case: dead SSH left pane in alternate screen mode
     if check_tui_running_in_pane(tmux_sess, tmux_win):
         send_keys(tmux_sess, tmux_win, "C-c", enter=False)
@@ -217,7 +219,7 @@ def _clean_pane_for_ssh(tmux_sess, tmux_win):
         # If still stuck, kill and recreate pane
         if check_tui_running_in_pane(tmux_sess, tmux_win):
             kill_window(tmux_sess, tmux_win)
-            ensure_window(tmux_sess, tmux_win)
+            ensure_window(tmux_sess, tmux_win, cwd=cwd)
             return
 
     # Normal case: Ctrl-C + Enter to ensure clean shell prompt
@@ -225,6 +227,31 @@ def _clean_pane_for_ssh(tmux_sess, tmux_win):
     time.sleep(0.3)
     send_keys(tmux_sess, tmux_win, "", enter=True)
     time.sleep(0.5)
+
+    # Verify pane responded (catches stuck `rdev ssh` that ignores Ctrl-C)
+    if not _verify_pane_responsive(tmux_sess, tmux_win):
+        kill_window(tmux_sess, tmux_win)
+        ensure_window(tmux_sess, tmux_win, cwd=cwd)
+```
+
+### 3.4 `_verify_pane_responsive()` Helper
+
+Sends a marker echo command and polls for the response within 3 seconds. If the marker never appears, the pane has a stuck process that ignores input:
+
+```python
+def _verify_pane_responsive(tmux_sess, tmux_win, timeout=3.0, poll_interval=0.5):
+    cmd = MarkerCommand("echo OK", prefix="PANE_CHK")
+    send_keys(tmux_sess, tmux_win, cmd.full_command, enter=True)
+    # Poll for marker in captured output
+    elapsed = 0.0
+    while elapsed < timeout:
+        time.sleep(poll_interval)
+        elapsed += poll_interval
+        output = capture_output(tmux_sess, tmux_win, lines=15)
+        result = cmd.parse_result(output)
+        if result is not None and "OK" in result:
+            return True
+    return False
 ```
 
 ---
@@ -505,6 +532,41 @@ Step 6: Act on findings.
 Result: Standard reconnect from shell prompt. Safe.
 ```
 
+### Scenario 11: `rdev ssh` hangs and doesn't respond to Ctrl-C
+
+```
+Step 1: TUI? NO (no alternate screen). SSH alive? NO.
+  → Pane is safe but has a stuck `rdev ssh` process.
+Step 2: Fix tunnel if needed.
+Step 3: SSH dead → _clean_pane_for_ssh:
+  - No TUI active → normal case path.
+  - Sends Ctrl-C + Enter to try clearing the hung process.
+  - Calls _verify_pane_responsive() — sends marker command and polls.
+  - Marker never appears (pane is stuck, process ignores Ctrl-C).
+  - Escalates: kill_window() + ensure_window() for a clean slate.
+  → Then rdev ssh → wait_for_prompt.
+  - If wait_for_prompt also times out (second stuck rdev ssh):
+    → kill_window() + ensure_window() again, retry once more.
+    → If still fails: RuntimeError (host likely unreachable).
+Step 4: Copy configs.
+Step 5: Check screen/Claude.
+Step 6: Act accordingly.
+Result: Stuck rdev ssh recovered via pane kill+recreate.
+```
+
+**Why this scenario occurs:**
+`rdev ssh host --non-tmux` is sent via `send_keys()`, so there's no `proc.kill()`
+available. When it hangs after printing "Starting ssh connection to ...", it becomes
+unresponsive to Ctrl-C. The `_verify_pane_responsive()` check detects this by sending
+a marker echo command and checking if the shell responds. If not, the pane is killed
+and recreated, guaranteeing a clean process group.
+
+**Why one retry is enough:**
+- `kill_window` sends SIGHUP to the pane's entire process group
+- The new pane has a fresh process group with no inherited children
+- If the second attempt also fails, the host is likely unreachable
+- The health check loop will trigger another reconnect later
+
 ---
 
 ## 7. Files to Modify
@@ -559,6 +621,10 @@ Result: Standard reconnect from shell prompt. Safe.
 - **`safe_send_keys`**: Verify `TUIActiveError` raised when TUI detected
 - **Locking**: Verify second concurrent reconnect is skipped (lock timeout)
 - **`_clean_pane_for_ssh`**: Verify Ctrl-C sequence and pane kill fallback
+- **`_verify_pane_responsive`**: Returns True when marker appears, False when stuck
+- **`_clean_pane_for_ssh` escalation**: Escalates to kill+recreate when pane is unresponsive after Ctrl-C
+- **Reconnect Step 3 retry**: Retries with kill+recreate on first timeout; raises after both fail
+- **`setup_remote_worker` retry**: Same retry pattern for initial setup
 
 ### Manual Integration Tests
 
@@ -571,3 +637,4 @@ Result: Standard reconnect from shell prompt. Safe.
 | Race protection | Trigger two reconnects simultaneously | Lock prevents second reconnect |
 | Dead Claude in screen | Kill Claude process on remote | Step 5 finds screen+no Claude, Step 6 relaunches |
 | Stale alternate screen | SSH dies while screen was attached | `_clean_pane_for_ssh` handles stale TUI |
+| Stuck rdev ssh | `rdev ssh` hangs, ignores Ctrl-C | `_verify_pane_responsive` detects, pane killed+recreated, SSH retried |

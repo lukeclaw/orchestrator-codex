@@ -524,7 +524,17 @@ def setup_remote_worker(
 
         # 3. Wait for shell prompt
         if not ssh.wait_for_prompt(tmux_session, name, timeout=30):
-            raise RuntimeError(f"Timed out waiting for shell prompt on {host}")
+            # First attempt failed — kill pane and retry once with a clean slate
+            logger.warning(
+                "setup_remote_worker %s: first SSH timed out, killing pane and retrying", name
+            )
+            tmux.kill_window(tmux_session, name)
+            tmux.ensure_window(tmux_session, name, cwd=local_tmp_dir)
+            ssh.remote_connect(tmux_session, name, host)
+            if not ssh.wait_for_prompt(tmux_session, name, timeout=30):
+                raise RuntimeError(
+                    f"Timed out waiting for shell prompt on {host} (after kill+recreate retry)"
+                )
 
         # 3b. rdev-specific: PATH fixup and claude update (skip for generic SSH)
         if ssh.is_rdev_host(host):
