@@ -2,7 +2,12 @@
 
 from unittest.mock import patch
 
-from orchestrator.terminal.ssh import is_rdev_host, is_remote_host, remote_connect
+from orchestrator.terminal.ssh import (
+    _remove_stale_known_hosts_old,
+    is_rdev_host,
+    is_remote_host,
+    remote_connect,
+)
 
 
 class TestIsRdevHost:
@@ -64,7 +69,9 @@ class TestRemoteConnect:
         mock_send_keys.return_value = True
         result = remote_connect("orch", "w1", "subs-mt/sleepy-franklin")
         assert result is True
-        mock_send_keys.assert_called_once_with("orch", "w1", "rdev ssh subs-mt/sleepy-franklin --non-tmux")
+        mock_send_keys.assert_called_once_with(
+            "orch", "w1", "rdev ssh subs-mt/sleepy-franklin --non-tmux"
+        )
 
     @patch("orchestrator.terminal.ssh.send_keys")
     def test_generic_ssh_host_uses_plain_ssh(self, mock_send_keys):
@@ -79,3 +86,39 @@ class TestRemoteConnect:
         result = remote_connect("orch", "w1", "192.168.1.100")
         assert result is True
         mock_send_keys.assert_called_once_with("orch", "w1", "ssh 192.168.1.100")
+
+    @patch("orchestrator.terminal.ssh._remove_stale_known_hosts_old")
+    @patch("orchestrator.terminal.ssh.send_keys")
+    def test_rdev_host_removes_known_hosts_old(self, mock_send_keys, mock_remove):
+        """Should remove stale known_hosts.old before rdev ssh."""
+        mock_send_keys.return_value = True
+        remote_connect("orch", "w1", "subs-mt/sleepy-franklin")
+        mock_remove.assert_called_once()
+
+    @patch("orchestrator.terminal.ssh._remove_stale_known_hosts_old")
+    @patch("orchestrator.terminal.ssh.send_keys")
+    def test_plain_ssh_does_not_remove_known_hosts_old(self, mock_send_keys, mock_remove):
+        """Should NOT remove known_hosts.old for plain SSH hosts."""
+        mock_send_keys.return_value = True
+        remote_connect("orch", "w1", "user@myhost.example.com")
+        mock_remove.assert_not_called()
+
+
+class TestRemoveStaleKnownHostsOld:
+    def test_removes_existing_file(self, tmp_path):
+        """Should remove the file when it exists."""
+        old_file = tmp_path / "known_hosts.old"
+        old_file.write_text("stale data")
+
+        with patch("orchestrator.terminal.ssh._KNOWN_HOSTS_OLD", str(old_file)):
+            _remove_stale_known_hosts_old()
+
+        assert not old_file.exists()
+
+    def test_noop_when_file_missing(self, tmp_path):
+        """Should not raise when file doesn't exist."""
+        with patch(
+            "orchestrator.terminal.ssh._KNOWN_HOSTS_OLD",
+            str(tmp_path / "nonexistent"),
+        ):
+            _remove_stale_known_hosts_old()  # should not raise

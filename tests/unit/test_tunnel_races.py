@@ -988,6 +988,7 @@ class TestRaceDeepProbeStaleResult:
         mock_tm.check_connectivity.return_value = False
         # restart returns a new pid
         mock_tm.restart_tunnel.return_value = 44444
+        mock_tm.get_failure_info.return_value = (0, None)
 
         mock_conn = MagicMock()
 

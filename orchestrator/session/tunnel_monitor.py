@@ -55,7 +55,8 @@ async def tunnel_health_loop(
 
     logger.info(
         "Tunnel health monitor started (interval=%.0fs, deep probe every %d cycles)",
-        check_interval, deep_probe_every,
+        check_interval,
+        deep_probe_every,
     )
 
     cycle = 0
@@ -63,7 +64,7 @@ async def tunnel_health_loop(
         try:
             await asyncio.sleep(check_interval)
             cycle += 1
-            do_deep_probe = (cycle % deep_probe_every == 0)
+            do_deep_probe = cycle % deep_probe_every == 0
             await _check_all_tunnels(conn, tunnel_manager, deep_probe=do_deep_probe)
         except asyncio.CancelledError:
             logger.info("Tunnel health monitor stopped.")
@@ -116,7 +117,10 @@ async def _check_all_tunnels(
         for s, is_healthy in probe_results:
             if not is_healthy:
                 restarted += await _restart_tunnel(
-                    tunnel_manager, conn, s, reason="connectivity probe failed",
+                    tunnel_manager,
+                    conn,
+                    s,
+                    reason="connectivity probe failed",
                 )
 
     if checked > 0:
@@ -135,7 +139,9 @@ async def _probe_tunnels_concurrent(tunnel_manager, sessions) -> list[tuple]:
 
     async def _probe_one(s):
         healthy = await loop.run_in_executor(
-            None, tunnel_manager.check_connectivity, s.id,
+            None,
+            tunnel_manager.check_connectivity,
+            s.id,
         )
         return (s, healthy)
 
@@ -154,13 +160,36 @@ async def _probe_tunnels_concurrent(tunnel_manager, sessions) -> list[tuple]:
 
 
 async def _restart_tunnel(tunnel_manager, conn, session, *, reason: str) -> int:
-    """Restart a single tunnel. Returns 1 on success, 0 on failure."""
-    logger.warning("Tunnel monitor: %s tunnel unhealthy (%s), restarting", session.name, reason)
+    """Restart a single tunnel. Returns 1 on success, 0 on failure.
+
+    Gives up after MAX_CONSECUTIVE_FAILURES and marks the session as error.
+    """
+    from orchestrator.session.tunnel import ReverseTunnelManager
+
+    failure_count, last_error = tunnel_manager.get_failure_info(session.id)
+    if failure_count >= ReverseTunnelManager.MAX_CONSECUTIVE_FAILURES:
+        logger.error(
+            "Tunnel monitor: %s failed %d consecutive times, giving up (last error: %s)",
+            session.name,
+            failure_count,
+            last_error,
+        )
+        sessions_repo.update_session(conn, session.id, status="error")
+        return 0
+
+    logger.warning(
+        "Tunnel monitor: %s tunnel unhealthy (%s), restarting (attempt %d)",
+        session.name,
+        reason,
+        failure_count + 1,
+    )
     try:
         new_pid = await asyncio.get_event_loop().run_in_executor(
             None,
             tunnel_manager.restart_tunnel,
-            session.id, session.name, session.host,
+            session.id,
+            session.name,
+            session.host,
         )
         if new_pid:
             sessions_repo.update_session(conn, session.id, tunnel_pid=new_pid)

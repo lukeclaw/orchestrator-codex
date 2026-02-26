@@ -252,8 +252,11 @@ class TestIsPortAvailable:
     def test_lsof_timeout_falls_back_to_socket(self):
         """Should fall back to socket bind when lsof times out."""
         import subprocess as sp
-        with patch("orchestrator.session.tunnel.subprocess.run") as mock_run, \
-             patch("orchestrator.session.tunnel.socket.socket") as mock_socket:
+
+        with (
+            patch("orchestrator.session.tunnel.subprocess.run") as mock_run,
+            patch("orchestrator.session.tunnel.socket.socket") as mock_socket,
+        ):
             mock_run.side_effect = sp.TimeoutExpired("lsof", 3)
             mock_sock_inst = MagicMock()
             mock_socket.return_value.__enter__ = MagicMock(return_value=mock_sock_inst)
@@ -263,8 +266,10 @@ class TestIsPortAvailable:
 
     def test_lsof_missing_falls_back_to_socket(self):
         """Should fall back to socket bind when lsof is not installed."""
-        with patch("orchestrator.session.tunnel.subprocess.run") as mock_run, \
-             patch("orchestrator.session.tunnel.socket.socket") as mock_socket:
+        with (
+            patch("orchestrator.session.tunnel.subprocess.run") as mock_run,
+            patch("orchestrator.session.tunnel.socket.socket") as mock_socket,
+        ):
             mock_run.side_effect = OSError("lsof not found")
             mock_sock_inst = MagicMock()
             mock_socket.return_value.__enter__ = MagicMock(return_value=mock_sock_inst)
@@ -309,9 +314,11 @@ class TestCreateTunnel:
 
     def test_creates_new_tunnel(self):
         """Should spawn SSH process for new tunnel."""
-        with patch("subprocess.run") as mock_run, \
-             patch("subprocess.Popen") as mock_popen, \
-             patch.object(tunnel, "is_port_available", return_value=True):
+        with (
+            patch("subprocess.run") as mock_run,
+            patch("subprocess.Popen") as mock_popen,
+            patch.object(tunnel, "is_port_available", return_value=True),
+        ):
             # No existing tunnels
             mock_run.return_value = MagicMock(stdout="", returncode=0)
 
@@ -342,8 +349,7 @@ class TestCreateTunnel:
         ps_output = """USER       PID  %CPU %MEM      VSZ    RSS   TT  STAT STARTED      TIME COMMAND
 yuqiu    12345   0.0  0.0 408628368   1234 s000  S+   10:00AM   0:00.01 ssh -N -L 4200:localhost:4200 user/rdev-vm
 """
-        with patch("subprocess.run") as mock_run, \
-             patch("os.kill") as mock_kill:
+        with patch("subprocess.run") as mock_run, patch("os.kill") as mock_kill:
             mock_run.return_value = MagicMock(stdout=ps_output, returncode=0)
             mock_kill.return_value = None  # Process is alive
 
@@ -355,9 +361,11 @@ yuqiu    12345   0.0  0.0 408628368   1234 s000  S+   10:00AM   0:00.01 ssh -N -
 
     def test_auto_finds_port_when_occupied(self):
         """Should auto-find a new port when the requested one is occupied."""
-        with patch("subprocess.run") as mock_run, \
-             patch("subprocess.Popen") as mock_popen, \
-             patch.object(tunnel, "is_port_available", side_effect=[False, True]):
+        with (
+            patch("subprocess.run") as mock_run,
+            patch("subprocess.Popen") as mock_popen,
+            patch.object(tunnel, "is_port_available", side_effect=[False, True]),
+        ):
             # No existing SSH tunnels
             mock_run.return_value = MagicMock(stdout="", returncode=0)
 
@@ -379,9 +387,11 @@ yuqiu    12345   0.0  0.0 408628368   1234 s000  S+   10:00AM   0:00.01 ssh -N -
 
     def test_fails_when_no_port_available(self):
         """Should fail when no available port can be found."""
-        with patch("subprocess.run") as mock_run, \
-             patch.object(tunnel, "is_port_available", return_value=False), \
-             patch.object(tunnel, "find_available_port", return_value=None):
+        with (
+            patch("subprocess.run") as mock_run,
+            patch.object(tunnel, "is_port_available", return_value=False),
+            patch.object(tunnel, "find_available_port", return_value=None),
+        ):
             mock_run.return_value = MagicMock(stdout="", returncode=0)
 
             success, result = tunnel.create_tunnel("user/rdev-vm", 4200)
@@ -414,9 +424,11 @@ yuqiu    12345   0.0  0.0 408628368   1234 s000  S+   10:00AM   0:00.01 ssh -N -
 
     def test_handles_ssh_failure(self):
         """Should handle SSH process failing to start."""
-        with patch("subprocess.run") as mock_run, \
-             patch("subprocess.Popen") as mock_popen, \
-             patch.object(tunnel, "is_port_available", return_value=True):
+        with (
+            patch("subprocess.run") as mock_run,
+            patch("subprocess.Popen") as mock_popen,
+            patch.object(tunnel, "is_port_available", return_value=True),
+        ):
             mock_run.return_value = MagicMock(stdout="", returncode=0)
 
             # Mock SSH process that fails immediately
@@ -433,9 +445,11 @@ yuqiu    12345   0.0  0.0 408628368   1234 s000  S+   10:00AM   0:00.01 ssh -N -
 
     def test_custom_local_port(self):
         """Should support custom local port different from remote port."""
-        with patch("subprocess.run") as mock_run, \
-             patch("subprocess.Popen") as mock_popen, \
-             patch.object(tunnel, "is_port_available", return_value=True):
+        with (
+            patch("subprocess.run") as mock_run,
+            patch("subprocess.Popen") as mock_popen,
+            patch.object(tunnel, "is_port_available", return_value=True),
+        ):
             mock_run.return_value = MagicMock(stdout="", returncode=0)
 
             mock_proc = MagicMock()
@@ -458,8 +472,7 @@ class TestCloseTunnel:
         ps_output = """USER       PID  %CPU %MEM      VSZ    RSS   TT  STAT STARTED      TIME COMMAND
 yuqiu    12345   0.0  0.0 408628368   1234 s000  S+   10:00AM   0:00.01 ssh -N -L 4200:localhost:4200 user/rdev-vm
 """
-        with patch("subprocess.run") as mock_run, \
-             patch("os.kill") as mock_kill:
+        with patch("subprocess.run") as mock_run, patch("os.kill") as mock_kill:
             mock_run.return_value = MagicMock(stdout=ps_output, returncode=0)
 
             success, message = tunnel.close_tunnel(4200)
@@ -495,8 +508,7 @@ yuqiu    12345   0.0  0.0 408628368   1234 s000  S+   10:00AM   0:00.01 ssh -N -
         ps_output = """USER       PID  %CPU %MEM      VSZ    RSS   TT  STAT STARTED      TIME COMMAND
 yuqiu    12345   0.0  0.0 408628368   1234 s000  S+   10:00AM   0:00.01 ssh -N -L 4200:localhost:4200 user/rdev-vm
 """
-        with patch("subprocess.run") as mock_run, \
-             patch("os.kill") as mock_kill:
+        with patch("subprocess.run") as mock_run, patch("os.kill") as mock_kill:
             mock_run.return_value = MagicMock(stdout=ps_output, returncode=0)
             mock_kill.side_effect = ProcessLookupError()
 
@@ -516,8 +528,7 @@ yuqiu    12345   0.0  0.0 408628368   1234 s000  S+   10:00AM   0:00.01 ssh -N -
 yuqiu    12346   0.0  0.0 408628368   1234 s000  S+   10:00AM   0:00.01 ssh -N -L 3000:localhost:3000 user/rdev-vm
 yuqiu    12347   0.0  0.0 408628368   1234 s000  S+   10:00AM   0:00.01 ssh -N -L 8080:localhost:8080 other/host
 """
-        with patch("subprocess.run") as mock_run, \
-             patch("os.kill") as mock_kill:
+        with patch("subprocess.run") as mock_run, patch("os.kill") as mock_kill:
             mock_run.return_value = MagicMock(stdout=ps_output, returncode=0)
 
             closed = tunnel.cleanup_tunnels_for_host("user/rdev-vm")
@@ -550,3 +561,142 @@ class TestInvalidateCache:
         tunnel.invalidate_cache()
 
         assert tunnel._cache_timestamp == 0
+
+
+class TestReverseTunnelStartupVerification:
+    """Tests for SSH startup verification and failure tracking in ReverseTunnelManager."""
+
+    def _make_manager(self, tmp_path):
+        return tunnel.ReverseTunnelManager(log_dir=str(tmp_path))
+
+    @patch("orchestrator.session.tunnel.time.sleep")
+    @patch("orchestrator.session.tunnel.subprocess.Popen")
+    def test_ssh_command_includes_clear_all_forwardings(self, mock_popen, mock_sleep, tmp_path):
+        """SSH args should include ClearAllForwardings=yes."""
+        mock_proc = MagicMock()
+        mock_proc.pid = 100
+        mock_proc.poll.return_value = None  # survives startup
+        mock_popen.return_value = mock_proc
+
+        mgr = self._make_manager(tmp_path)
+        mgr.start_tunnel("s1", "worker-1", "user/vm")
+
+        cmd = mock_popen.call_args[0][0]
+        # Find the index of ClearAllForwardings
+        assert "-o" in cmd
+        idx = cmd.index("ClearAllForwardings=yes")
+        assert cmd[idx - 1] == "-o"
+
+    @patch("orchestrator.session.tunnel.time.sleep")
+    @patch("orchestrator.session.tunnel.subprocess.Popen")
+    def test_returns_none_when_process_dies_during_startup(self, mock_popen, mock_sleep, tmp_path):
+        """Should return None when SSH exits during the 3s startup check."""
+        mock_proc = MagicMock()
+        mock_proc.pid = 200
+        mock_proc.poll.return_value = 255  # exited
+        mock_popen.return_value = mock_proc
+
+        mgr = self._make_manager(tmp_path)
+        result = mgr.start_tunnel("s1", "worker-1", "user/vm")
+
+        assert result is None
+        mock_sleep.assert_called_once_with(3)
+
+    @patch("orchestrator.session.tunnel.time.sleep")
+    @patch("orchestrator.session.tunnel.subprocess.Popen")
+    def test_returns_pid_when_process_survives(self, mock_popen, mock_sleep, tmp_path):
+        """Should return PID when SSH is still alive after startup check."""
+        mock_proc = MagicMock()
+        mock_proc.pid = 300
+        mock_proc.poll.return_value = None  # still alive
+        mock_popen.return_value = mock_proc
+
+        mgr = self._make_manager(tmp_path)
+        result = mgr.start_tunnel("s1", "worker-1", "user/vm")
+
+        assert result == 300
+
+    @patch("orchestrator.session.tunnel.time.sleep")
+    @patch("orchestrator.session.tunnel.subprocess.Popen")
+    def test_increments_failure_count_on_failure(self, mock_popen, mock_sleep, tmp_path):
+        """Should track consecutive failures in _failure_counts."""
+        mock_proc = MagicMock()
+        mock_proc.pid = 400
+        mock_proc.poll.return_value = 1
+        mock_popen.return_value = mock_proc
+
+        mgr = self._make_manager(tmp_path)
+
+        mgr.start_tunnel("s1", "worker-1", "user/vm")
+        assert mgr._failure_counts["s1"] == 1
+
+        mgr.start_tunnel("s1", "worker-1", "user/vm")
+        assert mgr._failure_counts["s1"] == 2
+
+    @patch("orchestrator.session.tunnel.time.sleep")
+    @patch("orchestrator.session.tunnel.subprocess.Popen")
+    def test_resets_failure_count_on_success(self, mock_popen, mock_sleep, tmp_path):
+        """Should reset failure tracking after a successful start."""
+        mgr = self._make_manager(tmp_path)
+
+        # First call: fail
+        mock_proc_fail = MagicMock()
+        mock_proc_fail.pid = 500
+        mock_proc_fail.poll.return_value = 1
+        mock_popen.return_value = mock_proc_fail
+        mgr.start_tunnel("s1", "worker-1", "user/vm")
+        assert mgr._failure_counts["s1"] == 1
+
+        # Second call: succeed
+        mock_proc_ok = MagicMock()
+        mock_proc_ok.pid = 501
+        mock_proc_ok.poll.return_value = None
+        mock_popen.return_value = mock_proc_ok
+        mgr.start_tunnel("s1", "worker-1", "user/vm")
+        assert mgr._failure_counts.get("s1", 0) == 0
+
+    @patch("orchestrator.session.tunnel.time.sleep")
+    @patch("orchestrator.session.tunnel.subprocess.Popen")
+    def test_stop_tunnel_clears_failure_state(self, mock_popen, mock_sleep, tmp_path):
+        """Manual stop_tunnel should reset failure tracking."""
+        mgr = self._make_manager(tmp_path)
+
+        # Fail once to populate tracking
+        mock_proc = MagicMock()
+        mock_proc.pid = 600
+        mock_proc.poll.return_value = 1
+        mock_popen.return_value = mock_proc
+        mgr.start_tunnel("s1", "worker-1", "user/vm")
+        assert mgr._failure_counts["s1"] == 1
+
+        mgr.stop_tunnel("s1")
+        assert mgr._failure_counts.get("s1", 0) == 0
+        assert mgr._last_errors.get("s1") is None
+
+    def test_get_failure_info_defaults(self, tmp_path):
+        """get_failure_info should return (0, None) for unknown sessions."""
+        mgr = self._make_manager(tmp_path)
+        count, error = mgr.get_failure_info("unknown")
+        assert count == 0
+        assert error is None
+
+    def test_read_last_log_line(self, tmp_path):
+        """_read_last_log_line should return the last non-empty line."""
+        log = tmp_path / "test.log"
+        log.write_text("line1\nline2\nline3\n")
+
+        result = tunnel.ReverseTunnelManager._read_last_log_line(str(log))
+        assert result == "line3"
+
+    def test_read_last_log_line_empty_file(self, tmp_path):
+        """_read_last_log_line should return None for empty files."""
+        log = tmp_path / "empty.log"
+        log.write_text("")
+
+        result = tunnel.ReverseTunnelManager._read_last_log_line(str(log))
+        assert result is None
+
+    def test_read_last_log_line_missing_file(self, tmp_path):
+        """_read_last_log_line should return None for missing files."""
+        result = tunnel.ReverseTunnelManager._read_last_log_line(str(tmp_path / "nope.log"))
+        assert result is None

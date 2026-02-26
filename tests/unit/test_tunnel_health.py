@@ -361,6 +361,7 @@ class TestTunnelHealthLoop:
         mock_tm = MagicMock()
         mock_tm.is_alive.return_value = False
         mock_tm.restart_tunnel.return_value = 99999
+        mock_tm.get_failure_info.return_value = (0, None)
 
         await _check_all_tunnels(MagicMock(), mock_tm)
 
@@ -383,6 +384,7 @@ class TestTunnelHealthLoop:
         mock_tm = MagicMock()
         mock_tm.is_alive.return_value = False
         mock_tm.restart_tunnel.return_value = 12345
+        mock_tm.get_failure_info.return_value = (0, None)
 
         await _check_all_tunnels(mock_conn, mock_tm)
 
@@ -403,10 +405,59 @@ class TestTunnelHealthLoop:
         mock_tm = MagicMock()
         mock_tm.is_alive.return_value = False
         mock_tm.restart_tunnel.return_value = None
+        mock_tm.get_failure_info.return_value = (0, None)
 
         await _check_all_tunnels(MagicMock(), mock_tm)
 
         mock_repo.update_session.assert_not_called()
+
+    @patch("orchestrator.session.tunnel_monitor.sessions_repo")
+    async def test_skips_restart_after_max_failures(self, mock_repo):
+        """Should not attempt restart and set status to error after max failures."""
+        from orchestrator.session.tunnel_monitor import _check_all_tunnels
+
+        mock_session = MagicMock()
+        mock_session.host = "user/rdev-vm"
+        mock_session.status = "waiting"
+        mock_session.name = "w1"
+        mock_session.id = "sess-1"
+        mock_repo.list_sessions.return_value = [mock_session]
+
+        mock_tm = MagicMock()
+        mock_tm.is_alive.return_value = False
+        mock_tm.get_failure_info.return_value = (5, "bind: Address already in use")
+
+        mock_conn = MagicMock()
+        await _check_all_tunnels(mock_conn, mock_tm)
+
+        # Should NOT attempt restart
+        mock_tm.restart_tunnel.assert_not_called()
+        # Should mark session as error
+        mock_repo.update_session.assert_called_once_with(mock_conn, "sess-1", status="error")
+
+    @patch("orchestrator.session.tunnel_monitor.sessions_repo")
+    async def test_logs_attempt_count_on_restart(self, mock_repo, caplog):
+        """Should log the attempt number when restarting."""
+        import logging
+
+        from orchestrator.session.tunnel_monitor import _check_all_tunnels
+
+        mock_session = MagicMock()
+        mock_session.host = "user/rdev-vm"
+        mock_session.status = "waiting"
+        mock_session.name = "w1"
+        mock_session.id = "sess-1"
+        mock_repo.list_sessions.return_value = [mock_session]
+
+        mock_tm = MagicMock()
+        mock_tm.is_alive.return_value = False
+        mock_tm.get_failure_info.return_value = (2, None)
+        mock_tm.restart_tunnel.return_value = 99999
+
+        with caplog.at_level(logging.WARNING, logger="orchestrator.session.tunnel_monitor"):
+            await _check_all_tunnels(MagicMock(), mock_tm)
+
+        assert "attempt 3" in caplog.text
 
 
 # ==============================================================================
@@ -430,7 +481,9 @@ class TestReconnectTunnelOnlyKillEscalation:
         mock_tm = MagicMock()
         mock_tm.restart_tunnel.return_value = 55555
 
-        result = reconnect_tunnel_only(db, mock_session, "orchestrator", 8093, mock_repo, tunnel_manager=mock_tm)
+        result = reconnect_tunnel_only(
+            db, mock_session, "orchestrator", 8093, mock_repo, tunnel_manager=mock_tm
+        )
 
         assert result is True
         mock_tm.restart_tunnel.assert_called_once_with("sess-123", "w1", "user/rdev-vm")

@@ -8,7 +8,7 @@ import pytest
 class TestStatusTransitions:
     """Test that status transitions happen correctly in various scenarios."""
 
-    @patch('orchestrator.api.routes.sessions.repo')
+    @patch("orchestrator.api.routes.sessions.repo")
     def test_connecting_to_working_on_success(self, mock_repo, db):
         """Successful rdev setup should transition connecting -> working."""
         # This tests the background thread behavior
@@ -18,22 +18,38 @@ class TestStatusTransitions:
         # The background thread calls repo.update_session(db, s.id, status="working")
 
         # For now, just verify the expected status values exist
-        valid_statuses = ["idle", "connecting", "working", "paused", "waiting",
-                         "screen_detached", "error", "disconnected"]
+        valid_statuses = [
+            "idle",
+            "connecting",
+            "working",
+            "paused",
+            "waiting",
+            "screen_detached",
+            "error",
+            "disconnected",
+        ]
         assert "connecting" in valid_statuses
         assert "working" in valid_statuses
 
-    @patch('orchestrator.api.routes.sessions.repo')
+    @patch("orchestrator.api.routes.sessions.repo")
     def test_connecting_to_error_on_failure(self, mock_repo, db):
         """Failed rdev setup should transition connecting -> error."""
         # Verify the background thread sets status to error on failure
-        valid_statuses = ["idle", "connecting", "working", "paused", "waiting",
-                         "screen_detached", "error", "disconnected"]
+        valid_statuses = [
+            "idle",
+            "connecting",
+            "working",
+            "paused",
+            "waiting",
+            "screen_detached",
+            "error",
+            "disconnected",
+        ]
         assert "connecting" in valid_statuses
         assert "error" in valid_statuses
 
-    @patch('orchestrator.state.repositories.tasks.list_tasks')
-    @patch('orchestrator.api.routes.sessions.repo')
+    @patch("orchestrator.state.repositories.tasks.list_tasks")
+    @patch("orchestrator.api.routes.sessions.repo")
     def test_working_to_paused_on_stop(self, mock_repo, mock_list_tasks, db):
         """Stopping a working session should transition to paused."""
         from orchestrator.api.routes.sessions import stop_session
@@ -47,8 +63,8 @@ class TestStatusTransitions:
         mock_repo.get_session.return_value = mock_session
         mock_list_tasks.return_value = []
 
-        with patch('orchestrator.api.routes.sessions.send_keys'):
-            with patch('orchestrator.terminal.manager.send_keys_literal'):
+        with patch("orchestrator.api.routes.sessions.send_keys"):
+            with patch("orchestrator.terminal.manager.send_keys_literal"):
                 stop_session("test-id", db=db)
 
         # Should update to idle (stop_session sets to idle, not paused)
@@ -57,10 +73,10 @@ class TestStatusTransitions:
         # Check that status="idle" is in the call
         assert "idle" in str(call_args)
 
-    @patch('orchestrator.session.health.check_claude_process_local')
-    @patch('orchestrator.session.health.is_remote_host')
-    @patch('orchestrator.session.health.repo')
-    @patch('orchestrator.api.routes.sessions.repo')
+    @patch("orchestrator.session.health.check_claude_process_local")
+    @patch("orchestrator.session.health.is_remote_host")
+    @patch("orchestrator.session.health.repo")
+    @patch("orchestrator.api.routes.sessions.repo")
     def test_working_to_disconnected_on_health_fail(
         self, mock_route_repo, mock_health_repo, mock_is_remote, mock_check_claude, db
     ):
@@ -87,12 +103,13 @@ class TestStatusTransitions:
         # Should update to disconnected
         mock_health_repo.update_session.assert_called()
 
-    @patch('orchestrator.session.health.check_screen_and_claude_remote')
-    @patch('orchestrator.session.health.is_remote_host')
-    @patch('orchestrator.session.health.repo')
-    @patch('orchestrator.api.routes.sessions.repo')
+    @patch("orchestrator.session.health.check_tui_running_in_pane", return_value=True)
+    @patch("orchestrator.session.health.check_screen_and_claude_remote")
+    @patch("orchestrator.session.health.is_remote_host")
+    @patch("orchestrator.session.health.repo")
+    @patch("orchestrator.api.routes.sessions.repo")
     def test_working_tunnel_dead_auto_reconnect_success(
-        self, mock_route_repo, mock_health_repo, mock_is_remote, mock_screen_check, db
+        self, mock_route_repo, mock_health_repo, mock_is_remote, mock_screen_check, mock_tui, db
     ):
         """Dead tunnel with alive Claude should auto-reconnect and stay alive."""
         from orchestrator.api.routes.sessions import health_check_session
@@ -121,10 +138,10 @@ class TestStatusTransitions:
         assert result["tunnel_reconnected"] is True
         mock_tm.restart_tunnel.assert_called_once()
 
-    @patch('orchestrator.session.health.check_screen_and_claude_remote')
-    @patch('orchestrator.session.health.is_remote_host')
-    @patch('orchestrator.session.health.repo')
-    @patch('orchestrator.api.routes.sessions.repo')
+    @patch("orchestrator.session.health.check_screen_and_claude_remote")
+    @patch("orchestrator.session.health.is_remote_host")
+    @patch("orchestrator.session.health.repo")
+    @patch("orchestrator.api.routes.sessions.repo")
     def test_working_to_screen_detached_on_tunnel_reconnect_fail(
         self, mock_route_repo, mock_health_repo, mock_is_remote, mock_screen_check, db
     ):
@@ -145,6 +162,7 @@ class TestStatusTransitions:
         mock_tm = MagicMock()
         mock_tm.is_alive.return_value = False  # Tunnel dead
         mock_tm.restart_tunnel.return_value = None  # Auto-reconnect fails
+        mock_tm.get_failure_info.return_value = (0, None)
 
         mock_request = MagicMock()
         mock_request.app.state.tunnel_manager = mock_tm
@@ -155,11 +173,9 @@ class TestStatusTransitions:
         assert result["status"] == "screen_detached"
         assert result["needs_reconnect"] is True
 
-    @patch('orchestrator.api.routes.sessions.trigger_reconnect')
-    @patch('orchestrator.api.routes.sessions.repo')
-    def test_disconnected_to_working_on_reconnect(
-        self, mock_repo, mock_trigger, db
-    ):
+    @patch("orchestrator.api.routes.sessions.trigger_reconnect")
+    @patch("orchestrator.api.routes.sessions.repo")
+    def test_disconnected_to_working_on_reconnect(self, mock_repo, mock_trigger, db):
         """Successful reconnect should transition disconnected -> working/waiting."""
         from orchestrator.api.routes.sessions import reconnect_session
 
@@ -183,11 +199,9 @@ class TestStatusTransitions:
         # Should have called trigger_reconnect
         mock_trigger.assert_called_once()
 
-    @patch('orchestrator.api.routes.sessions.trigger_reconnect')
-    @patch('orchestrator.api.routes.sessions.repo')
-    def test_error_to_working_on_reconnect(
-        self, mock_repo, mock_trigger, db
-    ):
+    @patch("orchestrator.api.routes.sessions.trigger_reconnect")
+    @patch("orchestrator.api.routes.sessions.repo")
+    def test_error_to_working_on_reconnect(self, mock_repo, mock_trigger, db):
         """Successful reconnect from error should transition to working/waiting."""
         from orchestrator.api.routes.sessions import reconnect_session
 

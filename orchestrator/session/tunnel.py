@@ -32,6 +32,7 @@ CACHE_TTL = 5.0  # seconds
 # 8093 is used for the reverse tunnel (API access from rdev to local orchestrator)
 RESERVED_PORTS = {8093}
 
+
 def get_reserved_ports() -> set:
     """Get the set of reserved ports that cannot be used for forward tunnels."""
     return RESERVED_PORTS.copy()
@@ -39,14 +40,16 @@ def get_reserved_ports() -> set:
 
 def is_port_available(port: int) -> bool:
     """Check if a local port is available using lsof.
-    
+
     Uses lsof to check if any process is listening on the given TCP port.
     Falls back to a socket bind check if lsof is not available.
     """
     try:
         result = subprocess.run(
             ["lsof", f"-iTCP:{port}", "-sTCP:LISTEN", "-t"],
-            capture_output=True, text=True, timeout=3,
+            capture_output=True,
+            text=True,
+            timeout=3,
         )
         # lsof -t outputs PIDs of listeners; empty = port is free
         return result.stdout.strip() == ""
@@ -62,11 +65,11 @@ def is_port_available(port: int) -> bool:
 
 def find_available_port(preferred: int, max_attempts: int = 100) -> int | None:
     """Find an available port, starting from preferred and incrementing.
-    
+
     Args:
         preferred: The preferred port to start searching from.
         max_attempts: Maximum number of ports to try.
-        
+
     Returns:
         An available port number, or None if no port found.
     """
@@ -83,7 +86,7 @@ def find_available_port(preferred: int, max_attempts: int = 100) -> int | None:
 
 def discover_active_tunnels(force_refresh: bool = False) -> dict[int, dict]:
     """Scan for active SSH port-forward tunnels via ps.
-    
+
     Returns:
         {local_port: {"pid": int, "remote_port": int, "host": str}}
     """
@@ -95,24 +98,19 @@ def discover_active_tunnels(force_refresh: bool = False) -> dict[int, dict]:
 
     tunnels = {}
     try:
-        result = subprocess.run(
-            ["ps", "aux"],
-            capture_output=True,
-            text=True,
-            timeout=5
-        )
+        result = subprocess.run(["ps", "aux"], capture_output=True, text=True, timeout=5)
 
         # Pattern: ssh -N -L <local_port>:localhost:<remote_port> <host>
         # Example: ssh -N -L 4200:localhost:4200 user/rdev-vm
         # Also handle: ssh -N -L 4200:localhost:4200 -o Option=value host
-        pattern = re.compile(r'ssh\s+.*-N\s+.*-L\s+(\d+):localhost:(\d+)\s+.*?(\S+)\s*$')
+        pattern = re.compile(r"ssh\s+.*-N\s+.*-L\s+(\d+):localhost:(\d+)\s+.*?(\S+)\s*$")
 
-        for line in result.stdout.split('\n'):
-            if 'ssh' not in line or '-L' not in line or '-N' not in line:
+        for line in result.stdout.split("\n"):
+            if "ssh" not in line or "-L" not in line or "-N" not in line:
                 continue
 
             # Skip grep processes
-            if 'grep' in line:
+            if "grep" in line:
                 continue
 
             match = pattern.search(line)
@@ -131,8 +129,13 @@ def discover_active_tunnels(force_refresh: bool = False) -> dict[int, dict]:
                             "remote_port": remote_port,
                             "host": host,
                         }
-                        logger.debug("Discovered tunnel: local:%d -> %s:%d (pid=%d)",
-                                    local_port, host, remote_port, pid)
+                        logger.debug(
+                            "Discovered tunnel: local:%d -> %s:%d (pid=%d)",
+                            local_port,
+                            host,
+                            remote_port,
+                            pid,
+                        )
                     except ValueError:
                         pass
     except subprocess.TimeoutExpired:
@@ -153,26 +156,23 @@ def invalidate_cache() -> None:
 
 def get_tunnels_for_host(host: str) -> dict[int, dict]:
     """Get all tunnels for a specific rdev host.
-    
+
     Args:
         host: rdev host (e.g., "user/rdev-vm")
-        
+
     Returns:
         {local_port: {"pid": int, "remote_port": int, "host": str}}
     """
     all_tunnels = discover_active_tunnels()
-    return {
-        port: info for port, info in all_tunnels.items()
-        if info["host"] == host
-    }
+    return {port: info for port, info in all_tunnels.items() if info["host"] == host}
 
 
 def find_tunnel_by_port(local_port: int) -> dict | None:
     """Find tunnel info for a specific local port.
-    
+
     Args:
         local_port: The local port number
-        
+
     Returns:
         {"pid": int, "remote_port": int, "host": str} or None
     """
@@ -191,15 +191,15 @@ def is_process_alive(pid: int) -> bool:
 
 def create_tunnel(host: str, remote_port: int, local_port: int | None = None) -> tuple[bool, dict]:
     """Create an SSH port-forward tunnel.
-    
+
     If the requested local port is occupied, automatically finds the next
     available port. The actual local port used is returned in the result dict.
-    
+
     Args:
         host: rdev host to tunnel to
         remote_port: Port on remote host
         local_port: Local port (defaults to same as remote_port)
-        
+
     Returns:
         (success: bool, info: dict)
         info contains: {"local_port", "remote_port", "pid", "host"} on success
@@ -214,7 +214,9 @@ def create_tunnel(host: str, remote_port: int, local_port: int | None = None) ->
 
     # Check for reserved ports (e.g., 8093 used by reverse tunnel for API)
     if local_port in RESERVED_PORTS:
-        return False, {"error": f"Port {local_port} is reserved for orchestrator internal use (reverse tunnel)"}
+        return False, {
+            "error": f"Port {local_port} is reserved for orchestrator internal use (reverse tunnel)"
+        }
 
     # Check if an existing SSH tunnel already covers this exact request
     existing = find_tunnel_by_port(local_port)
@@ -234,7 +236,9 @@ def create_tunnel(host: str, remote_port: int, local_port: int | None = None) ->
     if not is_port_available(local_port):
         new_port = find_available_port(local_port + 1)
         if new_port is None:
-            return False, {"error": f"Port {local_port} is occupied and no available port found nearby"}
+            return False, {
+                "error": f"Port {local_port} is occupied and no available port found nearby"
+            }
         logger.info("Port %d is occupied, using %d instead", local_port, new_port)
         local_port = new_port
 
@@ -256,8 +260,9 @@ def create_tunnel(host: str, remote_port: int, local_port: int | None = None) ->
         # Invalidate cache
         invalidate_cache()
 
-        logger.info("Created tunnel local:%d -> %s:%d (pid=%d)",
-                   local_port, host, remote_port, proc.pid)
+        logger.info(
+            "Created tunnel local:%d -> %s:%d (pid=%d)", local_port, host, remote_port, proc.pid
+        )
 
         return True, {
             "local_port": local_port,
@@ -272,11 +277,11 @@ def create_tunnel(host: str, remote_port: int, local_port: int | None = None) ->
 
 def close_tunnel(local_port: int, host: str | None = None) -> tuple[bool, str]:
     """Close an SSH tunnel on a specific port.
-    
+
     Args:
         local_port: The local port of the tunnel
         host: Optional host to verify ownership (safety check)
-        
+
     Returns:
         (success: bool, message: str)
     """
@@ -424,6 +429,10 @@ class ReverseTunnelManager:
     Thread-safe: all dict mutations are protected by a lock.
     """
 
+    # After this many consecutive startup failures, the tunnel monitor
+    # should stop retrying and mark the session as error.
+    MAX_CONSECUTIVE_FAILURES = 5
+
     def __init__(
         self,
         api_port: int = DEFAULT_API_PORT,
@@ -433,6 +442,8 @@ class ReverseTunnelManager:
         self.log_dir = log_dir
         self._tunnels: dict[str, _TunnelEntry] = {}  # session_id → entry
         self._lock = threading.Lock()
+        self._failure_counts: dict[str, int] = {}
+        self._last_errors: dict[str, str | None] = {}
 
         # Ensure log directory exists
         os.makedirs(self.log_dir, exist_ok=True)
@@ -456,8 +467,9 @@ class ReverseTunnelManager:
         local_port = local_port or self.api_port
         remote_port = remote_port or self.api_port
 
-        # Stop any existing tunnel for this session first
-        self.stop_tunnel(session_id)
+        # Stop any existing tunnel for this session first (without clearing
+        # failure tracking — that only resets on success or explicit stop).
+        self._stop_tunnel_internal(session_id)
 
         log_path = os.path.join(self.log_dir, f"{session_name}.log")
         try:
@@ -468,13 +480,21 @@ class ReverseTunnelManager:
 
         cmd = [
             "ssh",
-            "-o", "StrictHostKeyChecking=no",
-            "-o", "UserKnownHostsFile=/dev/null",
-            "-o", "ServerAliveInterval=30",
-            "-o", "ServerAliveCountMax=3",
-            "-o", "ExitOnForwardFailure=yes",
+            "-o",
+            "StrictHostKeyChecking=no",
+            "-o",
+            "UserKnownHostsFile=/dev/null",
+            "-o",
+            "ServerAliveInterval=30",
+            "-o",
+            "ServerAliveCountMax=3",
+            "-o",
+            "ExitOnForwardFailure=yes",
+            "-o",
+            "ClearAllForwardings=yes",
             "-N",
-            "-R", f"{remote_port}:127.0.0.1:{local_port}",
+            "-R",
+            f"{remote_port}:127.0.0.1:{local_port}",
             host,
         ]
 
@@ -492,6 +512,26 @@ class ReverseTunnelManager:
                 log_file.close()
             return None
 
+        # Verify SSH survived startup. SSH config conflicts (e.g.
+        # LocalForward on an already-bound port with ExitOnForwardFailure)
+        # cause the process to exit within ~1s.
+        time.sleep(3)
+        exit_code = proc.poll()
+        if exit_code is not None:
+            last_error = self._read_last_log_line(log_path)
+            logger.error(
+                "Tunnel for %s exited during startup (exit_code=%d, error=%s)",
+                session_name,
+                exit_code,
+                last_error,
+            )
+            with self._lock:
+                self._failure_counts[session_id] = self._failure_counts.get(session_id, 0) + 1
+                self._last_errors[session_id] = last_error
+            if log_file:
+                log_file.close()
+            return None
+
         entry = _TunnelEntry(
             proc=proc,
             host=host,
@@ -502,17 +542,24 @@ class ReverseTunnelManager:
 
         with self._lock:
             self._tunnels[session_id] = entry
+            # Successful start resets failure tracking
+            self._failure_counts.pop(session_id, None)
+            self._last_errors.pop(session_id, None)
 
         logger.info(
             "Started tunnel for %s (host=%s, pid=%d, port=%d→%d)",
-            session_name, host, proc.pid, local_port, remote_port,
+            session_name,
+            host,
+            proc.pid,
+            local_port,
+            remote_port,
         )
         return proc.pid
 
-    def stop_tunnel(self, session_id: str) -> bool:
-        """Stop a tunnel with SIGTERM → wait → SIGKILL escalation.
+    def _stop_tunnel_internal(self, session_id: str) -> bool:
+        """Stop a tunnel without clearing failure tracking.
 
-        Returns True if a tunnel was stopped, False if none existed.
+        Used by start_tunnel/restart_tunnel when replacing an existing tunnel.
         """
         with self._lock:
             entry = self._tunnels.pop(session_id, None)
@@ -523,6 +570,18 @@ class ReverseTunnelManager:
         self._kill_entry(entry)
         logger.info("Stopped tunnel for %s (pid=%d)", entry.session_name, entry.pid)
         return True
+
+    def stop_tunnel(self, session_id: str) -> bool:
+        """Stop a tunnel with SIGTERM → wait → SIGKILL escalation.
+
+        Returns True if a tunnel was stopped, False if none existed.
+        Manual stop clears failure tracking so the next start is fresh.
+        """
+        result = self._stop_tunnel_internal(session_id)
+        with self._lock:
+            self._failure_counts.pop(session_id, None)
+            self._last_errors.pop(session_id, None)
+        return result
 
     def restart_tunnel(
         self,
@@ -543,7 +602,8 @@ class ReverseTunnelManager:
             self._kill_entry(old_entry)
             logger.info(
                 "Stopped tunnel for %s (pid=%d) before restart",
-                old_entry.session_name, old_entry.pid,
+                old_entry.session_name,
+                old_entry.pid,
             )
 
         return self.start_tunnel(session_id, session_name, host)
@@ -565,7 +625,9 @@ class ReverseTunnelManager:
             # Process exited — log the exit code
             logger.info(
                 "Tunnel for %s (pid=%d) exited with code %d",
-                entry.session_name, entry.pid, status,
+                entry.session_name,
+                entry.pid,
+                status,
             )
             # Clean up the entry
             self._cleanup_dead_entry(session_id, entry)
@@ -605,6 +667,20 @@ class ReverseTunnelManager:
         with self._lock:
             return session_id in self._tunnels
 
+    def get_failure_info(self, session_id: str) -> tuple[int, str | None]:
+        """Return (failure_count, last_error) for a session's tunnel."""
+        with self._lock:
+            return (
+                self._failure_counts.get(session_id, 0),
+                self._last_errors.get(session_id),
+            )
+
+    def clear_failure_info(self, session_id: str) -> None:
+        """Reset failure tracking for a session."""
+        with self._lock:
+            self._failure_counts.pop(session_id, None)
+            self._last_errors.pop(session_id, None)
+
     def list_tunnels(self) -> list[dict]:
         """List all managed tunnels with their status."""
         with self._lock:
@@ -613,14 +689,16 @@ class ReverseTunnelManager:
         result = []
         for sid, entry in entries:
             alive = entry.proc.poll() is None
-            result.append({
-                "session_id": sid,
-                "session_name": entry.session_name,
-                "host": entry.host,
-                "pid": entry.pid,
-                "alive": alive,
-                "uptime_seconds": time.time() - entry.started_at,
-            })
+            result.append(
+                {
+                    "session_id": sid,
+                    "session_name": entry.session_name,
+                    "host": entry.host,
+                    "pid": entry.pid,
+                    "alive": alive,
+                    "uptime_seconds": time.time() - entry.started_at,
+                }
+            )
         return result
 
     # ------------------------------------------------------------------
@@ -642,9 +720,7 @@ class ReverseTunnelManager:
         Returns the (adopted or new) PID, or None on failure.
         """
         if stored_pid and self._try_adopt(session_id, session_name, host, stored_pid):
-            logger.info(
-                "Adopted existing tunnel for %s (pid=%d)", session_name, stored_pid
-            )
+            logger.info("Adopted existing tunnel for %s (pid=%d)", session_name, stored_pid)
             return stored_pid
 
         # Stored PID is dead or wrong — clean up any orphans and start fresh
@@ -674,11 +750,14 @@ class ReverseTunnelManager:
 
         # Cross-validate: is this PID actually a reverse tunnel for this host?
         from orchestrator.session.health import find_tunnel_pids
+
         tunnel_pids = find_tunnel_pids(host)
         if pid not in tunnel_pids:
             logger.warning(
                 "PID %d is alive but not a reverse tunnel for %s (found pids: %s)",
-                pid, host, tunnel_pids,
+                pid,
+                host,
+                tunnel_pids,
             )
             return False
 
@@ -698,6 +777,7 @@ class ReverseTunnelManager:
     def _kill_orphan_tunnels(self, host: str):
         """Kill any orphaned SSH reverse tunnel processes for a host."""
         from orchestrator.session.health import find_tunnel_pids
+
         pids = find_tunnel_pids(host)
         for pid in pids:
             try:
@@ -806,3 +886,27 @@ class ReverseTunnelManager:
                 entry.proc.wait(timeout=1)
             except (subprocess.TimeoutExpired, ChildProcessError):
                 pass
+
+    @staticmethod
+    def _read_last_log_line(log_path: str) -> str | None:
+        """Read the last non-empty line from a tunnel log file.
+
+        Opens a separate read-only FD (safe to call while the subprocess
+        still has the file open for writing on POSIX).
+        """
+        try:
+            with open(log_path, "rb") as f:
+                f.seek(0, 2)  # seek to end
+                size = f.tell()
+                if size == 0:
+                    return None
+                read_size = min(size, 2048)
+                f.seek(-read_size, 2)
+                data = f.read(read_size).decode("utf-8", errors="replace")
+                for line in reversed(data.splitlines()):
+                    stripped = line.strip()
+                    if stripped:
+                        return stripped
+        except OSError:
+            pass
+        return None

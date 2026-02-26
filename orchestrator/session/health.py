@@ -43,7 +43,13 @@ def find_tunnel_pids(host: str) -> list[int]:
         )
         pids = []
         for line in result.stdout.split("\n"):
-            if "ssh" in line and "-N" in line and "-R" in line and host in line and "grep" not in line:
+            if (
+                "ssh" in line
+                and "-N" in line
+                and "-R" in line
+                and host in line
+                and "grep" not in line
+            ):
                 parts = line.split()
                 if len(parts) > 1:
                     try:
@@ -253,7 +259,9 @@ def check_worker_ssh_alive(tmux_sess: str, tmux_win: str, host: str) -> bool:
     return has_ssh
 
 
-def probe_tunnel_connectivity(host: str, remote_port: int = DEFAULT_API_PORT, timeout: int = 8) -> bool:
+def probe_tunnel_connectivity(
+    host: str, remote_port: int = DEFAULT_API_PORT, timeout: int = 8
+) -> bool:
     """Actively test if the reverse tunnel works by SSHing to host and curling the tunneled port.
 
     This provides a definitive answer about tunnel health by testing actual connectivity,
@@ -286,7 +294,10 @@ def probe_tunnel_connectivity(host: str, remote_port: int = DEFAULT_API_PORT, ti
         else:
             logger.info(
                 "Tunnel probe: %s port %d - unhealthy (HTTP %s, stderr=%s)",
-                host, remote_port, http_code, result.stderr.strip()[:100],
+                host,
+                remote_port,
+                http_code,
+                result.stderr.strip()[:100],
             )
             return False
     except subprocess.TimeoutExpired:
@@ -299,24 +310,19 @@ def probe_tunnel_connectivity(host: str, remote_port: int = DEFAULT_API_PORT, ti
 
 def check_claude_process_local(session_id: str) -> tuple[bool, str]:
     """Check if Claude Code with given session_id is running locally via ps.
-    
+
     Args:
         session_id: The session ID to search for in Claude's -r flag
-        
+
     Returns:
         (alive: bool, reason: str) - whether Claude is running and why
     """
     try:
-        result = subprocess.run(
-            ["ps", "aux"],
-            capture_output=True,
-            text=True,
-            timeout=5
-        )
+        result = subprocess.run(["ps", "aux"], capture_output=True, text=True, timeout=5)
 
         # Look for claude process with our session_id
-        for line in result.stdout.split('\n'):
-            if 'claude' in line.lower() and session_id in line and 'grep' not in line:
+        for line in result.stdout.split("\n"):
+            if "claude" in line.lower() and session_id in line and "grep" not in line:
                 logger.debug("Found Claude process for session %s: %s", session_id, line[:100])
                 return True, "Claude process running"
 
@@ -329,24 +335,21 @@ def check_claude_process_local(session_id: str) -> tuple[bool, str]:
 
 
 def check_screen_and_claude_remote(
-    host: str,
-    session_id: str,
-    tmux_sess: str = None,
-    tmux_win: str = None
+    host: str, session_id: str, tmux_sess: str = None, tmux_win: str = None
 ) -> tuple[str, str]:
     """Check screen session and Claude process status on a remote host.
-    
+
     Uses subprocess SSH (fresh connection) to check status. Does NOT use tmux send-keys
     because that would type commands into Claude if it's running.
-    
+
     Also checks the worker tmux window to verify the SSH connection is actually alive.
-    
+
     Args:
         host: rdev host (e.g., "user/rdev-vm")
         session_id: Session ID to check for
         tmux_sess: tmux session name (used for SSH alive check)
         tmux_win: tmux window name (used for SSH alive check)
-        
+
     Returns:
         (status: str, reason: str) where status is one of:
         - "alive": Screen exists and Claude is running AND SSH connection alive
@@ -362,7 +365,9 @@ def check_screen_and_claude_remote(
     if tmux_sess and tmux_win:
         ssh_alive = check_worker_ssh_alive(tmux_sess, tmux_win, host)
         if not ssh_alive:
-            logger.info("Health check: Worker SSH appears disconnected for %s - marking as dead", host)
+            logger.info(
+                "Health check: Worker SSH appears disconnected for %s - marking as dead", host
+            )
             return "dead", f"Worker SSH session appears disconnected (not on rdev host '{host}')"
 
     # Check remote screen/Claude status via subprocess SSH
@@ -393,19 +398,30 @@ def check_screen_and_claude_remote(
             ["ssh", "-o", "ConnectTimeout=5", "-o", "BatchMode=yes", host, check_cmd],
             capture_output=True,
             text=True,
-            timeout=10
+            timeout=10,
         )
 
         if result.returncode != 0 and "Permission denied" in result.stderr:
-            return "screen_detached", f"SSH auth failed - screen may still be running: {result.stderr.strip()}"
+            return (
+                "screen_detached",
+                f"SSH auth failed - screen may still be running: {result.stderr.strip()}",
+            )
 
-        if result.returncode != 0 and ("Connection refused" in result.stderr or "Connection timed out" in result.stderr):
-            return "screen_detached", f"SSH connection failed - screen may still be running: {result.stderr.strip()}"
+        if result.returncode != 0 and (
+            "Connection refused" in result.stderr or "Connection timed out" in result.stderr
+        ):
+            return (
+                "screen_detached",
+                f"SSH connection failed - screen may still be running: {result.stderr.strip()}",
+            )
 
         # Catch-all for other SSH transport failures (host key errors, DNS, etc.)
         # If SSH itself failed (exit 255) and stdout is empty, it's a connection issue.
         if result.returncode == 255 and not result.stdout.strip():
-            return "screen_detached", f"SSH connection failed - screen may still be running: {result.stderr.strip()[:200]}"
+            return (
+                "screen_detached",
+                f"SSH connection failed - screen may still be running: {result.stderr.strip()[:200]}",
+            )
 
         output = result.stdout
         stderr = result.stderr
@@ -417,13 +433,21 @@ def check_screen_and_claude_remote(
         # Debug logging to diagnose false negatives
         logger.debug(
             "SSH health check for %s (screen=%s): returncode=%d, screen_ls=%s, screen_ps=%s, claude=%s, stdout=%r, stderr=%r",
-            host, screen_name, result.returncode, screen_exists_ls, screen_exists_ps, claude_running, output[:200], stderr[:100]
+            host,
+            screen_name,
+            result.returncode,
+            screen_exists_ls,
+            screen_exists_ps,
+            claude_running,
+            output[:200],
+            stderr[:100],
         )
         if screen_exists_ps and not screen_exists_ls:
             logger.info(
                 "SSH health check for %s: screen -ls missed session '%s' but ps found it "
                 "(likely SCREENDIR mismatch between interactive and BatchMode SSH)",
-                host, screen_name,
+                host,
+                screen_name,
             )
 
         if screen_exists and claude_running:
@@ -439,14 +463,23 @@ def check_screen_and_claude_remote(
                 "SSH health check for %s: Claude running but screen not found "
                 "(screen_name=%s) — likely orphaned after screen parent died. "
                 "stdout=%r, stderr=%r",
-                host, screen_name, output[:200], stderr[:100],
+                host,
+                screen_name,
+                output[:200],
+                stderr[:100],
             )
-            return "alive", f"Claude is running without screen (screen session '{screen_name}' not found — likely orphaned)"
+            return (
+                "alive",
+                f"Claude is running without screen (screen session '{screen_name}' not found — likely orphaned)",
+            )
         else:
             # Log at warning level when marking as dead - helps diagnose false negatives
             logger.warning(
                 "SSH health check marking %s as DEAD: screen_name=%s, stdout=%r, stderr=%r",
-                host, screen_name, output, stderr
+                host,
+                screen_name,
+                output,
+                stderr,
             )
             return "dead", f"No screen session found (looked for '{screen_name}')"
 
@@ -490,6 +523,7 @@ check_claude_process_rdev = check_claude_process_remote
 # High-Level Health Check Orchestration
 # =============================================================================
 
+
 def check_and_update_worker_health(db, session, tunnel_manager=None) -> dict:
     """Check a single worker's health and update its DB status accordingly.
 
@@ -508,7 +542,10 @@ def check_and_update_worker_health(db, session, tunnel_manager=None) -> dict:
 
     if is_remote_host(session.host):
         screen_status, reason = check_screen_and_claude_remote(
-            session.host, session.id, tmux_sess, tmux_win,
+            session.host,
+            session.id,
+            tmux_sess,
+            tmux_win,
         )
 
         tunnel_alive = tunnel_manager.is_alive(session.id) if tunnel_manager else False
@@ -517,25 +554,40 @@ def check_and_update_worker_health(db, session, tunnel_manager=None) -> dict:
             # --- Ensure tunnel is alive ---
             tunnel_reconnected = False
             if not tunnel_alive:
-                logger.info("Health check: %s has Claude running but tunnel dead, restarting tunnel", session.name)
+                logger.info(
+                    "Health check: %s has Claude running but tunnel dead, restarting tunnel",
+                    session.name,
+                )
                 if tunnel_manager:
                     new_pid = tunnel_manager.restart_tunnel(session.id, session.name, session.host)
                     if new_pid:
                         repo.update_session(db, session.id, tunnel_pid=new_pid)
-                        logger.info("Health check: %s tunnel restarted (pid=%d)", session.name, new_pid)
+                        logger.info(
+                            "Health check: %s tunnel restarted (pid=%d)", session.name, new_pid
+                        )
                         tunnel_alive = True
                         tunnel_reconnected = True
                         # Don't return — fall through to TUI check
 
                 if not tunnel_alive:
                     # Tunnel dead and could not be restarted
-                    reason = f"{reason}, but tunnel is dead and restart failed"
+                    tunnel_failures = 0
+                    tunnel_error = None
+                    if tunnel_manager:
+                        tunnel_failures, tunnel_error = tunnel_manager.get_failure_info(session.id)
+                    error_detail = f" ({tunnel_error})" if tunnel_error else ""
+                    reason = f"{reason}, but tunnel is dead and restart failed{error_detail}"
                     if session.status not in ("screen_detached", "connecting"):
                         repo.update_session(db, session.id, status="screen_detached")
                     return {
-                        "alive": False, "status": "screen_detached", "reason": reason,
-                        "screen_status": screen_status, "tunnel_alive": False,
+                        "alive": False,
+                        "status": "screen_detached",
+                        "reason": reason,
+                        "screen_status": screen_status,
+                        "tunnel_alive": False,
                         "needs_reconnect": True,
+                        "tunnel_failures": tunnel_failures,
+                        "tunnel_error": tunnel_error,
                     }
 
             # --- Tunnel alive. Check if pane is attached to screen ---
@@ -547,22 +599,31 @@ def check_and_update_worker_health(db, session, tunnel_manager=None) -> dict:
                     repo.update_session(db, session.id, status="screen_detached")
                     logger.info(
                         "Health check: %s alive but pane not attached to screen, "
-                        "marking screen_detached for auto-reattach", session.name,
+                        "marking screen_detached for auto-reattach",
+                        session.name,
                     )
                 return {
-                    "alive": False, "status": "screen_detached",
+                    "alive": False,
+                    "status": "screen_detached",
                     "reason": f"{reason} — pane not attached to screen",
-                    "screen_status": screen_status, "tunnel_alive": tunnel_alive,
-                    "needs_reconnect": True, "tunnel_reconnected": tunnel_reconnected,
+                    "screen_status": screen_status,
+                    "tunnel_alive": tunnel_alive,
+                    "needs_reconnect": True,
+                    "tunnel_reconnected": tunnel_reconnected,
                 }
 
             # --- All good: screen + Claude alive, tunnel alive, pane attached ---
             if session.status in ("screen_detached", "error", "disconnected"):
                 repo.update_session(db, session.id, status="waiting")
-                logger.info("Health check: %s recovered from %s to waiting", session.name, session.status)
+                logger.info(
+                    "Health check: %s recovered from %s to waiting", session.name, session.status
+                )
             result = {
-                "alive": True, "status": session.status, "reason": reason,
-                "screen_status": screen_status, "tunnel_alive": True,
+                "alive": True,
+                "status": session.status,
+                "reason": reason,
+                "screen_status": screen_status,
+                "tunnel_alive": True,
             }
             if tunnel_reconnected:
                 result["tunnel_reconnected"] = True
@@ -574,17 +635,27 @@ def check_and_update_worker_health(db, session, tunnel_manager=None) -> dict:
                 repo.update_session(db, session.id, status="screen_detached")
                 logger.info("Health check: %s marked as screen_detached (%s)", session.name, reason)
             return {
-                "alive": False, "status": "screen_detached", "reason": reason,
-                "screen_status": screen_status, "needs_reconnect": True,
+                "alive": False,
+                "status": "screen_detached",
+                "reason": reason,
+                "screen_status": screen_status,
+                "needs_reconnect": True,
             }
 
         elif screen_status == "screen_only":
             if session.status != "error":
                 repo.update_session(db, session.id, status="error")
-                logger.info("Health check: %s marked as error - Claude crashed in screen (%s)", session.name, reason)
+                logger.info(
+                    "Health check: %s marked as error - Claude crashed in screen (%s)",
+                    session.name,
+                    reason,
+                )
             return {
-                "alive": False, "status": "error", "reason": reason,
-                "screen_status": screen_status, "needs_reconnect": True,
+                "alive": False,
+                "status": "error",
+                "reason": reason,
+                "screen_status": screen_status,
+                "needs_reconnect": True,
             }
 
         else:  # dead
@@ -592,8 +663,11 @@ def check_and_update_worker_health(db, session, tunnel_manager=None) -> dict:
                 repo.update_session(db, session.id, status="disconnected")
                 logger.info("Health check: %s marked as disconnected (%s)", session.name, reason)
             return {
-                "alive": False, "status": "disconnected", "reason": reason,
-                "screen_status": screen_status, "needs_reconnect": True,
+                "alive": False,
+                "status": "disconnected",
+                "reason": reason,
+                "screen_status": screen_status,
+                "needs_reconnect": True,
             }
     else:
         alive, reason = check_claude_process_local(session.id)
@@ -601,7 +675,12 @@ def check_and_update_worker_health(db, session, tunnel_manager=None) -> dict:
             if session.status != "disconnected":
                 repo.update_session(db, session.id, status="disconnected")
                 logger.info("Health check: %s marked as disconnected (%s)", session.name, reason)
-            return {"alive": False, "status": "disconnected", "reason": reason, "needs_reconnect": True}
+            return {
+                "alive": False,
+                "status": "disconnected",
+                "reason": reason,
+                "needs_reconnect": True,
+            }
         return {"alive": True, "status": session.status, "reason": reason}
 
 
@@ -635,9 +714,14 @@ def check_all_workers_health(
     from orchestrator.session.reconnect import trigger_reconnect
 
     results = {
-        "checked": 0, "disconnected": [], "screen_detached": [],
-        "error": [], "alive": [], "skipped_active": [],
-        "auto_reconnected": [], "deferred": [],
+        "checked": 0,
+        "disconnected": [],
+        "screen_detached": [],
+        "error": [],
+        "alive": [],
+        "skipped_active": [],
+        "auto_reconnected": [],
+        "deferred": [],
     }
 
     auto_reconnect_candidates = []
@@ -658,7 +742,11 @@ def check_all_workers_health(
                     elapsed = (datetime.now(UTC) - dt.astimezone(UTC)).total_seconds()
                     if elapsed > 600:  # 10 minutes
                         repo.update_session(db, s.id, status="disconnected")
-                        logger.warning("Health check: %s stuck in connecting for %dm, marking disconnected", s.name, int(elapsed // 60))
+                        logger.warning(
+                            "Health check: %s stuck in connecting for %dm, marking disconnected",
+                            s.name,
+                            int(elapsed // 60),
+                        )
                         results["disconnected"].append(s.name)
                         if s.auto_reconnect:
                             auto_reconnect_candidates.append(s)
@@ -701,7 +789,10 @@ def check_all_workers_health(
         try:
             logger.info("Auto-reconnect: triggering reconnect for %s", s.name)
             trigger_reconnect(
-                s, db, db_path=db_path, api_port=api_port,
+                s,
+                db,
+                db_path=db_path,
+                api_port=api_port,
                 tunnel_manager=tunnel_manager,
             )
             results["auto_reconnected"].append(s.name)

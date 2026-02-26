@@ -26,10 +26,14 @@ class TestReconnectTunnelOnly:
         mock_tm = MagicMock()
         mock_tm.restart_tunnel.return_value = 12345
 
-        result = reconnect_tunnel_only(db, mock_session, "orchestrator", 8093, mock_repo, tunnel_manager=mock_tm)
+        result = reconnect_tunnel_only(
+            db, mock_session, "orchestrator", 8093, mock_repo, tunnel_manager=mock_tm
+        )
 
         assert result is True
-        mock_tm.restart_tunnel.assert_called_once_with("test-session-id", "test-worker", "subs-mt/test-vm")
+        mock_tm.restart_tunnel.assert_called_once_with(
+            "test-session-id", "test-worker", "subs-mt/test-vm"
+        )
         mock_repo.update_session.assert_called_once_with(db, "test-session-id", tunnel_pid=12345)
 
     def test_tunnel_reconnect_failure(self, db):
@@ -45,7 +49,9 @@ class TestReconnectTunnelOnly:
         mock_tm = MagicMock()
         mock_tm.restart_tunnel.return_value = None
 
-        result = reconnect_tunnel_only(db, mock_session, "orchestrator", 8093, mock_repo, tunnel_manager=mock_tm)
+        result = reconnect_tunnel_only(
+            db, mock_session, "orchestrator", 8093, mock_repo, tunnel_manager=mock_tm
+        )
 
         assert result is False
         mock_repo.update_session.assert_not_called()
@@ -61,7 +67,9 @@ class TestReconnectTunnelOnly:
 
         mock_repo = MagicMock()
 
-        result = reconnect_tunnel_only(db, mock_session, "orchestrator", 8093, mock_repo, tunnel_manager=None)
+        result = reconnect_tunnel_only(
+            db, mock_session, "orchestrator", 8093, mock_repo, tunnel_manager=None
+        )
 
         assert result is False
 
@@ -78,7 +86,9 @@ class TestReconnectTunnelOnly:
         mock_tm = MagicMock()
         mock_tm.restart_tunnel.side_effect = OSError("SSH binary not found")
 
-        result = reconnect_tunnel_only(db, mock_session, "orchestrator", 8093, mock_repo, tunnel_manager=mock_tm)
+        result = reconnect_tunnel_only(
+            db, mock_session, "orchestrator", 8093, mock_repo, tunnel_manager=mock_tm
+        )
 
         assert result is False
 
@@ -113,7 +123,16 @@ class TestReconnectRemoteWorkerTunnelOnlyPath:
         mock_tm = MagicMock()
         mock_tm.is_alive.return_value = False  # Tunnel dead
 
-        reconnect_remote_worker(db, mock_session, "orchestrator", "test-worker", 8093, "/tmp", mock_repo, tunnel_manager=mock_tm)
+        reconnect_remote_worker(
+            db,
+            mock_session,
+            "orchestrator",
+            "test-worker",
+            8093,
+            "/tmp",
+            mock_repo,
+            tunnel_manager=mock_tm,
+        )
 
         # Step 1 detects TUI+SSH alive, subprocess confirms "alive" → _ensure_tunnel called
         mock_tm.restart_tunnel.assert_called_once()
@@ -128,9 +147,16 @@ class TestReconnectRemoteWorkerTunnelOnlyPath:
     @patch("orchestrator.session.health.check_worker_ssh_alive", return_value=False)
     @patch("orchestrator.session.reconnect.time.sleep")
     def test_full_reconnect_when_ssh_dead(
-        self, mock_sleep, mock_ssh_alive,
-        mock_wait_prompt, mock_remote_connect, mock_kill_window, mock_send_keys,
-        mock_tui, mock_tmux_subprocess, db
+        self,
+        mock_sleep,
+        mock_ssh_alive,
+        mock_wait_prompt,
+        mock_remote_connect,
+        mock_kill_window,
+        mock_send_keys,
+        mock_tui,
+        mock_tmux_subprocess,
+        db,
     ):
         """When SSH process is dead (no TUI), should go through full pipeline."""
         from orchestrator.session.reconnect import reconnect_remote_worker
@@ -146,18 +172,28 @@ class TestReconnectRemoteWorkerTunnelOnlyPath:
         mock_tm.is_alive.return_value = False
 
         with pytest.raises(RuntimeError, match="Timed out waiting for shell prompt"):
-            reconnect_remote_worker(db, mock_session, "orchestrator", "test-worker", 8093, "/tmp", mock_repo, tunnel_manager=mock_tm)
+            reconnect_remote_worker(
+                db,
+                mock_session,
+                "orchestrator",
+                "test-worker",
+                8093,
+                "/tmp",
+                mock_repo,
+                tunnel_manager=mock_tm,
+            )
 
 
 class TestHealthCheckAutoReconnectTunnel:
     """Test that health check auto-reconnects dead tunnels via tunnel_manager."""
 
+    @patch("orchestrator.session.health.check_tui_running_in_pane", return_value=True)
     @patch("orchestrator.session.health.repo")
     @patch("orchestrator.session.health.check_screen_and_claude_remote")
     @patch("orchestrator.session.health.is_remote_host")
     @patch("orchestrator.api.routes.sessions.repo")
     def test_health_check_auto_reconnects_tunnel(
-        self, mock_route_repo, mock_is_remote, mock_screen_claude, mock_health_repo, db
+        self, mock_route_repo, mock_is_remote, mock_screen_claude, mock_health_repo, mock_tui, db
     ):
         """Health check should auto-reconnect tunnel when Claude running but tunnel dead."""
         from orchestrator.api.routes.sessions import health_check_session
@@ -184,14 +220,17 @@ class TestHealthCheckAutoReconnectTunnel:
 
         assert result["alive"] is True
         assert result["tunnel_reconnected"] is True
-        mock_tm.restart_tunnel.assert_called_once_with("test-session-id", "test-worker", "subs-mt/test-vm")
+        mock_tm.restart_tunnel.assert_called_once_with(
+            "test-session-id", "test-worker", "subs-mt/test-vm"
+        )
 
+    @patch("orchestrator.session.health.check_tui_running_in_pane", return_value=True)
     @patch("orchestrator.session.health.repo")
     @patch("orchestrator.session.health.check_screen_and_claude_remote")
     @patch("orchestrator.session.health.is_remote_host")
     @patch("orchestrator.api.routes.sessions.repo")
     def test_health_check_reports_failure_when_tunnel_reconnect_fails(
-        self, mock_route_repo, mock_is_remote, mock_screen_claude, mock_health_repo, db
+        self, mock_route_repo, mock_is_remote, mock_screen_claude, mock_health_repo, mock_tui, db
     ):
         """Health check should report failure if tunnel auto-reconnect fails."""
         from orchestrator.api.routes.sessions import health_check_session
@@ -210,6 +249,7 @@ class TestHealthCheckAutoReconnectTunnel:
         mock_tm = MagicMock()
         mock_tm.is_alive.return_value = False
         mock_tm.restart_tunnel.return_value = None  # Restart fails
+        mock_tm.get_failure_info.return_value = (0, None)
 
         mock_request = MagicMock()
         mock_request.app.state.tunnel_manager = mock_tm
@@ -219,3 +259,39 @@ class TestHealthCheckAutoReconnectTunnel:
         assert result["alive"] is False
         assert result["needs_reconnect"] is True
         assert "restart failed" in result["reason"]
+
+    @patch("orchestrator.session.health.check_tui_running_in_pane", return_value=True)
+    @patch("orchestrator.session.health.repo")
+    @patch("orchestrator.session.health.check_screen_and_claude_remote")
+    @patch("orchestrator.session.health.is_remote_host")
+    @patch("orchestrator.api.routes.sessions.repo")
+    def test_health_check_includes_tunnel_error_on_failure(
+        self, mock_route_repo, mock_is_remote, mock_screen_claude, mock_health_repo, mock_tui, db
+    ):
+        """Health check response should include tunnel_failures and tunnel_error."""
+        from orchestrator.api.routes.sessions import health_check_session
+
+        mock_is_remote.return_value = True
+        mock_screen_claude.return_value = ("alive", "Screen session exists and Claude is running")
+
+        mock_session = MagicMock()
+        mock_session.id = "test-session-id"
+        mock_session.name = "test-worker"
+        mock_session.host = "subs-mt/test-vm"
+        mock_session.status = "waiting"
+        mock_route_repo.get_session.return_value = mock_session
+
+        mock_tm = MagicMock()
+        mock_tm.is_alive.return_value = False
+        mock_tm.restart_tunnel.return_value = None
+        mock_tm.get_failure_info.return_value = (3, "bind: Address already in use")
+
+        mock_request = MagicMock()
+        mock_request.app.state.tunnel_manager = mock_tm
+
+        result = health_check_session("test-session-id", mock_request, db)
+
+        assert result["alive"] is False
+        assert result["tunnel_failures"] == 3
+        assert result["tunnel_error"] == "bind: Address already in use"
+        assert "bind: Address already in use" in result["reason"]
