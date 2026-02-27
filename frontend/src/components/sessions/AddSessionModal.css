@@ -1,6 +1,6 @@
-/* Stable height to prevent layout jumps when switching worker type */
+/* Fixed height so all 3 worker type tabs share the same modal size */
 .add-worker-body {
-  min-height: 340px;
+  height: 380px;
 }
 
 /* Modal subtitle */
