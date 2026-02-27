@@ -4,6 +4,7 @@ import asyncio
 import logging
 import subprocess
 import time
+import uuid
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -20,6 +21,12 @@ router = APIRouter()
 _rdev_cache: dict[str, Any] = {"data": [], "timestamp": 0}
 RDEV_CACHE_TTL = 3600  # 1 hour in seconds
 RDEV_BACKGROUND_REFRESH_INTERVAL = 1800  # 30 minutes in seconds
+
+# In-memory store for create-job results so the frontend can poll for errors.
+# Keys are job IDs (str); values are dicts with status/error/name.
+# Entries are cleaned up after 10 minutes.
+_create_jobs: dict[str, dict[str, Any]] = {}
+_CREATE_JOB_TTL = 600  # 10 minutes
 
 # Background task handle
 _background_task: asyncio.Task | None = None
@@ -179,7 +186,15 @@ def list_rdevs(refresh: bool = False, db=Depends(get_db)):
     return result
 
 
-def _run_create_rdev(cmd: list[str], rdev_full_name: str) -> None:
+def _purge_old_jobs() -> None:
+    """Remove create-job entries older than _CREATE_JOB_TTL."""
+    now = time.time()
+    expired = [jid for jid, j in _create_jobs.items() if now - j.get("updated", 0) > _CREATE_JOB_TTL]
+    for jid in expired:
+        _create_jobs.pop(jid, None)
+
+
+def _run_create_rdev(cmd: list[str], rdev_full_name: str, job_id: str) -> None:
     """Run rdev create in a background thread. Logs result and invalidates cache."""
     global _rdev_cache
     try:
@@ -193,14 +208,18 @@ def _run_create_rdev(cmd: list[str], rdev_full_name: str) -> None:
         if result.returncode != 0:
             error_msg = result.stderr.strip() or result.stdout.strip() or "Unknown error"
             logger.error("rdev create failed: %s", error_msg)
+            _create_jobs[job_id] = {"status": "failed", "error": error_msg, "name": rdev_full_name, "updated": time.time()}
         else:
             created_name = result.stdout.strip() or rdev_full_name
             logger.info("Created rdev: %s", created_name)
+            _create_jobs[job_id] = {"status": "done", "name": created_name, "updated": time.time()}
 
     except subprocess.TimeoutExpired:
         logger.error("rdev create timed out for %s", rdev_full_name)
-    except Exception:
+        _create_jobs[job_id] = {"status": "failed", "error": "rdev create timed out (>120s)", "name": rdev_full_name, "updated": time.time()}
+    except Exception as exc:
         logger.exception("rdev create failed for %s", rdev_full_name)
+        _create_jobs[job_id] = {"status": "failed", "error": str(exc), "name": rdev_full_name, "updated": time.time()}
     finally:
         # Invalidate cache so next list refresh picks up the new rdev
         _rdev_cache["timestamp"] = 0
@@ -212,6 +231,7 @@ async def create_rdev(body: RdevCreate):
     
     Kicks off `rdev create` in the background and returns immediately.
     The rdev will appear in the list once creation completes (~30-120s).
+    Returns a job_id that can be polled via GET /rdevs/jobs/{job_id}.
     """
     # Build rdev name
     if body.rdev_name:
@@ -226,11 +246,28 @@ async def create_rdev(body: RdevCreate):
     if body.flavor:
         cmd.extend(["--flavor", body.flavor])
 
-    logger.info("Creating rdev (background): %s", " ".join(cmd))
-    loop = asyncio.get_event_loop()
-    loop.run_in_executor(None, _run_create_rdev, cmd, rdev_full_name)
+    job_id = uuid.uuid4().hex[:12]
+    _create_jobs[job_id] = {"status": "running", "name": rdev_full_name, "updated": time.time()}
+    _purge_old_jobs()
 
-    return {"ok": True, "status": "creating", "name": rdev_full_name}
+    logger.info("Creating rdev (background): %s [job=%s]", " ".join(cmd), job_id)
+    loop = asyncio.get_event_loop()
+    loop.run_in_executor(None, _run_create_rdev, cmd, rdev_full_name, job_id)
+
+    return {"ok": True, "status": "creating", "name": rdev_full_name, "job_id": job_id}
+
+
+@router.get("/rdevs/jobs/{job_id}")
+def get_create_job(job_id: str):
+    """Poll the status of a background rdev-create job.
+    
+    Returns {status: "running"}, {status: "done", name: ...},
+    or {status: "failed", error: ...}.
+    """
+    job = _create_jobs.get(job_id)
+    if job is None:
+        raise HTTPException(404, "Job not found or expired")
+    return job
 
 
 @router.delete("/rdevs/{rdev_name:path}")

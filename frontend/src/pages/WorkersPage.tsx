@@ -142,7 +142,7 @@ export default function WorkersPage() {
   const createRefreshTimers = useRef<ReturnType<typeof setTimeout>[]>([])
   const notify = useNotify()
 
-  const handleCreateRdev = () => {
+  const handleCreateRdev = (jobId: string) => {
     setShowCreateRdevModal(false)
     notify('Rdev creation started — it may take 1-2 min to appear.', 'info')
 
@@ -156,6 +156,31 @@ export default function WorkersPage() {
         setTimeout(() => refreshRdevs(true), delay)
       )
     }
+
+    // Poll for job completion to surface errors
+    const pollJob = async () => {
+      const MAX_POLLS = 30  // up to ~150s
+      const POLL_INTERVAL = 5000
+      for (let i = 0; i < MAX_POLLS; i++) {
+        await new Promise(r => setTimeout(r, POLL_INTERVAL))
+        try {
+          const job = await api<{ status: string; error?: string; name?: string }>(`/api/rdevs/jobs/${jobId}`)
+          if (job.status === 'done') {
+            notify(`Rdev created: ${job.name}`, 'success')
+            refreshRdevs(true)
+            return
+          }
+          if (job.status === 'failed') {
+            notify(`Rdev creation failed: ${job.error}`, 'error')
+            return
+          }
+        } catch {
+          // Job endpoint gone or server error — stop polling
+          return
+        }
+      }
+    }
+    pollJob()
   }
 
   const handleRdevSort = (key: RdevSortKey) => {

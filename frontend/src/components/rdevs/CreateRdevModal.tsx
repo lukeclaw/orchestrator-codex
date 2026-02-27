@@ -6,7 +6,7 @@ import './CreateRdevModal.css'
 interface Props {
   open: boolean
   onClose: () => void
-  onCreate: () => void
+  onCreate: (jobId: string) => void
 }
 
 export default function CreateRdevModal({ open, onClose, onCreate }: Props) {
@@ -41,15 +41,15 @@ export default function CreateRdevModal({ open, onClose, onCreate }: Props) {
       payload.branch = branch.trim()
     }
 
-    // Fire request (backend returns 202 immediately) and close modal
-    api('/api/rdevs', {
-      method: 'POST',
-      body: JSON.stringify(payload),
-    }).catch(() => {
-      // Errors are logged server-side; nothing to show since modal is already closed
-    })
-
-    onCreate()
+    try {
+      const resp = await api<{ job_id: string }>('/api/rdevs', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      })
+      onCreate(resp.job_id)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to create rdev')
+    }
   }
 
   return (
