@@ -1,3 +1,8 @@
+/* Stable height to prevent layout jumps when switching worker type */
+.add-worker-body {
+  min-height: 340px;
+}
+
 /* Modal subtitle */
 .modal-subtitle {
   color: var(--text-muted);

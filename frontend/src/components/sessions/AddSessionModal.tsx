@@ -179,7 +179,7 @@ export default function AddSessionModal({ open, onClose }: Props) {
   return (
     <Modal open={open} onClose={onClose} title="Add New Worker">
       <form onSubmit={handleSubmit} data-testid="add-session-form">
-        <div className="modal-body">
+        <div className="modal-body add-worker-body">
           <div className="modal-subtitle">Connect a local, SSH, or rdev machine to your orchestrator.</div>
           <div className="form-group">
             <label>Worker Type</label>
