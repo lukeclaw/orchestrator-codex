@@ -395,7 +395,6 @@
   align-items: center;
   gap: 6px;
   cursor: pointer;
-  user-select: none;
 }
 
 .sd-fe-toggle-label {
@@ -410,7 +409,6 @@
   align-items: center;
   gap: 6px;
   cursor: pointer;
-  user-select: none;
 }
 
 .sd-auto-reconnect-label {

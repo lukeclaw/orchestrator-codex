@@ -52,7 +52,6 @@
   flex-shrink: 0;
   transition: background 0.1s, color 0.1s;
   white-space: nowrap;
-  user-select: none;
 }
 
 .fe-viewer__tab-item:hover {

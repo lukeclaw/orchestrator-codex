@@ -131,7 +131,6 @@
   white-space: nowrap;
   position: relative;
   min-height: 24px;
-  user-select: none;
 }
 
 .fe-node:hover {

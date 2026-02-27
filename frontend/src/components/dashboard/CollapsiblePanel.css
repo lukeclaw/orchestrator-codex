@@ -1,6 +1,5 @@
 .collapsible-panel-header {
   cursor: pointer;
-  user-select: none;
   height: 44px;
   box-sizing: border-box;
 }

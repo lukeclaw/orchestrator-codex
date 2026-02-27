@@ -6,6 +6,17 @@
   padding: 0;
 }
 
+/* Disable drag-to-select everywhere except text inputs and readable content */
+*:not(input):not(textarea):not([contenteditable="true"]):not(pre):not(code) {
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+pre, code, .markdown-content, .markdown-content * {
+  user-select: text;
+  -webkit-user-select: text;
+}
+
 html, body, #root {
   height: 100%;
 }

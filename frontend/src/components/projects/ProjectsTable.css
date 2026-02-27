@@ -25,7 +25,6 @@
 
 .pt-th.sortable {
   cursor: pointer;
-  user-select: none;
   transition: color 0.15s;
 }
 

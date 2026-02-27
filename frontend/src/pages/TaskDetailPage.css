@@ -87,7 +87,6 @@
 
 .tdp-card-header.clickable {
   cursor: pointer;
-  user-select: none;
 }
 
 .tdp-card-header.clickable:hover h3 {
