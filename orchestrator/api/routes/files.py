@@ -2,17 +2,25 @@
 
 from __future__ import annotations
 
+import json
 import logging
+import mimetypes
 import os
 import subprocess
+import textwrap
+import threading
 import time
+from dataclasses import dataclass
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import Response
 from pydantic import BaseModel
 
 from orchestrator.api.deps import get_db
 from orchestrator.state.repositories import sessions as repo
+from orchestrator.terminal.file_sync import _SSH_OPTS
+from orchestrator.terminal.ssh import is_remote_host
 
 logger = logging.getLogger(__name__)
 
@@ -139,17 +147,61 @@ def _validate_path(path: str) -> None:
         raise HTTPException(status_code=400, detail="Path traversal not allowed")
 
 
-def _resolve_work_dir(db, session_id: str) -> str:
-    """Look up session and return its work_dir (must be local)."""
+def _detect_remote_work_dir(host: str, session_id: str) -> str | None:
+    """Detect the working directory of the Claude process on a remote host.
+
+    Finds the Claude Code process by *session_id* (passed via ``--session-id``),
+    then reads its cwd with ``pwdx <pid>``.
+    """
+    # Find Claude PID, then get its cwd in one SSH round-trip.
+    cmd = (
+        f"pid=$(ps aux | grep -v grep "
+        f"| grep -E 'claude (-r|--|--settings)' "
+        f"| grep '{session_id}' "
+        f"| awk '{{print $2}}' | head -1) && "
+        f'[ -n "$pid" ] && pwdx "$pid" | awk \'{{print $2}}\''
+    )
+    try:
+        result = subprocess.run(
+            ["ssh", *_SSH_OPTS, host, cmd],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        path = result.stdout.strip()
+        if result.returncode == 0 and path and path.startswith("/"):
+            return path
+    except Exception:
+        logger.debug("Failed to detect work_dir on %s", host, exc_info=True)
+    return None
+
+
+@dataclass(frozen=True)
+class SessionInfo:
+    work_dir: str
+    host: str
+    is_remote: bool
+
+
+def _resolve_session(db, session_id: str) -> SessionInfo:
+    """Look up session and return metadata including locality flag."""
     session = repo.get_session(db, session_id)
     if session is None:
         raise HTTPException(status_code=404, detail="Session not found")
-    if not session.work_dir:
-        raise HTTPException(status_code=400, detail="Session has no work_dir")
+    remote = is_remote_host(session.host)
     work_dir = session.work_dir
-    if not os.path.isdir(work_dir):
+
+    if not work_dir and remote:
+        # Detect cwd of the running Claude process via pwdx
+        work_dir = _detect_remote_work_dir(session.host, session_id)
+        if work_dir:
+            repo.update_session(db, session_id, work_dir=work_dir)
+
+    if not work_dir:
+        raise HTTPException(status_code=400, detail="Session has no work_dir")
+    if not remote and not os.path.isdir(work_dir):
         raise HTTPException(status_code=400, detail="work_dir does not exist on disk")
-    return work_dir
+    return SessionInfo(work_dir=work_dir, host=session.host, is_remote=remote)
 
 
 # ---------------------------------------------------------------------------
@@ -217,6 +269,421 @@ def _human_size(size: int) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Remote (SSH) helpers
+# ---------------------------------------------------------------------------
+_SSH_TIMEOUT = 15  # seconds
+
+# Per-host semaphore to limit concurrent SSH connections
+_host_semaphores: dict[str, threading.Semaphore] = {}
+_host_sem_lock = threading.Lock()
+_MAX_SSH_CONCURRENT = 3
+_SSH_ACQUIRE_TIMEOUT = 10  # seconds
+
+
+def _get_host_semaphore(host: str) -> threading.Semaphore:
+    with _host_sem_lock:
+        if host not in _host_semaphores:
+            _host_semaphores[host] = threading.Semaphore(_MAX_SSH_CONCURRENT)
+        return _host_semaphores[host]
+
+
+def _acquire_ssh_slot(host: str) -> None:
+    sem = _get_host_semaphore(host)
+    if not sem.acquire(timeout=_SSH_ACQUIRE_TIMEOUT):
+        raise HTTPException(
+            status_code=503,
+            detail="Too many concurrent SSH connections; try again shortly",
+        )
+
+
+def _release_ssh_slot(host: str) -> None:
+    _get_host_semaphore(host).release()
+
+
+# Self-contained Python script executed on the remote host via SSH stdin.
+# Takes: work_dir, relative_path, show_ignored_flag ("1"/"0"), depth
+_REMOTE_LIST_SCRIPT = textwrap.dedent("""\
+    import json, os, subprocess, sys
+
+    work_dir = sys.argv[1]
+    rel_path = sys.argv[2]
+    show_ignored = sys.argv[3] == "1"
+    max_depth = int(sys.argv[4]) if len(sys.argv) > 4 else 1
+
+    DEFAULT_IGNORED = {
+        "__pycache__", "node_modules", ".git", ".tox", ".mypy_cache",
+        ".pytest_cache", ".ruff_cache", "dist", "build", ".egg-info",
+        ".venv", "venv", ".next", ".DS_Store", "Thumbs.db",
+    }
+    GIT_STATUS_MAP = {
+        "M": "modified", "A": "added", "D": "deleted", "R": "renamed",
+        "C": "copied", "U": "conflicting", "?": "untracked", "!": "ignored",
+    }
+    SEVERITY = ["conflicting","deleted","modified","added","renamed","untracked","ignored"]
+
+    norm_work = os.path.normpath(work_dir)
+    target = os.path.normpath(os.path.join(work_dir, rel_path))
+    if not target.startswith(norm_work):
+        print(json.dumps({"error": "Path outside work_dir"}))
+        sys.exit(1)
+
+    if not os.path.isdir(target):
+        print(json.dumps({"error": "Directory not found"}))
+        sys.exit(1)
+
+    # Git status (once, reused by all depths)
+    git_statuses = {}
+    git_available = False
+    cmd = ["git", "status", "--porcelain=v1", "-z"]
+    if show_ignored:
+        cmd.append("--ignored")
+    try:
+        r = subprocess.run(cmd, cwd=work_dir, capture_output=True, text=True, timeout=5)
+        if r.returncode == 0:
+            git_available = True
+            for entry in r.stdout.split("\\0"):
+                if len(entry) < 4:
+                    continue
+                xy = entry[:2]
+                p = entry[3:]
+                code = xy[0] if xy[0] != " " else xy[1]
+                git_statuses[p] = GIT_STATUS_MAP.get(code, "modified")
+    except Exception:
+        pass
+
+    def apply_git(entries):
+        if not git_available:
+            return
+        for ent in entries:
+            p = ent["path"]
+            if p in git_statuses:
+                ent["git_status"] = git_statuses[p]
+            elif ent["is_dir"]:
+                prefix = p + "/"
+                child = [s for k, s in git_statuses.items() if k.startswith(prefix)]
+                if child:
+                    for sev in SEVERITY:
+                        if sev in child:
+                            ent["git_status"] = sev
+                            break
+                    else:
+                        ent["git_status"] = child[0]
+            if ent.get("children"):
+                apply_git(ent["children"])
+
+    def scan_dir(abs_path, current_depth):
+        entries = []
+        try:
+            for e in os.scandir(abs_path):
+                name = e.name
+                if not show_ignored and name in DEFAULT_IGNORED:
+                    continue
+                if not show_ignored and name.startswith(".") and name != ".":
+                    continue
+                rp = os.path.relpath(e.path, work_dir)
+                is_dir = e.is_dir(follow_symlinks=False)
+                try:
+                    st = e.stat(follow_symlinks=False)
+                    size = st.st_size if not is_dir else None
+                    modified = st.st_mtime
+                except OSError:
+                    size = None
+                    modified = None
+                children_count = None
+                sub_children = None
+                if is_dir:
+                    try:
+                        children_count = sum(1 for _ in os.scandir(e.path))
+                    except OSError:
+                        pass
+                    if current_depth < max_depth:
+                        sub_children = scan_dir(e.path, current_depth + 1)
+                entries.append({
+                    "name": name, "path": rp, "is_dir": is_dir,
+                    "size": size, "modified": modified,
+                    "children_count": children_count,
+                    "git_status": None,
+                    "children": sub_children,
+                })
+        except PermissionError:
+            pass
+        entries.sort(key=lambda x: (not x["is_dir"], x["name"].lower()))
+        return entries
+
+    entries = scan_dir(target, 1)
+    apply_git(entries)
+    print(json.dumps({"entries": entries, "git_available": git_available}))
+""")
+
+
+def _run_ssh(host: str, script: str, args: list[str]) -> subprocess.CompletedProcess:
+    """Execute a Python script on a remote host via SSH stdin."""
+    cmd = ["ssh", *_SSH_OPTS, host, "python3", "-"] + args
+    return subprocess.run(
+        cmd,
+        input=script,
+        capture_output=True,
+        text=True,
+        timeout=_SSH_TIMEOUT,
+    )
+
+
+def _list_remote_dir(
+    host: str, work_dir: str, path: str, show_ignored: bool, depth: int = 1
+) -> tuple[list[FileEntry], bool]:
+    """List a directory on a remote host via SSH."""
+    _acquire_ssh_slot(host)
+    try:
+        result = _run_ssh(
+            host,
+            _REMOTE_LIST_SCRIPT,
+            [work_dir, path, "1" if show_ignored else "0", str(depth)],
+        )
+    except subprocess.TimeoutExpired:
+        raise HTTPException(status_code=504, detail="Remote directory listing timed out")
+    finally:
+        _release_ssh_slot(host)
+
+    if result.returncode != 0:
+        # Try to parse error from script output
+        try:
+            err = json.loads(result.stdout)
+            detail = err.get("error", "Remote listing failed")
+        except (json.JSONDecodeError, KeyError):
+            detail = result.stderr.strip() or "Remote listing failed"
+        if "not found" in detail.lower():
+            raise HTTPException(status_code=404, detail=detail)
+        raise HTTPException(status_code=502, detail=detail)
+
+    try:
+        data = json.loads(result.stdout)
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=502, detail="Invalid response from remote host")
+
+    entries = _parse_remote_entries(data["entries"])
+    return entries, data.get("git_available", False)
+
+
+def _parse_remote_entries(raw_list: list[dict]) -> list[FileEntry]:
+    """Recursively parse remote listing JSON into FileEntry objects."""
+    entries = []
+    for raw in raw_list:
+        size = raw.get("size")
+        raw_children = raw.get("children")
+        entries.append(
+            FileEntry(
+                name=raw["name"],
+                path=raw["path"],
+                is_dir=raw["is_dir"],
+                size=size,
+                modified=raw.get("modified"),
+                children_count=raw.get("children_count"),
+                git_status=raw.get("git_status"),
+                human_size=_human_size(size) if size is not None else None,
+                children=_parse_remote_entries(raw_children) if raw_children else None,
+            )
+        )
+    return entries
+
+
+# Self-contained Python script for reading file content on a remote host.
+# Takes: work_dir, relative_path, max_lines
+_REMOTE_READ_SCRIPT = textwrap.dedent("""\
+    import json, os, sys
+
+    work_dir = sys.argv[1]
+    rel_path = sys.argv[2]
+    max_lines = int(sys.argv[3])
+
+    target = os.path.normpath(os.path.join(work_dir, rel_path))
+    if not target.startswith(os.path.normpath(work_dir)):
+        print(json.dumps({"error": "Path outside work_dir"}))
+        sys.exit(1)
+
+    if not os.path.isfile(target):
+        print(json.dumps({"error": "File not found"}))
+        sys.exit(1)
+
+    st = os.stat(target)
+    file_size = st.st_size
+    file_mtime = st.st_mtime
+    if file_size > 5 * 1024 * 1024:
+        print(json.dumps({"error": "File too large (>5MB)", "code": 413}))
+        sys.exit(1)
+
+    # Binary detection
+    try:
+        with open(target, "rb") as f:
+            chunk = f.read(8192)
+            if b"\\x00" in chunk:
+                print(json.dumps({
+                    "content": "", "truncated": False,
+                    "total_lines": None, "size": file_size,
+                    "binary": True, "modified": file_mtime,
+                }))
+                sys.exit(0)
+    except OSError as e:
+        print(json.dumps({"error": str(e)}))
+        sys.exit(1)
+
+    # Read text
+    try:
+        with open(target, encoding="utf-8", errors="replace") as f:
+            lines = []
+            total = 0
+            for line in f:
+                total += 1
+                if total <= max_lines:
+                    lines.append(line)
+            print(json.dumps({
+                "content": "".join(lines),
+                "truncated": total > max_lines,
+                "total_lines": total,
+                "size": file_size,
+                "modified": file_mtime,
+                "binary": False,
+            }))
+    except OSError as e:
+        print(json.dumps({"error": str(e)}))
+        sys.exit(1)
+""")
+
+
+def _read_remote_file(host: str, work_dir: str, path: str, max_lines: int) -> FileContentResponse:
+    """Read file content from a remote host via SSH."""
+    _acquire_ssh_slot(host)
+    try:
+        result = _run_ssh(
+            host,
+            _REMOTE_READ_SCRIPT,
+            [work_dir, path, str(max_lines)],
+        )
+    except subprocess.TimeoutExpired:
+        raise HTTPException(status_code=504, detail="Remote file read timed out")
+    finally:
+        _release_ssh_slot(host)
+
+    if result.returncode != 0:
+        try:
+            err = json.loads(result.stdout)
+            detail = err.get("error", "Remote read failed")
+            code = err.get("code", 502)
+        except (json.JSONDecodeError, KeyError):
+            detail = result.stderr.strip() or "Remote read failed"
+            code = 502
+        if "not found" in detail.lower():
+            code = 404
+        elif "too large" in detail.lower():
+            code = 413
+        raise HTTPException(status_code=code, detail=detail)
+
+    try:
+        data = json.loads(result.stdout)
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=502, detail="Invalid response from remote host")
+
+    # Language detection from extension
+    ext = os.path.splitext(path)[1].lower()
+    basename = os.path.basename(path).lower()
+    language = _LANGUAGE_MAP.get(ext)
+    if language is None:
+        if basename == "dockerfile":
+            language = "dockerfile"
+        elif basename == "makefile":
+            language = "makefile"
+
+    return FileContentResponse(
+        path=path,
+        content=data.get("content", ""),
+        truncated=data.get("truncated", False),
+        total_lines=data.get("total_lines"),
+        size=data.get("size", 0),
+        binary=data.get("binary", False),
+        language=language if not data.get("binary") else None,
+        modified=data.get("modified"),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Remote caching
+# ---------------------------------------------------------------------------
+_remote_dir_cache: dict[str, tuple[float, list[FileEntry], bool]] = {}
+_REMOTE_DIR_CACHE_TTL = 10.0
+
+_remote_content_cache: dict[str, tuple[float, FileContentResponse]] = {}
+_REMOTE_CONTENT_CACHE_TTL = 30.0
+_REMOTE_CONTENT_CACHE_MAX = 20
+
+_cache_request_counter = 0
+
+
+def _cleanup_remote_caches() -> None:
+    """Purge expired entries from remote caches (called opportunistically)."""
+    now = time.monotonic()
+    expired = [k for k, (ts, *_) in _remote_dir_cache.items() if now - ts > _REMOTE_DIR_CACHE_TTL]
+    for k in expired:
+        del _remote_dir_cache[k]
+    expired = [
+        k for k, (ts, _) in _remote_content_cache.items() if now - ts > _REMOTE_CONTENT_CACHE_TTL
+    ]
+    for k in expired:
+        del _remote_content_cache[k]
+
+
+def _list_remote_dir_cached(
+    host: str,
+    work_dir: str,
+    path: str,
+    show_ignored: bool,
+    refresh: bool,
+    depth: int = 1,
+) -> tuple[list[FileEntry], bool]:
+    """Cached wrapper around _list_remote_dir."""
+    global _cache_request_counter
+    _cache_request_counter += 1
+    if _cache_request_counter % 10 == 0:
+        _cleanup_remote_caches()
+
+    cache_key = f"{host}::{work_dir}::{path}::{show_ignored}::{depth}"
+    if not refresh:
+        cached = _remote_dir_cache.get(cache_key)
+        if cached:
+            ts, entries, git_avail = cached
+            if time.monotonic() - ts < _REMOTE_DIR_CACHE_TTL:
+                return entries, git_avail
+
+    entries, git_available = _list_remote_dir(host, work_dir, path, show_ignored, depth)
+    _remote_dir_cache[cache_key] = (time.monotonic(), entries, git_available)
+    return entries, git_available
+
+
+def _read_remote_file_cached(
+    host: str, work_dir: str, path: str, max_lines: int, refresh: bool
+) -> FileContentResponse:
+    """Cached wrapper around _read_remote_file."""
+    global _cache_request_counter
+    _cache_request_counter += 1
+    if _cache_request_counter % 10 == 0:
+        _cleanup_remote_caches()
+
+    cache_key = f"{host}::{work_dir}::{path}::{max_lines}"
+    if not refresh:
+        cached = _remote_content_cache.get(cache_key)
+        if cached:
+            ts, resp = cached
+            if time.monotonic() - ts < _REMOTE_CONTENT_CACHE_TTL:
+                return resp
+
+    resp = _read_remote_file(host, work_dir, path, max_lines)
+    # Evict oldest if cache is full
+    if len(_remote_content_cache) >= _REMOTE_CONTENT_CACHE_MAX:
+        oldest_key = min(_remote_content_cache, key=lambda k: _remote_content_cache[k][0])
+        del _remote_content_cache[oldest_key]
+    _remote_content_cache[cache_key] = (time.monotonic(), resp)
+    return resp
+
+
+# ---------------------------------------------------------------------------
 # Response models
 # ---------------------------------------------------------------------------
 class FileEntry(BaseModel):
@@ -228,6 +695,7 @@ class FileEntry(BaseModel):
     children_count: int | None = None  # for dirs
     git_status: str | None = None
     human_size: str | None = None
+    children: list[FileEntry] | None = None  # pre-fetched when depth > 1
 
 
 class DirectoryResponse(BaseModel):
@@ -245,6 +713,7 @@ class FileContentResponse(BaseModel):
     size: int
     binary: bool
     language: str | None
+    modified: float | None = None  # epoch seconds
 
 
 # ---------------------------------------------------------------------------
@@ -254,32 +723,39 @@ class FileContentResponse(BaseModel):
 def list_files(
     session_id: str,
     path: str = Query(default=".", description="Relative path within work_dir"),
-    depth: int = Query(default=1, ge=1, le=3),
+    depth: int = Query(default=1, ge=1, le=5),
     show_ignored: bool = Query(default=False),
+    refresh: bool = Query(default=False),
     db=Depends(get_db),
 ) -> DirectoryResponse:
     """List directory contents with optional git status decorations."""
     _check_rate_limit(session_id)
     _validate_path(path)
-    work_dir = _resolve_work_dir(db, session_id)
+    info = _resolve_session(db, session_id)
 
-    target = os.path.normpath(os.path.join(work_dir, path))
-    # Ensure we stay inside work_dir
-    if not target.startswith(os.path.normpath(work_dir)):
-        raise HTTPException(status_code=400, detail="Path outside work_dir")
+    if info.is_remote:
+        entries, git_available = _list_remote_dir_cached(
+            info.host, info.work_dir, path, show_ignored, refresh, depth
+        )
+    else:
+        work_dir = info.work_dir
+        target = os.path.normpath(os.path.join(work_dir, path))
+        # Ensure we stay inside work_dir
+        if not target.startswith(os.path.normpath(work_dir)):
+            raise HTTPException(status_code=400, detail="Path outside work_dir")
 
-    if not os.path.isdir(target):
-        raise HTTPException(status_code=404, detail="Directory not found")
+        if not os.path.isdir(target):
+            raise HTTPException(status_code=404, detail="Directory not found")
 
-    entries = _scan_dir(target, work_dir, show_ignored, depth, current_depth=1)
+        entries = _scan_dir(target, work_dir, show_ignored, depth, current_depth=1)
 
-    # Git status
-    git_statuses, git_available = _get_git_status(work_dir, show_ignored)
-    if git_available:
-        _apply_git_status(entries, git_statuses)
+        # Git status
+        git_statuses, git_available = _get_git_status(work_dir, show_ignored)
+        if git_available:
+            _apply_git_status(entries, git_statuses)
 
     return DirectoryResponse(
-        work_dir=work_dir,
+        work_dir=info.work_dir,
         path=path,
         entries=entries,
         git_available=git_available,
@@ -324,6 +800,16 @@ def _scan_dir(
                     except OSError:
                         children_count = None
 
+                sub_children = None
+                if is_dir and current_depth < max_depth:
+                    sub_children = _scan_dir(
+                        entry.path,
+                        work_dir,
+                        show_ignored,
+                        max_depth,
+                        current_depth + 1,
+                    )
+
                 fe = FileEntry(
                     name=name,
                     path=rel_path,
@@ -332,6 +818,7 @@ def _scan_dir(
                     modified=modified,
                     children_count=children_count,
                     human_size=_human_size(size) if size is not None else None,
+                    children=sub_children,
                 )
                 entries.append(fe)
 
@@ -355,6 +842,9 @@ def _apply_git_status(entries: list[FileEntry], statuses: dict[str, str]) -> Non
             child_statuses = [s for p, s in statuses.items() if p.startswith(prefix)]
             if child_statuses:
                 entry.git_status = _highest_severity(child_statuses)
+        # Recurse into pre-fetched children
+        if entry.children:
+            _apply_git_status(entry.children, statuses)
 
 
 _SEVERITY_ORDER = [
@@ -386,13 +876,19 @@ def read_file_content(
     session_id: str,
     path: str = Query(..., description="Relative path to the file"),
     max_lines: int = Query(default=500, ge=1, le=10000),
+    refresh: bool = Query(default=False),
     db=Depends(get_db),
 ) -> FileContentResponse:
     """Read file contents with truncation and binary detection."""
     _check_rate_limit(session_id)
     _validate_path(path)
-    work_dir = _resolve_work_dir(db, session_id)
+    info = _resolve_session(db, session_id)
 
+    if info.is_remote:
+        return _read_remote_file_cached(info.host, info.work_dir, path, max_lines, refresh)
+
+    # --- local path (unchanged) ---
+    work_dir = info.work_dir
     abs_path = os.path.normpath(os.path.join(work_dir, path))
     if not abs_path.startswith(os.path.normpath(work_dir)):
         raise HTTPException(status_code=400, detail="Path outside work_dir")
@@ -400,7 +896,9 @@ def read_file_content(
     if not os.path.isfile(abs_path):
         raise HTTPException(status_code=404, detail="File not found")
 
-    file_size = os.path.getsize(abs_path)
+    stat = os.stat(abs_path)
+    file_size = stat.st_size
+    file_modified = stat.st_mtime
     if file_size > _MAX_FILE_SIZE:
         raise HTTPException(status_code=413, detail="File too large (>5MB)")
 
@@ -423,6 +921,7 @@ def read_file_content(
             size=file_size,
             binary=True,
             language=None,
+            modified=file_modified,
         )
 
     # Read text content with truncation
@@ -458,4 +957,71 @@ def read_file_content(
         size=file_size,
         binary=False,
         language=language,
+        modified=file_modified,
     )
+
+
+# ---------------------------------------------------------------------------
+# Raw file serving (for images etc.)
+# ---------------------------------------------------------------------------
+_MAX_RAW_SIZE = 10 * 1024 * 1024  # 10 MB
+
+
+@router.get("/sessions/{session_id}/files/raw")
+def read_file_raw(
+    session_id: str,
+    path: str = Query(..., description="Relative path to the file"),
+    db=Depends(get_db),
+) -> Response:
+    """Serve raw file bytes with the correct Content-Type (for images, etc.)."""
+    _check_rate_limit(session_id)
+    _validate_path(path)
+    info = _resolve_session(db, session_id)
+
+    content_type = mimetypes.guess_type(path)[0] or "application/octet-stream"
+
+    if info.is_remote:
+        return _read_remote_raw(info.host, info.work_dir, path, content_type)
+
+    abs_path = os.path.normpath(os.path.join(info.work_dir, path))
+    if not abs_path.startswith(os.path.normpath(info.work_dir)):
+        raise HTTPException(status_code=400, detail="Path outside work_dir")
+    if not os.path.isfile(abs_path):
+        raise HTTPException(status_code=404, detail="File not found")
+    if os.path.getsize(abs_path) > _MAX_RAW_SIZE:
+        raise HTTPException(status_code=413, detail="File too large (>10MB)")
+
+    with open(abs_path, "rb") as f:
+        data = f.read()
+    return Response(content=data, media_type=content_type)
+
+
+def _read_remote_raw(host: str, work_dir: str, path: str, content_type: str) -> Response:
+    """Read raw file bytes from a remote host via SSH."""
+    # Use a simple cat command piped through SSH
+    remote_path = os.path.normpath(os.path.join(work_dir, path))
+    if not remote_path.startswith(os.path.normpath(work_dir)):
+        raise HTTPException(status_code=400, detail="Path outside work_dir")
+
+    _acquire_ssh_slot(host)
+    try:
+        result = subprocess.run(
+            ["ssh", *_SSH_OPTS, host, "cat", remote_path],
+            capture_output=True,
+            timeout=_SSH_TIMEOUT,
+        )
+    except subprocess.TimeoutExpired:
+        raise HTTPException(status_code=504, detail="Remote file read timed out")
+    finally:
+        _release_ssh_slot(host)
+
+    if result.returncode != 0:
+        stderr = result.stderr.decode(errors="replace").strip()
+        if "No such file" in stderr:
+            raise HTTPException(status_code=404, detail="File not found")
+        raise HTTPException(status_code=502, detail=stderr or "Remote read failed")
+
+    if len(result.stdout) > _MAX_RAW_SIZE:
+        raise HTTPException(status_code=413, detail="File too large (>10MB)")
+
+    return Response(content=result.stdout, media_type=content_type)

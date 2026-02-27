@@ -282,6 +282,168 @@ function escapeHtml(text: string): string {
     .replace(/>/g, '&gt;')
 }
 
+// ---------------------------------------------------------------------------
+// Lightweight syntax highlighting
+// ---------------------------------------------------------------------------
+
+type HlRule = { pattern: RegExp; className: string }
+
+const KEYWORDS_PYTHON = 'and|as|assert|async|await|break|class|continue|def|del|elif|else|except|finally|for|from|global|if|import|in|is|lambda|nonlocal|not|or|pass|raise|return|try|while|with|yield'
+const KEYWORDS_JAVA = 'abstract|assert|boolean|break|byte|case|catch|char|class|const|continue|default|do|double|else|enum|extends|final|finally|float|for|goto|if|implements|import|instanceof|int|interface|long|native|new|package|private|protected|public|return|short|static|strictfp|super|switch|synchronized|this|throw|throws|transient|try|void|volatile|while'
+const KEYWORDS_JS = 'abstract|arguments|async|await|break|case|catch|class|const|continue|debugger|default|delete|do|else|enum|export|extends|finally|for|from|function|if|implements|import|in|instanceof|interface|let|new|of|package|private|protected|public|return|static|super|switch|this|throw|try|typeof|var|void|while|with|yield'
+const KEYWORDS_GO = 'break|case|chan|const|continue|default|defer|else|fallthrough|for|func|go|goto|if|import|interface|map|package|range|return|select|struct|switch|type|var'
+const KEYWORDS_RUST = 'as|async|await|break|const|continue|crate|dyn|else|enum|extern|fn|for|if|impl|in|let|loop|match|mod|move|mut|pub|ref|return|self|static|struct|super|trait|type|unsafe|use|where|while'
+const KEYWORDS_SQL = 'ADD|ALL|ALTER|AND|AS|ASC|BETWEEN|BY|CASE|CHECK|COLUMN|CONSTRAINT|CREATE|CROSS|DATABASE|DEFAULT|DELETE|DESC|DISTINCT|DROP|ELSE|END|EXCEPT|EXISTS|FOREIGN|FROM|FULL|GROUP|HAVING|IF|IN|INDEX|INNER|INSERT|INTERSECT|INTO|IS|JOIN|KEY|LEFT|LIKE|LIMIT|NOT|NULL|OFFSET|ON|OR|ORDER|OUTER|PRIMARY|REFERENCES|RIGHT|SELECT|SET|TABLE|THEN|UNION|UNIQUE|UPDATE|VALUES|WHEN|WHERE|WITH'
+const KEYWORDS_SHELL = 'if|then|else|elif|fi|for|while|do|done|case|esac|in|function|return|local|export|unset|readonly|shift|break|continue|exit|trap|source|eval|exec|set'
+const KEYWORDS_C = 'auto|break|case|char|const|continue|default|do|double|else|enum|extern|float|for|goto|if|inline|int|long|register|restrict|return|short|signed|sizeof|static|struct|switch|typedef|union|unsigned|void|volatile|while'
+
+const BUILTINS_PYTHON = 'True|False|None|self|cls|print|len|range|int|str|float|list|dict|set|tuple|bool|type|super|isinstance|hasattr|getattr|setattr|open|map|filter|zip|enumerate|sorted|reversed|any|all|min|max|sum|abs|round|input|format|property|classmethod|staticmethod'
+const BUILTINS_JS = 'true|false|null|undefined|NaN|Infinity|console|window|document|Math|JSON|Promise|Array|Object|String|Number|Boolean|Map|Set|Error|RegExp|Date|parseInt|parseFloat|isNaN'
+const BUILTINS_RUST = 'true|false|Some|None|Ok|Err|Self|println|eprintln|format|vec|Box|Vec|String|Option|Result|HashMap|HashSet|Rc|Arc|Cell|RefCell'
+const BUILTINS_GO = 'true|false|nil|iota|append|cap|close|copy|delete|len|make|new|panic|print|println|recover|error|string|bool|int|int8|int16|int32|int64|uint|uint8|uint16|uint32|uint64|float32|float64|byte|rune|complex64|complex128'
+
+function buildRules(lang: string): HlRule[] | null {
+  switch (lang) {
+    case 'python':
+    case 'py':
+      return [
+        { pattern: /(#.*)$/gm, className: 'hl-comment' },
+        { pattern: /("""[\s\S]*?"""|'''[\s\S]*?''')/g, className: 'hl-string' },
+        { pattern: /(f?"(?:\\.|[^"\\])*"|f?'(?:\\.|[^'\\])*')/g, className: 'hl-string' },
+        { pattern: /\b(\d+\.?\d*(?:e[+-]?\d+)?)\b/gi, className: 'hl-number' },
+        { pattern: new RegExp(`(?<![.\\w])@(\\w+)`, 'g'), className: 'hl-decorator' },
+        { pattern: new RegExp(`\\b(${BUILTINS_PYTHON})\\b`, 'g'), className: 'hl-builtin' },
+        { pattern: new RegExp(`\\b(${KEYWORDS_PYTHON})\\b`, 'g'), className: 'hl-keyword' },
+      ]
+    case 'java':
+      return [
+        { pattern: /(\/\/.*$)/gm, className: 'hl-comment' },
+        { pattern: /(\/\*[\s\S]*?\*\/)/g, className: 'hl-comment' },
+        { pattern: /("(?:\\.|[^"\\])*")/g, className: 'hl-string' },
+        { pattern: /('(?:\\.|[^'\\])')/g, className: 'hl-string' },
+        { pattern: /\b(\d+\.?\d*[fFdDlL]?)\b/g, className: 'hl-number' },
+        { pattern: /(@\w+)/g, className: 'hl-decorator' },
+        { pattern: new RegExp(`\\b(${KEYWORDS_JAVA})\\b`, 'g'), className: 'hl-keyword' },
+      ]
+    case 'javascript':
+    case 'typescript':
+    case 'js':
+    case 'ts':
+    case 'jsx':
+    case 'tsx':
+      return [
+        { pattern: /(\/\/.*$)/gm, className: 'hl-comment' },
+        { pattern: /(\/\*[\s\S]*?\*\/)/g, className: 'hl-comment' },
+        { pattern: /(`(?:\\.|[^`\\])*`)/g, className: 'hl-string' },
+        { pattern: /("(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*')/g, className: 'hl-string' },
+        { pattern: /\b(\d+\.?\d*(?:e[+-]?\d+)?n?)\b/gi, className: 'hl-number' },
+        { pattern: new RegExp(`\\b(${BUILTINS_JS})\\b`, 'g'), className: 'hl-builtin' },
+        { pattern: new RegExp(`\\b(${KEYWORDS_JS})\\b`, 'g'), className: 'hl-keyword' },
+      ]
+    case 'go':
+    case 'golang':
+      return [
+        { pattern: /(\/\/.*$)/gm, className: 'hl-comment' },
+        { pattern: /(\/\*[\s\S]*?\*\/)/g, className: 'hl-comment' },
+        { pattern: /(`[^`]*`)/g, className: 'hl-string' },
+        { pattern: /("(?:\\.|[^"\\])*")/g, className: 'hl-string' },
+        { pattern: /\b(\d+\.?\d*(?:e[+-]?\d+)?i?)\b/gi, className: 'hl-number' },
+        { pattern: new RegExp(`\\b(${BUILTINS_GO})\\b`, 'g'), className: 'hl-builtin' },
+        { pattern: new RegExp(`\\b(${KEYWORDS_GO})\\b`, 'g'), className: 'hl-keyword' },
+      ]
+    case 'rust':
+    case 'rs':
+      return [
+        { pattern: /(\/\/.*$)/gm, className: 'hl-comment' },
+        { pattern: /(\/\*[\s\S]*?\*\/)/g, className: 'hl-comment' },
+        { pattern: /("(?:\\.|[^"\\])*")/g, className: 'hl-string' },
+        { pattern: /\b(\d+\.?\d*(?:e[+-]?\d+)?(?:_\d+)*[fiu]?\d*)\b/gi, className: 'hl-number' },
+        { pattern: /(#!?\[[\w:]+\])/g, className: 'hl-decorator' },
+        { pattern: new RegExp(`\\b(${BUILTINS_RUST})\\b`, 'g'), className: 'hl-builtin' },
+        { pattern: new RegExp(`\\b(${KEYWORDS_RUST})\\b`, 'g'), className: 'hl-keyword' },
+      ]
+    case 'sql':
+      return [
+        { pattern: /(--.*$)/gm, className: 'hl-comment' },
+        { pattern: /(\/\*[\s\S]*?\*\/)/g, className: 'hl-comment' },
+        { pattern: /('(?:''|[^'])*')/g, className: 'hl-string' },
+        { pattern: /\b(\d+\.?\d*)\b/g, className: 'hl-number' },
+        { pattern: new RegExp(`\\b(${KEYWORDS_SQL})\\b`, 'gi'), className: 'hl-keyword' },
+      ]
+    case 'bash':
+    case 'sh':
+    case 'shell':
+    case 'zsh':
+      return [
+        { pattern: /(#.*$)/gm, className: 'hl-comment' },
+        { pattern: /("(?:\\.|[^"\\])*")/g, className: 'hl-string' },
+        { pattern: /('(?:[^'\\]|\\.)*')/g, className: 'hl-string' },
+        { pattern: /(\$\{?\w+\}?)/g, className: 'hl-builtin' },
+        { pattern: /\b(\d+)\b/g, className: 'hl-number' },
+        { pattern: new RegExp(`\\b(${KEYWORDS_SHELL})\\b`, 'g'), className: 'hl-keyword' },
+      ]
+    case 'c':
+    case 'cpp':
+    case 'c++':
+    case 'h':
+    case 'hpp':
+      return [
+        { pattern: /(\/\/.*$)/gm, className: 'hl-comment' },
+        { pattern: /(\/\*[\s\S]*?\*\/)/g, className: 'hl-comment' },
+        { pattern: /("(?:\\.|[^"\\])*")/g, className: 'hl-string' },
+        { pattern: /('(?:\\.|[^'\\])')/g, className: 'hl-string' },
+        { pattern: /(#\s*\w+)/gm, className: 'hl-decorator' },
+        { pattern: /\b(\d+\.?\d*[fFlLuU]*)\b/g, className: 'hl-number' },
+        { pattern: new RegExp(`\\b(${KEYWORDS_C}|class|namespace|template|typename|using|virtual|override|nullptr|new|delete|true|false|throw|catch|try)\\b`, 'g'), className: 'hl-keyword' },
+      ]
+    default:
+      return null
+  }
+}
+
+/**
+ * Apply regex-based syntax highlighting to code.
+ *
+ * Works by running rules in order, each time replacing matched spans with
+ * placeholders so later rules cannot re-match inside already-highlighted
+ * regions.
+ */
+function highlightCode(code: string, language: string): string {
+  const rules = buildRules(language)
+  if (!rules) return escapeHtml(code)
+
+  // Placeholder map: we replace matched regions with \x00F{idx}\x00 so later
+  // rules don't match inside them.  The "F" prefix prevents the number-
+  // highlighting regex (\b\d+\b) from matching the numeric index inside a
+  // placeholder — "F" is a word char, so there's no \b before the digits.
+  const fragments: string[] = []
+
+  let text = code
+  for (const rule of rules) {
+    text = text.replace(rule.pattern, (match) => {
+      // Don't re-highlight placeholders
+      if (match.includes('\x00')) return match
+      const idx = fragments.length
+      fragments.push(`<span class="${rule.className}">${escapeHtml(match)}</span>`)
+      return `\x00F${idx}\x00`
+    })
+  }
+
+  // Split text by placeholders, escape the gaps, restore spans
+  const parts = text.split(/\x00F(\d+)\x00/)
+  let result = ''
+  for (let i = 0; i < parts.length; i++) {
+    if (i % 2 === 0) {
+      // Plain text — escape it
+      result += escapeHtml(parts[i])
+    } else {
+      // Fragment index — restore the span
+      result += fragments[parseInt(parts[i], 10)]
+    }
+  }
+  return result
+}
+
 // Render tokens to HTML
 function renderTokens(tokens: Token[]): string {
   return tokens.map(token => {
@@ -294,7 +456,7 @@ function renderTokens(tokens: Token[]): string {
         return `<p>${parseInline(token.content)}</p>`
       
       case 'code_block':
-        return `<pre class="code-block${token.language ? ` language-${token.language}` : ''}"><code>${escapeHtml(token.content)}</code></pre>`
+        return `<pre class="code-block${token.language ? ` language-${token.language}` : ''}"><code>${highlightCode(token.content, token.language)}</code></pre>`
       
       case 'blockquote':
         return `<blockquote>${parseInline(token.content)}</blockquote>`

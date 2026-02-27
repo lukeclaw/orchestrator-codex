@@ -3,8 +3,8 @@ title: "File Explorer Panel — Design Document"
 author: Yudong Qiu
 created: 2026-02-26
 last_modified: 2026-02-26
-status: Phase 1 Implemented
-version: 0.4
+status: Phase 2 Implemented
+version: 0.5
 ---
 
 # File Explorer Panel — Design Document
@@ -1028,13 +1028,15 @@ Floating toggle button: `aria-pressed="true|false"`, `aria-label="Toggle file ex
 - localStorage persistence for all panel dimensions and preferences
 - Skeleton loading states, error states, empty states
 
-### Phase 2: Remote Support + Activity Awareness
+### Phase 2: Remote Support via SSH Proxy (Implemented)
 
-- Backend: SSH-based file listing and content reading (stdin-piped Python script, SFTP fallback)
-- Changed Files view with accurate git status (M, A, U, D, R badges in VS Code colors)
-- Parse terminal output for `> Edit`, `> Write`, `> Read` to enhance changed-file tracking
-- Auto-scroll tree to the file currently being edited by the worker
-- Read `.gitignore` from remote for filtering
+- Backend: `_resolve_session()` replaces `_resolve_work_dir()` — returns `SessionInfo` with `is_remote` flag
+- Remote listing: self-contained Python script piped via SSH stdin (`_REMOTE_LIST_SCRIPT`) runs `os.scandir()` + `git status` on remote
+- Remote file reading: `_REMOTE_READ_SCRIPT` handles binary detection, truncation, size limits on remote
+- SSH concurrency: per-host `threading.Semaphore(3)` prevents exhausting SSH MaxSessions
+- Remote caching: directory listing (10s TTL) and file content (30s TTL, max 20 entries) caches with `refresh` query param bypass
+- Frontend: removed `!isRdev` guard — file explorer now appears for all sessions with `work_dir`
+- Reuses `_SSH_OPTS` from `file_sync.py` and `is_remote_host()` from `ssh.py`
 
 ### Phase 3: Enhanced Features
 
@@ -1114,3 +1116,587 @@ Floating toggle button: `aria-pressed="true|false"`, `aria-label="Toggle file ex
 5. **Brain Panel coexistence on narrow viewports**: The mutual-collapse heuristic (opening one collapses the other below 700px) works but may surprise users. An alternative is a tabbed approach where Brain Panel and File Explorer are tabs in the same sidebar slot — but this loses the ability to see both simultaneously on wide screens.
 
 6. **Changed Files detection via mtime is imprecise**: A file modified by a cron job or background process would show up as "changed." Git status (Phase 1 for local, Phase 2 for remote) is more accurate. Terminal output parsing (Phase 2) is the most precise but fragile if Claude's output format changes.
+
+---
+
+## Phase 2: Remote File Explorer — Detailed Implementation Plan
+
+### Approach: Backend SSH Proxy
+
+The same two API endpoints (`GET /files`, `GET /files/content`) serve both local and remote sessions transparently. The backend detects whether a session is local or remote via `session.host`, and dispatches to either the local filesystem functions (existing) or new SSH-based functions. The frontend requires minimal changes — just removing the `!isRdev` guard.
+
+This is the simplest approach because:
+- No new services to deploy or manage on remote machines
+- No new network ports to expose (reuses existing SSH)
+- Same API contract — frontend is unaware of local vs. remote
+- Leverages the SSH infrastructure already proven in `file_sync.py` and `session.py`
+
+### Architecture Overview
+
+```
+Frontend (unchanged API contract)
+    │
+    ▼
+GET /api/sessions/{id}/files?path=src
+    │
+    ▼
+files.py: _resolve_session()
+    │
+    ├── session.host == "localhost"  ──►  os.scandir() (existing)
+    │
+    └── session.host != "localhost"  ──►  ssh + python3 script via stdin
+                                              │
+                                              ▼
+                                         Remote machine:
+                                         python3 runs os.scandir()
+                                         + git status --porcelain
+                                         returns JSON via stdout
+```
+
+### Implementation Details
+
+#### 1. Refactor `_resolve_work_dir()` → `_resolve_session()`
+
+The current function validates that `work_dir` exists on the local disk. For remote sessions, this check is impossible. Replace with a function that returns session metadata and a locality flag.
+
+```python
+# Current:
+def _resolve_work_dir(db, session_id: str) -> str:
+    session = repo.get_session(db, session_id)
+    if not session.work_dir:
+        raise HTTPException(400, "Session has no work_dir")
+    if not os.path.isdir(work_dir):
+        raise HTTPException(400, "work_dir does not exist on disk")
+    return work_dir
+
+# New:
+@dataclass
+class SessionInfo:
+    work_dir: str
+    host: str
+    is_remote: bool
+
+def _resolve_session(db, session_id: str) -> SessionInfo:
+    session = repo.get_session(db, session_id)
+    if session is None:
+        raise HTTPException(404, "Session not found")
+    if not session.work_dir:
+        raise HTTPException(400, "Session has no work_dir")
+    host = session.host or "localhost"
+    is_remote = ssh_module.is_remote_host(host)
+    if not is_remote and not os.path.isdir(session.work_dir):
+        raise HTTPException(400, "work_dir does not exist on disk")
+    return SessionInfo(
+        work_dir=session.work_dir,
+        host=host,
+        is_remote=is_remote,
+    )
+```
+
+#### 2. Remote Directory Listing via SSH + stdin Python Script
+
+Use the pattern from the design doc: pipe a self-contained Python script to the remote machine via `ssh host python3 - <args>`. The script runs `os.scandir()` and `git status` on the remote machine and prints JSON to stdout.
+
+**Why stdin piping (not shell interpolation):**
+- The remote path is passed as a `sys.argv` argument to `python3`, never interpolated into a shell string
+- The script itself is passed via stdin — no quoting issues, no shell metacharacter risks
+- This is the same security model used by `file_sync.py`
+
+```python
+_REMOTE_LIST_SCRIPT = r'''
+import os, json, sys, subprocess
+
+work_dir = sys.argv[1]
+target = sys.argv[2]  # path relative to work_dir, or "."
+show_ignored = sys.argv[3] == "1"
+
+abs_target = os.path.normpath(os.path.join(work_dir, target))
+# Path containment check
+if not abs_target.startswith(os.path.normpath(work_dir)):
+    print(json.dumps({"error": "Path outside work_dir"}))
+    sys.exit(1)
+
+if not os.path.isdir(abs_target):
+    print(json.dumps({"error": "Directory not found"}))
+    sys.exit(1)
+
+# Scan directory
+entries = []
+try:
+    for e in os.scandir(abs_target):
+        name = e.name
+        if not show_ignored and name.startswith(".") and name != ".":
+            continue
+        try:
+            st = e.stat(follow_symlinks=False)
+        except OSError:
+            continue
+        is_dir = e.is_dir(follow_symlinks=False)
+        entry = {
+            "name": name,
+            "path": os.path.relpath(e.path, work_dir),
+            "is_dir": is_dir,
+            "size": st.st_size if not is_dir else None,
+            "modified": st.st_mtime,
+        }
+        if is_dir:
+            try:
+                entry["children_count"] = sum(1 for _ in os.scandir(e.path))
+            except OSError:
+                entry["children_count"] = None
+        entries.append(entry)
+except PermissionError:
+    print(json.dumps({"error": "Permission denied"}))
+    sys.exit(1)
+
+entries.sort(key=lambda e: (not e["is_dir"], e["name"].lower()))
+
+# Git status
+git_statuses = {}
+git_available = False
+try:
+    cmd = ["git", "status", "--porcelain=v1", "-z"]
+    if show_ignored:
+        cmd.append("--ignored")
+    result = subprocess.run(cmd, capture_output=True, text=True,
+                            cwd=work_dir, timeout=5)
+    if result.returncode == 0:
+        git_available = True
+        for raw in result.stdout.split("\0"):
+            if len(raw) < 4:
+                continue
+            xy = raw[:2]
+            path_str = raw[3:]
+            code = xy[0] if xy[0] != " " else xy[1]
+            status_map = {"M":"modified","A":"added","D":"deleted",
+                          "R":"renamed","C":"copied","U":"conflicting",
+                          "?":"untracked","!":"ignored"}
+            git_statuses[path_str] = status_map.get(code, "modified")
+except Exception:
+    pass
+
+# Apply git status to entries
+for entry in entries:
+    p = entry["path"]
+    if p in git_statuses:
+        entry["git_status"] = git_statuses[p]
+    elif entry["is_dir"]:
+        prefix = p + "/"
+        for gp, gs in git_statuses.items():
+            if gp.startswith(prefix):
+                entry["git_status"] = gs
+                break
+
+print(json.dumps({"entries": entries, "git_available": git_available}))
+'''
+```
+
+**Execution wrapper:**
+
+```python
+from orchestrator.terminal.file_sync import _SSH_OPTS
+
+_REMOTE_SSH_TIMEOUT = 15  # seconds (network + execution)
+
+def _list_remote_dir(
+    host: str,
+    work_dir: str,
+    path: str,
+    show_ignored: bool,
+) -> tuple[list[FileEntry], bool]:
+    """List directory on remote host via SSH + stdin Python script."""
+    result = subprocess.run(
+        ["ssh", *_SSH_OPTS, host, "python3", "-", work_dir, path,
+         "1" if show_ignored else "0"],
+        input=_REMOTE_LIST_SCRIPT,
+        capture_output=True,
+        text=True,
+        timeout=_REMOTE_SSH_TIMEOUT,
+    )
+    if result.returncode != 0:
+        stderr = result.stderr.strip()
+        raise HTTPException(502, f"Remote listing failed: {stderr}")
+
+    data = json.loads(result.stdout)
+    if "error" in data:
+        raise HTTPException(400, data["error"])
+
+    entries = [FileEntry(**e) for e in data["entries"]]
+    return entries, data.get("git_available", False)
+```
+
+#### 3. Remote File Content Reading via SSH
+
+Same stdin-piping pattern for reading file content:
+
+```python
+_REMOTE_READ_SCRIPT = r'''
+import os, json, sys
+
+work_dir = sys.argv[1]
+path = sys.argv[2]
+max_lines = int(sys.argv[3])
+
+abs_path = os.path.normpath(os.path.join(work_dir, path))
+if not abs_path.startswith(os.path.normpath(work_dir)):
+    print(json.dumps({"error": "Path outside work_dir"}))
+    sys.exit(1)
+
+if not os.path.isfile(abs_path):
+    print(json.dumps({"error": "File not found"}))
+    sys.exit(1)
+
+file_size = os.path.getsize(abs_path)
+if file_size > 5 * 1024 * 1024:
+    print(json.dumps({"error": "File too large", "size": file_size}))
+    sys.exit(1)
+
+# Binary detection
+is_binary = False
+try:
+    with open(abs_path, "rb") as f:
+        chunk = f.read(8192)
+        if b"\x00" in chunk:
+            is_binary = True
+except OSError as e:
+    print(json.dumps({"error": str(e)}))
+    sys.exit(1)
+
+if is_binary:
+    print(json.dumps({"binary": True, "size": file_size}))
+    sys.exit(0)
+
+# Read text
+try:
+    with open(abs_path, encoding="utf-8", errors="replace") as f:
+        lines = []
+        total = 0
+        for line in f:
+            total += 1
+            if total <= max_lines:
+                lines.append(line)
+    print(json.dumps({
+        "content": "".join(lines),
+        "truncated": total > max_lines,
+        "total_lines": total,
+        "size": file_size,
+        "binary": False,
+    }))
+except OSError as e:
+    print(json.dumps({"error": str(e)}))
+    sys.exit(1)
+'''
+```
+
+#### 4. Endpoint Dispatch Logic
+
+Both endpoints use a simple branch:
+
+```python
+@router.get("/sessions/{session_id}/files")
+def list_files(session_id, path, depth, show_ignored, db):
+    _check_rate_limit(session_id)
+    _validate_path(path)
+    info = _resolve_session(db, session_id)
+
+    if info.is_remote:
+        entries, git_available = _list_remote_dir(
+            info.host, info.work_dir, path, show_ignored)
+    else:
+        # ... existing local logic unchanged ...
+
+    return DirectoryResponse(...)
+```
+
+#### 5. SSH Caching Strategy
+
+Remote SSH calls are expensive (~200-500ms per call vs. <1ms for local). Two cache layers:
+
+**a) Git status cache (existing, extend to remote):**
+- Same 5s TTL keyed by `host::work_dir::show_ignored`
+- For remote sessions, the git status is embedded in the listing script response (no separate SSH call)
+- This means directory listing and git status share one SSH roundtrip
+
+**b) Directory listing cache (new, remote only):**
+- In-memory dict keyed by `host::work_dir::path::show_ignored`
+- 10s TTL (longer than git cache because directory structure changes less frequently)
+- Invalidated on explicit refresh (frontend sends `?refresh=1` query param)
+- Not applied to local sessions (local `os.scandir` is fast enough)
+
+```python
+_remote_dir_cache: dict[str, tuple[float, list[FileEntry], bool]] = {}
+_REMOTE_DIR_CACHE_TTL = 10.0
+
+def _list_remote_dir_cached(host, work_dir, path, show_ignored, force_refresh=False):
+    cache_key = f"{host}::{work_dir}::{path}::{show_ignored}"
+    now = time.monotonic()
+    if not force_refresh:
+        cached = _remote_dir_cache.get(cache_key)
+        if cached and now - cached[0] < _REMOTE_DIR_CACHE_TTL:
+            return cached[1], cached[2]
+    entries, git_available = _list_remote_dir(host, work_dir, path, show_ignored)
+    _remote_dir_cache[cache_key] = (now, entries, git_available)
+    return entries, git_available
+```
+
+**c) File content cache (new, remote only):**
+- In-memory LRU cache, max 20 entries (files can be large)
+- Keyed by `host::work_dir::path::max_lines`
+- 30s TTL (file content changes less often during browsing)
+- Invalidated on explicit re-fetch
+
+#### 6. Frontend Changes
+
+Minimal — the API contract is identical for local and remote:
+
+**`SessionDetailPage.tsx` line 555:** Remove the `!isRdev` guard:
+
+```typescript
+// Before:
+{!isRdev && session.work_dir && (
+// After:
+{session.work_dir && (
+```
+
+That's it. The frontend already handles loading states, errors, and timeouts. The only addition is a slightly longer timeout expectation for remote sessions, but the existing skeleton/spinner UX handles this naturally.
+
+Optionally, show a subtle indicator when browsing remote files:
+- Add `isRemote` prop to `FileExplorerPanel`
+- Show "EXPLORER (remote)" or a small network icon in the panel header
+- This helps the user understand why operations might be slower
+
+### Risks, Gaps, and Edge Cases
+
+#### Risk 1: Python Not Available on Remote Machine
+
+**Problem:** The remote listing script requires `python3` on the remote host. Most Linux dev machines have it, but it's not guaranteed.
+
+**Mitigation:**
+1. On first SSH call failure (exit code 127 = command not found), fall back to a shell-only script using `ls -la`, `stat`, and `git status`. This is less structured but functional.
+2. Cache the "python3 available" flag per host to avoid retrying on every request.
+3. The shell fallback is more fragile (parsing `ls` output is locale-dependent), so log a warning suggesting the user install Python.
+
+```python
+def _check_python_available(host: str) -> bool:
+    """Check if python3 is available on remote host. Cached per host."""
+    cache_key = f"python3_available::{host}"
+    if cache_key in _host_capability_cache:
+        return _host_capability_cache[cache_key]
+    try:
+        result = subprocess.run(
+            ["ssh", *_SSH_OPTS, host, "python3", "--version"],
+            capture_output=True, text=True, timeout=10,
+        )
+        available = result.returncode == 0
+    except (subprocess.TimeoutExpired, Exception):
+        available = False
+    _host_capability_cache[cache_key] = available
+    return available
+```
+
+**Likelihood:** Low — rdev VMs and most Linux servers have Python 3 pre-installed.
+
+#### Risk 2: SSH Connection Failures / Timeouts
+
+**Problem:** SSH can fail for many reasons: host unreachable, key authentication failure, network timeout, rdev VM not running.
+
+**Mitigation:**
+- 15-second timeout on SSH commands (generous enough for slow networks, fast enough to not hang the UI)
+- Return structured error responses (502 for SSH failures) so the frontend can show appropriate messages
+- Distinguish between "host unreachable" (suggest reconnecting) vs. "auth failed" (suggest checking SSH keys) vs. "timeout" (suggest retrying)
+- Frontend already has error states with retry buttons
+
+```python
+except subprocess.TimeoutExpired:
+    raise HTTPException(504, "Remote operation timed out (15s)")
+except FileNotFoundError:
+    raise HTTPException(500, "SSH client not found on orchestrator host")
+```
+
+**Edge case — stale SSH connection:** If the rdev VM was restarted, the SSH host key changes. `_SSH_OPTS` includes `BatchMode=yes` which will fail on host key mismatch. The `known_hosts.old` cleanup in `ssh.py` partially addresses this for rdev, but may not cover all cases.
+
+**Mitigation:** Add `StrictHostKeyChecking=accept-new` to SSH opts for file explorer operations (not for the main session connection which should remain strict). This auto-accepts new host keys but still rejects changed keys for known hosts.
+
+#### Risk 3: Race Condition — Concurrent SSH Connections
+
+**Problem:** If the user rapidly expands multiple directories, each triggers an SSH connection. Too many concurrent SSH connections to the same host can:
+1. Exhaust the SSH connection limit (usually 10 per host in `sshd_config` MaxSessions)
+2. Overwhelm the remote machine with parallel Python processes
+3. Create connection errors that surface as confusing UI failures
+
+**Mitigation:**
+- **Backend semaphore per host:** Limit concurrent SSH calls to 3 per remote host using `asyncio.Semaphore` or `threading.Semaphore`
+- Since FastAPI uses sync endpoints, use `threading.Semaphore`
+
+```python
+_ssh_semaphores: dict[str, threading.Semaphore] = {}
+_SSH_MAX_CONCURRENT = 3
+
+def _get_ssh_semaphore(host: str) -> threading.Semaphore:
+    if host not in _ssh_semaphores:
+        _ssh_semaphores[host] = threading.Semaphore(_SSH_MAX_CONCURRENT)
+    return _ssh_semaphores[host]
+
+# Usage:
+sem = _get_ssh_semaphore(info.host)
+if not sem.acquire(timeout=10):
+    raise HTTPException(503, "Too many concurrent remote operations")
+try:
+    entries, git_available = _list_remote_dir(...)
+finally:
+    sem.release()
+```
+
+- **Frontend:** The existing AbortController pattern on the file viewer already cancels stale requests. Add the same pattern to directory listing requests.
+- **Rate limiting:** The existing 20 req/10s rate limit applies to remote sessions too
+
+#### Risk 4: Large File Transfer Over SSH
+
+**Problem:** Reading a 4MB file over SSH transfers the full content through the SSH pipe and then through the HTTP response. This is slow and memory-intensive.
+
+**Mitigation:**
+- The 5MB hard limit already prevents extreme cases
+- Default `max_lines=500` truncation applies to remote files too
+- Consider adding `max_bytes` parameter for remote sessions (e.g., 1MB) vs. local (5MB)
+- The remote script reads the file once on the remote machine and sends only the truncated content — no double transfer
+
+#### Risk 5: rdev vs. Generic SSH Differences
+
+**Problem:** rdev hosts use `user/session-name` format which looks like a path. The existing SSH infrastructure handles this (using `rdev ssh` for connection), but for file explorer we use direct `ssh` commands with `_SSH_OPTS`.
+
+**Mitigation:**
+- rdev hosts work with standard `ssh` for command execution (only the initial interactive connection needs `rdev ssh`). The `setup_remote_worker()` function already uses `subprocess.run(["ssh", *_SSH_OPTS, host, ...])` for file copies — same pattern.
+- Verify by checking `_copy_dir_to_remote_ssh()` in `session.py` — it uses `["ssh", "-o", "ConnectTimeout=10", "-o", "BatchMode=yes", host, ...]` and works for both rdev and generic SSH.
+- Test with both rdev and generic SSH hosts
+
+#### Risk 6: Path Validation on Remote
+
+**Problem:** The local path validation (`_validate_path`) rejects `..` and absolute paths, but the actual containment check (`target.startswith(work_dir)`) uses the local filesystem's `os.path.normpath`. For remote sessions, the containment check happens inside the remote Python script.
+
+**Mitigation:**
+- Keep the local `_validate_path()` as a first-pass filter (rejects obviously bad input before any SSH call)
+- The remote script performs its own `normpath` + `startswith` containment check
+- This is defense-in-depth: even if the local check is bypassed, the remote script enforces containment
+
+**Gap:** If `work_dir` itself doesn't exist on the remote machine (e.g., worker was moved to a different directory), the remote script will return "Directory not found". The backend should return a clear error message so the frontend can show "Working directory not found on remote machine."
+
+#### Risk 7: SSH Key / Auth for Different Host Types
+
+**Problem:** Different remote hosts may require different authentication:
+- rdev: Uses `.ssh/config` entries managed by `rdev`
+- Generic SSH: Uses whatever keys the user has configured
+- Some hosts may require ProxyJump or other SSH config
+
+**Mitigation:**
+- `_SSH_OPTS` uses `BatchMode=yes` which fails fast on auth issues (no password prompt hang)
+- The orchestrator's SSH config (`~/.ssh/config`) is shared with the file explorer SSH calls — any ProxyJump or IdentityFile settings work automatically
+- If auth fails, return 502 with the SSH stderr message so the user knows what's wrong
+
+#### Risk 8: Encoding / Locale Issues on Remote
+
+**Problem:** Remote machines may have different locale settings. Python's `os.scandir()` returns filenames in the filesystem encoding, which is usually UTF-8 on Linux but could be different.
+
+**Mitigation:**
+- The remote Python script uses `encoding="utf-8", errors="replace"` for file reading
+- Filenames from `os.scandir()` are already decoded by Python using the filesystem encoding
+- JSON output is UTF-8 encoded
+- SSH passes bytes transparently
+
+#### Risk 9: Memory Pressure from Caches
+
+**Problem:** With multiple remote sessions open, caches for directory listings, file contents, and git status accumulate in memory.
+
+**Mitigation:**
+- Directory cache: TTL-based eviction (10s), entries are small (list of FileEntry)
+- File content cache: LRU with max 20 entries, bounded total size
+- Git status cache: 5s TTL, auto-evicts
+- Add a periodic cache cleanup (e.g., every 60s, clear entries older than TTL)
+- Add cache size monitoring to logs
+
+```python
+def _cleanup_caches():
+    """Purge expired cache entries. Call periodically."""
+    now = time.monotonic()
+    for cache, ttl in [
+        (_git_cache, _GIT_CACHE_TTL),
+        (_remote_dir_cache, _REMOTE_DIR_CACHE_TTL),
+        (_remote_content_cache, _REMOTE_CONTENT_CACHE_TTL),
+    ]:
+        expired = [k for k, (ts, *_) in cache.items() if now - ts > ttl]
+        for k in expired:
+            del cache[k]
+```
+
+#### Race Condition 1: SSH Call During Session Teardown
+
+**Problem:** If a session is being deleted while a file listing SSH call is in-flight, the SSH call may succeed but the response is delivered to a deleted session ID. The frontend navigates away, so the response is harmless — but the backend may log confusing errors.
+
+**Mitigation:** Check session existence after SSH call returns (before building response). If session was deleted, return 404.
+
+#### Race Condition 2: Work Dir Changed While Browsing
+
+**Problem:** The worker may change its `work_dir` (e.g., `cd` to a different directory) while the user is browsing the file tree. The file tree shows stale data from the old directory.
+
+**Mitigation:**
+- On refresh, re-resolve `work_dir` from the session DB
+- If `work_dir` changed, clear the tree and re-fetch from root
+- Show a subtle notification: "Working directory changed to /new/path"
+- This is unlikely in practice (workers don't usually change directories mid-task)
+
+#### Race Condition 3: Parallel Requests Filling Cache with Different TTLs
+
+**Problem:** Two concurrent requests for the same directory arrive. Both miss the cache. Both execute SSH calls. The second to finish overwrites the first's cache entry, potentially with slightly different data if a file was modified between the two calls.
+
+**Mitigation:** This is benign — the "last write wins" semantics are fine for a read-only cache. Both responses are valid snapshots. The cache entry timestamp reflects the latest SSH call, so TTL is correct.
+
+### Test Plan
+
+#### Unit Tests (mock SSH)
+
+1. `_resolve_session()`: returns `SessionInfo` with correct `is_remote` flag
+2. `_list_remote_dir()`: mock `subprocess.run`, verify JSON parsing, FileEntry construction
+3. `_list_remote_dir()`: mock SSH timeout, verify 504 response
+4. `_list_remote_dir()`: mock SSH connection refused, verify 502 response
+5. `_list_remote_dir()`: mock invalid JSON output, verify 502 response
+6. Remote directory cache: verify TTL expiry, forced refresh
+7. SSH semaphore: verify concurrency limit (acquire/release)
+8. Remote content reading: mock SSH, verify truncation, binary detection
+
+#### Integration Tests (real SSH to localhost)
+
+1. SSH to `localhost` (requires SSH server running), list a temp directory
+2. Verify git status works over SSH
+3. Verify file content reading over SSH
+4. Verify path traversal rejection works in the remote script
+5. Verify Python-not-available fallback (if implemented)
+
+#### Manual Test Matrix
+
+| Scenario | Local Worker | rdev Worker | Generic SSH Worker |
+|----------|-------------|-------------|-------------------|
+| Open file explorer | Phase 1 ✓ | Phase 2 | Phase 2 |
+| Expand directory | Phase 1 ✓ | Phase 2 | Phase 2 |
+| View file content | Phase 1 ✓ | Phase 2 | Phase 2 |
+| Git status colors | Phase 1 ✓ | Phase 2 | Phase 2 |
+| Markdown preview | Phase 1 ✓ | Phase 2 | Phase 2 |
+| Large directory (500+ files) | Phase 1 ✓ | Phase 2 | Phase 2 |
+| Binary file | Phase 1 ✓ | Phase 2 | Phase 2 |
+| SSH disconnect during browse | N/A | Phase 2 | Phase 2 |
+| Refresh after file change | Phase 1 ✓ | Phase 2 | Phase 2 |
+
+### Files to Create / Modify
+
+| File | Change |
+|------|--------|
+| `orchestrator/api/routes/files.py` | Add `_resolve_session()`, `_list_remote_dir()`, `_read_remote_file()`, SSH caching, semaphore, dispatch logic in both endpoints |
+| `frontend/src/pages/SessionDetailPage.tsx` | Remove `!isRdev` guard (1 line change) |
+| `tests/unit/test_files_api.py` | Add tests for remote dispatch, SSH mocking, cache behavior |
+| `tests/integration/test_files_api.py` | Add SSH-to-localhost tests (conditional on SSH availability) |
+| `docs/014-file-explorer-design.md` | Update Phase 2 status |
+
+### Estimated Complexity
+
+- Backend changes: ~200 lines new code in `files.py` (scripts + wrappers + caching + semaphore)
+- Frontend changes: 1-3 lines (remove guard, optionally add remote indicator)
+- Tests: ~15 new test cases
+- Total new/modified: ~400 lines including tests

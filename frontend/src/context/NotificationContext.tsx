@@ -11,13 +11,11 @@ interface Notification {
 interface NotificationContextValue {
   notifications: Notification[]
   notify: (message: string, type?: NotificationType) => void
-  dismiss: (id: number) => void
 }
 
 const NotificationContext = createContext<NotificationContextValue>({
   notifications: [],
   notify: () => {},
-  dismiss: () => {},
 })
 
 export function useNotify() {
@@ -28,18 +26,10 @@ export function useNotifications() {
   return useContext(NotificationContext).notifications
 }
 
-export function useDismissNotification() {
-  return useContext(NotificationContext).dismiss
-}
-
 let nextId = 0
 
 export function NotificationProvider({ children }: { children: ReactNode }) {
   const [notifications, setNotifications] = useState<Notification[]>([])
-
-  const dismiss = useCallback((id: number) => {
-    setNotifications(prev => prev.filter(n => n.id !== id))
-  }, [])
 
   const notify = useCallback((message: string, type: NotificationType = 'info') => {
     const id = ++nextId
@@ -51,7 +41,7 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
   }, [])
 
   return (
-    <NotificationContext.Provider value={{ notifications, notify, dismiss }}>
+    <NotificationContext.Provider value={{ notifications, notify }}>
       {children}
     </NotificationContext.Provider>
   )

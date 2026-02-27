@@ -116,7 +116,7 @@
 .fe-tree {
   flex: 1;
   overflow-y: auto;
-  overflow-x: hidden;
+  overflow-x: auto;
   min-height: 0;
 }
 
@@ -258,6 +258,41 @@
 
 @keyframes fe-spin {
   to { transform: rotate(360deg); }
+}
+
+/* Skeleton loading */
+.fe-skeleton {
+  padding: 4px 0;
+}
+
+.fe-skeleton-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  height: 24px;
+}
+
+.fe-skeleton-icon {
+  width: 16px;
+  height: 16px;
+  border-radius: 3px;
+  background: var(--border-subtle);
+  flex-shrink: 0;
+  animation: fe-skeleton-pulse 1.2s ease-in-out infinite;
+}
+
+.fe-skeleton-text {
+  height: 10px;
+  border-radius: 3px;
+  background: var(--border-subtle);
+  animation: fe-skeleton-pulse 1.2s ease-in-out infinite;
+  animation-delay: 0.1s;
+}
+
+@keyframes fe-skeleton-pulse {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 0.8; }
 }
 
 /* Empty state */

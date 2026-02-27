@@ -552,7 +552,7 @@ export default function SessionDetailPage() {
         </div>
         <div className="sd-footer-right">
           {/* File explorer toggle */}
-          {!isRdev && session.work_dir && (
+          {(session.work_dir || isRdev) && (
             <>
               <label className="sd-fe-toggle" title="Toggle file explorer (Ctrl+Shift+E)">
                 <span className="sd-fe-toggle-label">Files</span>

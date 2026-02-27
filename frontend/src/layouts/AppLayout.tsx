@@ -14,25 +14,23 @@ export default function AppLayout() {
   const notifications = useNotifications()
 
   return (
-    <>
-      <div className="app-shell">
-        <Sidebar collapsed={collapsed} onToggle={toggle} />
-        <div className="app-content">
-          <Header />
-          <main className="app-main">
-            <Outlet />
-          </main>
-        </div>
-        <BrainPanel
-          collapsed={brainPanel.collapsed}
-          onToggleCollapsed={brainPanel.toggleCollapsed}
-          width={brainPanel.width}
-          onWidthChange={brainPanel.updateWidth}
-          minWidth={brainPanel.MIN_WIDTH}
-          maxWidth={brainPanel.MAX_WIDTH}
-        />
+    <div className="app-shell">
+      <Sidebar collapsed={collapsed} onToggle={toggle} />
+      <div className="app-content">
+        <Header />
+        <main className="app-main">
+          <Outlet />
+        </main>
       </div>
+      <BrainPanel
+        collapsed={brainPanel.collapsed}
+        onToggleCollapsed={brainPanel.toggleCollapsed}
+        width={brainPanel.width}
+        onWidthChange={brainPanel.updateWidth}
+        minWidth={brainPanel.MIN_WIDTH}
+        maxWidth={brainPanel.MAX_WIDTH}
+      />
       <NotificationToast notifications={notifications} />
-    </>
+    </div>
   )
 }

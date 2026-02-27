@@ -87,6 +87,7 @@ def update_session(
     last_viewed_at: str | None = None,
     auto_reconnect: bool | None = None,
     claude_session_id: str | None = None,
+    work_dir: str | None = ...,
 ) -> Session | None:
     sets = []
     params = []
@@ -119,6 +120,9 @@ def update_session(
     if claude_session_id is not None:
         sets.append("claude_session_id = ?")
         params.append(claude_session_id)
+    if work_dir is not ...:
+        sets.append("work_dir = ?")
+        params.append(work_dir)
     if not sets:
         return get_session(conn, id)
 

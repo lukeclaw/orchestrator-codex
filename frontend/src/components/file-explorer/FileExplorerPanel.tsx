@@ -24,6 +24,7 @@ interface FileEntry {
   children_count: number | null
   git_status: string | null
   human_size: string | null
+  children: FileEntry[] | null
 }
 
 interface DirectoryResponse {
@@ -33,7 +34,7 @@ interface DirectoryResponse {
   git_available: boolean
 }
 
-interface TreeNode extends FileEntry {
+interface TreeNode extends Omit<FileEntry, 'children'> {
   children?: TreeNode[]
   loading?: boolean
   expanded?: boolean
@@ -67,14 +68,13 @@ const GIT_BADGE: Record<string, string> = {
   ignored: 'I',
 }
 
-function epochToRelative(epoch: number | null): string {
-  if (!epoch) return ''
-  const secs = Math.floor((Date.now() / 1000) - epoch)
-  if (secs < 0) return 'just now'
-  if (secs < 60) return 'just now'
-  if (secs < 3600) return `${Math.floor(secs / 60)}m`
-  if (secs < 86400) return `${Math.floor(secs / 3600)}h`
-  return `${Math.floor(secs / 86400)}d`
+/** Convert API entries into TreeNodes, preserving pre-fetched children. */
+function entriesToNodes(entries: FileEntry[]): TreeNode[] {
+  return entries.map(e => ({
+    ...e,
+    expanded: false,
+    children: e.children ? entriesToNodes(e.children) : undefined,
+  }))
 }
 
 // --- Component ---
@@ -105,6 +105,7 @@ export default function FileExplorerPanel({
   }, [])
   const [changedFiles, setChangedFiles] = useState<FileEntry[]>([])
   const [gitAvailable, setGitAvailable] = useState(false)
+  const [rootLoading, setRootLoading] = useState(false)
   const [filterText, setFilterText] = useState('')
   const [showFilter, setShowFilter] = useState(false)
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; path: string } | null>(null)
@@ -113,19 +114,20 @@ export default function FileExplorerPanel({
   const treeRef = useRef<HTMLDivElement>(null)
 
   // Fetch root directory
-  const fetchDir = useCallback(async (path: string = '.'): Promise<{ entries: FileEntry[]; gitAvailable: boolean }> => {
-    const params = new URLSearchParams({ path, show_ignored: String(showIgnored) })
+  const fetchDir = useCallback(async (path: string = '.', depth = 1): Promise<{ entries: FileEntry[]; gitAvailable: boolean }> => {
+    const params = new URLSearchParams({ path, depth: String(depth), show_ignored: String(showIgnored) })
     const data = await api<DirectoryResponse>(
       `/api/sessions/${sessionId}/files?${params}`
     )
     return { entries: data.entries, gitAvailable: data.git_available }
   }, [sessionId, showIgnored])
 
-  // Load root on mount / refresh
+  // Load root on mount / refresh — depth=5 prefetches multiple levels
   const loadRoot = useCallback(async () => {
+    setRootLoading(true)
     try {
-      const { entries, gitAvailable: ga } = await fetchDir('.')
-      setTree(entries.map(e => ({ ...e, expanded: false })))
+      const { entries, gitAvailable: ga } = await fetchDir('.', 5)
+      setTree(entriesToNodes(entries))
       setGitAvailable(ga)
       // For "changed" view, collect all files with git status
       if (ga) {
@@ -133,14 +135,16 @@ export default function FileExplorerPanel({
       }
     } catch {
       // Silently fail - work_dir may not exist yet
+    } finally {
+      setRootLoading(false)
     }
   }, [fetchDir])
 
   useEffect(() => {
-    if (isOpen && workDir) {
+    if (isOpen) {
       loadRoot()
     }
-  }, [isOpen, workDir, loadRoot])
+  }, [isOpen, loadRoot])
 
   // Find a node by path in a tree
   const findNode = useCallback((nodes: TreeNode[], path: string): TreeNode | null => {
@@ -180,23 +184,16 @@ export default function FileExplorerPanel({
       return
     }
 
-    // Expanding without cached children — mark loading and fetch
+    // Expanding without cached children — mark loading and fetch (depth=2 prefetches)
     setTree(prev => updateNode(prev, nodePath, n => ({ ...n, loading: true, expanded: true })))
 
     try {
-      const params = new URLSearchParams({
-        path: nodePath,
-        depth: '1',
-        show_ignored: String(showIgnored),
-      })
-      const data = await api<DirectoryResponse>(
-        `/api/sessions/${sessionId}/files?${params}`
-      )
+      const { entries } = await fetchDir(nodePath, 5)
       setTree(prev => updateNode(prev, nodePath, n => ({
         ...n,
         loading: false,
         expanded: true,
-        children: data.entries.map(e => ({ ...e, expanded: false })),
+        children: entriesToNodes(entries),
       })))
     } catch {
       setTree(prev => updateNode(prev, nodePath, n => ({
@@ -205,7 +202,7 @@ export default function FileExplorerPanel({
         expanded: false,
       })))
     }
-  }, [sessionId, showIgnored, findNode, updateNode, setTree])
+  }, [fetchDir, findNode, updateNode, setTree])
 
   // Flatten tree for keyboard nav and rendering
   const flatNodes = useMemo(() => {
@@ -410,7 +407,16 @@ export default function FileExplorerPanel({
 
         {/* Tree content */}
         <div className="fe-tree">
-          {viewMode === 'files' ? (
+          {rootLoading && tree.length === 0 ? (
+            <div className="fe-skeleton">
+              {Array.from({ length: 8 }).map((_, i) => (
+                <div key={i} className="fe-skeleton-row" style={{ paddingLeft: (i % 3 === 0 ? 0 : i % 3 === 1 ? 16 : 32) + 4 }}>
+                  <span className="fe-skeleton-icon" />
+                  <span className="fe-skeleton-text" style={{ width: `${40 + ((i * 17) % 60)}%` }} />
+                </div>
+              ))}
+            </div>
+          ) : viewMode === 'files' ? (
             flatNodes.map(({ node, depth }, i) => {
               const dimmed = filterText && !node.name.toLowerCase().includes(filterText.toLowerCase())
               return (
@@ -464,14 +470,6 @@ export default function FileExplorerPanel({
                   {node.git_status && GIT_BADGE[node.git_status] && (
                     <span className={`fe-git-badge fe-git-badge--${node.git_status}`}>
                       {GIT_BADGE[node.git_status]}
-                    </span>
-                  )}
-
-                  {/* Meta: size + recency */}
-                  {!node.is_dir && (
-                    <span className="fe-meta">
-                      {node.human_size && <span className="fe-size">{node.human_size}</span>}
-                      {node.modified && <span className="fe-recency">{epochToRelative(node.modified)}</span>}
                     </span>
                   )}
 

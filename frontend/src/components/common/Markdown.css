@@ -187,3 +187,11 @@
   height: auto;
   border-radius: 6px;
 }
+
+/* Syntax highlighting (VS Code Dark+ inspired) */
+.markdown-content .hl-keyword { color: #569cd6; }
+.markdown-content .hl-comment { color: #6a9955; font-style: italic; }
+.markdown-content .hl-string { color: #ce9178; }
+.markdown-content .hl-number { color: #b5cea8; }
+.markdown-content .hl-builtin { color: #4ec9b0; }
+.markdown-content .hl-decorator { color: #dcdcaa; }

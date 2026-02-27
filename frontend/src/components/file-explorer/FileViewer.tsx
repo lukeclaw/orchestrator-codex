@@ -12,6 +12,7 @@ interface FileContentResponse {
   size: number
   binary: boolean
   language: string | null
+  modified: number | null
 }
 
 interface FileViewerProps {
@@ -22,10 +23,26 @@ interface FileViewerProps {
   onPin: () => void
 }
 
+const IMAGE_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.gif', '.bmp', '.svg', '.webp', '.ico'])
+
+function isImage(path: string): boolean {
+  const ext = path.slice(path.lastIndexOf('.')).toLowerCase()
+  return IMAGE_EXTENSIONS.has(ext)
+}
+
 function humanSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+}
+
+function timeAgo(epoch: number): string {
+  const secs = Math.floor(Date.now() / 1000 - epoch)
+  if (secs < 60) return 'just now'
+  if (secs < 3600) return `${Math.floor(secs / 60)}m ago`
+  if (secs < 86400) return `${Math.floor(secs / 3600)}h ago`
+  if (secs < 2592000) return `${Math.floor(secs / 86400)}d ago`
+  return `${Math.floor(secs / 2592000)}mo ago`
 }
 
 export default function FileViewer({ sessionId, filePath, isPinned, onClose, onPin }: FileViewerProps) {
@@ -100,7 +117,12 @@ export default function FileViewer({ sessionId, filePath, isPinned, onClose, onP
       <div className="fe-viewer__header">
         <span className={`fe-viewer__tab ${!isPinned ? 'fe-viewer__tab--preview' : ''}`}>
           {fileName}
-          {content && <span className="fe-viewer__size">{humanSize(content.size)}</span>}
+          {content && (
+            <span className="fe-viewer__size">
+              {humanSize(content.size)}
+              {content.modified != null && <> &middot; {timeAgo(content.modified)}</>}
+            </span>
+          )}
         </span>
         <div className="fe-viewer__actions">
           {isMarkdown && (
@@ -145,7 +167,14 @@ export default function FileViewer({ sessionId, filePath, isPinned, onClose, onP
 
         {content && !loading && !error && (
           <>
-            {content.binary ? (
+            {content.binary && filePath && isImage(filePath) ? (
+              <div className="fe-viewer__image">
+                <img
+                  src={`/api/sessions/${sessionId}/files/raw?path=${encodeURIComponent(filePath)}`}
+                  alt={filePath.split('/').pop() || filePath}
+                />
+              </div>
+            ) : content.binary ? (
               <div className="fe-viewer__binary">Binary file — preview not available</div>
             ) : isMarkdown && showPreview ? (
               <div className="fe-md-preview">
