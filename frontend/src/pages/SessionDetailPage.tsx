@@ -413,32 +413,6 @@ export default function SessionDetailPage() {
           </button>
         </div>
         <div className="sd-topbar-actions">
-          {/* Toggles in top bar */}
-          {(session.work_dir || isRemote) && (
-            <label className="sd-fe-toggle" title="Toggle file explorer (Ctrl+Shift+E)">
-              <span className="sd-fe-toggle-label">Files</span>
-              <button
-                className={`sd-toggle-switch ${fe.open ? 'on' : ''}`}
-                onClick={fe.toggleOpen}
-                role="switch"
-                aria-checked={fe.open}
-              >
-                <span className="sd-toggle-knob" />
-              </button>
-            </label>
-          )}
-          <label className="sd-auto-reconnect-toggle" title="When enabled, automatically reconnect this worker if it disconnects">
-            <span className="sd-auto-reconnect-label">Auto-reconnect</span>
-            <button
-              className={`sd-toggle-switch ${session.auto_reconnect ? 'on' : ''}`}
-              onClick={handleToggleAutoReconnect}
-              role="switch"
-              aria-checked={session.auto_reconnect}
-            >
-              <span className="sd-toggle-knob" />
-            </button>
-          </label>
-          <span className="sd-topbar-divider" />
 
           {/* Control buttons - icon only */}
           {(session.status === 'disconnected' || session.status === 'screen_detached' || session.status === 'error') ? (
@@ -610,6 +584,30 @@ export default function SessionDetailPage() {
           )}
         </div>
         <div className="sd-footer-right">
+          {(session.work_dir || isRemote) && (
+            <label className="sd-fe-toggle" title="Toggle file explorer (Ctrl+Shift+E)">
+              <span className="sd-fe-toggle-label">Files</span>
+              <button
+                className={`sd-toggle-switch ${fe.open ? 'on' : ''}`}
+                onClick={fe.toggleOpen}
+                role="switch"
+                aria-checked={fe.open}
+              >
+                <span className="sd-toggle-knob" />
+              </button>
+            </label>
+          )}
+          <label className="sd-auto-reconnect-toggle" title="When enabled, automatically reconnect this worker if it disconnects">
+            <span className="sd-auto-reconnect-label">Auto-reconnect</span>
+            <button
+              className={`sd-toggle-switch ${session.auto_reconnect ? 'on' : ''}`}
+              onClick={handleToggleAutoReconnect}
+              role="switch"
+              aria-checked={session.auto_reconnect}
+            >
+              <span className="sd-toggle-knob" />
+            </button>
+          </label>
           <button
             className="sd-paste-btn"
             onClick={handlePaste}
