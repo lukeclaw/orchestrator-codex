@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom'
 import { IconStop, IconTrash, IconPlay } from '../common/Icons'
+import ConfirmPopover from '../common/ConfirmPopover'
 import './RdevTable.css'
 
 interface Rdev {
@@ -64,7 +65,7 @@ export default function RdevTable({ rdevs, onDelete, onRestart, onStop, actionLo
             const isLoading = actionLoading === rdev.name
 
             return (
-              <tr key={rdev.name} className="rt-row">
+              <tr key={rdev.name} className={`rt-row rt-state-${rdev.state.toLowerCase()}`}>
                 <td>
                   <span className={`state-badge state-${rdev.state.toLowerCase()}`}>
                     {rdev.state}
@@ -74,6 +75,7 @@ export default function RdevTable({ rdevs, onDelete, onRestart, onStop, actionLo
                 <td>
                   {rdev.in_use && rdev.worker_name && rdev.worker_id ? (
                     <Link to={`/workers/${rdev.worker_id}`} className="worker-tag-link">
+                      <span className={`rt-worker-dot ${rdev.worker_status || 'idle'}`} />
                       <span className={`status-badge ${rdev.worker_status || 'idle'}`}>
                         {rdev.worker_name}
                       </span>
@@ -106,14 +108,23 @@ export default function RdevTable({ rdevs, onDelete, onRestart, onStop, actionLo
                       <IconPlay size={14} />
                     </button>
                   )}
-                  <button
-                    className="rt-action-btn delete"
-                    onClick={() => onDelete(rdev.name)}
-                    disabled={isLoading || rdev.in_use}
-                    title={rdev.in_use ? 'Remove worker first' : 'Delete rdev'}
+                  <ConfirmPopover
+                    message={`Delete rdev "${rdev.name}"? This cannot be undone.`}
+                    confirmLabel="Delete"
+                    onConfirm={() => onDelete(rdev.name)}
+                    variant="danger"
                   >
-                    <IconTrash size={14} />
-                  </button>
+                    {({ onClick }) => (
+                      <button
+                        className="rt-action-btn delete"
+                        onClick={onClick}
+                        disabled={isLoading || rdev.in_use}
+                        title={rdev.in_use ? 'Remove worker first' : 'Delete rdev'}
+                      >
+                        <IconTrash size={14} />
+                      </button>
+                    )}
+                  </ConfirmPopover>
                 </td>
               </tr>
             )

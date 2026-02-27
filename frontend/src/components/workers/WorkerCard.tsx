@@ -3,10 +3,9 @@ import { useNavigate, Link } from 'react-router-dom'
 import type { Session, Task } from '../../api/types'
 import { api, openUrl } from '../../api/client'
 import { useNotify } from '../../context/NotificationContext'
-import { timeAgo } from '../common/TimeAgo'
-import { IconTrash, IconPause, IconPlay, IconStop, IconRefresh, IconBrain } from '../common/Icons'
+import { timeAgo, parseDate } from '../common/TimeAgo'
+import { IconTrash, IconPause, IconPlay, IconStop, IconRefresh, IconBrain, IconKebab } from '../common/Icons'
 import ConfirmPopover from '../common/ConfirmPopover'
-import AssignTaskModal from '../tasks/AssignTaskModal'
 import './WorkerCard.css'
 
 interface Props {
@@ -21,6 +20,17 @@ interface TunnelInfo {
   host: string
 }
 
+function statusDuration(dateStr: string | null | undefined): string {
+  if (!dateStr) return ''
+  const d = parseDate(dateStr)
+  const secs = Math.floor((Date.now() - d.getTime()) / 1000)
+  if (secs < 0) return '<1m'
+  if (secs < 60) return '<1m'
+  if (secs < 3600) return `${Math.floor(secs / 60)}m`
+  if (secs < 86400) return `${Math.floor(secs / 3600)}h`
+  return `${Math.floor(secs / 86400)}d`
+}
+
 export default function WorkerCard({
   session, assignedTask, onRemove,
 }: Props) {
@@ -28,13 +38,17 @@ export default function WorkerCard({
   const notify = useNotify()
   const [removing, setRemoving] = useState(false)
   const [actionPending, setActionPending] = useState(false)
-  const [showAssignTask, setShowAssignTask] = useState(false)
+  const [showOverflow, setShowOverflow] = useState(false)
   const [tunnels, setTunnels] = useState<Record<string, TunnelInfo>>({})
   const tunnelIntervalRef = useRef<ReturnType<typeof setInterval> | undefined>(undefined)
   const sessionIdRef = useRef(session.id)
+  const overflowRef = useRef<HTMLDivElement>(null)
 
   // Check if this is an rdev worker
   const isRdev = session.host.includes('/')
+
+  // Whether to always show action buttons (error states)
+  const alwaysShowActions = session.status === 'error' || session.status === 'disconnected' || session.status === 'screen_detached'
 
   // Update ref when session changes (for interval callbacks to read current value)
   sessionIdRef.current = session.id
@@ -71,9 +85,32 @@ export default function WorkerCard({
     }
   }, [session.id, isRdev])
 
+  // Close overflow menu on click outside
+  useEffect(() => {
+    if (!showOverflow) return
+
+    function handleClickOutside(e: MouseEvent) {
+      if (overflowRef.current && !overflowRef.current.contains(e.target as Node)) {
+        setShowOverflow(false)
+      }
+    }
+
+    function handleEscape(e: KeyboardEvent) {
+      if (e.key === 'Escape') setShowOverflow(false)
+    }
+
+    document.addEventListener('mousedown', handleClickOutside)
+    document.addEventListener('keydown', handleEscape)
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside)
+      document.removeEventListener('keydown', handleEscape)
+    }
+  }, [showOverflow])
+
   async function handleRemove() {
     if (removing) return
     setRemoving(true)
+    setShowOverflow(false)
     try {
       // Stop the worker first, then delete
       try {
@@ -179,7 +216,7 @@ export default function WorkerCard({
 
   return (
     <div
-      className={`worker-card ${session.status}${removing ? ' removing' : ''}`}
+      className={`worker-card ${session.status}${removing ? ' removing' : ''}${alwaysShowActions ? ' show-actions' : ''}`}
       data-testid="worker-card"
       data-session-id={session.id}
       onClick={() => navigate(`/workers/${session.id}`)}
@@ -187,83 +224,107 @@ export default function WorkerCard({
       <div className="wc-header">
         <div className="wc-header-left">
           <span className={`status-indicator ${session.status}`} />
-          <span className="wc-name">{session.name}</span>
-          {session.host.includes('/') && <span className="wc-type-tag rdev">rdev</span>}
+          {isRdev && session.name.includes('_') ? (
+            <span className="wc-name">
+              <span className="wc-name-prefix">{session.name.slice(0, session.name.indexOf('_') + 1)}</span>
+              {session.name.slice(session.name.indexOf('_') + 1)}
+            </span>
+          ) : (
+            <span className="wc-name">{session.name}</span>
+          )}
+          {isRdev && <span className="wc-type-tag rdev">rdev</span>}
           <span className={`status-badge ${session.status}`}>{session.status}</span>
+          {session.last_status_changed_at && (
+            <span className="wc-duration">{statusDuration(session.last_status_changed_at)}</span>
+          )}
         </div>
         <div className="wc-actions">
-          {(session.status === 'disconnected' || session.status === 'screen_detached' || session.status === 'error') ? (
-            /* Reconnect button for disconnected/screen_detached/error workers */
-            <button
-              className="wc-action-btn reconnect"
-              onClick={handleReconnect}
-              disabled={actionPending}
-              title="Reconnect"
-            >
-              <IconRefresh size={14} />
-            </button>
-          ) : (
-            <>
-              {/* Check Progress button for waiting workers, Pause/Continue for others */}
-              {session.status === 'waiting' ? (
-                <button
-                  className="wc-action-btn check-progress"
-                  onClick={handleCheckProgress}
-                  disabled={actionPending}
-                  title="Check Progress"
-                >
-                  <IconBrain size={14} />
-                </button>
-              ) : (
-                <button
-                  className={`wc-action-btn ${session.status === 'paused' ? 'continue' : 'pause'}`}
-                  onClick={handlePauseOrContinue}
-                  disabled={actionPending || session.status === 'idle'}
-                  title={session.status === 'paused' ? 'Continue' : 'Pause'}
-                >
-                  {session.status === 'paused' ? <IconPlay size={14} /> : <IconPause size={14} />}
-                </button>
-              )}
-
-              {/* Stop button */}
-              <ConfirmPopover
-                message={`Stop worker "${session.name}" and clear context?`}
-                confirmLabel="Stop"
-                onConfirm={handleStop}
-                variant="danger"
+          {/* Hoverable action buttons */}
+          <div className="wc-actions-hoverable">
+            {(session.status === 'disconnected' || session.status === 'screen_detached' || session.status === 'error') ? (
+              /* Reconnect button for disconnected/screen_detached/error workers */
+              <button
+                className="wc-action-btn reconnect"
+                onClick={handleReconnect}
+                disabled={actionPending}
+                title="Reconnect"
               >
-                {({ onClick }) => (
+                <IconRefresh size={14} />
+              </button>
+            ) : (
+              <>
+                {/* Check Progress button for waiting workers, Pause/Continue for others */}
+                {session.status === 'waiting' ? (
                   <button
-                    className="wc-action-btn stop"
-                    onClick={onClick}
-                    disabled={actionPending || session.status === 'idle'}
-                    title="Stop and clear"
+                    className="wc-action-btn check-progress"
+                    onClick={handleCheckProgress}
+                    disabled={actionPending}
+                    title="Check Progress"
                   >
-                    <IconStop size={14} />
+                    <IconBrain size={14} />
+                  </button>
+                ) : (
+                  <button
+                    className={`wc-action-btn ${session.status === 'paused' ? 'continue' : 'pause'}`}
+                    onClick={handlePauseOrContinue}
+                    disabled={actionPending || session.status === 'idle'}
+                    title={session.status === 'paused' ? 'Continue' : 'Pause'}
+                  >
+                    {session.status === 'paused' ? <IconPlay size={14} /> : <IconPause size={14} />}
                   </button>
                 )}
-              </ConfirmPopover>
-            </>
-          )}
-
-          {/* Remove button */}
-          <ConfirmPopover
-            message={`Remove worker "${session.name}"?`}
-            confirmLabel="Remove"
-            onConfirm={handleRemove}
-            variant="danger"
-          >
-            {({ onClick }) => (
-              <button
-                className="wc-remove-btn"
-                onClick={onClick}
-                disabled={removing}
-                title="Remove worker"
-              >
-                <IconTrash size={14} />
-              </button>
+              </>
             )}
-          </ConfirmPopover>
+          </div>
+
+          {/* Kebab overflow menu — always visible */}
+          <div className="wc-overflow-menu" ref={overflowRef}>
+            <button
+              className="wc-kebab-btn"
+              onClick={e => { e.stopPropagation(); setShowOverflow(!showOverflow) }}
+              title="More actions"
+            >
+              <IconKebab size={14} />
+            </button>
+            {showOverflow && (
+              <div className="wc-overflow-dropdown">
+                <ConfirmPopover
+                  message={`Stop worker "${session.name}" and clear context?`}
+                  confirmLabel="Stop"
+                  onConfirm={handleStop}
+                  variant="danger"
+                >
+                  {({ onClick }) => (
+                    <button
+                      className="wc-overflow-item"
+                      onClick={onClick}
+                      disabled={actionPending || session.status === 'idle'}
+                    >
+                      <IconStop size={13} />
+                      <span>Stop & clear</span>
+                    </button>
+                  )}
+                </ConfirmPopover>
+                <ConfirmPopover
+                  message={`Remove worker "${session.name}"?`}
+                  confirmLabel="Remove"
+                  onConfirm={handleRemove}
+                  variant="danger"
+                >
+                  {({ onClick }) => (
+                    <button
+                      className="wc-overflow-item danger"
+                      onClick={onClick}
+                      disabled={removing}
+                    >
+                      <IconTrash size={13} />
+                      <span>Remove</span>
+                    </button>
+                  )}
+                </ConfirmPopover>
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
@@ -284,9 +345,7 @@ export default function WorkerCard({
               <span className="wc-task-title">{assignedTask.title}</span>
             </Link>
           ) : (
-            <button className="wc-assign-task-btn" onClick={e => { e.stopPropagation(); setShowAssignTask(true) }}>
-              + Assign task
-            </button>
+            <span className="wc-no-task">No task</span>
           )}
           {Object.keys(tunnels).length > 0 && (
             <div className="wc-tunnels">
@@ -306,12 +365,6 @@ export default function WorkerCard({
         </div>
         <span className="wc-activity" title="Last viewed">{timeAgo(session.last_viewed_at || session.created_at)}</span>
       </div>
-      <AssignTaskModal
-        open={showAssignTask}
-        onClose={() => setShowAssignTask(false)}
-        sessionId={session.id}
-        sessionName={session.name}
-      />
     </div>
   )
 }

@@ -49,6 +49,23 @@
   flex: 1;
 }
 
+/* Status indicator with pulse animation for working */
+.worker-card .status-indicator {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.worker-card.working .status-indicator {
+  animation: status-pulse 2s ease-in-out infinite;
+}
+
+@keyframes status-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(88, 166, 255, 0.5); }
+  50% { box-shadow: 0 0 0 4px rgba(88, 166, 255, 0); }
+}
+
 .wc-name {
   font-weight: 600;
   font-size: 13px;
@@ -56,7 +73,13 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  max-width: 180px;
+  max-width: 240px;
+}
+
+.wc-name-prefix {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-muted);
 }
 
 .wc-type-tag {
@@ -73,11 +96,33 @@
   color: #a78bfa;
 }
 
+/* Status duration indicator */
+.wc-duration {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
 /* Action buttons container */
 .wc-actions {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 2px;
+}
+
+/* Hoverable action group — hidden by default, shown on hover */
+.wc-actions-hoverable {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.worker-card:hover .wc-actions-hoverable,
+.worker-card.show-actions .wc-actions-hoverable {
+  opacity: 1;
 }
 
 /* Action buttons (pause, stop) */
@@ -137,8 +182,12 @@
   cursor: not-allowed;
 }
 
-/* Remove button */
-.wc-remove-btn {
+/* Kebab overflow menu */
+.wc-overflow-menu {
+  position: relative;
+}
+
+.wc-kebab-btn {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -151,12 +200,52 @@
   transition: color 0.15s, background 0.15s;
 }
 
-.wc-remove-btn:hover:not(:disabled) {
+.wc-kebab-btn:hover {
+  color: var(--text-primary);
+  background: var(--surface-hover);
+}
+
+.wc-overflow-dropdown {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  min-width: 120px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-md, 0 4px 12px rgba(0,0,0,0.3));
+  z-index: 100;
+  overflow: hidden;
+}
+
+.wc-overflow-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 6px 10px;
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  font-size: 12px;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.1s, color 0.1s;
+}
+
+.wc-overflow-item:hover {
+  background: var(--surface-hover);
+}
+
+.wc-overflow-item.danger {
   color: var(--red);
+}
+
+.wc-overflow-item.danger:hover {
   background: rgba(248, 81, 73, 0.1);
 }
 
-.wc-remove-btn:disabled {
+.wc-overflow-item:disabled {
   opacity: 0.3;
   cursor: not-allowed;
 }
@@ -230,26 +319,10 @@
   min-width: 0;
 }
 
-.wc-task-empty {
+.wc-no-task {
   font-size: 11px;
   color: var(--text-muted);
   font-style: italic;
-}
-
-.wc-assign-task-btn {
-  font-size: 11px;
-  color: var(--green, #3fb950);
-  background: rgba(63, 185, 80, 0.08);
-  border: 1px dashed rgba(63, 185, 80, 0.4);
-  border-radius: 4px;
-  padding: 2px 8px;
-  cursor: pointer;
-  transition: background 0.15s, border-color 0.15s;
-}
-
-.wc-assign-task-btn:hover {
-  background: rgba(63, 185, 80, 0.18);
-  border-color: rgba(63, 185, 80, 0.7);
 }
 
 .wc-activity {

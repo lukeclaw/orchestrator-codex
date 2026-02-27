@@ -7,13 +7,27 @@ import WorkerCard from '../components/workers/WorkerCard'
 import AddSessionModal from '../components/sessions/AddSessionModal'
 import RdevTable, { RdevSortKey, SortDir } from '../components/rdevs/RdevTable'
 import CreateRdevModal from '../components/rdevs/CreateRdevModal'
-import { IconRefresh } from '../components/common/Icons'
+import CustomSelect from '../components/common/CustomSelect'
+import { IconRefresh, IconSessions, IconFilter } from '../components/common/Icons'
 import { useNotify } from '../context/NotificationContext'
 import './WorkersPage.css'
 
 type SortOption = 'last_viewed' | 'last_status_changed' | 'name' | 'status'
 
 const SORT_KEY = 'orchestrator-worker-sort'
+
+const STATUS_ORDER = ['working', 'idle', 'waiting', 'paused', 'error', 'disconnected', 'screen_detached', 'connecting'] as const
+
+const STATUS_COLORS: Record<string, string> = {
+  working: '#58a6ff',
+  idle: '#3fb950',
+  waiting: '#d29922',
+  paused: '#f97316',
+  error: '#f85149',
+  disconnected: '#f85149',
+  screen_detached: '#f97316',
+  connecting: '#58a6ff',
+}
 
 export default function WorkersPage() {
   const { workers, tasks, rdevs, refreshRdevs } = useApp()
@@ -34,9 +48,8 @@ export default function WorkersPage() {
     const stored = localStorage.getItem(SORT_KEY)
     return (stored as SortOption) || 'last_viewed'
   })
-
-  const handleSortChange = (value: SortOption) => {
-    setSortBy(value)
+  const handleSortChange = (value: string) => {
+    setSortBy(value as SortOption)
     localStorage.setItem(SORT_KEY, value)
   }
 
@@ -72,6 +85,12 @@ export default function WorkersPage() {
     removeSession(id)
   }, [removeSession])
 
+  // Compute status counts for summary bar
+  const statusCounts = workers.reduce<Record<string, number>>((acc, w) => {
+    acc[w.status] = (acc[w.status] || 0) + 1
+    return acc
+  }, {})
+
   // Rdevs tab state (data comes from AppContext, only UI state is local)
   const [rdevsRefreshing, setRdevsRefreshing] = useState(false)
   const [showCreateRdevModal, setShowCreateRdevModal] = useState(false)
@@ -103,13 +122,12 @@ export default function WorkersPage() {
   }, [isRdevsPage, hasIntermediateState, refreshRdevs])
 
   const handleDeleteRdev = async (name: string) => {
-    if (!confirm(`Delete rdev "${name}"? This cannot be undone.`)) return
     setRdevActionLoading(name)
     try {
       await api(`/api/rdevs/${encodeURIComponent(name)}`, { method: 'DELETE' })
       refreshRdevs(true)
     } catch (e) {
-      alert(e instanceof Error ? e.message : 'Failed to delete rdev')
+      notify(e instanceof Error ? e.message : 'Failed to delete rdev', 'error')
     } finally {
       setRdevActionLoading(null)
     }
@@ -121,7 +139,7 @@ export default function WorkersPage() {
       await api(`/api/rdevs/${encodeURIComponent(name)}/restart`, { method: 'POST' })
       refreshRdevs(true)
     } catch (e) {
-      alert(e instanceof Error ? e.message : 'Failed to restart rdev')
+      notify(e instanceof Error ? e.message : 'Failed to restart rdev', 'error')
     } finally {
       setRdevActionLoading(null)
     }
@@ -133,7 +151,7 @@ export default function WorkersPage() {
       await api(`/api/rdevs/${encodeURIComponent(name)}/stop`, { method: 'POST' })
       refreshRdevs(true)
     } catch (e) {
-      alert(e instanceof Error ? e.message : 'Failed to stop rdev')
+      notify(e instanceof Error ? e.message : 'Failed to stop rdev', 'error')
     } finally {
       setRdevActionLoading(null)
     }
@@ -221,44 +239,29 @@ export default function WorkersPage() {
     <div className="workers-page">
       <div className="page-header">
         <div className="page-header-left">
-          <h1>{isRdevsPage ? 'Rdevs' : 'Workers'}</h1>
-          <Link
-            to={isRdevsPage ? '/workers' : '/workers/rdevs'}
-            className="tab-toggle-btn"
-          >
-            {isRdevsPage ? `Workers (${workers.length})` : `Rdevs (${rdevs.length})`} →
-          </Link>
+          <div className="toggle-group">
+            <Link to="/workers" className={`toggle-btn${!isRdevsPage ? ' active' : ''}`}>
+              Workers ({workers.length})
+            </Link>
+            <Link to="/workers/rdevs" className={`toggle-btn${isRdevsPage ? ' active' : ''}`}>
+              Rdevs ({rdevs.length})
+            </Link>
+          </div>
         </div>
 
         {!isRdevsPage ? (
           <div className="page-header-actions">
-            <div className="sort-control">
-              <label>Sort by:</label>
-              <select
-                className="sort-select"
-                value={sortBy}
-                onChange={e => handleSortChange(e.target.value as SortOption)}
-              >
-                <option value="last_viewed">Last Viewed</option>
-                <option value="last_status_changed">Last Status Changed</option>
-                <option value="name">Name</option>
-                <option value="status">Status</option>
-              </select>
-            </div>
-            <select
-              className="status-filter-select"
-              value={statusFilter}
-              onChange={e => setStatusFilter(e.target.value)}
-            >
-              <option value="">All ({workers.length})</option>
-              <option value="connecting">Connecting</option>
-              <option value="idle">Idle</option>
-              <option value="working">Working</option>
-              <option value="waiting">Waiting</option>
-              <option value="error">Error</option>
-              <option value="screen_detached">Screen Detached</option>
-              <option value="disconnected">Disconnected</option>
-            </select>
+            <CustomSelect
+              prefix="Sort by:"
+              value={sortBy}
+              onChange={handleSortChange}
+              options={[
+                { value: 'last_viewed', label: 'Last Viewed' },
+                { value: 'last_status_changed', label: 'Last Status Changed' },
+                { value: 'name', label: 'Name' },
+                { value: 'status', label: 'Status' },
+              ]}
+            />
             <button
               className="btn btn-primary"
               data-testid="add-session-btn"
@@ -277,15 +280,15 @@ export default function WorkersPage() {
             >
               <IconRefresh size={16} className={rdevsRefreshing ? 'spinning' : ''} />
             </button>
-            <select
-              className="status-filter-select"
+            <CustomSelect
               value={rdevStateFilter}
-              onChange={e => setRdevStateFilter(e.target.value as '' | 'RUNNING' | 'STOPPED')}
-            >
-              <option value="">All ({rdevs.length})</option>
-              <option value="RUNNING">Running ({runningCount})</option>
-              <option value="STOPPED">Stopped ({stoppedCount})</option>
-            </select>
+              onChange={v => setRdevStateFilter(v as '' | 'RUNNING' | 'STOPPED')}
+              options={[
+                { value: '', label: `All (${rdevs.length})` },
+                { value: 'RUNNING', label: `Running (${runningCount})` },
+                { value: 'STOPPED', label: `Stopped (${stoppedCount})` },
+              ]}
+            />
             <button
               className="btn btn-primary"
               onClick={() => setShowCreateRdevModal(true)}
@@ -298,6 +301,24 @@ export default function WorkersPage() {
 
       {!isRdevsPage ? (
         <>
+          {/* Status summary bar */}
+          {workers.length > 0 && (
+            <div className="status-summary-bar">
+              {STATUS_ORDER.filter(s => statusCounts[s]).map(status => (
+                <button
+                  key={status}
+                  className={`status-summary-item${statusFilter === status ? ' active' : ''}`}
+                  onClick={() => setStatusFilter(statusFilter === status ? '' : status)}
+                  type="button"
+                >
+                  <span className="status-summary-dot" style={{ background: STATUS_COLORS[status] }} />
+                  <span className="status-summary-count">{statusCounts[status]}</span>
+                  <span className="status-summary-label">{status.replace('_', ' ')}</span>
+                </button>
+              ))}
+            </div>
+          )}
+
           {filtered.length > 0 ? (
             <div className="worker-grid" data-testid="session-grid">
               {filtered.map(s => (
@@ -310,11 +331,29 @@ export default function WorkersPage() {
               ))}
             </div>
           ) : (
-            <p className="empty-state">
-              {statusFilter
-                ? `No workers with status "${statusFilter}"`
-                : 'No workers yet. Click "+ Add Worker" to get started.'}
-            </p>
+            <div className="workers-empty-state">
+              {statusFilter ? (
+                <>
+                  <IconFilter size={32} />
+                  <p>No workers with status "{statusFilter}"</p>
+                  <button className="btn btn-secondary" onClick={() => setStatusFilter('')}>
+                    Clear filter
+                  </button>
+                </>
+              ) : (
+                <>
+                  <IconSessions size={48} />
+                  <h3>No workers yet</h3>
+                  <p>Add a worker to get started with Claude Code sessions.</p>
+                  <button
+                    className="btn btn-primary"
+                    onClick={() => setShowAddModal(true)}
+                  >
+                    + Add Worker
+                  </button>
+                </>
+              )}
+            </div>
           )}
         </>
       ) : (

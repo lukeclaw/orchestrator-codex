@@ -79,6 +79,12 @@
   gap: 8px;
 }
 
+.sd-topbar-divider {
+  width: 1px;
+  height: 20px;
+  background: var(--border);
+}
+
 
 /* Control buttons - icon only */
 .sd-control-btn {
