@@ -18,13 +18,27 @@
   gap: 16px;
 }
 
-/* Toggle-group link overrides */
-.workers-page .toggle-group .toggle-btn {
+/* Sub-page link next to Workers title */
+.workers-page .page-sub-link {
+  font-size: 13px;
+  color: var(--text-muted);
   text-decoration: none;
-  color: var(--text-secondary);
+  transition: color 0.15s;
 }
 
-.workers-page .toggle-group .toggle-btn.active {
+.workers-page .page-sub-link:hover {
+  color: var(--accent);
+}
+
+/* Back link on Rdevs sub-page */
+.workers-page .page-back-link {
+  font-size: 13px;
+  color: var(--text-muted);
+  text-decoration: none;
+  transition: color 0.15s;
+}
+
+.workers-page .page-back-link:hover {
   color: var(--accent);
 }
 

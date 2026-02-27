@@ -239,14 +239,19 @@ export default function WorkersPage() {
     <div className="workers-page">
       <div className="page-header">
         <div className="page-header-left">
-          <div className="toggle-group">
-            <Link to="/workers" className={`toggle-btn${!isRdevsPage ? ' active' : ''}`}>
-              Workers ({workers.length})
-            </Link>
-            <Link to="/workers/rdevs" className={`toggle-btn${isRdevsPage ? ' active' : ''}`}>
-              Rdevs ({rdevs.length})
-            </Link>
-          </div>
+          {isRdevsPage ? (
+            <>
+              <Link to="/workers" className="page-back-link">← Workers</Link>
+              <h1>Rdevs</h1>
+            </>
+          ) : (
+            <>
+              <h1>Workers</h1>
+              <Link to="/workers/rdevs" className="page-sub-link">
+                Rdevs ({rdevs.length}) →
+              </Link>
+            </>
+          )}
         </div>
 
         {!isRdevsPage ? (
