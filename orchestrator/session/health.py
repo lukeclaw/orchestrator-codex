@@ -716,14 +716,16 @@ def check_and_update_worker_health(db, session, tunnel_manager=None) -> dict:
                 }
 
             # --- All good: screen + Claude alive, tunnel alive, pane attached ---
-            if session.status in ("screen_detached", "error", "disconnected"):
+            current_status = session.status
+            if current_status in ("screen_detached", "error", "disconnected"):
                 repo.update_session(db, session.id, status="waiting")
+                current_status = "waiting"
                 logger.info(
                     "Health check: %s recovered from %s to waiting", session.name, session.status
                 )
             result = {
                 "alive": True,
-                "status": session.status,
+                "status": current_status,
                 "reason": reason,
                 "screen_status": screen_status,
                 "tunnel_alive": True,
@@ -847,8 +849,22 @@ def check_all_workers_health(
 
     for s in sessions:
         if s.status == "disconnected":
+            # Health-check first: the worker may have self-recovered (e.g.,
+            # the previous disconnect was a transient ps-aux timeout).  If
+            # the check finds Claude alive, it updates the DB to "waiting"
+            # and we can skip the heavier reconnect path.
+            try:
+                result = check_and_update_worker_health(db, s, tunnel_manager)
+                if result.get("alive"):
+                    results["checked"] += 1
+                    results["alive"].append(s.name)
+                    continue
+            except Exception as e:
+                logger.debug("Health pre-check failed for disconnected %s: %s", s.name, e)
             if s.auto_reconnect:
                 auto_reconnect_candidates.append(s)
+            else:
+                results["disconnected"].append(s.name)
             continue
         if s.status == "connecting":
             # Check if stuck connecting for too long (>10 min)
