@@ -4,6 +4,7 @@ Covers: migration, repository, API, hook generation, and reconnect logic.
 """
 
 import os
+import subprocess
 from unittest.mock import MagicMock, patch
 
 from orchestrator.state.models import Session
@@ -402,6 +403,190 @@ class TestHealthCheckUsesClaudeSessionId:
         assert alive is True
         assert mock_ps.call_count == 2
         assert mock_ps.call_args_list[1][0][0] == "claude-id-after-reconnect"
+
+    @patch('orchestrator.session.health._has_claude_in_process_tree', return_value=False)
+    @patch('orchestrator.session.health._get_pane_pid', return_value=None)
+    @patch('orchestrator.session.health.check_claude_process_local')
+    def test_pane_pid_none_skips_tree_check(self, mock_ps, mock_pane, mock_tree):
+        """When pane PID is None (tmux window gone), skip tree walk, go to ps aux."""
+        from orchestrator.session.health import check_claude_running_local
+
+        mock_ps.return_value = (True, "Claude process running")
+
+        alive, reason = check_claude_running_local(
+            "sess-id", "claude-id", "orch", "worker"
+        )
+        assert alive is True
+        # Tree check should NOT have been called (pane_pid is None)
+        mock_tree.assert_not_called()
+        # ps aux should have been called
+        mock_ps.assert_called_once_with("sess-id")
+
+    @patch('orchestrator.session.health._has_claude_in_process_tree', return_value=False)
+    @patch('orchestrator.session.health._get_pane_pid', return_value=12345)
+    @patch('orchestrator.session.health.check_claude_process_local')
+    def test_same_ids_no_duplicate_ps_call(self, mock_ps, mock_pane, mock_tree):
+        """When claude_session_id == session_id, don't call ps aux twice."""
+        from orchestrator.session.health import check_claude_running_local
+
+        mock_ps.return_value = (False, "No Claude process found for session same-id")
+
+        alive, reason = check_claude_running_local(
+            "same-id", "same-id", "orch", "worker"
+        )
+        assert alive is False
+        # Should only call once — no duplicate for same ID
+        assert mock_ps.call_count == 1
+
+    @patch('orchestrator.session.health._has_claude_in_process_tree', return_value=False)
+    @patch('orchestrator.session.health._get_pane_pid', return_value=12345)
+    @patch('orchestrator.session.health.check_claude_process_local')
+    def test_all_methods_fail_returns_false(self, mock_ps, mock_pane, mock_tree):
+        """When pane tree, session.id ps aux, and claude_session_id ps aux all fail."""
+        from orchestrator.session.health import check_claude_running_local
+
+        mock_ps.side_effect = [
+            (False, "No Claude process found for session sess-id"),
+            (False, "No Claude process found for session claude-id"),
+        ]
+
+        alive, reason = check_claude_running_local(
+            "sess-id", "claude-id", "orch", "worker"
+        )
+        assert alive is False
+        assert mock_ps.call_count == 2
+
+    @patch('orchestrator.session.health._has_claude_in_process_tree', return_value=False)
+    @patch('orchestrator.session.health._get_pane_pid', return_value=12345)
+    @patch('orchestrator.session.health.check_claude_process_local')
+    def test_none_claude_session_id_no_second_ps_call(self, mock_ps, mock_pane, mock_tree):
+        """When claude_session_id is None, only one ps aux call (session.id)."""
+        from orchestrator.session.health import check_claude_running_local
+
+        mock_ps.return_value = (False, "No Claude process found")
+
+        alive, reason = check_claude_running_local(
+            "sess-id", None, "orch", "worker"
+        )
+        assert alive is False
+        assert mock_ps.call_count == 1
+
+
+# =============================================================================
+# _has_claude_in_process_tree unit tests
+# =============================================================================
+
+class TestHasClaudeInProcessTree:
+    """Direct unit tests for _has_claude_in_process_tree."""
+
+    @patch('orchestrator.session.health.subprocess.run')
+    def test_finds_claude_as_direct_child(self, mock_run):
+        """Claude process as a direct child of root_pid."""
+        from orchestrator.session.health import _has_claude_in_process_tree
+
+        mock_run.return_value = MagicMock(
+            returncode=0,
+            stdout=(
+                "  PID  PPID ARGS\n"
+                "  100     1 /bin/bash\n"
+                "  200   100 /usr/bin/node /usr/local/bin/claude --session-id abc\n"
+            ),
+        )
+        assert _has_claude_in_process_tree(100) is True
+
+    @patch('orchestrator.session.health.subprocess.run')
+    def test_finds_claude_as_grandchild(self, mock_run):
+        """Claude process as a grandchild (bash -> node -> claude)."""
+        from orchestrator.session.health import _has_claude_in_process_tree
+
+        mock_run.return_value = MagicMock(
+            returncode=0,
+            stdout=(
+                "  PID  PPID ARGS\n"
+                "  100     1 /bin/bash\n"
+                "  200   100 /usr/bin/node wrapper.js\n"
+                "  300   200 /usr/local/bin/claude --session-id abc\n"
+            ),
+        )
+        assert _has_claude_in_process_tree(100) is True
+
+    @patch('orchestrator.session.health.subprocess.run')
+    def test_no_claude_descendant(self, mock_run):
+        """No claude process in the tree."""
+        from orchestrator.session.health import _has_claude_in_process_tree
+
+        mock_run.return_value = MagicMock(
+            returncode=0,
+            stdout=(
+                "  PID  PPID ARGS\n"
+                "  100     1 /bin/bash\n"
+                "  200   100 /usr/bin/vim file.txt\n"
+            ),
+        )
+        assert _has_claude_in_process_tree(100) is False
+
+    @patch('orchestrator.session.health.subprocess.run')
+    def test_excludes_grep_artifacts(self, mock_run):
+        """grep claude in args should not count as a match."""
+        from orchestrator.session.health import _has_claude_in_process_tree
+
+        mock_run.return_value = MagicMock(
+            returncode=0,
+            stdout=(
+                "  PID  PPID ARGS\n"
+                "  100     1 /bin/bash\n"
+                "  200   100 grep claude\n"
+            ),
+        )
+        assert _has_claude_in_process_tree(100) is False
+
+    @patch('orchestrator.session.health.subprocess.run')
+    def test_no_children_returns_false(self, mock_run):
+        """Root PID with no children returns False."""
+        from orchestrator.session.health import _has_claude_in_process_tree
+
+        mock_run.return_value = MagicMock(
+            returncode=0,
+            stdout=(
+                "  PID  PPID ARGS\n"
+                "  100     1 /bin/bash\n"
+            ),
+        )
+        assert _has_claude_in_process_tree(100) is False
+
+    @patch('orchestrator.session.health.subprocess.run')
+    def test_ps_failure_returns_false(self, mock_run):
+        """ps command failure returns False (fail-safe)."""
+        from orchestrator.session.health import _has_claude_in_process_tree
+
+        mock_run.return_value = MagicMock(returncode=1, stdout="")
+        assert _has_claude_in_process_tree(100) is False
+
+    @patch('orchestrator.session.health.subprocess.run')
+    def test_timeout_returns_false(self, mock_run):
+        """Timeout returns False (fail-safe)."""
+        from orchestrator.session.health import _has_claude_in_process_tree
+
+        mock_run.side_effect = subprocess.TimeoutExpired(cmd="ps", timeout=5)
+        assert _has_claude_in_process_tree(100) is False
+
+    @patch('orchestrator.session.health.subprocess.run')
+    def test_other_panes_claude_not_matched(self, mock_run):
+        """Claude running under a different root PID should not match."""
+        from orchestrator.session.health import _has_claude_in_process_tree
+
+        mock_run.return_value = MagicMock(
+            returncode=0,
+            stdout=(
+                "  PID  PPID ARGS\n"
+                "  100     1 /bin/bash\n"
+                "  200   100 /usr/bin/vim\n"
+                "  300     1 /bin/bash\n"
+                "  400   300 /usr/local/bin/claude --session-id other\n"
+            ),
+        )
+        # PID 100's tree has no claude; PID 300's does but we're checking 100
+        assert _has_claude_in_process_tree(100) is False
 
 
 # =============================================================================
