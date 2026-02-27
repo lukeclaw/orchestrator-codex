@@ -1,8 +1,8 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import Modal from '../common/Modal'
 import { api } from '../../api/client'
 import { useApp } from '../../context/AppContext'
-import { IconRefresh } from '../common/Icons'
+import { IconRefresh, IconServer, IconSessions, IconLaptop } from '../common/Icons'
 import './AddSessionModal.css'
 
 interface Props {
@@ -20,13 +20,30 @@ interface RdevInstance {
   worker_name?: string
 }
 
-// Generate a default worker name like "worker-a1b"
+// Generate a memorable default worker name like "swift-fox"
+const ADJECTIVES = [
+  'swift', 'bold', 'calm', 'keen', 'warm', 'cool', 'fair', 'wise',
+  'bright', 'quick', 'sharp', 'crisp', 'fresh', 'vivid', 'lucid',
+  'noble', 'brisk', 'deft', 'prime', 'grand',
+]
+const NOUNS = [
+  'fox', 'owl', 'elk', 'jay', 'ram', 'lynx', 'hawk', 'dove',
+  'wolf', 'bear', 'hare', 'wren', 'lark', 'crow', 'deer',
+  'seal', 'ibis', 'moth', 'puma', 'yak',
+]
 function generateWorkerName(): string {
-  const timestamp = Date.now().toString(36).slice(-3)
-  return `worker-${timestamp}`
+  const adj = ADJECTIVES[Math.floor(Math.random() * ADJECTIVES.length)]
+  const noun = NOUNS[Math.floor(Math.random() * NOUNS.length)]
+  return `${adj}-${noun}`
 }
 
 const WORKER_BASE_DIR = '/tmp/orchestrator/workers'
+
+const WORKER_TYPE_DESCRIPTIONS: Record<string, string> = {
+  rdev: 'Connect to a LinkedIn rdev virtual machine instance.',
+  ssh: 'Connect to any remote machine via SSH.',
+  local: 'Run a worker on your local machine.',
+}
 
 export default function AddSessionModal({ open, onClose }: Props) {
   const { refresh } = useApp()
@@ -43,6 +60,7 @@ export default function AddSessionModal({ open, onClose }: Props) {
   const [sshName, setSshName] = useState(generateWorkerName)
   const [sshHost, setSshHost] = useState('')
   const [sshWorkDir, setSshWorkDir] = useState('')
+  const [sshNameManual, setSshNameManual] = useState(false)
 
   // Shared state
   const [error, setError] = useState('')
@@ -70,11 +88,24 @@ export default function AddSessionModal({ open, onClose }: Props) {
       setSshName(generateWorkerName())
       setSshHost('')
       setSshWorkDir('')
+      setSshNameManual(false)
       setError('')
       setRdevError('')
       setTouchedFields(new Set())
     }
   }, [open])
+
+  // Auto-derive SSH name from host
+  useEffect(() => {
+    if (workerType === 'ssh' && !sshNameManual && sshHost.trim()) {
+      // Extract hostname: "user@host.example.com" → "host", "host.example.com" → "host"
+      const hostPart = sshHost.includes('@') ? sshHost.split('@')[1] : sshHost
+      const shortName = hostPart.split('.')[0]
+      if (shortName) {
+        setSshName(shortName)
+      }
+    }
+  }, [sshHost, workerType, sshNameManual])
 
   // Mark field as touched
   const touchField = (field: string) => {
@@ -109,6 +140,21 @@ export default function AddSessionModal({ open, onClose }: Props) {
   // Form is valid when all required fields are filled
   const isFormValid = validateForm()
 
+  // Compute disabled reason for tooltip
+  const disabledReason = !isFormValid
+    ? workerType === 'rdev'
+      ? 'Select an rdev instance to continue'
+      : workerType === 'ssh'
+        ? !sshHost.trim()
+          ? 'Enter an SSH host to continue'
+          : !name.trim() || hasNonAscii
+            ? 'Enter a valid worker name to continue'
+            : ''
+        : !name.trim() || hasNonAscii
+          ? 'Enter a valid worker name to continue'
+          : ''
+    : ''
+
   // Fetch rdev list (forceRefresh bypasses server cache)
   const fetchRdevs = useCallback(async (forceRefresh = false) => {
     setLoadingRdevs(true)
@@ -123,6 +169,27 @@ export default function AddSessionModal({ open, onClose }: Props) {
       setLoadingRdevs(false)
     }
   }, [])
+
+  // Sort rdevs into sections: available, in-use, stopped
+  const sortedRdevs = useMemo(() => {
+    const available: RdevInstance[] = []
+    const inUse: RdevInstance[] = []
+    const stopped: RdevInstance[] = []
+    for (const rdev of rdevs) {
+      if (rdev.state === 'RUNNING' && !rdev.in_use) {
+        available.push(rdev)
+      } else if (rdev.in_use) {
+        inUse.push(rdev)
+      } else {
+        stopped.push(rdev)
+      }
+    }
+    const byName = (a: RdevInstance, b: RdevInstance) => a.name.localeCompare(b.name)
+    available.sort(byName)
+    inUse.sort(byName)
+    stopped.sort(byName)
+    return { available, inUse, stopped }
+  }, [rdevs])
 
   // Fetch rdevs when modal opens and rdev type is selected
   useEffect(() => {
@@ -176,36 +243,78 @@ export default function AddSessionModal({ open, onClose }: Props) {
     }
   }
 
+  function renderRdevItem(rdev: RdevInstance) {
+    return (
+      <div
+        key={rdev.name}
+        role="option"
+        aria-selected={selectedRdev === rdev.name}
+        aria-disabled={rdev.in_use || rdev.state !== 'RUNNING'}
+        className={`rdev-item ${selectedRdev === rdev.name ? 'selected' : ''} ${rdev.in_use ? 'in-use' : ''} ${rdev.state !== 'RUNNING' ? 'not-running' : ''}`}
+        title={
+          rdev.in_use
+            ? `Already in use by worker "${rdev.worker_name}"`
+            : rdev.state !== 'RUNNING'
+              ? `Instance is ${rdev.state.toLowerCase()}`
+              : ''
+        }
+        onClick={() => {
+          touchField('rdev')
+          if (!rdev.in_use && rdev.state === 'RUNNING') {
+            setSelectedRdev(rdev.name)
+          }
+        }}
+      >
+        <div className="rdev-item-main">
+          <span className={`rdev-state ${rdev.state.toLowerCase()}`}>{rdev.state}</span>
+          <span className="rdev-name">{rdev.name}</span>
+        </div>
+        <div className="rdev-item-meta">
+          {rdev.in_use ? (
+            <span className="rdev-in-use">In use</span>
+          ) : (
+            <span className="rdev-accessed">{rdev.last_accessed}</span>
+          )}
+        </div>
+      </div>
+    )
+  }
+
   return (
     <Modal open={open} onClose={onClose} title="Add New Worker">
       <form onSubmit={handleSubmit} data-testid="add-session-form">
         <div className="modal-body add-worker-body">
-          <div className="modal-subtitle">Connect a local, SSH, or rdev machine to your orchestrator.</div>
-          <div className="form-group">
-            <label>Worker Type</label>
-            <div className="toggle-group" data-testid="worker-type-toggle">
+          <div className="worker-type-toggle" data-testid="worker-type-toggle">
+            <div className="toggle-group">
               <button
                 type="button"
                 className={`toggle-btn${workerType === 'rdev' ? ' active' : ''}`}
-                onClick={() => setWorkerType('rdev')}
+                onClick={() => {
+                  setWorkerType('rdev')
+                  setSshNameManual(false)
+                }}
               >
-                rdev VM
+                <IconServer size={14} /> rdev VM
               </button>
               <button
                 type="button"
                 className={`toggle-btn${workerType === 'ssh' ? ' active' : ''}`}
-                onClick={() => setWorkerType('ssh')}
+                onClick={() => {
+                  setWorkerType('ssh')
+                  setSshNameManual(false)
+                }}
               >
-                SSH
+                <IconSessions size={14} /> SSH
               </button>
               <button
                 type="button"
                 className={`toggle-btn${workerType === 'local' ? ' active' : ''}`}
                 onClick={() => setWorkerType('local')}
               >
-                Local
+                <IconLaptop size={14} /> Local
               </button>
             </div>
+            <div className="worker-type-description">{WORKER_TYPE_DESCRIPTIONS[workerType]}</div>
           </div>
 
           {workerType !== 'rdev' && (
@@ -218,9 +327,10 @@ export default function AddSessionModal({ open, onClose }: Props) {
                 onChange={e => {
                   setName(e.target.value)
                   touchField('name')
+                  if (workerType === 'ssh') setSshNameManual(true)
                 }}
                 onBlur={() => touchField('name')}
-                placeholder="e.g. api-worker"
+                placeholder={workerType === 'ssh' ? 'Auto-derived from host' : 'e.g. api-worker'}
                 className={nameError ? 'input-error' : ''}
               />
               {nameError
@@ -255,39 +365,25 @@ export default function AddSessionModal({ open, onClose }: Props) {
                 <div className="rdev-empty">No rdev instances found. Create one with <code>rdev create</code></div>
               ) : (
                 <>
-                <div className="rdev-list">
-                  {rdevs.map(rdev => (
-                    <div
-                      key={rdev.name}
-                      className={`rdev-item ${selectedRdev === rdev.name ? 'selected' : ''} ${rdev.in_use ? 'in-use' : ''} ${rdev.state !== 'RUNNING' ? 'not-running' : ''}`}
-                      title={
-                        rdev.in_use
-                          ? `Already in use by worker "${rdev.worker_name}"`
-                          : rdev.state !== 'RUNNING'
-                            ? `Instance is ${rdev.state.toLowerCase()}`
-                            : ''
-                      }
-                      onClick={() => {
-                        touchField('rdev')
-                        if (!rdev.in_use && rdev.state === 'RUNNING') {
-                          setSelectedRdev(rdev.name)
-                        }
-                      }}
-                    >
-                      <div className="rdev-item-main">
-                        <span className={`rdev-state ${rdev.state.toLowerCase()}`}>{rdev.state}</span>
-                        <span className="rdev-name">{rdev.name}</span>
-                        {rdev.cluster && <span className="rdev-cluster">{rdev.cluster}</span>}
-                      </div>
-                      <div className="rdev-item-meta">
-                        {rdev.in_use ? (
-                          <span className="rdev-in-use">Worker: {rdev.worker_name}</span>
-                        ) : (
-                          <span className="rdev-accessed">{rdev.last_accessed}</span>
-                        )}
-                      </div>
-                    </div>
-                  ))}
+                <div className="rdev-list" role="listbox" aria-label="rdev instances">
+                  {sortedRdevs.available.length > 0 && (
+                    <>
+                      <div className="rdev-section-header">Available ({sortedRdevs.available.length})</div>
+                      {sortedRdevs.available.map(renderRdevItem)}
+                    </>
+                  )}
+                  {sortedRdevs.inUse.length > 0 && (
+                    <>
+                      <div className="rdev-section-header">In Use ({sortedRdevs.inUse.length})</div>
+                      {sortedRdevs.inUse.map(renderRdevItem)}
+                    </>
+                  )}
+                  {sortedRdevs.stopped.length > 0 && (
+                    <>
+                      <div className="rdev-section-header">Stopped ({sortedRdevs.stopped.length})</div>
+                      {sortedRdevs.stopped.map(renderRdevItem)}
+                    </>
+                  )}
                 </div>
                   {rdevError2 && <div className="field-error">{rdevError2}</div>}
                 </>
@@ -348,8 +444,9 @@ export default function AddSessionModal({ open, onClose }: Props) {
             className="btn btn-primary"
             data-testid="create-session-btn"
             disabled={creating || !isFormValid}
+            title={disabledReason}
           >
-            {creating ? 'Creating...' : 'Create Worker'}
+            {creating ? <><IconRefresh size={14} className="spinning" /> Creating...</> : 'Create Worker'}
           </button>
         </div>
       </form>

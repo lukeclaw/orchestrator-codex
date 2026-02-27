@@ -174,8 +174,13 @@ select:focus {
   border-color: rgba(63,185,80,0.4);
 }
 
-.btn-primary:hover {
+.btn-primary:hover:not(:disabled) {
   background: var(--green);
+}
+
+.btn-primary:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
 }
 
 .btn-secondary {
@@ -302,7 +307,7 @@ select:focus {
   font-size: 12px;
   white-space: nowrap;
   background: var(--surface);
-  color: var(--text-muted);
+  color: var(--text-secondary);
   border: none;
   cursor: pointer;
   transition: background 0.15s, color 0.15s;

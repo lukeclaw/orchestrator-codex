@@ -13,7 +13,7 @@
   /* Text */
   --text-primary: #e6edf3;
   --text-secondary: #8b949e;
-  --text-muted: #484f58;
+  --text-muted: #6e7681;
 
   /* Accent */
   --accent: #58a6ff;
@@ -29,6 +29,11 @@
   --red-muted: #da3633;
   --orange: #db6d28;
   --purple: #a371f7;
+
+  /* Semantic aliases */
+  --danger: #f85149;
+  --success: #3fb950;
+  --warning: #d29922;
 
   /* Sizing */
   --radius: 6px;

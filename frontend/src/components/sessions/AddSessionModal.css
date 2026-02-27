@@ -1,11 +1,11 @@
-/* Fixed height so all 3 worker type tabs share the same modal size */
+/* Fixed height so modal doesn't resize when switching tabs */
 .add-worker-body {
   height: min(450px, 80vh);
   display: flex;
   flex-direction: column;
 }
 
-/* Let the rdev form-group stretch to fill remaining space */
+/* Let the last form-group stretch to fill remaining space */
 .add-worker-body > .form-group:last-of-type {
   flex: 1;
   display: flex;
@@ -13,11 +13,26 @@
   min-height: 0;
 }
 
-/* Modal subtitle */
-.modal-subtitle {
+/* More vertical breathing room between form fields */
+.add-worker-body .form-group {
+  margin-bottom: 18px;
+}
+
+/* Worker type toggle with icons and description */
+.worker-type-toggle {
+  margin-bottom: 18px;
+}
+
+.worker-type-toggle .toggle-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.worker-type-description {
+  font-size: 12px;
   color: var(--text-muted);
-  font-size: 13px;
-  margin-bottom: 16px;
+  margin-top: 8px;
   line-height: 1.4;
 }
 
@@ -54,7 +69,8 @@
   cursor: not-allowed;
 }
 
-.btn-icon .spinning {
+.btn-icon .spinning,
+.btn .spinning {
   animation: spin 1s linear infinite;
 }
 
@@ -90,6 +106,16 @@
   font-size: 12px;
 }
 
+/* Section headers for grouped rdev list */
+.rdev-section-header {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+  padding: 6px 4px 2px;
+}
+
 .rdev-list {
   display: flex;
   flex-direction: column;
@@ -121,14 +147,20 @@
 }
 
 .rdev-item.in-use {
-  opacity: 0.6;
   cursor: not-allowed;
   background: var(--surface);
 }
 
+.rdev-item.in-use .rdev-name {
+  color: var(--text-muted);
+}
+
 .rdev-item.not-running {
-  opacity: 0.5;
   cursor: not-allowed;
+}
+
+.rdev-item.not-running .rdev-name {
+  color: var(--text-muted);
 }
 
 .rdev-item-main {
@@ -164,14 +196,6 @@
   color: var(--text);
 }
 
-.rdev-cluster {
-  font-size: 10px;
-  color: var(--text-muted);
-  background: var(--surface-hover);
-  padding: 1px 5px;
-  border-radius: 3px;
-}
-
 .rdev-item-meta {
   font-size: 11px;
   color: var(--text-muted);
@@ -202,21 +226,28 @@
 }
 
 .field-error {
-  color: #f59e0b;
+  color: var(--danger);
   font-size: 12px;
   margin-top: 4px;
 }
 
 .input-error {
-  border-color: #f59e0b !important;
+  border-color: var(--danger) !important;
 }
 
 .input-error:focus {
-  box-shadow: 0 0 0 2px rgba(245, 158, 11, 0.2);
+  box-shadow: 0 0 0 2px rgba(248, 81, 73, 0.2);
 }
 
 .field-hint {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--text-muted);
   margin-top: 4px;
+}
+
+/* Create button spinner */
+.btn-primary {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
 }

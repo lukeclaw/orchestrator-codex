@@ -30,7 +30,7 @@ export default function Modal({ open, onClose, title, wide, extraWide, closeOnOu
       >
         <div className="modal-header">
           <h3>{title}</h3>
-          <button className="modal-close" onClick={onClose} data-testid="modal-close">&times;</button>
+          <button className="modal-close" onClick={onClose} data-testid="modal-close" aria-label="Close">&times;</button>
         </div>
         {children}
       </div>
