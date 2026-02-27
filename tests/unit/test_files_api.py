@@ -14,12 +14,17 @@ from fastapi import HTTPException
 from orchestrator.api.routes.files import (
     FileEntry,
     FileWriteRequest,
+    MoveRequest,
     _apply_git_status,
+    _delete_local,
+    _delete_remote,
     _detect_remote_work_dir,
     _get_git_status,
     _highest_severity,
     _human_size,
     _list_remote_dir,
+    _move_local,
+    _move_remote,
     _read_remote_file,
     _remote_content_cache,
     _remote_dir_cache,
@@ -818,3 +823,225 @@ class TestWriteFileRemote:
 
         # Cache should be invalidated
         assert cache_key not in _remote_content_cache
+
+
+# ---------------------------------------------------------------------------
+# Phase 4: Delete endpoint tests
+# ---------------------------------------------------------------------------
+
+
+class TestDeleteLocal:
+    def test_delete_file(self, tmp_path):
+        f = tmp_path / "remove_me.txt"
+        f.write_text("bye")
+        resp = _delete_local(str(tmp_path), "remove_me.txt")
+        assert resp.status == "ok"
+        assert not f.exists()
+
+    def test_delete_directory(self, tmp_path):
+        d = tmp_path / "mydir"
+        d.mkdir()
+        (d / "inner.txt").write_text("hi")
+        resp = _delete_local(str(tmp_path), "mydir")
+        assert resp.status == "ok"
+        assert not d.exists()
+
+    def test_delete_not_found(self, tmp_path):
+        with pytest.raises(HTTPException) as exc_info:
+            _delete_local(str(tmp_path), "nonexistent.txt")
+        assert exc_info.value.status_code == 404
+
+    def test_delete_path_traversal(self, tmp_path):
+        with pytest.raises(HTTPException) as exc_info:
+            _delete_local(str(tmp_path), "../outside.txt")
+        assert exc_info.value.status_code == 400
+
+
+class TestDeleteRemote:
+    @patch(
+        "orchestrator.api.routes.files.get_remote_file_server",
+        side_effect=RuntimeError("no server"),
+    )
+    @patch("orchestrator.api.routes.files._run_ssh")
+    def test_delete_remote_success(self, mock_ssh, _mock_server):
+        mock_ssh.return_value = MagicMock(
+            returncode=0,
+            stdout=json.dumps({"status": "ok"}),
+            stderr="",
+        )
+        resp = _delete_remote("host", "/work", "file.txt")
+        assert resp.status == "ok"
+
+    @patch(
+        "orchestrator.api.routes.files.get_remote_file_server",
+        side_effect=RuntimeError("no server"),
+    )
+    @patch("orchestrator.api.routes.files._run_ssh")
+    def test_delete_remote_not_found(self, mock_ssh, _mock_server):
+        mock_ssh.return_value = MagicMock(
+            returncode=1,
+            stdout=json.dumps({"error": "Not found"}),
+            stderr="",
+        )
+        with pytest.raises(HTTPException) as exc_info:
+            _delete_remote("host", "/work", "missing.txt")
+        assert exc_info.value.status_code == 404
+
+    @patch(
+        "orchestrator.api.routes.files.get_remote_file_server",
+        side_effect=RuntimeError("no server"),
+    )
+    @patch("orchestrator.api.routes.files._run_ssh")
+    def test_delete_remote_timeout(self, mock_ssh, _mock_server):
+        mock_ssh.side_effect = subprocess.TimeoutExpired(cmd="ssh", timeout=15)
+        with pytest.raises(HTTPException) as exc_info:
+            _delete_remote("host", "/work", "file.txt")
+        assert exc_info.value.status_code == 504
+
+    @patch("orchestrator.api.routes.files._run_ssh")
+    def test_delete_falls_back_when_persistent_server_returns_unknown_action(
+        self, mock_ssh
+    ):
+        """If the persistent server is running an old script that doesn't know
+        'delete', the error should trigger fallback to one-shot SSH."""
+        mock_server = MagicMock()
+        mock_server.execute.return_value = {"error": "Unknown action: delete"}
+
+        mock_ssh.return_value = MagicMock(
+            returncode=0,
+            stdout=json.dumps({"status": "ok"}),
+            stderr="",
+        )
+
+        with patch(
+            "orchestrator.api.routes.files.get_remote_file_server",
+            return_value=mock_server,
+        ):
+            resp = _delete_remote("host", "/work", "file.txt")
+
+        assert resp.status == "ok"
+        mock_ssh.assert_called_once()  # fallback was used
+
+
+# ---------------------------------------------------------------------------
+# Phase 5: Move endpoint tests
+# ---------------------------------------------------------------------------
+
+
+class TestMoveLocal:
+    def test_move_file(self, tmp_path):
+        f = tmp_path / "old.txt"
+        f.write_text("content")
+        resp = _move_local(str(tmp_path), "old.txt", "new.txt")
+        assert resp.status == "ok"
+        assert not f.exists()
+        assert (tmp_path / "new.txt").read_text() == "content"
+
+    def test_move_into_directory(self, tmp_path):
+        f = tmp_path / "file.txt"
+        f.write_text("hello")
+        d = tmp_path / "subdir"
+        d.mkdir()
+        resp = _move_local(str(tmp_path), "file.txt", "subdir/file.txt")
+        assert resp.status == "ok"
+        assert not f.exists()
+        assert (d / "file.txt").read_text() == "hello"
+
+    def test_move_creates_parent_dirs(self, tmp_path):
+        f = tmp_path / "file.txt"
+        f.write_text("data")
+        resp = _move_local(str(tmp_path), "file.txt", "deep/nested/file.txt")
+        assert resp.status == "ok"
+        assert (tmp_path / "deep" / "nested" / "file.txt").read_text() == "data"
+
+    def test_move_directory(self, tmp_path):
+        d = tmp_path / "olddir"
+        d.mkdir()
+        (d / "inner.txt").write_text("hi")
+        resp = _move_local(str(tmp_path), "olddir", "newdir")
+        assert resp.status == "ok"
+        assert not d.exists()
+        assert (tmp_path / "newdir" / "inner.txt").read_text() == "hi"
+
+    def test_move_not_found(self, tmp_path):
+        with pytest.raises(HTTPException) as exc_info:
+            _move_local(str(tmp_path), "missing.txt", "dest.txt")
+        assert exc_info.value.status_code == 404
+
+    def test_move_source_path_traversal(self, tmp_path):
+        with pytest.raises(HTTPException) as exc_info:
+            _move_local(str(tmp_path), "../outside.txt", "dest.txt")
+        assert exc_info.value.status_code == 400
+
+    def test_move_dest_path_traversal(self, tmp_path):
+        f = tmp_path / "file.txt"
+        f.write_text("data")
+        with pytest.raises(HTTPException) as exc_info:
+            _move_local(str(tmp_path), "file.txt", "../outside.txt")
+        assert exc_info.value.status_code == 400
+
+
+class TestMoveRemote:
+    @patch(
+        "orchestrator.api.routes.files.get_remote_file_server",
+        side_effect=RuntimeError("no server"),
+    )
+    @patch("orchestrator.api.routes.files._run_ssh")
+    def test_move_remote_success(self, mock_ssh, _mock_server):
+        mock_ssh.return_value = MagicMock(
+            returncode=0,
+            stdout=json.dumps({"status": "ok"}),
+            stderr="",
+        )
+        resp = _move_remote("host", "/work", "old.txt", "new.txt")
+        assert resp.status == "ok"
+
+    @patch(
+        "orchestrator.api.routes.files.get_remote_file_server",
+        side_effect=RuntimeError("no server"),
+    )
+    @patch("orchestrator.api.routes.files._run_ssh")
+    def test_move_remote_not_found(self, mock_ssh, _mock_server):
+        mock_ssh.return_value = MagicMock(
+            returncode=1,
+            stdout=json.dumps({"error": "Not found"}),
+            stderr="",
+        )
+        with pytest.raises(HTTPException) as exc_info:
+            _move_remote("host", "/work", "missing.txt", "dest.txt")
+        assert exc_info.value.status_code == 404
+
+    @patch(
+        "orchestrator.api.routes.files.get_remote_file_server",
+        side_effect=RuntimeError("no server"),
+    )
+    @patch("orchestrator.api.routes.files._run_ssh")
+    def test_move_remote_timeout(self, mock_ssh, _mock_server):
+        mock_ssh.side_effect = subprocess.TimeoutExpired(cmd="ssh", timeout=15)
+        with pytest.raises(HTTPException) as exc_info:
+            _move_remote("host", "/work", "old.txt", "new.txt")
+        assert exc_info.value.status_code == 504
+
+    @patch("orchestrator.api.routes.files._run_ssh")
+    def test_move_falls_back_when_persistent_server_returns_unknown_action(
+        self, mock_ssh
+    ):
+        """If the persistent server is running an old script that doesn't know
+        'move', the error should trigger fallback to one-shot SSH."""
+        mock_server = MagicMock()
+        mock_server.execute.return_value = {"error": "Unknown action: move"}
+
+        mock_ssh.return_value = MagicMock(
+            returncode=0,
+            stdout=json.dumps({"status": "ok"}),
+            stderr="",
+        )
+
+        with patch(
+            "orchestrator.api.routes.files.get_remote_file_server",
+            return_value=mock_server,
+        ):
+            resp = _move_remote("host", "/work", "old.txt", "new.txt")
+
+        assert resp.status == "ok"
+        mock_ssh.assert_called_once()  # fallback was used

@@ -24,6 +24,10 @@ Verify all changes with tests. Aim for full coverage of new and modified code pa
 - Cover happy path, error cases, and edge cases
 - Use `uv run pytest <test_file> -v -o "addopts="` to run specific test files
 
+## Frontend — Tauri Compatibility
+
+Never use `window.confirm()`, `window.alert()`, `window.prompt()`, or any other native browser dialogs. They do not work in the Tauri webview. Instead, use the `<ConfirmPopover>` component (`components/common/ConfirmPopover.tsx`) for destructive action confirmations, which supports danger/warning/default variants and smart positioning.
+
 ## Design Docs
 
 The design documents are at `docs/` folder. Keep it updated for relavent topics, and add new topics for major changes or feature additions.

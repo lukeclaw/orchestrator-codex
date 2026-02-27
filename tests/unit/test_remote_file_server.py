@@ -286,6 +286,167 @@ class TestRemoteFileServerScript:
             proc.kill()
             proc.wait()
 
+    def test_delete_file(self, tmp_path):
+        (tmp_path / "doomed.txt").write_text("delete me")
+
+        proc = self._start_local_server()
+        try:
+            resp = self._send_command(
+                proc,
+                {
+                    "action": "delete",
+                    "work_dir": str(tmp_path),
+                    "path": "doomed.txt",
+                },
+            )
+            assert resp == {"status": "ok"}
+            assert not (tmp_path / "doomed.txt").exists()
+        finally:
+            proc.stdin.close()
+            proc.kill()
+            proc.wait()
+
+    def test_delete_directory(self, tmp_path):
+        d = tmp_path / "mydir"
+        d.mkdir()
+        (d / "inner.txt").write_text("hi")
+
+        proc = self._start_local_server()
+        try:
+            resp = self._send_command(
+                proc,
+                {
+                    "action": "delete",
+                    "work_dir": str(tmp_path),
+                    "path": "mydir",
+                },
+            )
+            assert resp == {"status": "ok"}
+            assert not d.exists()
+        finally:
+            proc.stdin.close()
+            proc.kill()
+            proc.wait()
+
+    def test_delete_not_found(self, tmp_path):
+        proc = self._start_local_server()
+        try:
+            resp = self._send_command(
+                proc,
+                {
+                    "action": "delete",
+                    "work_dir": str(tmp_path),
+                    "path": "nonexistent.txt",
+                },
+            )
+            assert "error" in resp
+            assert "not found" in resp["error"].lower()
+        finally:
+            proc.stdin.close()
+            proc.kill()
+            proc.wait()
+
+    def test_delete_work_dir_rejected(self, tmp_path):
+        proc = self._start_local_server()
+        try:
+            resp = self._send_command(
+                proc,
+                {
+                    "action": "delete",
+                    "work_dir": str(tmp_path),
+                    "path": ".",
+                },
+            )
+            assert "error" in resp
+        finally:
+            proc.stdin.close()
+            proc.kill()
+            proc.wait()
+
+    def test_move_rename_file(self, tmp_path):
+        (tmp_path / "old.txt").write_text("content")
+
+        proc = self._start_local_server()
+        try:
+            resp = self._send_command(
+                proc,
+                {
+                    "action": "move",
+                    "work_dir": str(tmp_path),
+                    "from_path": "old.txt",
+                    "to_path": "new.txt",
+                },
+            )
+            assert resp == {"status": "ok"}
+            assert not (tmp_path / "old.txt").exists()
+            assert (tmp_path / "new.txt").read_text() == "content"
+        finally:
+            proc.stdin.close()
+            proc.kill()
+            proc.wait()
+
+    def test_move_into_directory(self, tmp_path):
+        (tmp_path / "file.txt").write_text("hello")
+        (tmp_path / "subdir").mkdir()
+
+        proc = self._start_local_server()
+        try:
+            resp = self._send_command(
+                proc,
+                {
+                    "action": "move",
+                    "work_dir": str(tmp_path),
+                    "from_path": "file.txt",
+                    "to_path": "subdir/file.txt",
+                },
+            )
+            assert resp == {"status": "ok"}
+            assert (tmp_path / "subdir" / "file.txt").read_text() == "hello"
+        finally:
+            proc.stdin.close()
+            proc.kill()
+            proc.wait()
+
+    def test_move_creates_parent_dirs(self, tmp_path):
+        (tmp_path / "file.txt").write_text("data")
+
+        proc = self._start_local_server()
+        try:
+            resp = self._send_command(
+                proc,
+                {
+                    "action": "move",
+                    "work_dir": str(tmp_path),
+                    "from_path": "file.txt",
+                    "to_path": "deep/nested/file.txt",
+                },
+            )
+            assert resp == {"status": "ok"}
+            assert (tmp_path / "deep" / "nested" / "file.txt").read_text() == "data"
+        finally:
+            proc.stdin.close()
+            proc.kill()
+            proc.wait()
+
+    def test_move_not_found(self, tmp_path):
+        proc = self._start_local_server()
+        try:
+            resp = self._send_command(
+                proc,
+                {
+                    "action": "move",
+                    "work_dir": str(tmp_path),
+                    "from_path": "missing.txt",
+                    "to_path": "dest.txt",
+                },
+            )
+            assert "error" in resp
+            assert "not found" in resp["error"].lower()
+        finally:
+            proc.stdin.close()
+            proc.kill()
+            proc.wait()
+
     def test_multiple_commands(self, tmp_path):
         """Verify the server handles multiple sequential commands."""
         (tmp_path / "a.py").write_text("file a")

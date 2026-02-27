@@ -294,46 +294,15 @@
   50% { opacity: 0.8; }
 }
 
-/* Empty state */
-.fe-empty {
-  padding: 16px;
-  text-align: center;
-  color: var(--text-muted);
-  font-size: 12px;
+/* Drag and drop */
+.fe-node--drop-target {
+  background: rgba(88, 166, 255, 0.15);
+  outline: 1px dashed var(--blue, #58a6ff);
+  outline-offset: -1px;
 }
 
-/* View mode tabs */
-.fe-tabs {
-  display: flex;
-  border-top: 1px solid var(--border-subtle);
-  flex-shrink: 0;
-}
-
-.fe-tab {
-  flex: 1;
-  padding: 6px;
-  background: none;
-  border: none;
-  color: var(--text-muted);
-  font-size: 11px;
-  cursor: pointer;
-  transition: color 0.15s, background 0.15s;
-  text-align: center;
-}
-
-.fe-tab:hover:not(:disabled) {
-  color: var(--text-secondary);
-  background: var(--surface-hover);
-}
-
-.fe-tab--active {
-  color: var(--text-primary);
-  border-bottom: 2px solid var(--accent);
-}
-
-.fe-tab:disabled {
+.fe-node--dragging {
   opacity: 0.4;
-  cursor: not-allowed;
 }
 
 /* Resize handle — 1px divider that widens on hover */
@@ -409,11 +378,6 @@
   padding: 1px 6px;
   outline: none;
   font-family: inherit;
-}
-
-/* Changed file view */
-.fe-node--changed {
-  padding-left: 8px;
 }
 
 /* Reduced motion */

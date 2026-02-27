@@ -56,6 +56,8 @@ export interface EditorTabsAPI {
   saveTab(path: string): Promise<boolean>
   isDirty(path: string): boolean
   hasAnyDirty: boolean
+  closeTabsByPrefix(prefix: string): void
+  renameTabPaths(oldPrefix: string, newPrefix: string): void
 }
 
 // ---------------------------------------------------------------------------
@@ -557,6 +559,49 @@ export function useEditorTabs(sessionId: string): EditorTabsAPI {
     return tab.originalContent !== tab.currentContent
   }, [tabs])
 
+  // ------- closeTabsByPrefix -------
+  const closeTabsByPrefix = useCallback((prefix: string) => {
+    setTabs(prev => {
+      const next = prev.filter(t => t.path !== prefix && !t.path.startsWith(prefix + '/'))
+      // Cancel inflight fetches for removed tabs
+      for (const t of prev) {
+        if (t.path === prefix || t.path.startsWith(prefix + '/')) {
+          const ctrl = abortControllers.current.get(t.path)
+          if (ctrl) ctrl.abort()
+        }
+      }
+      setActiveTabPath(current => {
+        if (current && (current === prefix || current.startsWith(prefix + '/'))) {
+          return next.length > 0 ? next[next.length - 1].path : null
+        }
+        return current
+      })
+      return next
+    })
+  }, [])
+
+  // ------- renameTabPaths -------
+  const renameTabPaths = useCallback((oldPrefix: string, newPrefix: string) => {
+    setTabs(prev => prev.map(t => {
+      if (t.path === oldPrefix) {
+        const newPath = newPrefix
+        return { ...t, path: newPath, fileName: extractFileName(newPath) }
+      }
+      if (t.path.startsWith(oldPrefix + '/')) {
+        const newPath = newPrefix + t.path.slice(oldPrefix.length)
+        return { ...t, path: newPath, fileName: extractFileName(newPath) }
+      }
+      return t
+    }))
+    setActiveTabPath(current => {
+      if (current === oldPrefix) return newPrefix
+      if (current && current.startsWith(oldPrefix + '/')) {
+        return newPrefix + current.slice(oldPrefix.length)
+      }
+      return current
+    })
+  }, [])
+
   // ------- hasAnyDirty -------
   const hasAnyDirty = tabs.some(t => {
     if (t.isNew) return (t.currentContent ?? '') !== ''
@@ -578,5 +623,7 @@ export function useEditorTabs(sessionId: string): EditorTabsAPI {
     saveTab,
     isDirty,
     hasAnyDirty,
+    closeTabsByPrefix,
+    renameTabPaths,
   }
 }

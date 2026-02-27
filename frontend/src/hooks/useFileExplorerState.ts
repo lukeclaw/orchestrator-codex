@@ -3,15 +3,12 @@ import { loadCachedExplorerOpen, saveCachedExplorerOpen } from './useEditorTabs'
 
 const WIDTH_KEY = 'fe-width'
 const VIEWER_RATIO_KEY = 'fe-viewer-ratio'
-const VIEW_MODE_KEY = 'fe-view-mode'
 const SHOW_IGNORED_KEY = 'fe-show-ignored'
 
 const DEFAULT_WIDTH = 240
 const MIN_WIDTH = 180
 const MAX_WIDTH = 400
 const DEFAULT_VIEWER_RATIO = 0.5
-
-export type ViewMode = 'files' | 'changed'
 
 export function useFileExplorerState(sessionId?: string) {
   const [open, setOpen] = useState(() => sessionId ? loadCachedExplorerOpen(sessionId) : false)
@@ -28,13 +25,6 @@ export function useFileExplorerState(sessionId?: string) {
       const stored = localStorage.getItem(VIEWER_RATIO_KEY)
       return stored ? Math.max(0.2, Math.min(0.8, parseFloat(stored))) : DEFAULT_VIEWER_RATIO
     } catch { return DEFAULT_VIEWER_RATIO }
-  })
-
-  const [viewMode, setViewMode] = useState<ViewMode>(() => {
-    try {
-      const stored = localStorage.getItem(VIEW_MODE_KEY)
-      return stored === 'changed' ? 'changed' : 'files'
-    } catch { return 'files' }
   })
 
   const [showIgnored, setShowIgnored] = useState(() => {
@@ -62,11 +52,6 @@ export function useFileExplorerState(sessionId?: string) {
     try { localStorage.setItem(VIEWER_RATIO_KEY, String(clamped)) } catch {}
   }, [])
 
-  const updateViewMode = useCallback((mode: ViewMode) => {
-    setViewMode(mode)
-    try { localStorage.setItem(VIEW_MODE_KEY, mode) } catch {}
-  }, [])
-
   const toggleShowIgnored = useCallback(() => {
     setShowIgnored(prev => {
       const next = !prev
@@ -82,8 +67,6 @@ export function useFileExplorerState(sessionId?: string) {
     updateWidth,
     viewerHeightRatio,
     updateViewerHeightRatio,
-    viewMode,
-    updateViewMode,
     showIgnored,
     toggleShowIgnored,
     MIN_WIDTH,

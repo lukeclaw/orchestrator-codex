@@ -7,6 +7,7 @@ import json
 import logging
 import mimetypes
 import os
+import shutil
 import subprocess
 import tempfile
 import textwrap
@@ -1407,3 +1408,239 @@ def _read_remote_raw(host: str, work_dir: str, path: str, content_type: str) -> 
         raise HTTPException(status_code=413, detail="File too large (>10MB)")
 
     return Response(content=result.stdout, media_type=content_type)
+
+
+# ---------------------------------------------------------------------------
+# Delete file/directory
+# ---------------------------------------------------------------------------
+class DeleteResponse(BaseModel):
+    status: str
+
+
+def _validate_not_root(path: str) -> None:
+    """Reject attempts to delete/move the work_dir root itself."""
+    normalized = os.path.normpath(path)
+    if normalized in (".", ""):
+        raise HTTPException(status_code=400, detail="Cannot operate on work_dir root")
+
+
+@router.delete("/sessions/{session_id}/files")
+def delete_file(
+    session_id: str,
+    path: str = Query(..., description="Relative path to delete"),
+    db=Depends(get_db),
+) -> DeleteResponse:
+    """Delete a file or directory."""
+    _check_rate_limit(session_id)
+    _validate_path(path)
+    _validate_not_root(path)
+    info = _resolve_session(db, session_id)
+
+    if info.is_remote:
+        return _delete_remote(info.host, info.work_dir, path)
+    return _delete_local(info.work_dir, path)
+
+
+def _delete_local(work_dir: str, path: str) -> DeleteResponse:
+    abs_path = os.path.normpath(os.path.join(work_dir, path))
+    if not abs_path.startswith(os.path.normpath(work_dir) + os.sep):
+        raise HTTPException(status_code=400, detail="Path outside work_dir")
+    if os.path.isdir(abs_path):
+        shutil.rmtree(abs_path)
+    elif os.path.isfile(abs_path) or os.path.islink(abs_path):
+        os.remove(abs_path)
+    else:
+        raise HTTPException(status_code=404, detail="Not found")
+    # Invalidate caches
+    for key in list(_remote_content_cache.keys()):
+        if f"::{path}::" in key:
+            _remote_content_cache.pop(key, None)
+    return DeleteResponse(status="ok")
+
+
+_REMOTE_DELETE_SCRIPT = textwrap.dedent("""\
+    import json, os, shutil, sys
+
+    work_dir = sys.argv[1]
+    rel_path = sys.argv[2]
+
+    target = os.path.normpath(os.path.join(work_dir, rel_path))
+    if not target.startswith(os.path.normpath(work_dir) + os.sep):
+        print(json.dumps({"error": "Path outside work_dir"}))
+        sys.exit(1)
+    if os.path.isdir(target):
+        shutil.rmtree(target)
+    elif os.path.isfile(target) or os.path.islink(target):
+        os.remove(target)
+    else:
+        print(json.dumps({"error": "Not found"}))
+        sys.exit(1)
+    print(json.dumps({"status": "ok"}))
+""")
+
+
+def _delete_remote_fallback(host: str, work_dir: str, path: str) -> DeleteResponse:
+    _acquire_ssh_slot(host)
+    try:
+        result = _run_ssh(host, _REMOTE_DELETE_SCRIPT, [work_dir, path])
+    except subprocess.TimeoutExpired:
+        raise HTTPException(status_code=504, detail="Remote delete timed out")
+    finally:
+        _release_ssh_slot(host)
+
+    if result.returncode != 0:
+        try:
+            err = json.loads(result.stdout)
+            detail = err.get("error", "Remote delete failed")
+        except (json.JSONDecodeError, KeyError):
+            detail = result.stderr.strip() or "Remote delete failed"
+        if "not found" in detail.lower():
+            raise HTTPException(status_code=404, detail=detail)
+        raise HTTPException(status_code=502, detail=detail)
+
+    return DeleteResponse(status="ok")
+
+
+def _delete_remote(host: str, work_dir: str, path: str) -> DeleteResponse:
+    try:
+        server = get_remote_file_server(host)
+        data = server.execute(
+            {"action": "delete", "work_dir": work_dir, "path": path}
+        )
+        if "error" in data:
+            # Any error from persistent server → fall back to one-shot SSH
+            # so stale servers (missing new handlers) degrade gracefully.
+            raise RuntimeError(data["error"])
+        return DeleteResponse(status="ok")
+    except (RuntimeError, OSError, json.JSONDecodeError) as exc:
+        logger.warning(
+            "Persistent server failed for delete on %s, falling back: %s",
+            host,
+            exc,
+        )
+        return _delete_remote_fallback(host, work_dir, path)
+
+
+# ---------------------------------------------------------------------------
+# Move / Rename file or directory
+# ---------------------------------------------------------------------------
+class MoveRequest(BaseModel):
+    from_path: str
+    to_path: str
+
+
+class MoveResponse(BaseModel):
+    status: str
+
+
+@router.post("/sessions/{session_id}/files/move")
+def move_file(
+    session_id: str,
+    body: MoveRequest,
+    db=Depends(get_db),
+) -> MoveResponse:
+    """Move or rename a file/directory."""
+    _check_rate_limit(session_id)
+    _validate_path(body.from_path)
+    _validate_path(body.to_path)
+    _validate_not_root(body.from_path)
+    info = _resolve_session(db, session_id)
+
+    if info.is_remote:
+        return _move_remote(info.host, info.work_dir, body.from_path, body.to_path)
+    return _move_local(info.work_dir, body.from_path, body.to_path)
+
+
+def _move_local(work_dir: str, from_path: str, to_path: str) -> MoveResponse:
+    norm_work = os.path.normpath(work_dir)
+    src = os.path.normpath(os.path.join(work_dir, from_path))
+    dst = os.path.normpath(os.path.join(work_dir, to_path))
+    if not src.startswith(norm_work + os.sep):
+        raise HTTPException(status_code=400, detail="Source path outside work_dir")
+    if not dst.startswith(norm_work + os.sep):
+        raise HTTPException(status_code=400, detail="Destination path outside work_dir")
+    if not os.path.exists(src):
+        raise HTTPException(status_code=404, detail="Not found")
+    os.makedirs(os.path.dirname(dst), exist_ok=True)
+    shutil.move(src, dst)
+    # Invalidate caches
+    for key in list(_remote_content_cache.keys()):
+        if f"::{from_path}::" in key:
+            _remote_content_cache.pop(key, None)
+    return MoveResponse(status="ok")
+
+
+_REMOTE_MOVE_SCRIPT = textwrap.dedent("""\
+    import json, os, shutil, sys
+
+    work_dir = sys.argv[1]
+    from_path = sys.argv[2]
+    to_path = sys.argv[3]
+
+    norm_work = os.path.normpath(work_dir)
+    src = os.path.normpath(os.path.join(work_dir, from_path))
+    dst = os.path.normpath(os.path.join(work_dir, to_path))
+    if not src.startswith(norm_work + os.sep):
+        print(json.dumps({"error": "Source path outside work_dir"}))
+        sys.exit(1)
+    if not dst.startswith(norm_work + os.sep):
+        print(json.dumps({"error": "Destination path outside work_dir"}))
+        sys.exit(1)
+    if not os.path.exists(src):
+        print(json.dumps({"error": "Not found"}))
+        sys.exit(1)
+    os.makedirs(os.path.dirname(dst), exist_ok=True)
+    shutil.move(src, dst)
+    print(json.dumps({"status": "ok"}))
+""")
+
+
+def _move_remote_fallback(
+    host: str, work_dir: str, from_path: str, to_path: str,
+) -> MoveResponse:
+    _acquire_ssh_slot(host)
+    try:
+        result = _run_ssh(host, _REMOTE_MOVE_SCRIPT, [work_dir, from_path, to_path])
+    except subprocess.TimeoutExpired:
+        raise HTTPException(status_code=504, detail="Remote move timed out")
+    finally:
+        _release_ssh_slot(host)
+
+    if result.returncode != 0:
+        try:
+            err = json.loads(result.stdout)
+            detail = err.get("error", "Remote move failed")
+        except (json.JSONDecodeError, KeyError):
+            detail = result.stderr.strip() or "Remote move failed"
+        if "not found" in detail.lower():
+            raise HTTPException(status_code=404, detail=detail)
+        raise HTTPException(status_code=502, detail=detail)
+
+    return MoveResponse(status="ok")
+
+
+def _move_remote(
+    host: str, work_dir: str, from_path: str, to_path: str,
+) -> MoveResponse:
+    try:
+        server = get_remote_file_server(host)
+        data = server.execute(
+            {
+                "action": "move",
+                "work_dir": work_dir,
+                "from_path": from_path,
+                "to_path": to_path,
+            }
+        )
+        if "error" in data:
+            # Any error from persistent server → fall back to one-shot SSH
+            # so stale servers (missing new handlers) degrade gracefully.
+            raise RuntimeError(data["error"])
+        return MoveResponse(status="ok")
+    except (RuntimeError, OSError, json.JSONDecodeError) as exc:
+        logger.warning(
+            "Persistent server failed for move on %s, falling back: %s",
+            host,
+            exc,
+        )
+        return _move_remote_fallback(host, work_dir, from_path, to_path)

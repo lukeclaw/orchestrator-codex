@@ -9,7 +9,6 @@ import {
   IconFilter,
   IconX,
 } from '../common/Icons'
-import type { ViewMode } from '../../hooks/useFileExplorerState'
 import './FileExplorerPanel.css'
 
 // --- Types ---
@@ -51,10 +50,10 @@ interface FileExplorerPanelProps {
   onFileDoubleClick?: (path: string) => void
   onNewFile?: (dirPath: string, fileName: string) => Promise<boolean>
   selectedFile: string | null
-  viewMode: ViewMode
-  onViewModeChange: (mode: ViewMode) => void
   showIgnored: boolean
   onToggleIgnored: () => void
+  onFileDeleted?: (path: string) => void
+  onFileRenamed?: (oldPath: string, newPath: string) => void
 }
 
 // --- Helpers ---
@@ -87,6 +86,22 @@ function entriesToNodes(entries: FileEntry[], oldNodes?: TreeNode[]): TreeNode[]
   })
 }
 
+/** Extract the file/folder name from a path. */
+function extractName(path: string): string {
+  return path.split('/').pop() || path
+}
+
+/** Get the parent directory path from a relative path. */
+function parentDir(path: string): string {
+  const parts = path.split('/')
+  return parts.length > 1 ? parts.slice(0, -1).join('/') : ''
+}
+
+/** Check if ancestor is a parent of descendant. */
+function isAncestor(ancestor: string, descendant: string): boolean {
+  return descendant === ancestor || descendant.startsWith(ancestor + '/')
+}
+
 // --- Component ---
 
 export default function FileExplorerPanel({
@@ -99,10 +114,10 @@ export default function FileExplorerPanel({
   onFileDoubleClick,
   onNewFile,
   selectedFile,
-  viewMode,
-  onViewModeChange,
   showIgnored,
   onToggleIgnored,
+  onFileDeleted,
+  onFileRenamed,
 }: FileExplorerPanelProps) {
   const notify = useNotify()
   const [tree, setTreeRaw] = useState<TreeNode[]>([])
@@ -115,8 +130,6 @@ export default function FileExplorerPanel({
       return next
     })
   }, [])
-  const [changedFiles, setChangedFiles] = useState<FileEntry[]>([])
-  const [gitAvailable, setGitAvailable] = useState(false)
   const [rootLoading, setRootLoading] = useState(false)
   const [filterText, setFilterText] = useState('')
   const [showFilter, setShowFilter] = useState(false)
@@ -126,6 +139,13 @@ export default function FileExplorerPanel({
   const [newFileInput, setNewFileInput] = useState<{ dirPath: string; depth: number } | null>(null)
   const newFileInputRef = useRef<HTMLInputElement>(null)
   const newFileSubmittedRef = useRef(false)
+  // Inline rename input
+  const [renameTarget, setRenameTarget] = useState<{ path: string; depth: number } | null>(null)
+  const renameInputRef = useRef<HTMLInputElement>(null)
+  const renameSubmittedRef = useRef(false)
+  // Drag and drop
+  const [dragPath, setDragPath] = useState<string | null>(null)
+  const [dropTarget, setDropTarget] = useState<string | null>(null)
   const filterInputRef = useRef<HTMLInputElement>(null)
   const treeRef = useRef<HTMLDivElement>(null)
 
@@ -145,13 +165,8 @@ export default function FileExplorerPanel({
     refreshingRef.current = true
     setRootLoading(true)
     try {
-      const { entries, gitAvailable: ga } = await fetchDir('.', 5)
+      const { entries } = await fetchDir('.', 5)
       setTree(prev => entriesToNodes(entries, prev))
-      setGitAvailable(ga)
-      // For "changed" view, collect all files with git status
-      if (ga) {
-        setChangedFiles(entries.filter(e => e.git_status && e.git_status !== 'ignored'))
-      }
     } catch {
       // Silently fail - work_dir may not exist yet
     } finally {
@@ -316,6 +331,119 @@ export default function FileExplorerPanel({
     setNewFileInput(null)
   }, [])
 
+  // Delete handler — right-click → Delete is already intentional, no confirmation needed
+  const handleDelete = useCallback(async (path: string) => {
+    setContextMenu(null)
+    try {
+      await api(`/api/sessions/${sessionId}/files?path=${encodeURIComponent(path)}`, { method: 'DELETE' })
+      onFileDeleted?.(path)
+      loadRoot()
+    } catch (e) {
+      notify(e instanceof Error ? e.message : 'Failed to delete', 'error')
+    }
+  }, [sessionId, onFileDeleted, loadRoot, notify])
+
+  // Rename handler — show inline input
+  const handleRenameStart = useCallback((path: string) => {
+    setContextMenu(null)
+    // Compute depth for the inline input
+    const parts = path.split('/')
+    const depth = parts.length - 1
+    renameSubmittedRef.current = false
+    setRenameTarget({ path, depth })
+    setTimeout(() => {
+      const input = renameInputRef.current
+      if (input) {
+        input.focus()
+        // Select filename without extension for files
+        const name = extractName(path)
+        const dotIdx = name.lastIndexOf('.')
+        if (dotIdx > 0) {
+          input.setSelectionRange(0, dotIdx)
+        } else {
+          input.select()
+        }
+      }
+    }, 0)
+  }, [])
+
+  const handleRenameSubmit = useCallback(async (value: string) => {
+    if (renameSubmittedRef.current) return
+    if (!renameTarget) return
+    renameSubmittedRef.current = true
+    const newName = value.trim()
+    setRenameTarget(null)
+    if (!newName || newName === extractName(renameTarget.path)) return
+    const parent = parentDir(renameTarget.path)
+    const newPath = parent ? `${parent}/${newName}` : newName
+    try {
+      await api(`/api/sessions/${sessionId}/files/move`, {
+        method: 'POST',
+        body: JSON.stringify({ from_path: renameTarget.path, to_path: newPath }),
+      })
+      onFileRenamed?.(renameTarget.path, newPath)
+      loadRoot()
+    } catch (e) {
+      notify(e instanceof Error ? e.message : 'Failed to rename', 'error')
+    }
+  }, [renameTarget, sessionId, onFileRenamed, loadRoot, notify])
+
+  const handleRenameCancel = useCallback(() => {
+    setRenameTarget(null)
+  }, [])
+
+  // Drag and drop — move via API
+  const handleDragStart = useCallback((e: React.DragEvent, path: string) => {
+    e.dataTransfer.setData('text/plain', path)
+    e.dataTransfer.effectAllowed = 'move'
+    setDragPath(path)
+  }, [])
+
+  const handleDragOver = useCallback((e: React.DragEvent, targetPath: string) => {
+    e.preventDefault()
+    e.dataTransfer.dropEffect = 'move'
+    if (targetPath !== dropTarget) {
+      setDropTarget(targetPath)
+    }
+  }, [dropTarget])
+
+  const handleDragLeave = useCallback(() => {
+    setDropTarget(null)
+  }, [])
+
+  const handleDragEnd = useCallback(() => {
+    setDragPath(null)
+    setDropTarget(null)
+  }, [])
+
+  const handleDrop = useCallback(async (e: React.DragEvent, targetDir: string) => {
+    e.preventDefault()
+    setDropTarget(null)
+    setDragPath(null)
+    const sourcePath = e.dataTransfer.getData('text/plain')
+    if (!sourcePath) return
+
+    // Validation
+    if (sourcePath === targetDir) return // drop onto self
+    if (isAncestor(sourcePath, targetDir)) return // can't drop parent into child
+    const sourceParent = parentDir(sourcePath)
+    if (sourceParent === targetDir || (sourceParent === '' && targetDir === '.')) return // same dir = no-op
+
+    const fileName = extractName(sourcePath)
+    const toPath = targetDir === '.' || targetDir === '' ? fileName : `${targetDir}/${fileName}`
+
+    try {
+      await api(`/api/sessions/${sessionId}/files/move`, {
+        method: 'POST',
+        body: JSON.stringify({ from_path: sourcePath, to_path: toPath }),
+      })
+      onFileRenamed?.(sourcePath, toPath)
+      loadRoot()
+    } catch (e) {
+      notify(e instanceof Error ? e.message : 'Failed to move', 'error')
+    }
+  }, [sessionId, onFileRenamed, loadRoot, notify])
+
   // Keyboard navigation
   const handleKeyDown = useCallback((e: KeyboardEvent<HTMLDivElement>) => {
     if (e.key === '/') {
@@ -466,6 +594,9 @@ export default function FileExplorerPanel({
               setContextMenu({ x: e.clientX, y: e.clientY, path: '.' })
             }
           }}
+          onDragOver={e => handleDragOver(e, '.')}
+          onDragLeave={handleDragLeave}
+          onDrop={e => handleDrop(e, '.')}
         >
           {rootLoading && tree.length === 0 ? (
             <div className="fe-skeleton">
@@ -476,7 +607,7 @@ export default function FileExplorerPanel({
                 </div>
               ))}
             </div>
-          ) : viewMode === 'files' ? (
+          ) : (
             <>
               {/* New file input at root level */}
               {newFileInput && (newFileInput.dirPath === '.' || newFileInput.dirPath === '') && (
@@ -502,15 +633,24 @@ export default function FileExplorerPanel({
                 const showNewFileAfter = newFileInput
                   && node.is_dir && node.expanded
                   && node.path === newFileInput.dirPath
+                const isRenaming = renameTarget?.path === node.path
+                const isDragging = dragPath === node.path
+                const isDropTarget = dropTarget === node.path && node.is_dir
                 return (
                   <React.Fragment key={node.path}>
                     <div
-                      className={`fe-node ${node.path === selectedFile ? 'fe-node--selected' : ''} ${focusIndex === i ? 'fe-node--focused' : ''} ${node.git_status ? `fe-node--git-${node.git_status}` : ''} ${dimmed ? 'fe-node--dimmed' : ''}`}
+                      className={`fe-node ${node.path === selectedFile ? 'fe-node--selected' : ''} ${focusIndex === i ? 'fe-node--focused' : ''} ${node.git_status ? `fe-node--git-${node.git_status}` : ''} ${dimmed ? 'fe-node--dimmed' : ''} ${isDragging ? 'fe-node--dragging' : ''} ${isDropTarget ? 'fe-node--drop-target' : ''}`}
                       style={{ paddingLeft: depth * 16 + 4 }}
                       role="treeitem"
                       aria-expanded={node.is_dir ? node.expanded : undefined}
                       aria-level={depth + 1}
                       aria-selected={node.path === selectedFile}
+                      draggable={!isRenaming}
+                      onDragStart={e => handleDragStart(e, node.path)}
+                      onDragEnd={handleDragEnd}
+                      onDragOver={node.is_dir ? e => { e.stopPropagation(); handleDragOver(e, node.path) } : undefined}
+                      onDragLeave={node.is_dir ? handleDragLeave : undefined}
+                      onDrop={node.is_dir ? e => { e.stopPropagation(); handleDrop(e, node.path) } : undefined}
                       onClick={() => {
                         setFocusIndex(i)
                         if (node.is_dir) {
@@ -551,11 +691,26 @@ export default function FileExplorerPanel({
                         }
                       </span>
 
-                      {/* Name */}
-                      <span className="fe-name">{node.name}</span>
+                      {/* Name or inline rename input */}
+                      {isRenaming ? (
+                        <input
+                          ref={renameInputRef}
+                          className="fe-new-file-input"
+                          defaultValue={node.name}
+                          onKeyDown={e => {
+                            e.stopPropagation()
+                            if (e.key === 'Enter') handleRenameSubmit((e.target as HTMLInputElement).value)
+                            if (e.key === 'Escape') handleRenameCancel()
+                          }}
+                          onBlur={e => handleRenameSubmit(e.target.value)}
+                          onClick={e => e.stopPropagation()}
+                        />
+                      ) : (
+                        <span className="fe-name">{node.name}</span>
+                      )}
 
                       {/* Meta: git badge */}
-                      {node.git_status && GIT_BADGE[node.git_status] && (
+                      {!isRenaming && node.git_status && GIT_BADGE[node.git_status] && (
                         <span className={`fe-git-badge fe-git-badge--${node.git_status}`}>
                           {GIT_BADGE[node.git_status]}
                         </span>
@@ -587,50 +742,7 @@ export default function FileExplorerPanel({
                 )
               })
             }</>
-
-          ) : (
-            /* Changed files view */
-            changedFiles.length === 0 ? (
-              <div className="fe-empty">No changes detected</div>
-            ) : (
-              changedFiles.map(f => (
-                <div
-                  key={f.path}
-                  className={`fe-node fe-node--changed ${f.path === selectedFile ? 'fe-node--selected' : ''} ${f.git_status ? `fe-node--git-${f.git_status}` : ''}`}
-                  onClick={() => onFileSelect(f.path)}
-                  onContextMenu={e => {
-                    e.preventDefault()
-                    setContextMenu({ x: e.clientX, y: e.clientY, path: f.path })
-                  }}
-                >
-                  <span className="fe-icon"><IconFile size={16} /></span>
-                  <span className="fe-name">{f.path}</span>
-                  {f.git_status && GIT_BADGE[f.git_status] && (
-                    <span className={`fe-git-badge fe-git-badge--${f.git_status}`}>
-                      {GIT_BADGE[f.git_status]}
-                    </span>
-                  )}
-                </div>
-              ))
-            )
           )}
-        </div>
-
-        {/* View mode tabs */}
-        <div className="fe-tabs">
-          <button
-            className={`fe-tab ${viewMode === 'files' ? 'fe-tab--active' : ''}`}
-            onClick={() => onViewModeChange('files')}
-          >
-            Files
-          </button>
-          <button
-            className={`fe-tab ${viewMode === 'changed' ? 'fe-tab--active' : ''}`}
-            onClick={() => onViewModeChange('changed')}
-            disabled={!gitAvailable}
-          >
-            Changed
-          </button>
         </div>
       </div>
 
@@ -651,6 +763,12 @@ export default function FileExplorerPanel({
             style={{ left: contextMenu.x, top: contextMenu.y }}
           >
             {onNewFile && <button onClick={() => handleNewFile(contextMenu.path)}>New File</button>}
+            {contextMenu.path !== '.' && (
+              <button onClick={() => handleRenameStart(contextMenu.path)}>Rename</button>
+            )}
+            {contextMenu.path !== '.' && (
+              <button onClick={() => handleDelete(contextMenu.path)}>Delete</button>
+            )}
             <button onClick={() => handleCopyPath(contextMenu.path)}>Copy path</button>
             <button onClick={() => handleCopyRelativePath(contextMenu.path)}>Copy relative path</button>
             <button onClick={() => { closeContextMenu(); loadRoot() }}>Refresh</button>
@@ -658,6 +776,7 @@ export default function FileExplorerPanel({
           </div>
         </>
       )}
+
     </>
   )
 }

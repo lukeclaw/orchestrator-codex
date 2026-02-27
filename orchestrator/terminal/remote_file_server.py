@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
 # Remote server script (executed on the remote host)
 # ---------------------------------------------------------------------------
 _REMOTE_FILE_SERVER_SCRIPT = textwrap.dedent("""\
-    import json, os, subprocess, sys, base64, tempfile
+    import json, os, shutil, subprocess, sys, base64, tempfile
 
     DEFAULT_IGNORED = {
         "__pycache__", "node_modules", ".git", ".tox", ".mypy_cache",
@@ -250,11 +250,59 @@ _REMOTE_FILE_SERVER_SCRIPT = textwrap.dedent("""\
         st = os.stat(target)
         respond({"conflict": False, "size": st.st_size, "modified": st.st_mtime})
 
+    def handle_delete(cmd):
+        work_dir = cmd["work_dir"]
+        rel_path = cmd.get("path", "")
+        if not rel_path:
+            respond({"error": "No path provided"})
+            return
+        norm_work = os.path.normpath(work_dir)
+        target = os.path.normpath(os.path.join(work_dir, rel_path))
+        if not target.startswith(norm_work + os.sep) and target != norm_work:
+            respond({"error": "Path outside work_dir"})
+            return
+        if target == norm_work:
+            respond({"error": "Cannot delete work_dir itself"})
+            return
+        if os.path.isdir(target):
+            shutil.rmtree(target)
+        elif os.path.isfile(target) or os.path.islink(target):
+            os.remove(target)
+        else:
+            respond({"error": "Not found"})
+            return
+        respond({"status": "ok"})
+
+    def handle_move(cmd):
+        work_dir = cmd["work_dir"]
+        from_path = cmd.get("from_path", "")
+        to_path = cmd.get("to_path", "")
+        if not from_path or not to_path:
+            respond({"error": "Both from_path and to_path are required"})
+            return
+        norm_work = os.path.normpath(work_dir)
+        src = os.path.normpath(os.path.join(work_dir, from_path))
+        dst = os.path.normpath(os.path.join(work_dir, to_path))
+        if not src.startswith(norm_work + os.sep) and src != norm_work:
+            respond({"error": "Source path outside work_dir"})
+            return
+        if not dst.startswith(norm_work + os.sep) and dst != norm_work:
+            respond({"error": "Destination path outside work_dir"})
+            return
+        if not os.path.exists(src):
+            respond({"error": "Not found"})
+            return
+        os.makedirs(os.path.dirname(dst), exist_ok=True)
+        shutil.move(src, dst)
+        respond({"status": "ok"})
+
     HANDLERS = {
         "ping": handle_ping,
         "list_dir": handle_list_dir,
         "read_file": handle_read_file,
         "write_file": handle_write_file,
+        "delete": handle_delete,
+        "move": handle_move,
     }
 
     for line in sys.stdin:

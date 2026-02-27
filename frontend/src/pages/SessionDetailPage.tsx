@@ -131,6 +131,14 @@ export default function SessionDetailPage() {
     return editorTabs.openNewFile(dirPath, fileName)
   }, [editorTabs])
 
+  const handleFileDeleted = useCallback((path: string) => {
+    editorTabs.closeTabsByPrefix(path)
+  }, [editorTabs])
+
+  const handleFileRenamed = useCallback((oldPath: string, newPath: string) => {
+    editorTabs.renameTabPaths(oldPath, newPath)
+  }, [editorTabs])
+
   // Viewer resize handle
   const handleViewerResizeStart = useCallback((e: React.MouseEvent) => {
     e.preventDefault()
@@ -491,10 +499,10 @@ export default function SessionDetailPage() {
             onFileDoubleClick={handleFileDoubleClick}
             onNewFile={handleNewFile}
             selectedFile={editorTabs.activeTabPath}
-            viewMode={fe.viewMode}
-            onViewModeChange={fe.updateViewMode}
             showIgnored={fe.showIgnored}
             onToggleIgnored={fe.toggleShowIgnored}
+            onFileDeleted={handleFileDeleted}
+            onFileRenamed={handleFileRenamed}
           />
         )}
 
