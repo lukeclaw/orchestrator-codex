@@ -38,6 +38,7 @@ async def lifespan(app: FastAPI):
     # Load config for the orchestrator engine
     try:
         from orchestrator.main import load_config
+
         config = load_config()
     except Exception:
         config = {}
@@ -76,6 +77,7 @@ async def lifespan(app: FastAPI):
     # Clean up old images if data/images/ exceeds size cap
     try:
         from orchestrator.api.routes.paste import cleanup_images, get_images_dir
+
         images_dir = get_images_dir()
         cleanup_images(images_dir)
     except Exception:
@@ -84,17 +86,20 @@ async def lifespan(app: FastAPI):
     # Clean up old status events (180-day retention)
     try:
         from orchestrator.state.repositories.status_events import cleanup_old_events
+
         cleanup_old_events(conn, retention_days=180)
     except Exception:
         logger.exception("Status events cleanup failed (non-fatal)")
 
     # Start rdev background refresh task (skip in test mode — no db_path means in-memory DB)
     from orchestrator.api.routes.rdevs import start_background_refresh, stop_background_refresh
+
     if db_path:
         start_background_refresh()
 
     # Start scheduled backup task
     from orchestrator.api.routes.backup import start_backup_schedule, stop_backup_schedule
+
     if db_path:
         start_backup_schedule(db_path)
 
@@ -108,6 +113,15 @@ async def lifespan(app: FastAPI):
 
     # Shutdown: stop monitor, state manager, tunnels
     logger.info("Orchestrator API shutting down")
+
+    # Stop persistent remote file servers
+    from orchestrator.terminal.remote_file_server import shutdown_all_servers
+
+    try:
+        shutdown_all_servers()
+    except Exception:
+        logger.exception("Remote file server shutdown failed (non-fatal)")
+
     await orch.stop()
     if state_manager:
         await state_manager.stop()
@@ -180,8 +194,7 @@ def create_app(
         app.mount("/assets", StaticFiles(directory=str(dist_assets)), name="assets")
     else:
         logger.warning(
-            "Frontend assets not found at %s. "
-            "Run 'cd frontend && npm run build' to build the UI.",
+            "Frontend assets not found at %s. Run 'cd frontend && npm run build' to build the UI.",
             dist_assets,
         )
 
@@ -222,6 +235,7 @@ def create_app(
     @app.get("/api/health", tags=["health"])
     def health():
         from orchestrator import __version__
+
         return {"status": "ok", "version": __version__}
 
     # Open URL in system browser (Tauri webview can't do window.open)
@@ -229,6 +243,7 @@ def create_app(
     async def open_url(request: dict):
         import platform
         import subprocess
+
         url = request.get("url", "")
         if not url or not (url.startswith("http://") or url.startswith("https://")):
             return {"status": "error", "message": "Invalid URL"}
@@ -239,6 +254,7 @@ def create_app(
                 subprocess.Popen(["xdg-open", url])
             else:
                 import webbrowser
+
                 webbrowser.open(url)
             return {"status": "ok"}
         except Exception as e:
@@ -247,10 +263,12 @@ def create_app(
 
     # WebSocket
     from orchestrator.api.websocket import websocket_endpoint
+
     app.add_api_websocket_route("/ws", websocket_endpoint)
 
     # Terminal WebSocket
     from orchestrator.api.ws_terminal import terminal_websocket
+
     app.add_api_websocket_route("/ws/terminal/{session_id}", terminal_websocket)
 
     # Static mount for saved images
@@ -263,6 +281,7 @@ def create_app(
 
     # Dashboard route
     from orchestrator.api.routes.dashboard import router as dashboard_router
+
     app.include_router(dashboard_router)
 
     return app

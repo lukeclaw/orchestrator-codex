@@ -8,7 +8,20 @@ import subprocess
 logger = logging.getLogger(__name__)
 
 # SSH options matching session.py conventions
-_SSH_OPTS = ["-o", "ConnectTimeout=10", "-o", "BatchMode=yes"]
+_SSH_OPTS = [
+    "-o",
+    "ConnectTimeout=10",
+    "-o",
+    "BatchMode=yes",
+    "-o",
+    "ControlMaster=auto",
+    "-o",
+    "ControlPath=/tmp/orchestrator-ssh-%C",
+    "-o",
+    "ControlPersist=600",
+    "-o",
+    "ServerAliveInterval=30",
+]
 
 
 def get_worker_tmp_dir(worker_name: str) -> str:

@@ -96,8 +96,15 @@ def client_with_remote_session(tmp_path):
         )
         return result
 
-    with patch("orchestrator.api.routes.files._run_ssh", side_effect=fake_run_ssh), \
-         patch("orchestrator.api.routes.files._run_ssh_bytes", side_effect=fake_run_ssh_bytes):
+    with (
+        patch(
+            "orchestrator.api.routes.files.get_remote_file_server",
+            side_effect=RuntimeError("no persistent server in tests"),
+        ),
+        patch("orchestrator.api.routes.files.ensure_server_starting"),
+        patch("orchestrator.api.routes.files._run_ssh", side_effect=fake_run_ssh),
+        patch("orchestrator.api.routes.files._run_ssh_bytes", side_effect=fake_run_ssh_bytes),
+    ):
         with TestClient(app) as c:
             yield c, session.id, tmp_path
 
@@ -193,7 +200,6 @@ class TestListFiles:
         entry = next(e for e in resp.json()["entries"] if e["name"] == "sized.txt")
         assert entry["size"] == 5
         assert entry["human_size"] == "5B"
-
 
     def test_depth_prefetch(self, client_with_session):
         client, session_id, tmp_path = client_with_session
@@ -349,12 +355,12 @@ class TestRateLimiting:
 
         _rate_limits.pop(session_id, None)
 
-        # Send 20 requests (should all succeed)
-        for _ in range(20):
+        # Send 60 requests (should all succeed)
+        for _ in range(60):
             resp = client.get(f"/api/sessions/{session_id}/files")
             assert resp.status_code == 200
 
-        # 21st should be rate limited
+        # 61st should be rate limited
         resp = client.get(f"/api/sessions/{session_id}/files")
         assert resp.status_code == 429
 
@@ -387,16 +393,12 @@ class TestRawFile:
 
     def test_path_traversal_rejected(self, client_with_session):
         client, session_id, _ = client_with_session
-        resp = client.get(
-            f"/api/sessions/{session_id}/files/raw?path=../../etc/passwd"
-        )
+        resp = client.get(f"/api/sessions/{session_id}/files/raw?path=../../etc/passwd")
         assert resp.status_code == 400
 
     def test_file_not_found(self, client_with_session):
         client, session_id, _ = client_with_session
-        resp = client.get(
-            f"/api/sessions/{session_id}/files/raw?path=nonexistent.png"
-        )
+        resp = client.get(f"/api/sessions/{session_id}/files/raw?path=nonexistent.png")
         assert resp.status_code == 404
 
     def test_large_file_rejected(self, client_with_session):
@@ -552,9 +554,7 @@ class TestWriteFile:
         assert data["size"] == len("modified content")
 
         # Read back
-        resp = client.get(
-            f"/api/sessions/{session_id}/files/content?path=editable.py"
-        )
+        resp = client.get(f"/api/sessions/{session_id}/files/content?path=editable.py")
         assert resp.json()["content"] == "modified content"
 
     def test_write_new_file_and_read_back(self, client_with_session):
@@ -572,9 +572,7 @@ class TestWriteFile:
         assert resp.json()["conflict"] is False
 
         # Read back
-        resp = client.get(
-            f"/api/sessions/{session_id}/files/content?path=newdir/newfile.txt"
-        )
+        resp = client.get(f"/api/sessions/{session_id}/files/content?path=newdir/newfile.txt")
         assert resp.status_code == 200
         assert resp.json()["content"] == "hello new file"
 

@@ -22,6 +22,10 @@ from pydantic import BaseModel
 from orchestrator.api.deps import get_db
 from orchestrator.state.repositories import sessions as repo
 from orchestrator.terminal.file_sync import _SSH_OPTS
+from orchestrator.terminal.remote_file_server import (
+    ensure_server_starting,
+    get_remote_file_server,
+)
 from orchestrator.terminal.ssh import is_remote_host
 
 logger = logging.getLogger(__name__)
@@ -32,7 +36,7 @@ router = APIRouter()
 # Rate limiting (simple in-memory counter per session)
 # ---------------------------------------------------------------------------
 _rate_limits: dict[str, list[float]] = {}
-_RATE_LIMIT = 20
+_RATE_LIMIT = 60
 _RATE_WINDOW = 10.0  # seconds
 
 
@@ -203,6 +207,12 @@ def _resolve_session(db, session_id: str) -> SessionInfo:
         raise HTTPException(status_code=400, detail="Session has no work_dir")
     if not remote and not os.path.isdir(work_dir):
         raise HTTPException(status_code=400, detail="work_dir does not exist on disk")
+
+    # Eagerly start the persistent file server so it's ready by the time
+    # the first file operation completes and the user clicks something else.
+    if remote:
+        ensure_server_starting(session.host)
+
     return SessionInfo(work_dir=work_dir, host=session.host, is_remote=remote)
 
 
@@ -278,7 +288,7 @@ _SSH_TIMEOUT = 15  # seconds
 # Per-host semaphore to limit concurrent SSH connections
 _host_semaphores: dict[str, threading.Semaphore] = {}
 _host_sem_lock = threading.Lock()
-_MAX_SSH_CONCURRENT = 3
+_MAX_SSH_CONCURRENT = 8
 _SSH_ACQUIRE_TIMEOUT = 10  # seconds
 
 
@@ -430,9 +440,7 @@ def _run_ssh(host: str, script: str, args: list[str]) -> subprocess.CompletedPro
     )
 
 
-def _run_ssh_bytes(
-    host: str, script: bytes, args: list[str]
-) -> subprocess.CompletedProcess:
+def _run_ssh_bytes(host: str, script: bytes, args: list[str]) -> subprocess.CompletedProcess:
     """Execute a Python script on a remote host via SSH stdin (bytes mode)."""
     cmd = ["ssh", *_SSH_OPTS, host, "python3", "-"] + args
     return subprocess.run(
@@ -443,10 +451,10 @@ def _run_ssh_bytes(
     )
 
 
-def _list_remote_dir(
+def _list_remote_dir_fallback(
     host: str, work_dir: str, path: str, show_ignored: bool, depth: int = 1
 ) -> tuple[list[FileEntry], bool]:
-    """List a directory on a remote host via SSH."""
+    """List a directory on a remote host via SSH (one-shot fallback)."""
     _acquire_ssh_slot(host)
     try:
         result = _run_ssh(
@@ -477,6 +485,53 @@ def _list_remote_dir(
 
     entries = _parse_remote_entries(data["entries"])
     return entries, data.get("git_available", False)
+
+
+def _list_remote_dir(
+    host: str, work_dir: str, path: str, show_ignored: bool, depth: int = 1
+) -> tuple[list[FileEntry], bool]:
+    """List a directory on a remote host, preferring the persistent server."""
+    t0 = time.monotonic()
+    try:
+        server = get_remote_file_server(host)
+        data = server.execute(
+            {
+                "action": "list_dir",
+                "work_dir": work_dir,
+                "path": path,
+                "show_ignored": show_ignored,
+                "depth": depth,
+            }
+        )
+        if "error" in data:
+            detail = data["error"]
+            if "not found" in detail.lower():
+                raise HTTPException(status_code=404, detail=detail)
+            raise HTTPException(status_code=502, detail=detail)
+        entries = _parse_remote_entries(data["entries"])
+        elapsed = time.monotonic() - t0
+        logger.info(
+            "list_remote_dir %s:%s took %.3fs (server=persistent)",
+            host,
+            path,
+            elapsed,
+        )
+        return entries, data.get("git_available", False)
+    except (RuntimeError, OSError, json.JSONDecodeError) as exc:
+        logger.warning(
+            "Persistent server failed for list_dir on %s, falling back: %s",
+            host,
+            exc,
+        )
+        result = _list_remote_dir_fallback(host, work_dir, path, show_ignored, depth)
+        elapsed = time.monotonic() - t0
+        logger.info(
+            "list_remote_dir %s:%s took %.3fs (server=fallback)",
+            host,
+            path,
+            elapsed,
+        )
+        return result
 
 
 def _parse_remote_entries(raw_list: list[dict]) -> list[FileEntry]:
@@ -564,8 +619,10 @@ _REMOTE_READ_SCRIPT = textwrap.dedent("""\
 """)
 
 
-def _read_remote_file(host: str, work_dir: str, path: str, max_lines: int) -> FileContentResponse:
-    """Read file content from a remote host via SSH."""
+def _read_remote_file_fallback(
+    host: str, work_dir: str, path: str, max_lines: int
+) -> FileContentResponse:
+    """Read file content from a remote host via SSH (one-shot fallback)."""
     _acquire_ssh_slot(host)
     try:
         result = _run_ssh(
@@ -597,7 +654,11 @@ def _read_remote_file(host: str, work_dir: str, path: str, max_lines: int) -> Fi
     except json.JSONDecodeError:
         raise HTTPException(status_code=502, detail="Invalid response from remote host")
 
-    # Language detection from extension
+    return _build_file_content_response(path, data)
+
+
+def _build_file_content_response(path: str, data: dict) -> FileContentResponse:
+    """Build a FileContentResponse from parsed remote data."""
     ext = os.path.splitext(path)[1].lower()
     basename = os.path.basename(path).lower()
     language = _LANGUAGE_MAP.get(ext)
@@ -619,15 +680,61 @@ def _read_remote_file(host: str, work_dir: str, path: str, max_lines: int) -> Fi
     )
 
 
+def _read_remote_file(host: str, work_dir: str, path: str, max_lines: int) -> FileContentResponse:
+    """Read file content from a remote host, preferring the persistent server."""
+    t0 = time.monotonic()
+    try:
+        server = get_remote_file_server(host)
+        data = server.execute(
+            {
+                "action": "read_file",
+                "work_dir": work_dir,
+                "path": path,
+                "max_lines": max_lines,
+            }
+        )
+        if "error" in data:
+            detail = data["error"]
+            code = data.get("code", 502)
+            if "not found" in detail.lower():
+                code = 404
+            elif "too large" in detail.lower():
+                code = 413
+            raise HTTPException(status_code=code, detail=detail)
+        elapsed = time.monotonic() - t0
+        logger.info(
+            "read_remote_file %s:%s took %.3fs (server=persistent)",
+            host,
+            path,
+            elapsed,
+        )
+        return _build_file_content_response(path, data)
+    except (RuntimeError, OSError, json.JSONDecodeError) as exc:
+        logger.warning(
+            "Persistent server failed for read_file on %s, falling back: %s",
+            host,
+            exc,
+        )
+        result = _read_remote_file_fallback(host, work_dir, path, max_lines)
+        elapsed = time.monotonic() - t0
+        logger.info(
+            "read_remote_file %s:%s took %.3fs (server=fallback)",
+            host,
+            path,
+            elapsed,
+        )
+        return result
+
+
 # ---------------------------------------------------------------------------
 # Remote caching
 # ---------------------------------------------------------------------------
 _remote_dir_cache: dict[str, tuple[float, list[FileEntry], bool]] = {}
-_REMOTE_DIR_CACHE_TTL = 10.0
+_REMOTE_DIR_CACHE_TTL = 60.0
 
 _remote_content_cache: dict[str, tuple[float, FileContentResponse]] = {}
-_REMOTE_CONTENT_CACHE_TTL = 30.0
-_REMOTE_CONTENT_CACHE_MAX = 20
+_REMOTE_CONTENT_CACHE_TTL = 120.0
+_REMOTE_CONTENT_CACHE_MAX = 100
 
 _cache_request_counter = 0
 
@@ -665,6 +772,7 @@ def _list_remote_dir_cached(
         if cached:
             ts, entries, git_avail = cached
             if time.monotonic() - ts < _REMOTE_DIR_CACHE_TTL:
+                logger.info("list_remote_dir %s:%s cache=hit", host, path)
                 return entries, git_avail
 
     entries, git_available = _list_remote_dir(host, work_dir, path, show_ignored, depth)
@@ -687,6 +795,7 @@ def _read_remote_file_cached(
         if cached:
             ts, resp = cached
             if time.monotonic() - ts < _REMOTE_CONTENT_CACHE_TTL:
+                logger.info("read_remote_file %s:%s cache=hit", host, path)
                 return resp
 
     resp = _read_remote_file(host, work_dir, path, max_lines)
@@ -1065,9 +1174,7 @@ def _write_local_file(work_dir: str, body: FileWriteRequest) -> FileWriteRespons
     stat = os.stat(abs_path)
     # Invalidate remote content cache entry if present
     _remote_content_cache.pop(f"localhost::{work_dir}::{body.path}::500", None)
-    return FileWriteResponse(
-        path=body.path, size=stat.st_size, modified=stat.st_mtime
-    )
+    return FileWriteResponse(path=body.path, size=stat.st_size, modified=stat.st_mtime)
 
 
 # Self-contained Python script for writing file content on a remote host.
@@ -1115,10 +1222,10 @@ _REMOTE_WRITE_SCRIPT = textwrap.dedent("""\
 """)
 
 
-def _write_remote_file(
+def _write_remote_file_fallback(
     host: str, work_dir: str, body: FileWriteRequest
 ) -> FileWriteResponse:
-    """Write a file on a remote host via SSH."""
+    """Write a file on a remote host via SSH (one-shot fallback)."""
     content_b64 = base64.b64encode(body.content.encode("utf-8")).decode("ascii")
     script = _REMOTE_WRITE_SCRIPT.replace("__CONTENT_B64__", content_b64)
 
@@ -1138,14 +1245,10 @@ def _write_remote_file(
         _release_ssh_slot(host)
 
     stdout_str = (
-        result.stdout
-        if isinstance(result.stdout, str)
-        else result.stdout.decode(errors="replace")
+        result.stdout if isinstance(result.stdout, str) else result.stdout.decode(errors="replace")
     )
     stderr_str = (
-        result.stderr
-        if isinstance(result.stderr, str)
-        else result.stderr.decode(errors="replace")
+        result.stderr if isinstance(result.stderr, str) else result.stderr.decode(errors="replace")
     )
 
     if result.returncode != 0:
@@ -1163,29 +1266,81 @@ def _write_remote_file(
     try:
         data = json.loads(stdout_str)
     except json.JSONDecodeError:
-        raise HTTPException(
-            status_code=502, detail="Invalid response from remote host"
-        )
+        raise HTTPException(status_code=502, detail="Invalid response from remote host")
 
+    return _build_write_response(body.path, data)
+
+
+def _build_write_response(path: str, data: dict) -> FileWriteResponse:
+    """Build a FileWriteResponse from parsed remote data."""
     if data.get("conflict"):
         return FileWriteResponse(
-            path=body.path,
+            path=path,
             size=data["size"],
             modified=data["modified"],
             conflict=True,
         )
-
-    # Invalidate content cache for this file
-    for key in list(_remote_content_cache.keys()):
-        if f"::{body.path}::" in key:
-            _remote_content_cache.pop(key, None)
-
     return FileWriteResponse(
-        path=body.path,
+        path=path,
         size=data["size"],
         modified=data["modified"],
         conflict=False,
     )
+
+
+def _write_remote_file(host: str, work_dir: str, body: FileWriteRequest) -> FileWriteResponse:
+    """Write a file on a remote host, preferring the persistent server."""
+    t0 = time.monotonic()
+    try:
+        server = get_remote_file_server(host)
+        content_b64 = base64.b64encode(body.content.encode("utf-8")).decode("ascii")
+        data = server.execute(
+            {
+                "action": "write_file",
+                "work_dir": work_dir,
+                "path": body.path,
+                "content_b64": content_b64,
+                "expected_mtime": body.expected_mtime,
+                "create": body.create,
+            }
+        )
+        if "error" in data:
+            detail = data["error"]
+            if "not found" in detail.lower():
+                raise HTTPException(status_code=404, detail=detail)
+            if "permission denied" in detail.lower():
+                raise HTTPException(status_code=403, detail=detail)
+            raise HTTPException(status_code=502, detail=detail)
+        elapsed = time.monotonic() - t0
+        logger.info(
+            "write_remote_file %s:%s took %.3fs (server=persistent)",
+            host,
+            body.path,
+            elapsed,
+        )
+        resp = _build_write_response(body.path, data)
+    except (RuntimeError, OSError, json.JSONDecodeError) as exc:
+        logger.warning(
+            "Persistent server failed for write_file on %s, falling back: %s",
+            host,
+            exc,
+        )
+        resp = _write_remote_file_fallback(host, work_dir, body)
+        elapsed = time.monotonic() - t0
+        logger.info(
+            "write_remote_file %s:%s took %.3fs (server=fallback)",
+            host,
+            body.path,
+            elapsed,
+        )
+
+    # Invalidate content cache for this file (regardless of method used)
+    if not resp.conflict:
+        for key in list(_remote_content_cache.keys()):
+            if f"::{body.path}::" in key:
+                _remote_content_cache.pop(key, None)
+
+    return resp
 
 
 # ---------------------------------------------------------------------------
