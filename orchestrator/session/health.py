@@ -794,6 +794,12 @@ def check_and_update_worker_health(db, session, tunnel_manager=None) -> dict:
                 "reason": reason,
                 "needs_reconnect": True,
             }
+        if session.status in ("disconnected", "error"):
+            repo.update_session(db, session.id, status="waiting")
+            logger.info(
+                "Health check: %s recovered from %s to waiting", session.name, session.status
+            )
+            return {"alive": True, "status": "waiting", "reason": reason}
         return {"alive": True, "status": session.status, "reason": reason}
 
 

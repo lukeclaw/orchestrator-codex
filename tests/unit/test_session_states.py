@@ -103,6 +103,38 @@ class TestStatusTransitions:
         # Should update to disconnected
         mock_health_repo.update_session.assert_called()
 
+    @patch("orchestrator.session.health.check_claude_running_local")
+    @patch("orchestrator.session.health.is_remote_host")
+    @patch("orchestrator.session.health.repo")
+    @patch("orchestrator.api.routes.sessions.repo")
+    def test_disconnected_to_waiting_on_health_recover(
+        self, mock_route_repo, mock_health_repo, mock_is_remote, mock_check_claude, db
+    ):
+        """Health check finding alive Claude should recover disconnected -> waiting."""
+        from orchestrator.api.routes.sessions import health_check_session
+
+        mock_is_remote.return_value = False
+        mock_check_claude.return_value = (True, "Claude process running in pane")
+
+        mock_session = MagicMock()
+        mock_session.id = "test-id"
+        mock_session.name = "test-worker"
+        mock_session.host = "localhost"
+        mock_session.status = "disconnected"
+
+        mock_route_repo.get_session.return_value = mock_session
+
+        mock_request = MagicMock()
+        mock_request.app.state.tunnel_manager = None
+
+        result = health_check_session("test-id", mock_request, db=db)
+
+        assert result["alive"] is True
+        assert result["status"] == "waiting"
+        mock_health_repo.update_session.assert_called_once()
+        call_kwargs = mock_health_repo.update_session.call_args
+        assert call_kwargs[1].get("status") == "waiting" or "waiting" in str(call_kwargs)
+
     @patch("orchestrator.session.health.check_tui_running_in_pane", return_value=True)
     @patch("orchestrator.session.health.check_screen_and_claude_remote")
     @patch("orchestrator.session.health.is_remote_host")
