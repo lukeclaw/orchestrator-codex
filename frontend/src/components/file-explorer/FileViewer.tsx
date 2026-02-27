@@ -1,5 +1,19 @@
 import { useState, useCallback, useRef, useEffect } from 'react'
-import Editor from '@monaco-editor/react'
+import Editor, { loader } from '@monaco-editor/react'
+
+// Define a custom dark theme with a cooler background
+loader.init().then(monaco => {
+  monaco.editor.defineTheme('cool-dark', {
+    base: 'vs-dark',
+    inherit: true,
+    rules: [],
+    colors: {
+      'editor.background': '#181a20',
+      'editorGutter.background': '#181a20',
+      'minimap.background': '#181a20',
+    },
+  })
+})
 import { IconX, IconSave, IconPencil, IconEye } from '../common/Icons'
 import Markdown from '../common/Markdown'
 import type { Tab } from '../../hooks/useEditorTabs'
@@ -209,7 +223,7 @@ export default function FileViewer({
                   language={monacoLanguage(activeTab.language)}
                   value={activeTab.currentContent ?? ''}
                   onChange={(value) => onContentChange(activeTab.path, value ?? '')}
-                  theme="vs-dark"
+                  theme="cool-dark"
                   options={{
                     minimap: { enabled: true, scale: 1, showSlider: 'mouseover' },
                     fontSize: 12,

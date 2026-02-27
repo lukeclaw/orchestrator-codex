@@ -40,7 +40,7 @@ export default function SessionDetailPage() {
   const tunnelIntervalRef = useRef<ReturnType<typeof setInterval> | undefined>(undefined)
 
   // File explorer state
-  const fe = useFileExplorerState()
+  const fe = useFileExplorerState(id)
   const editorTabs = useEditorTabs(id!)
 
   // Local state for page-specific data

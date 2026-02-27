@@ -1,4 +1,5 @@
 import { useState, useCallback } from 'react'
+import { loadCachedExplorerOpen, saveCachedExplorerOpen } from './useEditorTabs'
 
 const WIDTH_KEY = 'fe-width'
 const VIEWER_RATIO_KEY = 'fe-viewer-ratio'
@@ -12,9 +13,8 @@ const DEFAULT_VIEWER_RATIO = 0.5
 
 export type ViewMode = 'files' | 'changed'
 
-export function useFileExplorerState() {
-  // Always start closed — open state is per-page-visit, not persisted
-  const [open, setOpen] = useState(false)
+export function useFileExplorerState(sessionId?: string) {
+  const [open, setOpen] = useState(() => sessionId ? loadCachedExplorerOpen(sessionId) : false)
 
   const [panelWidth, setPanelWidth] = useState(() => {
     try {
@@ -43,8 +43,12 @@ export function useFileExplorerState() {
   })
 
   const toggleOpen = useCallback(() => {
-    setOpen(prev => !prev)
-  }, [])
+    setOpen(prev => {
+      const next = !prev
+      if (sessionId) saveCachedExplorerOpen(sessionId, next)
+      return next
+    })
+  }, [sessionId])
 
   const updateWidth = useCallback((w: number) => {
     const clamped = Math.max(MIN_WIDTH, Math.min(MAX_WIDTH, w))

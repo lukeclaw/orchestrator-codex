@@ -108,6 +108,7 @@ function cacheKey(sessionId: string): string {
 interface CachedTabState {
   paths: string[]
   active: string | null
+  explorerOpen?: boolean
 }
 
 function loadCachedTabs(sessionId: string): CachedTabState | null {
@@ -120,11 +121,32 @@ function loadCachedTabs(sessionId: string): CachedTabState | null {
   }
 }
 
-function saveCachedTabs(sessionId: string, tabs: Tab[], active: string | null) {
+function saveCachedTabs(sessionId: string, tabs: Tab[], active: string | null, explorerOpen?: boolean) {
   try {
+    const prev = loadCachedTabs(sessionId)
     const state: CachedTabState = {
       paths: tabs.filter(t => !t.isNew).map(t => t.path),
       active,
+      explorerOpen: explorerOpen ?? prev?.explorerOpen ?? false,
+    }
+    sessionStorage.setItem(cacheKey(sessionId), JSON.stringify(state))
+  } catch {
+    // Ignore storage errors
+  }
+}
+
+export function loadCachedExplorerOpen(sessionId: string): boolean {
+  const cached = loadCachedTabs(sessionId)
+  return cached?.explorerOpen ?? false
+}
+
+export function saveCachedExplorerOpen(sessionId: string, open: boolean) {
+  try {
+    const cached = loadCachedTabs(sessionId)
+    const state: CachedTabState = {
+      paths: cached?.paths ?? [],
+      active: cached?.active ?? null,
+      explorerOpen: open,
     }
     sessionStorage.setItem(cacheKey(sessionId), JSON.stringify(state))
   } catch {
