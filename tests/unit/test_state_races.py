@@ -104,7 +104,7 @@ class TestHealthCheckVsReconnect:
               oscillate between disconnected/waiting across repeated cycles.
     """
 
-    @patch("orchestrator.session.health.check_claude_process_local")
+    @patch("orchestrator.session.health.check_claude_running_local")
     @patch("orchestrator.session.health.is_remote_host")
     def test_health_check_overwrites_reconnect_status(self, mock_is_remote, mock_check_claude):
         """Demonstrate that health check can overwrite reconnect's 'waiting' status."""
@@ -129,7 +129,7 @@ class TestHealthCheckVsReconnect:
         assert tracker.statuses == ["waiting", "disconnected"]
         assert result["status"] == "disconnected"
 
-    @patch("orchestrator.session.health.check_claude_process_local")
+    @patch("orchestrator.session.health.check_claude_running_local")
     @patch("orchestrator.session.health.is_remote_host")
     def test_interleaved_health_and_reconnect_threads(self, mock_is_remote, mock_check_claude):
         """Simulate true concurrent interleaving with threads.
@@ -284,7 +284,7 @@ class TestDeletedSessionDuringHealthCheck:
         # The function returns ok=True even though the DB update was a no-op
         assert result["ok"] is True
 
-    @patch("orchestrator.session.health.check_claude_process_local")
+    @patch("orchestrator.session.health.check_claude_running_local")
     @patch("orchestrator.session.health.is_remote_host")
     def test_check_all_with_deleted_session_in_candidates(self, mock_is_remote, mock_check_claude):
         """check_all_workers_health adds a session to candidates, then session is deleted."""
@@ -338,7 +338,7 @@ class TestDualConcurrentHealthChecks:
       unless one of them also triggers reconnect, causing a double reconnect.
     """
 
-    @patch("orchestrator.session.health.check_claude_process_local")
+    @patch("orchestrator.session.health.check_claude_running_local")
     @patch("orchestrator.session.health.is_remote_host")
     def test_double_health_check_double_writes(self, mock_is_remote, mock_check_claude):
         """Two health checks both write 'disconnected' for the same session."""
@@ -362,7 +362,7 @@ class TestDualConcurrentHealthChecks:
         # Both wrote "disconnected" -- duplicate write
         assert tracker.statuses.count("disconnected") == 2
 
-    @patch("orchestrator.session.health.check_claude_process_local")
+    @patch("orchestrator.session.health.check_claude_running_local")
     @patch("orchestrator.session.health.is_remote_host")
     def test_concurrent_health_checks_via_threads(self, mock_is_remote, mock_check_claude):
         """Threaded version: both health checks fire at the same time."""
@@ -392,7 +392,7 @@ class TestDualConcurrentHealthChecks:
         assert all(r["status"] == "disconnected" for r in results)
         assert tracker.statuses.count("disconnected") == 2
 
-    @patch("orchestrator.session.health.check_claude_process_local")
+    @patch("orchestrator.session.health.check_claude_running_local")
     @patch("orchestrator.session.health.is_remote_host")
     def test_double_health_check_all_triggers_double_reconnect(
         self, mock_is_remote, mock_check_claude
@@ -950,7 +950,7 @@ class TestLocalReconnectStatusOnFailure:
                 return_value=True,
             ),
             patch(
-                "orchestrator.session.health.check_claude_process_local",
+                "orchestrator.session.health.check_claude_running_local",
                 return_value=(True, "running"),
             ),
         ):
@@ -1030,7 +1030,7 @@ class TestReconnectLockPrevention:
 class TestCombinedRaceScenarios:
     """Test scenarios that combine multiple race conditions."""
 
-    @patch("orchestrator.session.health.check_claude_process_local")
+    @patch("orchestrator.session.health.check_claude_running_local")
     @patch("orchestrator.session.health.is_remote_host")
     def test_health_check_triggers_reconnect_which_races_with_next_health_check(
         self, mock_is_remote, mock_check_claude
@@ -1112,7 +1112,7 @@ class TestHealthCheckIdempotencyGuards:
     start of the function), not the current DB value.
     """
 
-    @patch("orchestrator.session.health.check_claude_process_local")
+    @patch("orchestrator.session.health.check_claude_running_local")
     @patch("orchestrator.session.health.is_remote_host")
     def test_guard_prevents_redundant_write_when_already_disconnected(
         self, mock_is_remote, mock_check_claude
@@ -1135,7 +1135,7 @@ class TestHealthCheckIdempotencyGuards:
         assert tracker.statuses == []
         assert result["status"] == "disconnected"
 
-    @patch("orchestrator.session.health.check_claude_process_local")
+    @patch("orchestrator.session.health.check_claude_running_local")
     @patch("orchestrator.session.health.is_remote_host")
     def test_guard_uses_stale_status_snapshot(self, mock_is_remote, mock_check_claude):
         """Guard uses session.status (from function entry), not current DB value.

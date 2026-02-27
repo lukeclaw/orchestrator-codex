@@ -299,22 +299,22 @@ class TestReconnectUsesClaudeSessionId:
 
 
 # =============================================================================
-# Health check uses claude_session_id for local workers
+# Health check uses pane-based detection + both IDs for local workers
 # =============================================================================
 
 class TestHealthCheckUsesClaudeSessionId:
-    """Regression: health check must use claude_session_id (not session.id)
-    when checking local worker processes via ps.
+    """Regression: local health check must not rely solely on claude_session_id
+    for ps aux matching.
 
-    After /clear or /compact, Claude may be running with a different session ID
-    than the orchestrator's session.id. If the health check only looks for
-    session.id in ps output, it falsely reports Claude as dead and triggers
-    an unnecessary reconnect loop.
+    After /clear or /compact, Claude's internal session ID changes but the
+    process command line retains the original --session-id.  The health check
+    now uses pane-based process tree detection as the primary method, with
+    ps aux fallback checking both session.id and claude_session_id.
     """
 
-    @patch('orchestrator.session.health.check_claude_process_local')
-    def test_health_check_uses_claude_session_id_when_set(self, mock_check, db):
-        """Health check should search for claude_session_id in ps, not session.id."""
+    @patch('orchestrator.session.health.check_claude_running_local')
+    def test_health_check_passes_both_ids(self, mock_check, db):
+        """Health check should pass both session.id and claude_session_id."""
         from orchestrator.session.health import check_and_update_worker_health
 
         s = repo.create_session(db, "test-local-health", "localhost")
@@ -323,16 +323,20 @@ class TestHealthCheckUsesClaudeSessionId:
         repo.update_session(db, s.id, claude_session_id=new_claude_id)
         s = repo.get_session(db, s.id)
 
-        mock_check.return_value = (True, "Claude process running")
+        mock_check.return_value = (True, "Claude process running in pane")
 
         check_and_update_worker_health(db, s)
 
-        # Must be called with claude_session_id, NOT session.id
-        mock_check.assert_called_once_with(new_claude_id)
+        # Must be called with both IDs + tmux info
+        mock_check.assert_called_once()
+        args = mock_check.call_args[1] if mock_check.call_args[1] else None
+        positional = mock_check.call_args[0]
+        assert positional[0] == s.id  # session.id first
+        assert positional[1] == new_claude_id  # claude_session_id second
 
-    @patch('orchestrator.session.health.check_claude_process_local')
+    @patch('orchestrator.session.health.check_claude_running_local')
     def test_health_check_falls_back_to_session_id(self, mock_check, db):
-        """When claude_session_id is None, fall back to session.id."""
+        """When claude_session_id is None, fall back gracefully."""
         from orchestrator.session.health import check_and_update_worker_health
 
         s = repo.create_session(db, "test-local-fallback", "localhost")
@@ -345,29 +349,59 @@ class TestHealthCheckUsesClaudeSessionId:
 
         check_and_update_worker_health(db, s)
 
-        # Should fall back to session.id
-        mock_check.assert_called_once_with(s.id)
+        # Should pass session.id and None
+        positional = mock_check.call_args[0]
+        assert positional[0] == s.id
+        assert positional[1] is None
 
+    @patch('orchestrator.session.health._has_claude_in_process_tree', return_value=True)
+    @patch('orchestrator.session.health._get_pane_pid', return_value=12345)
+    def test_pane_detection_finds_claude_after_clear(self, mock_pane, mock_tree, db):
+        """After /clear, pane-based detection still finds Claude even though
+        claude_session_id no longer matches the process command line."""
+        from orchestrator.session.health import check_claude_running_local
+
+        alive, reason = check_claude_running_local(
+            "original-session-id", "new-id-after-clear", "orch", "worker"
+        )
+        assert alive is True
+        assert "pane" in reason
+
+    @patch('orchestrator.session.health._has_claude_in_process_tree', return_value=False)
+    @patch('orchestrator.session.health._get_pane_pid', return_value=12345)
     @patch('orchestrator.session.health.check_claude_process_local')
-    def test_health_check_false_negative_without_fix(self, mock_check, db):
-        """Demonstrate that using session.id when claude_session_id differs
-        would cause a false 'disconnected' status."""
-        from orchestrator.session.health import check_and_update_worker_health
+    def test_ps_aux_fallback_checks_session_id_first(self, mock_ps, mock_pane, mock_tree, db):
+        """When pane detection fails, ps aux fallback tries session.id first."""
+        from orchestrator.session.health import check_claude_running_local
 
-        s = repo.create_session(db, "test-false-neg", "localhost")
-        repo.update_session(db, s.id, status="working",
-                            claude_session_id="different-id-after-clear")
-        s = repo.get_session(db, s.id)
+        mock_ps.return_value = (True, "Claude process running")
 
-        # Claude is running — but only findable by claude_session_id
-        mock_check.return_value = (True, "Claude process running")
+        alive, reason = check_claude_running_local(
+            "original-id", "different-id", "orch", "worker"
+        )
+        assert alive is True
+        # First call should be with session.id
+        assert mock_ps.call_args_list[0][0][0] == "original-id"
 
-        result = check_and_update_worker_health(db, s)
+    @patch('orchestrator.session.health._has_claude_in_process_tree', return_value=False)
+    @patch('orchestrator.session.health._get_pane_pid', return_value=12345)
+    @patch('orchestrator.session.health.check_claude_process_local')
+    def test_ps_aux_fallback_tries_claude_session_id(self, mock_ps, mock_pane, mock_tree, db):
+        """When pane detection and session.id both fail, tries claude_session_id."""
+        from orchestrator.session.health import check_claude_running_local
 
-        # With the fix: health check finds Claude → alive
-        assert result["alive"] is True
-        # Verify it searched with the correct ID
-        mock_check.assert_called_once_with("different-id-after-clear")
+        # First call (session.id) fails, second (claude_session_id) succeeds
+        mock_ps.side_effect = [
+            (False, "No Claude process found for session original-id"),
+            (True, "Claude process running"),
+        ]
+
+        alive, reason = check_claude_running_local(
+            "original-id", "claude-id-after-reconnect", "orch", "worker"
+        )
+        assert alive is True
+        assert mock_ps.call_count == 2
+        assert mock_ps.call_args_list[1][0][0] == "claude-id-after-reconnect"
 
 
 # =============================================================================
@@ -376,15 +410,15 @@ class TestHealthCheckUsesClaudeSessionId:
 
 class TestReconnectLocalUsesClaudeSessionId:
     """Regression: reconnect_local_worker's initial 'is Claude running?' check
-    must also use claude_session_id when available."""
+    must use pane-based detection with both IDs."""
 
-    @patch('orchestrator.session.health.check_claude_process_local')
+    @patch('orchestrator.session.health.check_claude_running_local')
     @patch('orchestrator.session.reconnect.check_tui_running_in_pane', return_value=True)
-    def test_reconnect_checks_claude_session_id(self, mock_tui, mock_check):
-        """reconnect_local_worker should use claude_session_id for ps check."""
+    def test_reconnect_checks_via_pane_detection(self, mock_tui, mock_check):
+        """reconnect_local_worker should use check_claude_running_local with both IDs."""
         from orchestrator.session.reconnect import reconnect_local_worker
 
-        mock_check.return_value = (True, "Claude process running")
+        mock_check.return_value = (True, "Claude process running in pane")
 
         session = Session(
             id="orch-id-123",
@@ -404,8 +438,11 @@ class TestReconnectLocalUsesClaudeSessionId:
 
         # Should detect Claude is running and return True (nothing to do)
         assert result is True
-        # Must search for claude_session_id, not session.id
-        mock_check.assert_called_once_with("claude-id-xyz")
+        # Must pass both session.id and claude_session_id
+        mock_check.assert_called_once()
+        positional = mock_check.call_args[0]
+        assert positional[0] == "orch-id-123"
+        assert positional[1] == "claude-id-xyz"
 
 
 # =============================================================================

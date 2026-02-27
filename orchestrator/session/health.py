@@ -308,6 +308,56 @@ def probe_tunnel_connectivity(
         return False
 
 
+def _has_claude_in_process_tree(root_pid: int) -> bool:
+    """Check if there is a ``claude`` process descended from *root_pid*.
+
+    Uses the full command args (``ps -eo pid,ppid,args``) instead of just
+    the short command name because Claude Code runs via a Node.js wrapper
+    and the ``comm`` field may show ``node`` instead of ``claude``.
+    """
+    try:
+        result = subprocess.run(
+            ["ps", "-eo", "pid,ppid,args"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        if result.returncode != 0:
+            return False
+
+        children: dict[int, list[int]] = {}
+        commands: dict[int, str] = {}
+        for line in result.stdout.strip().split("\n")[1:]:  # skip header
+            parts = line.split(None, 2)
+            if len(parts) < 3:
+                continue
+            try:
+                pid = int(parts[0])
+                ppid = int(parts[1])
+            except ValueError:
+                continue
+            args = parts[2].strip()
+            children.setdefault(ppid, []).append(pid)
+            commands[pid] = args
+
+        # BFS from root_pid
+        queue = children.get(root_pid, [])
+        while queue:
+            pid = queue.pop(0)
+            args = commands.get(pid, "")
+            # Match "claude" in command args but exclude grep/ps artifacts
+            if "claude" in args.lower() and "grep" not in args:
+                return True
+            queue.extend(children.get(pid, []))
+
+        return False
+    except subprocess.TimeoutExpired:
+        return False
+    except Exception as e:
+        logger.debug("_has_claude_in_process_tree error: %s", e)
+        return False
+
+
 def check_claude_process_local(session_id: str) -> tuple[bool, str]:
     """Check if Claude Code with given session_id is running locally via ps.
 
@@ -335,7 +385,11 @@ def check_claude_process_local(session_id: str) -> tuple[bool, str]:
 
 
 def check_screen_and_claude_remote(
-    host: str, session_id: str, tmux_sess: str = None, tmux_win: str = None
+    host: str,
+    session_id: str,
+    tmux_sess: str = None,
+    tmux_win: str = None,
+    claude_session_id: str | None = None,
 ) -> tuple[str, str]:
     """Check screen session and Claude process status on a remote host.
 
@@ -349,6 +403,10 @@ def check_screen_and_claude_remote(
         session_id: Session ID to check for
         tmux_sess: tmux session name (used for SSH alive check)
         tmux_win: tmux window name (used for SSH alive check)
+        claude_session_id: Claude's internal session ID (may differ from
+            session_id after /clear).  When provided, the remote ``ps aux``
+            grep checks for either ID so that the check succeeds regardless
+            of which ID appears in the process command line.
 
     Returns:
         (status: str, reason: str) where status is one of:
@@ -391,7 +449,7 @@ def check_screen_and_claude_remote(
         check_cmd = (
             f"screen -ls 2>/dev/null | grep -q '{screen_name}' && echo 'SCREEN_EXISTS' || echo 'NO_SCREEN'; "
             f"ps aux | grep -v grep | grep -qi '[s]creen.*{screen_name}' && echo 'SCREEN_PS_EXISTS' || echo 'NO_SCREEN_PS'; "
-            f"ps aux | grep -v grep | grep -E 'claude (-r|--|--settings)' | grep -q '{session_id}' && echo 'CLAUDE_RUNNING' || echo 'NO_CLAUDE'"
+            f"ps aux | grep -v grep | grep -E 'claude (-r|--|--settings)' | grep -qE '({session_id}{'|' + claude_session_id if claude_session_id and claude_session_id != session_id else ''})' && echo 'CLAUDE_RUNNING' || echo 'NO_CLAUDE'"
         )
 
         result = subprocess.run(
@@ -519,6 +577,50 @@ check_screen_and_claude_rdev = check_screen_and_claude_remote
 check_claude_process_rdev = check_claude_process_remote
 
 
+def check_claude_running_local(
+    session_id: str,
+    claude_session_id: str | None,
+    tmux_sess: str,
+    tmux_win: str,
+) -> tuple[bool, str]:
+    """Check if Claude Code is running for a local worker.
+
+    Uses two complementary methods:
+    1. Process tree walk from the tmux pane PID — reliable and does not
+       depend on which session ID was passed at launch time.  This handles
+       the common case where ``claude_session_id`` diverges from the
+       command-line ``--session-id`` after ``/clear`` or ``/compact``.
+    2. ``ps aux`` scan for known session IDs — fallback when the pane PID
+       cannot be determined.
+
+    Args:
+        session_id: Orchestrator session ID (passed as ``--session-id`` at launch).
+        claude_session_id: Claude's internal session ID (may differ after /clear).
+        tmux_sess: tmux session name.
+        tmux_win: tmux window name.
+
+    Returns:
+        (alive, reason)
+    """
+    # Primary: walk the pane's process tree for a claude descendant.
+    pane_pid = _get_pane_pid(tmux_sess, tmux_win)
+    if pane_pid is not None and _has_claude_in_process_tree(pane_pid):
+        return True, "Claude process running in pane"
+
+    # Fallback: ps aux with orchestrator ID (always present on initial launch).
+    alive, reason = check_claude_process_local(session_id)
+    if alive:
+        return alive, reason
+
+    # Try Claude's tracked ID if different (may be in cmd after reconnect).
+    if claude_session_id and claude_session_id != session_id:
+        alive, reason = check_claude_process_local(claude_session_id)
+        if alive:
+            return alive, reason
+
+    return False, reason
+
+
 # =============================================================================
 # High-Level Health Check Orchestration
 # =============================================================================
@@ -546,6 +648,7 @@ def check_and_update_worker_health(db, session, tunnel_manager=None) -> dict:
             session.id,
             tmux_sess,
             tmux_win,
+            claude_session_id=session.claude_session_id,
         )
 
         tunnel_alive = tunnel_manager.is_alive(session.id) if tunnel_manager else False
@@ -670,10 +773,17 @@ def check_and_update_worker_health(db, session, tunnel_manager=None) -> dict:
                 "needs_reconnect": True,
             }
     else:
-        # Use claude_session_id when available — after /clear or /compact,
-        # Claude may be running with a different session ID than session.id.
-        local_check_id = session.claude_session_id or session.id
-        alive, reason = check_claude_process_local(local_check_id)
+        # Local worker: use pane-based process tree detection (primary)
+        # with ps aux fallback checking both orchestrator and Claude IDs.
+        # After /clear or /compact, Claude's internal session ID changes
+        # but the process command line retains the original --session-id,
+        # so relying solely on claude_session_id causes false disconnects.
+        alive, reason = check_claude_running_local(
+            session.id,
+            session.claude_session_id,
+            tmux_sess,
+            tmux_win,
+        )
         if not alive:
             if session.status != "disconnected":
                 repo.update_session(db, session.id, status="disconnected")

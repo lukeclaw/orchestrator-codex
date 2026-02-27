@@ -73,7 +73,7 @@ class TestStatusTransitions:
         # Check that status="idle" is in the call
         assert "idle" in str(call_args)
 
-    @patch("orchestrator.session.health.check_claude_process_local")
+    @patch("orchestrator.session.health.check_claude_running_local")
     @patch("orchestrator.session.health.is_remote_host")
     @patch("orchestrator.session.health.repo")
     @patch("orchestrator.api.routes.sessions.repo")
