@@ -34,7 +34,6 @@ export default function AddSessionModal({ open, onClose }: Props) {
 
   // Local worker state
   const [localName, setLocalName] = useState(generateWorkerName)
-  const [host, setHost] = useState('localhost')
   const [mpPath, setMpPath] = useState('')
 
   // Rdev worker state
@@ -67,7 +66,6 @@ export default function AddSessionModal({ open, onClose }: Props) {
     if (!open) {
       setWorkerType('local')
       setLocalName(generateWorkerName())
-      setHost('localhost')
       setMpPath('')
       setRdevName('')
       setSelectedRdev('')
@@ -87,19 +85,27 @@ export default function AddSessionModal({ open, onClose }: Props) {
 
   // Validation helper
   const validateForm = () => {
+    const currentName = workerType === 'rdev' ? rdevName : workerType === 'ssh' ? sshName : localName
+    const nameValid = !!currentName.trim() && !/[^a-zA-Z0-9_\-]/.test(currentName)
     if (workerType === 'rdev') {
-      return !!rdevName.trim() && !!selectedRdev
+      return nameValid && !!selectedRdev
     } else if (workerType === 'ssh') {
-      return !!sshName.trim() && !!sshHost.trim()
+      return nameValid && !!sshHost.trim()
     } else {
-      return !!localName.trim() && !!host.trim()
+      return nameValid
     }
   }
 
+  // Validate worker name: only ASCII letters, digits, hyphens, underscores
+  const hasNonAscii = /[^a-zA-Z0-9_\-]/.test(name)
+
   // Error messages (shown when field is touched and invalid)
-  const nameError = touchedFields.has('name') && !name.trim() ? 'Worker name is required' : ''
+  const nameError = touchedFields.has('name') && !name.trim()
+    ? 'Worker name is required'
+    : touchedFields.has('name') && hasNonAscii
+      ? 'Only English letters, numbers, hyphens, and underscores are allowed'
+      : ''
   const rdevError2 = touchedFields.has('rdev') && workerType === 'rdev' && !selectedRdev ? 'Please select an rdev instance' : ''
-  const hostError = touchedFields.has('host') && workerType === 'local' && !host.trim() ? 'Host is required' : ''
   const sshHostError = touchedFields.has('sshHost') && workerType === 'ssh' && !sshHost.trim() ? 'SSH host is required' : ''
 
   // Form is valid when all required fields are filled
@@ -137,7 +143,7 @@ export default function AddSessionModal({ open, onClose }: Props) {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     // Touch all fields to show any remaining errors
-    setTouchedFields(new Set(['name', 'rdev', 'host', 'sshHost']))
+    setTouchedFields(new Set(['name', 'rdev', 'sshHost']))
     if (!validateForm()) return
     setError('')
     setCreating(true)
@@ -155,8 +161,7 @@ export default function AddSessionModal({ open, onClose }: Props) {
         payload.host = sshHost.trim()
         payload.work_dir = sshWorkDir.trim() || null
       } else {
-        if (!host.trim()) return
-        payload.host = host.trim()
+        payload.host = 'localhost'
         payload.work_dir = mpPath.trim() || null
       }
 
@@ -311,22 +316,6 @@ export default function AddSessionModal({ open, onClose }: Props) {
             </>
           ) : (
             <>
-              <div className="form-group">
-                <label>Host <span className="field-required">*required</span></label>
-                <input
-                  type="text"
-                  data-testid="session-host-input"
-                  value={host}
-                  onChange={e => {
-                    setHost(e.target.value)
-                    touchField('host')
-                  }}
-                  onBlur={() => touchField('host')}
-                  placeholder="localhost"
-                  className={hostError ? 'input-error' : ''}
-                />
-                {hostError && <div className="field-error">{hostError}</div>}
-              </div>
               <div className="form-group">
                 <label>Working Directory <span className="field-optional">(optional)</span></label>
                 <input

@@ -171,17 +171,17 @@
 }
 
 .field-error {
-  color: var(--danger);
+  color: #f59e0b;
   font-size: 12px;
   margin-top: 4px;
 }
 
 .input-error {
-  border-color: var(--danger) !important;
+  border-color: #f59e0b !important;
 }
 
 .input-error:focus {
-  box-shadow: 0 0 0 2px rgba(239, 68, 68, 0.2);
+  box-shadow: 0 0 0 2px rgba(245, 158, 11, 0.2);
 }
 
 .field-hint {
