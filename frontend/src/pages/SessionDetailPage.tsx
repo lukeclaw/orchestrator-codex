@@ -4,7 +4,10 @@ import { api, openUrl } from '../api/client'
 import { useNotify } from '../context/NotificationContext'
 import { useApp } from '../context/AppContext'
 import { useSmartPaste } from '../hooks/useSmartPaste'
+import { useFileExplorerState } from '../hooks/useFileExplorerState'
 import TerminalView from '../components/terminal/TerminalView'
+import FileExplorerPanel from '../components/file-explorer/FileExplorerPanel'
+import FileViewer from '../components/file-explorer/FileViewer'
 import { IconPause, IconPlay, IconStop, IconRefresh, IconTrash, IconSync, IconBrain } from '../components/common/Icons'
 import ConfirmPopover from '../components/common/ConfirmPopover'
 import AssignTaskModal from '../components/tasks/AssignTaskModal'
@@ -33,6 +36,11 @@ export default function SessionDetailPage() {
   // Tunnel state for rdev workers
   const [tunnels, setTunnels] = useState<Record<string, TunnelInfo>>({})
   const tunnelIntervalRef = useRef<ReturnType<typeof setInterval> | undefined>(undefined)
+
+  // File explorer state
+  const fe = useFileExplorerState()
+  const [selectedFile, setSelectedFile] = useState<string | null>(null)
+  const [pinnedFile, setPinnedFile] = useState<string | null>(null)
 
   // Local state for page-specific data
   const [error, setError] = useState('')
@@ -74,6 +82,63 @@ export default function SessionDetailPage() {
       clearInterval(tunnelIntervalRef.current)
     }
   }, [id, isRdev])
+
+  // Ctrl+Shift+E to toggle file explorer
+  useEffect(() => {
+    const handler = (e: globalThis.KeyboardEvent) => {
+      if (e.ctrlKey && e.shiftKey && e.key === 'E') {
+        e.preventDefault()
+        fe.toggleOpen()
+      }
+    }
+    document.addEventListener('keydown', handler)
+    return () => document.removeEventListener('keydown', handler)
+  }, [fe.toggleOpen])
+
+  // File explorer handlers
+  const handleFileSelect = useCallback((path: string) => {
+    if (pinnedFile) {
+      // If there's a pinned file, preview is temporary
+      setSelectedFile(path)
+    } else {
+      setSelectedFile(path)
+    }
+  }, [pinnedFile])
+
+  const handleFileClose = useCallback(() => {
+    setSelectedFile(null)
+    setPinnedFile(null)
+  }, [])
+
+  const handleFilePin = useCallback(() => {
+    if (selectedFile) {
+      setPinnedFile(prev => prev === selectedFile ? null : selectedFile)
+    }
+  }, [selectedFile])
+
+  // Viewer resize handle
+  const handleViewerResizeStart = useCallback((e: React.MouseEvent) => {
+    e.preventDefault()
+    const startY = e.clientY
+    const startRatio = fe.viewerHeightRatio
+    const container = (e.target as HTMLElement).closest('.fe-right-pane')
+    if (!container) return
+    const containerHeight = container.getBoundingClientRect().height
+    container.closest('.fe-content-area')?.classList.add('resizing')
+
+    const onMove = (ev: MouseEvent) => {
+      const delta = ev.clientY - startY
+      const newRatio = startRatio + delta / containerHeight
+      fe.updateViewerHeightRatio(newRatio)
+    }
+    const onUp = () => {
+      container.closest('.fe-content-area')?.classList.remove('resizing')
+      document.removeEventListener('mousemove', onMove)
+      document.removeEventListener('mouseup', onUp)
+    }
+    document.addEventListener('mousemove', onMove)
+    document.addEventListener('mouseup', onUp)
+  }, [fe.viewerHeightRatio, fe.updateViewerHeightRatio])
 
   async function handlePauseOrContinue() {
     if (!id || actionPending) return
@@ -405,9 +470,51 @@ export default function SessionDetailPage() {
         </div>
       )}
 
-      {/* Terminal fills the rest */}
-      <div className="sd-terminal-area">
-        <TerminalView sessionId={session.id} sessionStatus={session.status} disableScrollback={isRdev} onFocusRef={(fn) => { terminalFocusRef.current = fn }} onImagePaste={handleImagePaste} onTextPaste={handleTextPaste} />
+      {/* Main content area: file explorer + viewer + terminal */}
+      <div className={`fe-content-area ${fe.open ? 'fe-content-area--open' : ''}`}>
+        {/* File explorer panel (left) */}
+        {id && (
+          <FileExplorerPanel
+            sessionId={id}
+            workDir={session.work_dir || null}
+            isOpen={fe.open}
+            width={fe.panelWidth}
+            onWidthChange={fe.updateWidth}
+            onFileSelect={handleFileSelect}
+            selectedFile={selectedFile}
+            viewMode={fe.viewMode}
+            onViewModeChange={fe.updateViewMode}
+            showIgnored={fe.showIgnored}
+            onToggleIgnored={fe.toggleShowIgnored}
+          />
+        )}
+
+        {/* Right pane: viewer (top) + terminal (bottom) */}
+        <div className="fe-right-pane">
+          {/* File viewer */}
+          {fe.open && selectedFile && id && (
+            <>
+              <div className="fe-viewer-area" style={{ height: `${fe.viewerHeightRatio * 100}%` }}>
+                <FileViewer
+                  sessionId={id}
+                  filePath={selectedFile}
+                  isPinned={pinnedFile === selectedFile}
+                  onClose={handleFileClose}
+                  onPin={handleFilePin}
+                />
+              </div>
+              <div className="fe-viewer-resize" onMouseDown={handleViewerResizeStart} />
+            </>
+          )}
+
+          {/* Terminal */}
+          <div className="sd-terminal-area">
+            {fe.open && selectedFile && (
+              <div className="sd-terminal-header">TERMINAL</div>
+            )}
+            <TerminalView sessionId={session.id} sessionStatus={session.status} disableScrollback={isRdev} onFocusRef={(fn) => { terminalFocusRef.current = fn }} onImagePaste={handleImagePaste} onTextPaste={handleTextPaste} />
+          </div>
+        </div>
       </div>
 
       {/* Footer with task link */}
@@ -444,6 +551,23 @@ export default function SessionDetailPage() {
           )}
         </div>
         <div className="sd-footer-right">
+          {/* File explorer toggle */}
+          {!isRdev && session.work_dir && (
+            <>
+              <label className="sd-fe-toggle" title="Toggle file explorer (Ctrl+Shift+E)">
+                <span className="sd-fe-toggle-label">Files</span>
+                <button
+                  className={`sd-toggle-switch ${fe.open ? 'on' : ''}`}
+                  onClick={fe.toggleOpen}
+                  role="switch"
+                  aria-checked={fe.open}
+                >
+                  <span className="sd-toggle-knob" />
+                </button>
+              </label>
+              <span className="sd-footer-divider" />
+            </>
+          )}
           {/* Auto-reconnect toggle — a worker setting, not an action */}
           <label className="sd-auto-reconnect-toggle" title="When enabled, automatically reconnect this worker if it disconnects">
             <span className="sd-auto-reconnect-label">Auto-reconnect</span>

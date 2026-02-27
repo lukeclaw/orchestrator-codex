@@ -1,0 +1,552 @@
+import { useState, useEffect, useCallback, useRef, useMemo, type KeyboardEvent } from 'react'
+import { api } from '../../api/client'
+import { useNotify } from '../../context/NotificationContext'
+import {
+  IconChevronRight,
+  IconFolder,
+  IconFolderOpen,
+  IconFile,
+  IconFilter,
+  IconRefresh,
+  IconX,
+} from '../common/Icons'
+import type { ViewMode } from '../../hooks/useFileExplorerState'
+import './FileExplorerPanel.css'
+
+// --- Types ---
+
+interface FileEntry {
+  name: string
+  path: string
+  is_dir: boolean
+  size: number | null
+  modified: number | null
+  children_count: number | null
+  git_status: string | null
+  human_size: string | null
+}
+
+interface DirectoryResponse {
+  work_dir: string
+  path: string
+  entries: FileEntry[]
+  git_available: boolean
+}
+
+interface TreeNode extends FileEntry {
+  children?: TreeNode[]
+  loading?: boolean
+  expanded?: boolean
+}
+
+// --- Props ---
+
+interface FileExplorerPanelProps {
+  sessionId: string
+  workDir: string | null
+  isOpen: boolean
+  width: number
+  onWidthChange: (w: number) => void
+  onFileSelect: (path: string) => void
+  selectedFile: string | null
+  viewMode: ViewMode
+  onViewModeChange: (mode: ViewMode) => void
+  showIgnored: boolean
+  onToggleIgnored: () => void
+}
+
+// --- Helpers ---
+
+const GIT_BADGE: Record<string, string> = {
+  modified: 'M',
+  added: 'A',
+  untracked: 'U',
+  deleted: 'D',
+  renamed: 'R',
+  conflicting: '!',
+  ignored: 'I',
+}
+
+function epochToRelative(epoch: number | null): string {
+  if (!epoch) return ''
+  const secs = Math.floor((Date.now() / 1000) - epoch)
+  if (secs < 0) return 'just now'
+  if (secs < 60) return 'just now'
+  if (secs < 3600) return `${Math.floor(secs / 60)}m`
+  if (secs < 86400) return `${Math.floor(secs / 3600)}h`
+  return `${Math.floor(secs / 86400)}d`
+}
+
+// --- Component ---
+
+export default function FileExplorerPanel({
+  sessionId,
+  workDir,
+  isOpen,
+  width,
+  onWidthChange,
+  onFileSelect,
+  selectedFile,
+  viewMode,
+  onViewModeChange,
+  showIgnored,
+  onToggleIgnored,
+}: FileExplorerPanelProps) {
+  const notify = useNotify()
+  const [tree, setTreeRaw] = useState<TreeNode[]>([])
+  const treeSnapshotRef = useRef<TreeNode[]>([])
+  // Wrap setTree to keep the ref in sync
+  const setTree = useCallback((updater: TreeNode[] | ((prev: TreeNode[]) => TreeNode[])) => {
+    setTreeRaw(prev => {
+      const next = typeof updater === 'function' ? updater(prev) : updater
+      treeSnapshotRef.current = next
+      return next
+    })
+  }, [])
+  const [changedFiles, setChangedFiles] = useState<FileEntry[]>([])
+  const [gitAvailable, setGitAvailable] = useState(false)
+  const [filterText, setFilterText] = useState('')
+  const [showFilter, setShowFilter] = useState(false)
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; path: string } | null>(null)
+  const [focusIndex, setFocusIndex] = useState(-1)
+  const filterInputRef = useRef<HTMLInputElement>(null)
+  const treeRef = useRef<HTMLDivElement>(null)
+
+  // Fetch root directory
+  const fetchDir = useCallback(async (path: string = '.'): Promise<{ entries: FileEntry[]; gitAvailable: boolean }> => {
+    const params = new URLSearchParams({ path, show_ignored: String(showIgnored) })
+    const data = await api<DirectoryResponse>(
+      `/api/sessions/${sessionId}/files?${params}`
+    )
+    return { entries: data.entries, gitAvailable: data.git_available }
+  }, [sessionId, showIgnored])
+
+  // Load root on mount / refresh
+  const loadRoot = useCallback(async () => {
+    try {
+      const { entries, gitAvailable: ga } = await fetchDir('.')
+      setTree(entries.map(e => ({ ...e, expanded: false })))
+      setGitAvailable(ga)
+      // For "changed" view, collect all files with git status
+      if (ga) {
+        setChangedFiles(entries.filter(e => e.git_status && e.git_status !== 'ignored'))
+      }
+    } catch {
+      // Silently fail - work_dir may not exist yet
+    }
+  }, [fetchDir])
+
+  useEffect(() => {
+    if (isOpen && workDir) {
+      loadRoot()
+    }
+  }, [isOpen, workDir, loadRoot])
+
+  // Find a node by path in a tree
+  const findNode = useCallback((nodes: TreeNode[], path: string): TreeNode | null => {
+    for (const n of nodes) {
+      if (n.path === path) return n
+      if (n.children) {
+        const found = findNode(n.children, path)
+        if (found) return found
+      }
+    }
+    return null
+  }, [])
+
+  // Helper to update a node by path in the tree
+  const updateNode = useCallback((nodes: TreeNode[], path: string, updater: (n: TreeNode) => TreeNode): TreeNode[] =>
+    nodes.map(n => {
+      if (n.path === path) return updater(n)
+      if (n.children) return { ...n, children: updateNode(n.children, path, updater) }
+      return n
+    }), [])
+
+  // Expand a directory node
+  const toggleExpand = useCallback(async (nodePath: string) => {
+    // Read current state synchronously from the ref
+    const node = findNode(treeSnapshotRef.current, nodePath)
+    if (!node || !node.is_dir) return
+
+    if (node.expanded) {
+      // Collapsing — just toggle off, no fetch needed
+      setTree(prev => updateNode(prev, nodePath, n => ({ ...n, expanded: false })))
+      return
+    }
+
+    if (node.children) {
+      // Children already cached — just expand, no fetch needed
+      setTree(prev => updateNode(prev, nodePath, n => ({ ...n, expanded: true })))
+      return
+    }
+
+    // Expanding without cached children — mark loading and fetch
+    setTree(prev => updateNode(prev, nodePath, n => ({ ...n, loading: true, expanded: true })))
+
+    try {
+      const params = new URLSearchParams({
+        path: nodePath,
+        depth: '1',
+        show_ignored: String(showIgnored),
+      })
+      const data = await api<DirectoryResponse>(
+        `/api/sessions/${sessionId}/files?${params}`
+      )
+      setTree(prev => updateNode(prev, nodePath, n => ({
+        ...n,
+        loading: false,
+        expanded: true,
+        children: data.entries.map(e => ({ ...e, expanded: false })),
+      })))
+    } catch {
+      setTree(prev => updateNode(prev, nodePath, n => ({
+        ...n,
+        loading: false,
+        expanded: false,
+      })))
+    }
+  }, [sessionId, showIgnored, findNode, updateNode, setTree])
+
+  // Flatten tree for keyboard nav and rendering
+  const flatNodes = useMemo(() => {
+    const result: { node: TreeNode; depth: number }[] = []
+    const walk = (nodes: TreeNode[], depth: number) => {
+      for (const n of nodes) {
+        const matchesFilter = !filterText || n.name.toLowerCase().includes(filterText.toLowerCase())
+        if (matchesFilter || n.is_dir) {
+          result.push({ node: n, depth })
+        }
+        if (n.expanded && n.children) {
+          walk(n.children, depth + 1)
+        }
+      }
+    }
+    walk(tree, 0)
+    return result
+  }, [tree, filterText])
+
+  // Context menu actions
+  const handleCopyPath = useCallback(async (relPath: string) => {
+    try {
+      const fullPath = workDir ? `${workDir}/${relPath}` : relPath
+      await navigator.clipboard.writeText(fullPath)
+      notify('Copied!', 'success')
+    } catch {
+      notify('Failed to copy path', 'error')
+    }
+    setContextMenu(null)
+  }, [workDir, notify])
+
+  const handleCopyRelativePath = useCallback(async (relPath: string) => {
+    try {
+      await navigator.clipboard.writeText(relPath)
+      notify('Copied!', 'success')
+    } catch {
+      notify('Failed to copy path', 'error')
+    }
+    setContextMenu(null)
+  }, [notify])
+
+  const handleCollapseAll = useCallback(() => {
+    setTree(prev => {
+      const collapse = (nodes: TreeNode[]): TreeNode[] =>
+        nodes.map(n => ({ ...n, expanded: false, children: n.children ? collapse(n.children) : undefined }))
+      return collapse(prev)
+    })
+    setContextMenu(null)
+  }, [])
+
+  // Keyboard navigation
+  const handleKeyDown = useCallback((e: KeyboardEvent<HTMLDivElement>) => {
+    if (e.key === '/') {
+      e.preventDefault()
+      setShowFilter(true)
+      setTimeout(() => filterInputRef.current?.focus(), 0)
+      return
+    }
+    if (e.key === 'Escape') {
+      if (showFilter) {
+        setShowFilter(false)
+        setFilterText('')
+      }
+      setContextMenu(null)
+      return
+    }
+
+    const len = flatNodes.length
+    if (!len) return
+
+    if (e.key === 'ArrowDown') {
+      e.preventDefault()
+      setFocusIndex(prev => Math.min(prev + 1, len - 1))
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault()
+      setFocusIndex(prev => Math.max(prev - 1, 0))
+    } else if (e.key === 'Enter') {
+      if (focusIndex >= 0 && focusIndex < len) {
+        const { node } = flatNodes[focusIndex]
+        if (node.is_dir) {
+          toggleExpand(node.path)
+        } else {
+          onFileSelect(node.path)
+        }
+      }
+    } else if (e.key === 'ArrowRight') {
+      if (focusIndex >= 0 && focusIndex < len) {
+        const { node } = flatNodes[focusIndex]
+        if (node.is_dir && !node.expanded) {
+          toggleExpand(node.path)
+        }
+      }
+    } else if (e.key === 'ArrowLeft') {
+      if (focusIndex >= 0 && focusIndex < len) {
+        const { node } = flatNodes[focusIndex]
+        if (node.is_dir && node.expanded) {
+          toggleExpand(node.path)
+        }
+      }
+    }
+  }, [flatNodes, focusIndex, showFilter, toggleExpand, onFileSelect])
+
+  // Close context menu when clicking outside
+  useEffect(() => {
+    if (!contextMenu) return
+    const close = () => setContextMenu(null)
+    document.addEventListener('click', close)
+    return () => document.removeEventListener('click', close)
+  }, [contextMenu])
+
+  // Resize handle
+  const handleResizeStart = useCallback((e: React.MouseEvent) => {
+    e.preventDefault()
+    const startX = e.clientX
+    const startWidth = width
+    const parent = (e.target as HTMLElement).closest('.fe-content-area')
+    parent?.classList.add('resizing')
+
+    const onMove = (ev: MouseEvent) => {
+      const delta = ev.clientX - startX
+      onWidthChange(startWidth + delta)
+    }
+    const onUp = () => {
+      parent?.classList.remove('resizing')
+      document.removeEventListener('mousemove', onMove)
+      document.removeEventListener('mouseup', onUp)
+    }
+    document.addEventListener('mousemove', onMove)
+    document.addEventListener('mouseup', onUp)
+  }, [width, onWidthChange])
+
+  // Truncated work_dir for display
+  const displayPath = workDir
+    ? workDir.split('/').slice(-2).join('/')
+    : ''
+
+  return (
+    <>
+      <div
+        className={`fe-panel ${isOpen ? 'open' : ''}`}
+        style={{ width: isOpen ? width : 0 }}
+        role="tree"
+        tabIndex={0}
+        onKeyDown={handleKeyDown}
+        ref={treeRef}
+      >
+        {/* Header */}
+        <div className="fe-header">
+          <span className="fe-header-title">EXPLORER</span>
+          <div className="fe-header-actions">
+            <button
+              className="fe-header-btn"
+              onClick={() => {
+                setShowFilter(prev => !prev)
+                if (!showFilter) setTimeout(() => filterInputRef.current?.focus(), 0)
+              }}
+              title="Filter files (/)"
+            >
+              <IconFilter size={14} />
+            </button>
+            <button
+              className="fe-header-btn"
+              onClick={loadRoot}
+              title="Refresh"
+            >
+              <IconRefresh size={14} />
+            </button>
+          </div>
+        </div>
+
+        {/* Work dir path */}
+        <div className="fe-workdir" title={workDir || ''}>
+          {displayPath}
+        </div>
+
+        {/* Filter input */}
+        {showFilter && (
+          <div className="fe-filter">
+            <input
+              ref={filterInputRef}
+              className="fe-filter-input"
+              type="text"
+              placeholder="Filter files..."
+              value={filterText}
+              onChange={e => setFilterText(e.target.value)}
+              onKeyDown={e => {
+                if (e.key === 'Escape') {
+                  setShowFilter(false)
+                  setFilterText('')
+                  treeRef.current?.focus()
+                }
+              }}
+            />
+            <button
+              className="fe-filter-close"
+              onClick={() => { setShowFilter(false); setFilterText('') }}
+            >
+              <IconX size={12} />
+            </button>
+          </div>
+        )}
+
+        {/* Tree content */}
+        <div className="fe-tree">
+          {viewMode === 'files' ? (
+            flatNodes.map(({ node, depth }, i) => {
+              const dimmed = filterText && !node.name.toLowerCase().includes(filterText.toLowerCase())
+              return (
+                <div
+                  key={node.path}
+                  className={`fe-node ${node.path === selectedFile ? 'fe-node--selected' : ''} ${focusIndex === i ? 'fe-node--focused' : ''} ${node.git_status ? `fe-node--git-${node.git_status}` : ''} ${dimmed ? 'fe-node--dimmed' : ''}`}
+                  style={{ paddingLeft: depth * 16 + 4 }}
+                  role="treeitem"
+                  aria-expanded={node.is_dir ? node.expanded : undefined}
+                  aria-level={depth + 1}
+                  aria-selected={node.path === selectedFile}
+                  onClick={() => {
+                    setFocusIndex(i)
+                    if (node.is_dir) {
+                      toggleExpand(node.path)
+                    } else {
+                      onFileSelect(node.path)
+                    }
+                  }}
+                  onContextMenu={e => {
+                    e.preventDefault()
+                    setContextMenu({ x: e.clientX, y: e.clientY, path: node.path })
+                  }}
+                >
+                  {/* Indent guides */}
+                  {depth > 0 && Array.from({ length: depth }).map((_, d) => (
+                    <span key={d} className="fe-indent-guide" style={{ left: d * 16 + 8 }} />
+                  ))}
+
+                  {/* Chevron for dirs */}
+                  {node.is_dir ? (
+                    <span className={`fe-chevron ${node.expanded ? 'fe-chevron--open' : ''}`}>
+                      <IconChevronRight size={14} />
+                    </span>
+                  ) : (
+                    <span className="fe-chevron fe-chevron--spacer" />
+                  )}
+
+                  {/* Icon */}
+                  <span className="fe-icon">
+                    {node.is_dir
+                      ? (node.expanded ? <IconFolderOpen size={16} /> : <IconFolder size={16} />)
+                      : <IconFile size={16} />
+                    }
+                  </span>
+
+                  {/* Name */}
+                  <span className="fe-name">{node.name}</span>
+
+                  {/* Meta: git badge */}
+                  {node.git_status && GIT_BADGE[node.git_status] && (
+                    <span className={`fe-git-badge fe-git-badge--${node.git_status}`}>
+                      {GIT_BADGE[node.git_status]}
+                    </span>
+                  )}
+
+                  {/* Meta: size + recency */}
+                  {!node.is_dir && (
+                    <span className="fe-meta">
+                      {node.human_size && <span className="fe-size">{node.human_size}</span>}
+                      {node.modified && <span className="fe-recency">{epochToRelative(node.modified)}</span>}
+                    </span>
+                  )}
+
+                  {/* Loading spinner */}
+                  {node.loading && <span className="fe-spinner" />}
+                </div>
+              )
+            })
+          ) : (
+            /* Changed files view */
+            changedFiles.length === 0 ? (
+              <div className="fe-empty">No changes detected</div>
+            ) : (
+              changedFiles.map(f => (
+                <div
+                  key={f.path}
+                  className={`fe-node fe-node--changed ${f.path === selectedFile ? 'fe-node--selected' : ''} ${f.git_status ? `fe-node--git-${f.git_status}` : ''}`}
+                  onClick={() => onFileSelect(f.path)}
+                  onContextMenu={e => {
+                    e.preventDefault()
+                    setContextMenu({ x: e.clientX, y: e.clientY, path: f.path })
+                  }}
+                >
+                  <span className="fe-icon"><IconFile size={16} /></span>
+                  <span className="fe-name">{f.path}</span>
+                  {f.git_status && GIT_BADGE[f.git_status] && (
+                    <span className={`fe-git-badge fe-git-badge--${f.git_status}`}>
+                      {GIT_BADGE[f.git_status]}
+                    </span>
+                  )}
+                </div>
+              ))
+            )
+          )}
+        </div>
+
+        {/* View mode tabs */}
+        <div className="fe-tabs">
+          <button
+            className={`fe-tab ${viewMode === 'files' ? 'fe-tab--active' : ''}`}
+            onClick={() => onViewModeChange('files')}
+          >
+            Files
+          </button>
+          <button
+            className={`fe-tab ${viewMode === 'changed' ? 'fe-tab--active' : ''}`}
+            onClick={() => onViewModeChange('changed')}
+            disabled={!gitAvailable}
+          >
+            Changed
+          </button>
+        </div>
+      </div>
+
+      {/* Resize handle */}
+      {isOpen && (
+        <div
+          className="fe-resize-handle"
+          onMouseDown={handleResizeStart}
+        />
+      )}
+
+      {/* Context menu */}
+      {contextMenu && (
+        <div
+          className="fe-context-menu"
+          style={{ left: contextMenu.x, top: contextMenu.y }}
+          onClick={e => e.stopPropagation()}
+        >
+          <button onClick={() => handleCopyPath(contextMenu.path)}>Copy path</button>
+          <button onClick={() => handleCopyRelativePath(contextMenu.path)}>Copy relative path</button>
+          <button onClick={loadRoot}>Refresh</button>
+          <button onClick={handleCollapseAll}>Collapse all</button>
+        </div>
+      )}
+    </>
+  )
+}

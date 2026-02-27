@@ -169,11 +169,75 @@
   color: var(--text-primary);
 }
 
+/* File Explorer Content Area */
+.fe-content-area {
+  display: flex;
+  flex-direction: row;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  position: relative;
+}
+
+/* Right pane (viewer + terminal) */
+.fe-right-pane {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
+
+/* Viewer area */
+.fe-viewer-area {
+  min-height: 80px;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.fe-viewer-area .fe-viewer {
+  height: 100%;
+}
+
+/* Viewer resize handle (horizontal) */
+.fe-viewer-resize {
+  height: 4px;
+  cursor: row-resize;
+  background: transparent;
+  transition: background 0.15s;
+  flex-shrink: 0;
+}
+
+.fe-viewer-resize:hover {
+  background: var(--accent);
+}
+
+/* Disable transitions during resize */
+.fe-content-area.resizing * {
+  transition: none !important;
+}
+
 /* Terminal */
 .sd-terminal-area {
   flex: 1;
   min-height: 0;
   overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.sd-terminal-header {
+  display: flex;
+  align-items: center;
+  padding: 4px 12px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border-subtle);
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-secondary);
+  flex-shrink: 0;
 }
 
 /* Footer - matches WorkerCard footer style */
@@ -297,6 +361,21 @@
   background: var(--border);
 }
 
+/* File explorer toggle in footer */
+.sd-fe-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.sd-fe-toggle-label {
+  font-size: 11px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
 /* Auto-reconnect toggle in footer */
 .sd-auto-reconnect-toggle {
   display: flex;
@@ -388,3 +467,4 @@
     margin-left: 0;
   }
 }
+

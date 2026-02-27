@@ -41,6 +41,16 @@
   --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, sans-serif;
   --font-mono: 'SF Mono', 'Menlo', 'Monaco', 'Consolas', monospace;
 
+  /* Git status colors */
+  --git-modified: #E2C08D;
+  --git-added: #81b88b;
+  --git-untracked: #73C991;
+  --git-deleted: #c74e39;
+  --git-renamed: #73C991;
+  --git-conflicting: #e4676b;
+  --git-ignored: #8C8C8C;
+  --git-submodule: #8db9e2;
+
   /* Shadows */
   --shadow-sm: 0 1px 0 rgba(27,31,36,0.04);
   --shadow-md: 0 3px 6px rgba(0,0,0,0.3);

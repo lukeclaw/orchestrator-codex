@@ -190,6 +190,7 @@ def create_app(
         backup,
         brain,
         context,
+        files,
         notifications,
         paste,
         projects,
@@ -203,6 +204,7 @@ def create_app(
     )
 
     app.include_router(backup.router, prefix="/api", tags=["backup"])
+    app.include_router(files.router, prefix="/api", tags=["files"])
     app.include_router(sessions.router, prefix="/api", tags=["sessions"])
     app.include_router(rdevs.router, prefix="/api", tags=["rdevs"])
     app.include_router(projects.router, prefix="/api", tags=["projects"])
