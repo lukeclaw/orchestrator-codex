@@ -362,25 +362,30 @@ def _verify_claude_started(
 ) -> tuple[bool, str]:
     """Check that Claude's TUI actually started after sending the launch command.
 
-    Polls for the alternate screen buffer (TUI indicator) within *timeout*
-    seconds.  If the TUI never appears it usually means ``claude -r`` failed
-    with an error like "No conversation found with session ID: …".
-
-    NOTE: This check is unreliable inside GNU Screen sessions because screen
-    itself uses the alternate screen buffer — ``#{alternate_on}`` is always 1.
-    Use ``_verify_claude_running_via_ssh`` for verification inside screen.
+    Polls using two methods:
+    1. Alternate screen buffer (``#{alternate_on}``) — works for remote
+       workers inside GNU Screen.
+    2. Process-tree walk from the tmux pane PID — works for local workers
+       where Claude Code does not use the alternate screen buffer.
 
     Returns:
-        (started, error_output) — *started* is True when the TUI is detected.
+        (started, error_output) — *started* is True when Claude is detected.
         When False, *error_output* contains the last terminal lines for diagnosis.
     """
+    from orchestrator.session.health import _get_pane_pid, _has_claude_in_process_tree
+
     start = time.time()
     while time.time() - start < timeout:
         time.sleep(poll_interval)
+        # Method 1: alternate screen (works inside GNU Screen on remote)
         if check_tui_running_in_pane(tmux_sess, tmux_win):
             return True, ""
+        # Method 2: process tree (works for local Claude Code)
+        pane_pid = _get_pane_pid(tmux_sess, tmux_win)
+        if pane_pid is not None and _has_claude_in_process_tree(pane_pid):
+            return True, ""
 
-    # TUI never appeared — capture output to check for errors
+    # Claude never appeared — capture output to check for errors
     output = capture_output(tmux_sess, tmux_win, lines=15)
     return False, output
 
@@ -1065,20 +1070,21 @@ def reconnect_local_worker(
         os.makedirs(tmp_dir, exist_ok=True)
         ensure_window(tmux_sess, tmux_win, cwd=tmp_dir)
 
-        # Check if Claude is still running — use pane-based detection
-        # with ps aux fallback checking both IDs, since after /clear the
-        # process command line retains the original --session-id.
+        # Check if Claude is still running — use process-tree detection
+        # (not alternate screen, since Claude Code doesn't use it locally).
+        alive, _ = check_claude_running_local(
+            session.id,
+            session.claude_session_id,
+            tmux_sess,
+            tmux_win,
+        )
+        if alive:
+            logger.info("Reconnect local %s: Claude still running, nothing to do", session.name)
+            return True
+
+        # Claude not running — make sure the pane is at a shell prompt.
+        # If alternate screen is active (e.g. stale TUI), exit it first.
         if check_tui_running_in_pane(tmux_sess, tmux_win):
-            alive, _ = check_claude_running_local(
-                session.id,
-                session.claude_session_id,
-                tmux_sess,
-                tmux_win,
-            )
-            if alive:
-                logger.info("Reconnect local %s: Claude still running, nothing to do", session.name)
-                return True
-            # TUI showing but Claude dead — exit dead TUI
             send_keys(tmux_sess, tmux_win, "C-c", enter=False)
             time.sleep(0.5)
             send_keys(tmux_sess, tmux_win, "", enter=True)

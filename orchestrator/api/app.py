@@ -74,6 +74,15 @@ async def lifespan(app: FastAPI):
     app.state.orchestrator = orch
     await orch.start()
 
+    # Clean up orphaned tmux control mode clients from previous server runs.
+    # These accumulate on restart and can cause tmux to pause or degrade.
+    try:
+        from orchestrator.terminal.control import cleanup_stale_control_clients
+
+        cleanup_stale_control_clients()
+    except Exception:
+        logger.exception("Control client cleanup failed (non-fatal)")
+
     # Clean up old images if data/images/ exceeds size cap
     try:
         from orchestrator.api.routes.paste import cleanup_images, get_images_dir

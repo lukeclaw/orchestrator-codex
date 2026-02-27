@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 from collections.abc import Callable
 
 logger = logging.getLogger(__name__)
@@ -23,8 +24,8 @@ def _unescape_tmux_output(data: str) -> bytes:
     result = bytearray()
     i = 0
     while i < len(data):
-        if data[i] == '\\' and i + 1 < len(data):
-            if data[i + 1] == '\\':
+        if data[i] == "\\" and i + 1 < len(data):
+            if data[i + 1] == "\\":
                 result.append(0x5C)  # literal backslash
                 i += 2
             elif i + 3 < len(data) and data[i + 1 : i + 4].isdigit():
@@ -34,7 +35,7 @@ def _unescape_tmux_output(data: str) -> bytes:
                 result.append(ord(data[i]))
                 i += 1
         else:
-            result.extend(data[i].encode('utf-8'))
+            result.extend(data[i].encode("utf-8"))
             i += 1
     return bytes(result)
 
@@ -48,15 +49,15 @@ def _parse_output_line(line: str) -> tuple[str, bytes] | None:
 
     Returns ``(pane_id, raw_bytes)`` on success, ``None`` otherwise.
     """
-    if not line.startswith('%output '):
+    if not line.startswith("%output "):
         return None
     # "%output %5 some data here"
-    rest = line[len('%output '):]
-    space = rest.find(' ')
+    rest = line[len("%output ") :]
+    space = rest.find(" ")
     if space == -1:
         return None
     pane_id = rest[:space]
-    raw = _unescape_tmux_output(rest[space + 1:])
+    raw = _unescape_tmux_output(rest[space + 1 :])
     return pane_id, raw
 
 
@@ -100,7 +101,7 @@ def _strip_tmux_sequences(data: bytes, state: dict[str, bool] | None = None) -> 
 
         # Normal mode
         if pending_esc:
-            if b == ord('k'):
+            if b == ord("k"):
                 # Enter ESC k title payload mode and drop both bytes.
                 in_title = True
                 pending_esc = False
@@ -126,12 +127,67 @@ def _strip_tmux_sequences(data: bytes, state: dict[str, bool] | None = None) -> 
     return bytes(result)
 
 
+def cleanup_stale_control_clients() -> int:
+    """Kill orphaned tmux control-mode clients from previous server runs.
+
+    When the orchestrator server restarts without cleanly stopping its
+    ``tmux -C attach-session`` subprocess, the child process gets
+    reparented to PID 1 (launchd/init).  These zombies accumulate and
+    can degrade tmux performance.
+
+    Returns the number of stale clients killed.
+    """
+    import subprocess
+
+    our_pid = os.getpid()
+    killed = 0
+    try:
+        result = subprocess.run(
+            ["ps", "-eo", "pid,ppid,command"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        for line in result.stdout.splitlines():
+            if "tmux -C attach-session" not in line:
+                continue
+            parts = line.split(None, 2)
+            if len(parts) < 3:
+                continue
+            pid, ppid = int(parts[0]), int(parts[1])
+            if pid == our_pid:
+                continue
+            # Only kill clients whose parent is init (ppid=1) — orphaned
+            if ppid == 1:
+                try:
+                    os.kill(pid, 15)  # SIGTERM
+                    killed += 1
+                    logger.info(
+                        "Killed stale tmux control client pid=%d (orphaned, ppid=1)",
+                        pid,
+                    )
+                except ProcessLookupError:
+                    pass
+                except PermissionError:
+                    logger.debug("Cannot kill pid=%d (permission denied)", pid)
+    except Exception:
+        logger.debug("cleanup_stale_control_clients failed", exc_info=True)
+    if killed:
+        logger.info("Cleaned up %d stale tmux control-mode clients", killed)
+    return killed
+
+
 async def check_alternate_screen_async(session: str, window: str) -> bool:
     """Return True if the pane is currently in alternate screen buffer mode."""
     target = f"{session}:{window}"
     try:
         proc = await asyncio.create_subprocess_exec(
-            "tmux", "display-message", "-p", "-t", target, "#{alternate_on}",
+            "tmux",
+            "display-message",
+            "-p",
+            "-t",
+            target,
+            "#{alternate_on}",
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
@@ -149,7 +205,12 @@ async def get_pane_id_async(session: str, window: str) -> str | None:
     target = f"{session}:{window}"
     try:
         proc = await asyncio.create_subprocess_exec(
-            "tmux", "list-panes", "-t", target, "-F", "#{pane_id}",
+            "tmux",
+            "list-panes",
+            "-t",
+            target,
+            "-F",
+            "#{pane_id}",
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
@@ -157,7 +218,7 @@ async def get_pane_id_async(session: str, window: str) -> str | None:
         if proc.returncode != 0:
             return None
         # Take the first pane (active pane) if multiple exist
-        pane_id = stdout.decode().strip().split('\n')[0]
+        pane_id = stdout.decode().strip().split("\n")[0]
         return pane_id if pane_id else None
     except Exception as e:
         logger.error("Failed to resolve pane ID for %s: %s", target, e)
@@ -189,13 +250,19 @@ class TmuxControlConnection:
 
         try:
             import shutil
+
             tmux_path = shutil.which("tmux")
             logger.info(
                 "Starting tmux control mode for session %s (tmux=%s)",
-                self.session, tmux_path,
+                self.session,
+                tmux_path,
             )
             self._process = await asyncio.create_subprocess_exec(
-                "tmux", "-C", "attach-session", "-t", self.session,
+                "tmux",
+                "-C",
+                "attach-session",
+                "-t",
+                self.session,
                 stdin=asyncio.subprocess.PIPE,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
@@ -203,7 +270,8 @@ class TmuxControlConnection:
             self._running = True
             logger.info(
                 "Started tmux control mode for session %s (pid=%s)",
-                self.session, self._process.pid,
+                self.session,
+                self._process.pid,
             )
 
             self._reader_task = asyncio.create_task(self._read_output())
@@ -249,9 +317,9 @@ class TmuxControlConnection:
                 if not line:
                     break
 
-                decoded = line.decode('utf-8', errors='replace').rstrip('\n')
+                decoded = line.decode("utf-8", errors="replace").rstrip("\n")
 
-                if decoded.startswith('%exit'):
+                if decoded.startswith("%exit"):
                     logger.info("tmux control mode exited for session %s", self.session)
                     break
 
@@ -324,9 +392,9 @@ class TmuxControlConnection:
             return False
 
         try:
-            key_bytes = keys.encode('utf-8')
-            hex_keys = ' '.join(f'{b:02x}' for b in key_bytes)
-            cmd = f'send-keys -H -t {target} {hex_keys}\n'
+            key_bytes = keys.encode("utf-8")
+            hex_keys = " ".join(f"{b:02x}" for b in key_bytes)
+            cmd = f"send-keys -H -t {target} {hex_keys}\n"
             self._process.stdin.write(cmd.encode())
             await self._process.stdin.drain()
             return True
@@ -340,7 +408,7 @@ class TmuxControlConnection:
             return False
 
         try:
-            cmd = f'resize-window -t {target} -x {cols} -y {rows}\n'
+            cmd = f"resize-window -t {target} -x {cols} -y {rows}\n"
             self._process.stdin.write(cmd.encode())
             await self._process.stdin.drain()
             return True
@@ -431,21 +499,26 @@ async def resize_async(session: str, window: str, cols: int, rows: int) -> bool:
 
 async def capture_pane_async(session: str, window: str) -> str:
     """Capture pane content asynchronously using subprocess.
-    
+
     Note: tmux control mode doesn't support capture-pane output directly,
     so we use asyncio subprocess for non-blocking capture.
-    
+
     Strips trailing blank lines to avoid cursor positioning issues.
     """
     target = f"{session}:{window}"
     try:
         proc = await asyncio.create_subprocess_exec(
-            "tmux", "capture-pane", "-p", "-e", "-t", target,
+            "tmux",
+            "capture-pane",
+            "-p",
+            "-e",
+            "-t",
+            target,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
         stdout, _ = await proc.communicate()
-        return stdout.decode('utf-8', errors='replace')
+        return stdout.decode("utf-8", errors="replace")
     except Exception as e:
         logger.error("Failed to capture pane: %s", e)
         return ""
@@ -453,19 +526,23 @@ async def capture_pane_async(session: str, window: str) -> str:
 
 async def get_cursor_position_async(session: str, window: str) -> tuple[int, int]:
     """Get cursor position (x, y) from tmux pane.
-    
+
     Returns (cursor_x, cursor_y) where x is column (0-indexed) and y is row (0-indexed).
     """
     target = f"{session}:{window}"
     try:
         proc = await asyncio.create_subprocess_exec(
-            "tmux", "display-message", "-p", "-t", target,
+            "tmux",
+            "display-message",
+            "-p",
+            "-t",
+            target,
             "#{cursor_x} #{cursor_y}",
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
         stdout, _ = await proc.communicate()
-        parts = stdout.decode('utf-8', errors='replace').strip().split()
+        parts = stdout.decode("utf-8", errors="replace").strip().split()
         if len(parts) == 2:
             return int(parts[0]), int(parts[1])
     except Exception as e:
@@ -475,10 +552,10 @@ async def get_cursor_position_async(session: str, window: str) -> tuple[int, int
 
 async def capture_pane_with_cursor_async(session: str, window: str) -> tuple[str, int, int]:
     """Capture pane content and cursor position together.
-    
+
     Returns (content, cursor_x, cursor_y).
     Runs both captures concurrently for speed (~25ms vs ~45ms sequential).
-    
+
     Note: This has a race condition - content and cursor are captured at slightly
     different times. Use capture_pane_with_cursor_atomic_async for correctness.
     """
@@ -492,9 +569,9 @@ async def capture_pane_with_cursor_async(session: str, window: str) -> tuple[str
 
 async def capture_pane_with_cursor_atomic_async(session: str, window: str) -> tuple[str, int, int]:
     """Capture pane content AND cursor position atomically in a single subprocess.
-    
+
     Returns (content, cursor_x, cursor_y).
-    
+
     This eliminates the race condition in capture_pane_with_cursor_async where
     content and cursor could be captured at different times, causing cursor drift.
     """
@@ -504,8 +581,9 @@ async def capture_pane_with_cursor_atomic_async(session: str, window: str) -> tu
         # Uses a separator that won't appear in terminal output
         # Only echo separator if capture-pane succeeds (using &&)
         proc = await asyncio.create_subprocess_exec(
-            "sh", "-c",
-            f'tmux capture-pane -p -e -t {target} && '
+            "sh",
+            "-c",
+            f"tmux capture-pane -p -e -t {target} && "
             f'echo "===CURSOR_POSITION===" && '
             f'tmux display-message -p -t {target} "#{{cursor_x}} #{{cursor_y}}"',
             stdout=asyncio.subprocess.PIPE,
@@ -517,7 +595,7 @@ async def capture_pane_with_cursor_atomic_async(session: str, window: str) -> tu
         if proc.returncode != 0:
             return "", 0, 0
 
-        output = stdout.decode('utf-8', errors='replace')
+        output = stdout.decode("utf-8", errors="replace")
 
         # Parse the combined output
         if "===CURSOR_POSITION===" in output:
@@ -539,9 +617,9 @@ async def capture_pane_with_history_async(
     session: str, window: str, scrollback_lines: int = 1000
 ) -> tuple[str, int, int, int]:
     """Capture pane content with scrollback history and cursor position atomically.
-    
+
     Returns (content, cursor_x, cursor_y, total_lines).
-    
+
     Args:
         session: tmux session name
         window: tmux window name
@@ -552,8 +630,9 @@ async def capture_pane_with_history_async(
         # Capture content with scrollback, plus cursor position and history size
         # Only echo separator if capture-pane succeeds (using &&)
         proc = await asyncio.create_subprocess_exec(
-            "sh", "-c",
-            f'tmux capture-pane -p -e -t {target} -S -{scrollback_lines} && '
+            "sh",
+            "-c",
+            f"tmux capture-pane -p -e -t {target} -S -{scrollback_lines} && "
             f'echo "===CURSOR_POSITION===" && '
             f'tmux display-message -p -t {target} "#{{cursor_x}} #{{cursor_y}} #{{history_size}}"',
             stdout=asyncio.subprocess.PIPE,
@@ -565,7 +644,7 @@ async def capture_pane_with_history_async(
         if proc.returncode != 0:
             return "", 0, 0, 0
 
-        output = stdout.decode('utf-8', errors='replace')
+        output = stdout.decode("utf-8", errors="replace")
 
         # Parse the combined output
         if "===CURSOR_POSITION===" in output:
@@ -575,7 +654,7 @@ async def capture_pane_with_history_async(
                 cursor_x = int(parts[0])
                 cursor_y = int(parts[1])
                 history_size = int(parts[2]) if len(parts) >= 3 else 0
-                total_lines = content.count('\n') + 1
+                total_lines = content.count("\n") + 1
                 return content, cursor_x, cursor_y, total_lines
 
         # Fallback if parsing fails
