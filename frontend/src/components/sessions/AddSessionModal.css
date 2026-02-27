@@ -1,3 +1,11 @@
+/* Modal subtitle */
+.modal-subtitle {
+  color: var(--text-muted);
+  font-size: 13px;
+  margin-bottom: 16px;
+  line-height: 1.4;
+}
+
 .rdev-list-header {
   display: flex;
   align-items: center;
@@ -139,6 +147,14 @@
   font-size: 13px;
   font-weight: 500;
   color: var(--text);
+}
+
+.rdev-cluster {
+  font-size: 10px;
+  color: var(--text-muted);
+  background: var(--surface-hover);
+  padding: 1px 5px;
+  border-radius: 3px;
 }
 
 .rdev-item-meta {

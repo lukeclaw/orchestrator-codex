@@ -20,10 +20,10 @@ interface RdevInstance {
   worker_name?: string
 }
 
-// Generate a default worker name like "w1", "w2", etc.
+// Generate a default worker name like "worker-a1b"
 function generateWorkerName(): string {
   const timestamp = Date.now().toString(36).slice(-3)
-  return `w${timestamp}`
+  return `worker-${timestamp}`
 }
 
 const WORKER_BASE_DIR = '/tmp/orchestrator/workers'
@@ -182,6 +182,7 @@ export default function AddSessionModal({ open, onClose }: Props) {
     <Modal open={open} onClose={onClose} title="Add New Worker">
       <form onSubmit={handleSubmit} data-testid="add-session-form">
         <div className="modal-body">
+          <div className="modal-subtitle">Connect a local, SSH, or rdev machine to your orchestrator.</div>
           <div className="form-group">
             <label>Worker Type</label>
             <div className="toggle-group" data-testid="worker-type-toggle">
@@ -210,7 +211,7 @@ export default function AddSessionModal({ open, onClose }: Props) {
           </div>
 
           <div className="form-group">
-            <label>Worker Name <span className="field-required">*required</span></label>
+            <label>Worker Name <span className="field-required">*</span></label>
             <input
               type="text"
               data-testid="session-name-input"
@@ -223,13 +224,16 @@ export default function AddSessionModal({ open, onClose }: Props) {
               placeholder="e.g. api-worker"
               className={nameError ? 'input-error' : ''}
             />
-            {nameError && <div className="field-error">{nameError}</div>}
+            {nameError
+              ? <div className="field-error">{nameError}</div>
+              : <div className="field-hint">Letters, numbers, hyphens, and underscores only</div>
+            }
           </div>
 
           {workerType === 'rdev' ? (
             <div className="form-group">
               <div className="rdev-list-header">
-                <label>Select rdev Instance <span className="field-required">*required</span></label>
+                <label>Select rdev Instance <span className="field-required">*</span></label>
                 <button
                   type="button"
                   className="btn-icon"
@@ -256,6 +260,13 @@ export default function AddSessionModal({ open, onClose }: Props) {
                     <div
                       key={rdev.name}
                       className={`rdev-item ${selectedRdev === rdev.name ? 'selected' : ''} ${rdev.in_use ? 'in-use' : ''} ${rdev.state !== 'RUNNING' ? 'not-running' : ''}`}
+                      title={
+                        rdev.in_use
+                          ? `Already in use by worker "${rdev.worker_name}"`
+                          : rdev.state !== 'RUNNING'
+                            ? `Instance is ${rdev.state.toLowerCase()}`
+                            : ''
+                      }
                       onClick={() => {
                         touchField('rdev')
                         if (!rdev.in_use && rdev.state === 'RUNNING') {
@@ -269,6 +280,7 @@ export default function AddSessionModal({ open, onClose }: Props) {
                       <div className="rdev-item-main">
                         <span className={`rdev-state ${rdev.state.toLowerCase()}`}>{rdev.state}</span>
                         <span className="rdev-name">{rdev.name}</span>
+                        {rdev.cluster && <span className="rdev-cluster">{rdev.cluster}</span>}
                       </div>
                       <div className="rdev-item-meta">
                         {rdev.in_use ? (
@@ -287,7 +299,7 @@ export default function AddSessionModal({ open, onClose }: Props) {
           ) : workerType === 'ssh' ? (
             <>
               <div className="form-group">
-                <label>SSH Host <span className="field-required">*required</span></label>
+                <label>SSH Host <span className="field-required">*</span></label>
                 <input
                   type="text"
                   data-testid="session-ssh-host-input"
@@ -325,6 +337,7 @@ export default function AddSessionModal({ open, onClose }: Props) {
                   onChange={e => setMpPath(e.target.value)}
                   placeholder="e.g. /src/my-project"
                 />
+                <div className="field-hint">Auto-generated from worker name</div>
               </div>
             </>
           )}
