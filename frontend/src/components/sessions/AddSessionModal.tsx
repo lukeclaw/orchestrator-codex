@@ -37,7 +37,6 @@ export default function AddSessionModal({ open, onClose }: Props) {
   const [mpPath, setMpPath] = useState('')
 
   // Rdev worker state
-  const [rdevName, setRdevName] = useState('')
   const [selectedRdev, setSelectedRdev] = useState<string>('')
 
   // SSH worker state
@@ -57,9 +56,9 @@ export default function AddSessionModal({ open, onClose }: Props) {
   const [loadingRdevs, setLoadingRdevs] = useState(false)
   const [rdevError, setRdevError] = useState('')
 
-  // Get current name based on worker type
-  const name = workerType === 'rdev' ? rdevName : workerType === 'ssh' ? sshName : localName
-  const setName = workerType === 'rdev' ? setRdevName : workerType === 'ssh' ? setSshName : setLocalName
+  // Get current name based on worker type (not used for rdev)
+  const name = workerType === 'ssh' ? sshName : localName
+  const setName = workerType === 'ssh' ? setSshName : setLocalName
 
   // Reset state when modal is closed
   useEffect(() => {
@@ -67,7 +66,6 @@ export default function AddSessionModal({ open, onClose }: Props) {
       setWorkerType('local')
       setLocalName(generateWorkerName())
       setMpPath('')
-      setRdevName('')
       setSelectedRdev('')
       setSshName(generateWorkerName())
       setSshHost('')
@@ -85,15 +83,15 @@ export default function AddSessionModal({ open, onClose }: Props) {
 
   // Validation helper
   const validateForm = () => {
-    const currentName = workerType === 'rdev' ? rdevName : workerType === 'ssh' ? sshName : localName
-    const nameValid = !!currentName.trim() && !/[^a-zA-Z0-9_\-]/.test(currentName)
     if (workerType === 'rdev') {
-      return nameValid && !!selectedRdev
-    } else if (workerType === 'ssh') {
-      return nameValid && !!sshHost.trim()
-    } else {
-      return nameValid
+      return !!selectedRdev
     }
+    const currentName = workerType === 'ssh' ? sshName : localName
+    const nameValid = !!currentName.trim() && !/[^a-zA-Z0-9_\-]/.test(currentName)
+    if (workerType === 'ssh') {
+      return nameValid && !!sshHost.trim()
+    }
+    return nameValid
   }
 
   // Validate worker name: only ASCII letters, digits, hyphens, underscores
@@ -149,20 +147,20 @@ export default function AddSessionModal({ open, onClose }: Props) {
     setCreating(true)
 
     try {
-      // Sanitize name: replace / and \ with _ to avoid folder structure issues
-      const sanitizedName = name.trim().replace(/[/\\]/g, '_')
-      const payload: Record<string, unknown> = { name: sanitizedName }
+      let payload: Record<string, unknown>
 
       if (workerType === 'rdev') {
         if (!selectedRdev) return
-        payload.host = selectedRdev
+        // Worker name matches rdev instance name
+        const sanitizedName = selectedRdev.replace(/[/\\]/g, '_')
+        payload = { name: sanitizedName, host: selectedRdev }
       } else if (workerType === 'ssh') {
         if (!sshHost.trim()) return
-        payload.host = sshHost.trim()
-        payload.work_dir = sshWorkDir.trim() || null
+        const sanitizedName = name.trim().replace(/[/\\]/g, '_')
+        payload = { name: sanitizedName, host: sshHost.trim(), work_dir: sshWorkDir.trim() || null }
       } else {
-        payload.host = 'localhost'
-        payload.work_dir = mpPath.trim() || null
+        const sanitizedName = name.trim().replace(/[/\\]/g, '_')
+        payload = { name: sanitizedName, host: 'localhost', work_dir: mpPath.trim() || null }
       }
 
       await api('/api/sessions', {
@@ -210,25 +208,27 @@ export default function AddSessionModal({ open, onClose }: Props) {
             </div>
           </div>
 
-          <div className="form-group">
-            <label>Worker Name <span className="field-required">*</span></label>
-            <input
-              type="text"
-              data-testid="session-name-input"
-              value={name}
-              onChange={e => {
-                setName(e.target.value)
-                touchField('name')
-              }}
-              onBlur={() => touchField('name')}
-              placeholder="e.g. api-worker"
-              className={nameError ? 'input-error' : ''}
-            />
-            {nameError
-              ? <div className="field-error">{nameError}</div>
-              : <div className="field-hint">Letters, numbers, hyphens, and underscores only</div>
-            }
-          </div>
+          {workerType !== 'rdev' && (
+            <div className="form-group">
+              <label>Worker Name <span className="field-required">*</span></label>
+              <input
+                type="text"
+                data-testid="session-name-input"
+                value={name}
+                onChange={e => {
+                  setName(e.target.value)
+                  touchField('name')
+                }}
+                onBlur={() => touchField('name')}
+                placeholder="e.g. api-worker"
+                className={nameError ? 'input-error' : ''}
+              />
+              {nameError
+                ? <div className="field-error">{nameError}</div>
+                : <div className="field-hint">Letters, numbers, hyphens, and underscores only</div>
+              }
+            </div>
+          )}
 
           {workerType === 'rdev' ? (
             <div className="form-group">
@@ -271,9 +271,6 @@ export default function AddSessionModal({ open, onClose }: Props) {
                         touchField('rdev')
                         if (!rdev.in_use && rdev.state === 'RUNNING') {
                           setSelectedRdev(rdev.name)
-                          // Auto-set worker name to rdev name
-                          setName(rdev.name)
-                          touchField('name')
                         }
                       }}
                     >
