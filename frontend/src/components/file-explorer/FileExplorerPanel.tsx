@@ -143,9 +143,15 @@ export default function FileExplorerPanel({
   const [renameTarget, setRenameTarget] = useState<{ path: string; depth: number } | null>(null)
   const renameInputRef = useRef<HTMLInputElement>(null)
   const renameSubmittedRef = useRef(false)
-  // Drag and drop
-  const [dragPath, setDragPath] = useState<string | null>(null)
+  // Drag and drop (mouse-event based — HTML5 DnD doesn't work in Tauri WebView)
+  const [dragState, setDragState] = useState<{
+    sourcePath: string
+    startX: number
+    startY: number
+    active: boolean  // true once mouse moved >5px from start
+  } | null>(null)
   const [dropTarget, setDropTarget] = useState<string | null>(null)
+  const dropTargetRef = useRef<string | null>(null)
   const filterInputRef = useRef<HTMLInputElement>(null)
   const treeRef = useRef<HTMLDivElement>(null)
 
@@ -392,57 +398,102 @@ export default function FileExplorerPanel({
     setRenameTarget(null)
   }, [])
 
-  // Drag and drop — move via API
-  const handleDragStart = useCallback((e: React.DragEvent, path: string) => {
-    e.dataTransfer.setData('text/plain', path)
-    e.dataTransfer.effectAllowed = 'move'
-    setDragPath(path)
+  // Drag and drop via mouse events (HTML5 DnD API doesn't work in Tauri WebView)
+  const DRAG_THRESHOLD = 5
+
+  const handleNodeMouseDown = useCallback((e: React.MouseEvent, path: string) => {
+    // Only left button, ignore if renaming
+    if (e.button !== 0) return
+    setDragState({ sourcePath: path, startX: e.clientX, startY: e.clientY, active: false })
   }, [])
 
-  const handleDragOver = useCallback((e: React.DragEvent, targetPath: string) => {
-    e.preventDefault()
-    e.dataTransfer.dropEffect = 'move'
-    if (targetPath !== dropTarget) {
-      setDropTarget(targetPath)
+  // Keep ref in sync for use in mouseup handler (avoids stale closure)
+  const updateDropTarget = useCallback((val: string | null) => {
+    dropTargetRef.current = val
+    setDropTarget(val)
+  }, [])
+
+  // Global mousemove/mouseup while dragging — attached via useEffect
+  useEffect(() => {
+    if (!dragState) return
+
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!dragState.active) {
+        const dx = e.clientX - dragState.startX
+        const dy = e.clientY - dragState.startY
+        if (Math.abs(dx) < DRAG_THRESHOLD && Math.abs(dy) < DRAG_THRESHOLD) return
+        // Activate drag
+        setDragState(prev => prev ? { ...prev, active: true } : null)
+      }
+
+      // Hit-test: find the .fe-node under the cursor
+      const el = document.elementFromPoint(e.clientX, e.clientY)
+      if (!el) { updateDropTarget(null); return }
+      const nodeEl = (el as HTMLElement).closest?.('.fe-node') as HTMLElement | null
+      if (!nodeEl) {
+        // Over empty tree area → root
+        const treeEl = (el as HTMLElement).closest?.('.fe-tree')
+        updateDropTarget(treeEl ? '.' : null)
+        return
+      }
+      const targetPath = nodeEl.dataset.path
+      const isDir = nodeEl.dataset.isDir === 'true'
+      if (!targetPath) { updateDropTarget(null); return }
+      const dir = isDir ? targetPath : (parentDir(targetPath) || '.')
+      updateDropTarget(dir)
     }
-  }, [dropTarget])
 
-  const handleDragLeave = useCallback(() => {
-    setDropTarget(null)
-  }, [])
+    const handleMouseUp = async () => {
+      const state = dragState
+      const currentDropTarget = dropTargetRef.current
+      setDragState(null)
+      updateDropTarget(null)
 
-  const handleDragEnd = useCallback(() => {
-    setDragPath(null)
-    setDropTarget(null)
-  }, [])
+      if (!state.active || !currentDropTarget) return
 
-  const handleDrop = useCallback(async (e: React.DragEvent, targetDir: string) => {
-    e.preventDefault()
-    setDropTarget(null)
-    setDragPath(null)
-    const sourcePath = e.dataTransfer.getData('text/plain')
-    if (!sourcePath) return
+      const sourcePath = state.sourcePath
+      const targetDir = currentDropTarget
 
-    // Validation
-    if (sourcePath === targetDir) return // drop onto self
-    if (isAncestor(sourcePath, targetDir)) return // can't drop parent into child
-    const sourceParent = parentDir(sourcePath)
-    if (sourceParent === targetDir || (sourceParent === '' && targetDir === '.')) return // same dir = no-op
+      // Validation
+      if (sourcePath === targetDir) return
+      if (isAncestor(sourcePath, targetDir)) return
+      const sourceParent = parentDir(sourcePath)
+      if (sourceParent === targetDir || (sourceParent === '' && targetDir === '.')) return
 
-    const fileName = extractName(sourcePath)
-    const toPath = targetDir === '.' || targetDir === '' ? fileName : `${targetDir}/${fileName}`
+      const fileName = extractName(sourcePath)
+      const toPath = targetDir === '.' || targetDir === '' ? fileName : `${targetDir}/${fileName}`
 
-    try {
-      await api(`/api/sessions/${sessionId}/files/move`, {
-        method: 'POST',
-        body: JSON.stringify({ from_path: sourcePath, to_path: toPath }),
-      })
-      onFileRenamed?.(sourcePath, toPath)
-      loadRoot()
-    } catch (e) {
-      notify(e instanceof Error ? e.message : 'Failed to move', 'error')
+      try {
+        await api(`/api/sessions/${sessionId}/files/move`, {
+          method: 'POST',
+          body: JSON.stringify({ from_path: sourcePath, to_path: toPath }),
+        })
+        onFileRenamed?.(sourcePath, toPath)
+        loadRoot()
+      } catch (err) {
+        notify(err instanceof Error ? err.message : 'Failed to move', 'error')
+      }
     }
-  }, [sessionId, onFileRenamed, loadRoot, notify])
+
+    document.addEventListener('mousemove', handleMouseMove)
+    document.addEventListener('mouseup', handleMouseUp)
+    return () => {
+      document.removeEventListener('mousemove', handleMouseMove)
+      document.removeEventListener('mouseup', handleMouseUp)
+    }
+  }, [dragState, sessionId, onFileRenamed, loadRoot, notify, updateDropTarget])
+
+  // Set cursor to grabbing during active drag
+  useEffect(() => {
+    if (dragState?.active) {
+      document.body.style.cursor = 'grabbing'
+      document.body.style.userSelect = 'none'
+      return () => {
+        document.body.style.cursor = ''
+        document.body.style.userSelect = ''
+      }
+    }
+  }, [dragState?.active])
 
   // Keyboard navigation
   const handleKeyDown = useCallback((e: KeyboardEvent<HTMLDivElement>) => {
@@ -594,9 +645,6 @@ export default function FileExplorerPanel({
               setContextMenu({ x: e.clientX, y: e.clientY, path: '.' })
             }
           }}
-          onDragOver={e => handleDragOver(e, '.')}
-          onDragLeave={handleDragLeave}
-          onDrop={e => handleDrop(e, '.')}
         >
           {rootLoading && tree.length === 0 ? (
             <div className="fe-skeleton">
@@ -634,8 +682,8 @@ export default function FileExplorerPanel({
                   && node.is_dir && node.expanded
                   && node.path === newFileInput.dirPath
                 const isRenaming = renameTarget?.path === node.path
-                const isDragging = dragPath === node.path
-                const isDropTarget = dropTarget === node.path && node.is_dir
+                const isDragging = dragState?.active && dragState.sourcePath === node.path
+                const isDropTarget = node.is_dir && dropTarget === node.path
                 return (
                   <React.Fragment key={node.path}>
                     <div
@@ -645,12 +693,9 @@ export default function FileExplorerPanel({
                       aria-expanded={node.is_dir ? node.expanded : undefined}
                       aria-level={depth + 1}
                       aria-selected={node.path === selectedFile}
-                      draggable={!isRenaming}
-                      onDragStart={e => handleDragStart(e, node.path)}
-                      onDragEnd={handleDragEnd}
-                      onDragOver={node.is_dir ? e => { e.stopPropagation(); handleDragOver(e, node.path) } : undefined}
-                      onDragLeave={node.is_dir ? handleDragLeave : undefined}
-                      onDrop={node.is_dir ? e => { e.stopPropagation(); handleDrop(e, node.path) } : undefined}
+                      data-path={node.path}
+                      data-is-dir={String(node.is_dir)}
+                      onMouseDown={!isRenaming ? (e: React.MouseEvent) => handleNodeMouseDown(e, node.path) : undefined}
                       onClick={() => {
                         setFocusIndex(i)
                         if (node.is_dir) {
