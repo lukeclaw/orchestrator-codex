@@ -7,7 +7,6 @@ import {
   IconFolderOpen,
   IconFile,
   IconFilter,
-  IconRefresh,
   IconX,
 } from '../common/Icons'
 import type { ViewMode } from '../../hooks/useFileExplorerState'
@@ -71,12 +70,21 @@ const GIT_BADGE: Record<string, string> = {
 }
 
 /** Convert API entries into TreeNodes, preserving pre-fetched children. */
-function entriesToNodes(entries: FileEntry[]): TreeNode[] {
-  return entries.map(e => ({
-    ...e,
-    expanded: false,
-    children: e.children ? entriesToNodes(e.children) : undefined,
-  }))
+function entriesToNodes(entries: FileEntry[], oldNodes?: TreeNode[]): TreeNode[] {
+  const oldMap = new Map<string, TreeNode>()
+  if (oldNodes) {
+    for (const n of oldNodes) oldMap.set(n.path, n)
+  }
+  return entries.map(e => {
+    const old = oldMap.get(e.path)
+    return {
+      ...e,
+      expanded: old?.expanded ?? false,
+      children: e.children
+        ? entriesToNodes(e.children, old?.children)
+        : old?.expanded ? old.children : undefined,
+    }
+  })
 }
 
 // --- Component ---
@@ -131,11 +139,14 @@ export default function FileExplorerPanel({
   }, [sessionId, showIgnored])
 
   // Load root on mount / refresh — depth=5 prefetches multiple levels
+  const refreshingRef = useRef(false)
   const loadRoot = useCallback(async () => {
+    if (refreshingRef.current) return
+    refreshingRef.current = true
     setRootLoading(true)
     try {
       const { entries, gitAvailable: ga } = await fetchDir('.', 5)
-      setTree(entriesToNodes(entries))
+      setTree(prev => entriesToNodes(entries, prev))
       setGitAvailable(ga)
       // For "changed" view, collect all files with git status
       if (ga) {
@@ -145,13 +156,16 @@ export default function FileExplorerPanel({
       // Silently fail - work_dir may not exist yet
     } finally {
       setRootLoading(false)
+      refreshingRef.current = false
     }
   }, [fetchDir])
 
+  // Initial load + auto-refresh every 3s while panel is open
   useEffect(() => {
-    if (isOpen) {
-      loadRoot()
-    }
+    if (!isOpen) return
+    loadRoot()
+    const id = setInterval(loadRoot, 3000)
+    return () => clearInterval(id)
   }, [isOpen, loadRoot])
 
   // Find a node by path in a tree
@@ -407,13 +421,6 @@ export default function FileExplorerPanel({
             >
               <IconFilter size={14} />
             </button>
-            <button
-              className="fe-header-btn"
-              onClick={loadRoot}
-              title="Refresh"
-            >
-              <IconRefresh size={14} />
-            </button>
           </div>
         </div>
 
@@ -481,6 +488,7 @@ export default function FileExplorerPanel({
                     className="fe-new-file-input"
                     placeholder="filename"
                     onKeyDown={e => {
+                      e.stopPropagation()
                       if (e.key === 'Enter') handleNewFileSubmit((e.target as HTMLInputElement).value)
                       if (e.key === 'Escape') handleNewFileCancel()
                     }}
@@ -567,6 +575,7 @@ export default function FileExplorerPanel({
                           className="fe-new-file-input"
                           placeholder="filename"
                           onKeyDown={e => {
+                            e.stopPropagation()
                             if (e.key === 'Enter') handleNewFileSubmit((e.target as HTMLInputElement).value)
                             if (e.key === 'Escape') handleNewFileCancel()
                           }}

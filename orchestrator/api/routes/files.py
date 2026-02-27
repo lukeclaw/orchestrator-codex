@@ -730,7 +730,7 @@ def _read_remote_file(host: str, work_dir: str, path: str, max_lines: int) -> Fi
 # Remote caching
 # ---------------------------------------------------------------------------
 _remote_dir_cache: dict[str, tuple[float, list[FileEntry], bool]] = {}
-_REMOTE_DIR_CACHE_TTL = 60.0
+_REMOTE_DIR_CACHE_TTL = 5.0
 
 _remote_content_cache: dict[str, tuple[float, FileContentResponse]] = {}
 _REMOTE_CONTENT_CACHE_TTL = 120.0
