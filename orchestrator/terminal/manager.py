@@ -83,7 +83,7 @@ def create_window(session_name: str, window_name: str, cwd: str | None = None) -
     if not session_exists(session_name):
         create_session(session_name)
 
-    args = ["new-window", "-t", session_name, "-n", window_name]
+    args = ["new-window", "-d", "-t", session_name, "-n", window_name]
     if cwd:
         import os
         os.makedirs(cwd, exist_ok=True)
