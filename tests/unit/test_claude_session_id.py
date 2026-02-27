@@ -234,8 +234,10 @@ class TestReconnectUsesClaudeSessionId:
     @patch('orchestrator.session.reconnect.get_path_export_command', return_value="export PATH=...")
     @patch('orchestrator.session.reconnect.get_worker_prompt', return_value=None)
     @patch('orchestrator.session.reconnect.check_tui_running_in_pane', return_value=False)
+    @patch('orchestrator.session.health.check_claude_running_local',
+           return_value=(False, "not running"))
     def test_local_reconnect_uses_claude_session_id(
-        self, mock_tui, mock_prompt, mock_path, mock_ensure,
+        self, mock_alive, mock_tui, mock_prompt, mock_path, mock_ensure,
         mock_safe_send, mock_get_arg, mock_check_exists, mock_verify,
     ):
         """reconnect_local_worker should use claude_session_id for session check."""
@@ -270,8 +272,10 @@ class TestReconnectUsesClaudeSessionId:
     @patch('orchestrator.session.reconnect.get_path_export_command', return_value="export PATH=...")
     @patch('orchestrator.session.reconnect.get_worker_prompt', return_value=None)
     @patch('orchestrator.session.reconnect.check_tui_running_in_pane', return_value=False)
+    @patch('orchestrator.session.health.check_claude_running_local',
+           return_value=(False, "not running"))
     def test_local_reconnect_falls_back_to_orch_id(
-        self, mock_tui, mock_prompt, mock_path, mock_ensure,
+        self, mock_alive, mock_tui, mock_prompt, mock_path, mock_ensure,
         mock_safe_send, mock_get_arg, mock_check_exists, mock_verify,
     ):
         """reconnect_local_worker without claude_session_id should use session.id."""
@@ -645,8 +649,10 @@ class TestClaudeLaunchRecovery:
     @patch('orchestrator.session.reconnect.get_path_export_command', return_value="export PATH=...")
     @patch('orchestrator.session.reconnect.get_worker_prompt', return_value=None)
     @patch('orchestrator.session.reconnect.check_tui_running_in_pane', return_value=False)
+    @patch('orchestrator.session.health.check_claude_running_local',
+           return_value=(False, "not running"))
     def test_local_reconnect_retries_on_r_failure(
-        self, mock_tui, mock_prompt, mock_path, mock_ensure,
+        self, mock_alive, mock_tui, mock_prompt, mock_path, mock_ensure,
         mock_safe_send, mock_check_exists, mock_send_keys, mock_verify,
     ):
         """When -r fails, should retry with --session-id."""
@@ -691,8 +697,10 @@ class TestClaudeLaunchRecovery:
     @patch('orchestrator.session.reconnect.get_path_export_command', return_value="export PATH=...")
     @patch('orchestrator.session.reconnect.get_worker_prompt', return_value=None)
     @patch('orchestrator.session.reconnect.check_tui_running_in_pane', return_value=False)
+    @patch('orchestrator.session.health.check_claude_running_local',
+           return_value=(False, "not running"))
     def test_local_reconnect_no_retry_on_success(
-        self, mock_tui, mock_prompt, mock_path, mock_ensure,
+        self, mock_alive, mock_tui, mock_prompt, mock_path, mock_ensure,
         mock_safe_send, mock_check_exists, mock_verify,
     ):
         """When -r succeeds, should NOT retry."""
@@ -732,8 +740,10 @@ class TestClaudeLaunchRecovery:
     @patch('orchestrator.session.reconnect.get_path_export_command', return_value="export PATH=...")
     @patch('orchestrator.session.reconnect.get_worker_prompt', return_value=None)
     @patch('orchestrator.session.reconnect.check_tui_running_in_pane', return_value=False)
+    @patch('orchestrator.session.health.check_claude_running_local',
+           return_value=(False, "not running"))
     def test_local_reconnect_gives_up_after_retry_fails(
-        self, mock_tui, mock_prompt, mock_path, mock_ensure,
+        self, mock_alive, mock_tui, mock_prompt, mock_path, mock_ensure,
         mock_safe_send, mock_check_exists, mock_send_keys, mock_verify,
     ):
         """When both -r and --session-id fail, should give up gracefully."""
