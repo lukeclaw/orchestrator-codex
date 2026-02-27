@@ -166,16 +166,16 @@ class TestListFiles:
         (tmp_path / ".hidden").write_text("secret")
         (tmp_path / "visible.txt").write_text("hi")
 
-        resp = client.get(f"/api/sessions/{session_id}/files")
+        resp = client.get(f"/api/sessions/{session_id}/files?show_hidden=false")
         names = [e["name"] for e in resp.json()["entries"]]
         assert "visible.txt" in names
         assert ".hidden" not in names
 
-    def test_show_ignored(self, client_with_session):
+    def test_show_hidden(self, client_with_session):
         client, session_id, tmp_path = client_with_session
         (tmp_path / ".hidden").write_text("secret")
 
-        resp = client.get(f"/api/sessions/{session_id}/files?show_ignored=true")
+        resp = client.get(f"/api/sessions/{session_id}/files?show_hidden=true")
         names = [e["name"] for e in resp.json()["entries"]]
         assert ".hidden" in names
 
@@ -458,7 +458,7 @@ class TestRemoteListFiles:
         (tmp_path / ".hidden").write_text("secret")
         (tmp_path / "visible.txt").write_text("hi")
 
-        resp = client.get(f"/api/sessions/{session_id}/files")
+        resp = client.get(f"/api/sessions/{session_id}/files?show_hidden=false")
         names = [e["name"] for e in resp.json()["entries"]]
         assert "visible.txt" in names
         assert ".hidden" not in names

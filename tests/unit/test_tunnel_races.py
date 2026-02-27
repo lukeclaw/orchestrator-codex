@@ -49,6 +49,19 @@ def _make_manager(**kwargs) -> ReverseTunnelManager:
         return ReverseTunnelManager(**defaults)
 
 
+def _mock_open():
+    """Create a mock for builtins.open that returns a file-like context manager.
+
+    The mock file's tell() returns 0 so that _read_log_since can compare
+    end_pos (int) <= start_pos (int) without TypeError.
+    """
+    mock_file = MagicMock()
+    mock_file.tell.return_value = 0
+    mock_file.__enter__ = MagicMock(return_value=mock_file)
+    mock_file.__exit__ = MagicMock(return_value=False)
+    return MagicMock(return_value=mock_file)
+
+
 # ---------------------------------------------------------------------------
 # Race 1: tunnel_health_loop restart_tunnel vs reconnect _ensure_tunnel
 #
@@ -94,7 +107,7 @@ class TestRace1ConcurrentRestartFromMonitorAndReconnect:
             pid = mgr.restart_tunnel("sess-1", "worker-1", "host/vm")
             results[name] = pid
 
-        with patch("builtins.open", MagicMock()):
+        with patch("builtins.open", _mock_open()):
             t1 = threading.Thread(target=restart_thread, args=("monitor",))
             t2 = threading.Thread(target=restart_thread, args=("reconnect",))
             t1.start()
@@ -153,14 +166,14 @@ class TestRace1ConcurrentRestartFromMonitorAndReconnect:
             mgr.stop_tunnel("sess-1")
             event_t1_stopped.set()
             event_t2_may_start.wait(timeout=3)
-            with patch("builtins.open", MagicMock()):
+            with patch("builtins.open", _mock_open()):
                 results["t1"] = mgr.start_tunnel("sess-1", "worker-1", "host/vm")
 
         def thread_2():
             event_t1_stopped.wait(timeout=3)
             mgr.stop_tunnel("sess-1")  # finds nothing, returns False
             event_t2_may_start.set()
-            with patch("builtins.open", MagicMock()):
+            with patch("builtins.open", _mock_open()):
                 results["t2"] = mgr.start_tunnel("sess-1", "worker-1", "host/vm")
 
         t1 = threading.Thread(target=thread_1)
@@ -254,7 +267,7 @@ class TestRace2CleanupDeadEntryDuringStartTunnel:
         new_proc = _make_mock_proc(pid=300, alive=True)
         mock_popen.return_value = new_proc
 
-        with patch("builtins.open", MagicMock()):
+        with patch("builtins.open", _mock_open()):
             pid = mgr.start_tunnel("sess-1", "worker-1", "host/vm")
 
         assert pid == 300
@@ -300,13 +313,13 @@ class TestRace3RecoverTunnelsVsHealthLoop:
 
         def recover_thread():
             barrier.wait()
-            with patch("builtins.open", MagicMock()):
+            with patch("builtins.open", _mock_open()):
                 pid = mgr.recover_tunnel("sess-1", "worker-1", "host/vm", stored_pid=None)
             results["recover"] = pid
 
         def health_thread():
             barrier.wait()
-            with patch("builtins.open", MagicMock()):
+            with patch("builtins.open", _mock_open()):
                 pid = mgr.restart_tunnel("sess-1", "worker-1", "host/vm")
             results["health"] = pid
 
@@ -487,7 +500,7 @@ class TestRace5TwoConcurrentRestartsSameSession:
             mgr.stop_tunnel("sess-1")
             t1_stopped.set()
             t2_stopped.wait(timeout=3)
-            with patch("builtins.open", MagicMock()):
+            with patch("builtins.open", _mock_open()):
                 results["t1_pid"] = mgr.start_tunnel("sess-1", "worker-1", "host/vm")
 
         def thread_2():
@@ -495,7 +508,7 @@ class TestRace5TwoConcurrentRestartsSameSession:
             t1_stopped.wait(timeout=3)
             mgr.stop_tunnel("sess-1")  # no-op since T1 already popped
             t2_stopped.set()
-            with patch("builtins.open", MagicMock()):
+            with patch("builtins.open", _mock_open()):
                 results["t2_pid"] = mgr.start_tunnel("sess-1", "worker-1", "host/vm")
 
         t1 = threading.Thread(target=thread_1)
@@ -532,7 +545,7 @@ class TestRace5TwoConcurrentRestartsSameSession:
 
         def restart_worker(i):
             try:
-                with patch("builtins.open", MagicMock()):
+                with patch("builtins.open", _mock_open()):
                     mgr.restart_tunnel("sess-1", "worker-1", "host/vm")
             except Exception as e:
                 errors.append((i, e))
@@ -583,7 +596,7 @@ class TestRace6KillOrphanKillsNewTunnel:
             killed_pids.append((pid, sig))
 
         # Scenario setup: start a tunnel, then orphan cleanup finds its PID
-        with patch("builtins.open", MagicMock()):
+        with patch("builtins.open", _mock_open()):
             pid = mgr.start_tunnel("sess-1", "worker-1", "host/vm")
 
         assert pid == 7000
@@ -634,14 +647,14 @@ class TestRace6KillOrphanKillsNewTunnel:
 
         def recover_thread():
             barrier.wait()
-            with patch("builtins.open", MagicMock()), patch("os.kill", side_effect=mock_kill):
+            with patch("builtins.open", _mock_open()), patch("os.kill", side_effect=mock_kill):
                 results["recover"] = mgr.recover_tunnel(
                     "sess-1", "worker-1", "host/vm", stored_pid=None
                 )
 
         def start_thread():
             barrier.wait()
-            with patch("builtins.open", MagicMock()):
+            with patch("builtins.open", _mock_open()):
                 results["start"] = mgr.start_tunnel("sess-2", "worker-2", "host/vm")
 
         t1 = threading.Thread(target=recover_thread)
@@ -880,7 +893,7 @@ class TestRaceListTunnelsDuringModification:
             i = 0
             while not stop_flag.is_set():
                 sid = f"sess-{i % 5}"
-                with patch("builtins.open", MagicMock()):
+                with patch("builtins.open", _mock_open()):
                     mgr.start_tunnel(sid, f"w-{i % 5}", "host/vm")
                 mgr.stop_tunnel(sid)
                 i += 1
@@ -947,7 +960,10 @@ class TestRaceStopAllDuringStart:
                 added_during_stop.set()
             return result
 
-        with patch.object(mgr, "stop_tunnel", side_effect=slow_stop):
+        with (
+            patch.object(mgr, "stop_tunnel", side_effect=slow_stop),
+            patch("os.kill", side_effect=ProcessLookupError),
+        ):
             mgr.stop_all()
 
         # The late addition may or may not have been stopped
@@ -1023,7 +1039,7 @@ class TestStressConcurrentOperations:
         def op_start():
             while not stop_flag.is_set():
                 try:
-                    with patch("builtins.open", MagicMock()):
+                    with patch("builtins.open", _mock_open()):
                         mgr.start_tunnel(session_id, "worker", "host/vm")
                 except Exception as e:
                     errors.append(("start", e))
@@ -1038,7 +1054,7 @@ class TestStressConcurrentOperations:
         def op_restart():
             while not stop_flag.is_set():
                 try:
-                    with patch("builtins.open", MagicMock()):
+                    with patch("builtins.open", _mock_open()):
                         mgr.restart_tunnel(session_id, "worker", "host/vm")
                 except Exception as e:
                     errors.append(("restart", e))
@@ -1096,7 +1112,7 @@ class TestStressConcurrentOperations:
             sid = f"sess-{i}"
             barrier.wait()
             try:
-                with patch("builtins.open", MagicMock()):
+                with patch("builtins.open", _mock_open()):
                     pid = mgr.start_tunnel(sid, f"worker-{i}", f"host/vm-{i}")
                 assert pid is not None
                 assert mgr.is_alive(sid) is True
