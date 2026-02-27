@@ -1,6 +1,16 @@
 /* Fixed height so all 3 worker type tabs share the same modal size */
 .add-worker-body {
   height: min(450px, 80vh);
+  display: flex;
+  flex-direction: column;
+}
+
+/* Let the rdev form-group stretch to fill remaining space */
+.add-worker-body > .form-group:last-of-type {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
 }
 
 /* Modal subtitle */
@@ -84,7 +94,7 @@
   display: flex;
   flex-direction: column;
   gap: 6px;
-  max-height: 240px;
+  flex: 1;
   overflow-y: auto;
 }
 
