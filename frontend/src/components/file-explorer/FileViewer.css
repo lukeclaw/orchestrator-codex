@@ -46,7 +46,7 @@
   min-width: 0;
   max-width: 280px;
   font-size: 12px;
-  color: var(--text-muted);
+  color: var(--text-secondary, #9ca3af);
   border-right: 1px solid var(--border-subtle);
   cursor: pointer;
   flex-shrink: 0;
@@ -204,7 +204,7 @@
 
 /* Markdown preview */
 .fe-md-preview {
-  padding: 16px 26px;
+  padding: 12px 16px;
   font-family: var(--font-sans);
   font-size: 14px;
   line-height: 22px;
