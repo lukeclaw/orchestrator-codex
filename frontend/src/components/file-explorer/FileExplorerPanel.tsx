@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef, useMemo, type KeyboardEvent } from 'react'
+import React, { useState, useEffect, useCallback, useRef, useMemo, type KeyboardEvent } from 'react'
 import { api } from '../../api/client'
 import { useNotify } from '../../context/NotificationContext'
 import {
@@ -50,7 +50,7 @@ interface FileExplorerPanelProps {
   onWidthChange: (w: number) => void
   onFileSelect: (path: string) => void
   onFileDoubleClick?: (path: string) => void
-  onNewFile?: (dirPath: string, fileName: string) => void
+  onNewFile?: (dirPath: string, fileName: string) => Promise<boolean>
   selectedFile: string | null
   viewMode: ViewMode
   onViewModeChange: (mode: ViewMode) => void
@@ -114,6 +114,10 @@ export default function FileExplorerPanel({
   const [showFilter, setShowFilter] = useState(false)
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; path: string } | null>(null)
   const [focusIndex, setFocusIndex] = useState(-1)
+  // Inline new-file input: { dirPath, depth } when active
+  const [newFileInput, setNewFileInput] = useState<{ dirPath: string; depth: number } | null>(null)
+  const newFileInputRef = useRef<HTMLInputElement>(null)
+  const newFileSubmittedRef = useRef(false)
   const filterInputRef = useRef<HTMLInputElement>(null)
   const treeRef = useRef<HTMLDivElement>(null)
 
@@ -262,12 +266,41 @@ export default function FileExplorerPanel({
     if (!onNewFile) return
     // Determine directory: if the context target is a dir, use it; otherwise use parent
     const node = findNode(treeSnapshotRef.current, contextPath)
-    const dirPath = node?.is_dir ? contextPath : contextPath.split('/').slice(0, -1).join('/')
-    const fileName = window.prompt('Enter file name:')
-    if (fileName && fileName.trim()) {
-      onNewFile(dirPath, fileName.trim())
+    const isDir = node?.is_dir ?? contextPath === '.'
+    const dirPath = isDir ? contextPath : contextPath.split('/').slice(0, -1).join('/')
+    // Find depth for the inline input
+    let depth = 0
+    if (dirPath && dirPath !== '.') {
+      depth = dirPath.split('/').length
     }
-  }, [onNewFile, findNode])
+    // Expand the target directory if collapsed
+    if (isDir && node && !node.expanded) {
+      toggleExpand(contextPath)
+    }
+    newFileSubmittedRef.current = false
+    setNewFileInput({ dirPath, depth })
+    setTimeout(() => newFileInputRef.current?.focus(), 0)
+  }, [onNewFile, findNode, toggleExpand])
+
+  const handleNewFileSubmit = useCallback(async (value: string) => {
+    if (newFileSubmittedRef.current) return
+    if (!newFileInput || !onNewFile) return
+    newFileSubmittedRef.current = true
+    const name = value.trim()
+    setNewFileInput(null)
+    if (name) {
+      const dirPath = newFileInput.dirPath === '.' ? '' : newFileInput.dirPath
+      const ok = await onNewFile(dirPath, name)
+      if (ok) {
+        // Refresh tree to show the newly created file
+        loadRoot()
+      }
+    }
+  }, [newFileInput, onNewFile, loadRoot])
+
+  const handleNewFileCancel = useCallback(() => {
+    setNewFileInput(null)
+  }, [])
 
   // Keyboard navigation
   const handleKeyDown = useCallback((e: KeyboardEvent<HTMLDivElement>) => {
@@ -321,13 +354,8 @@ export default function FileExplorerPanel({
     }
   }, [flatNodes, focusIndex, showFilter, toggleExpand, onFileSelect])
 
-  // Close context menu when clicking outside
-  useEffect(() => {
-    if (!contextMenu) return
-    const close = () => setContextMenu(null)
-    document.addEventListener('click', close)
-    return () => document.removeEventListener('click', close)
-  }, [contextMenu])
+  // Close context menu
+  const closeContextMenu = useCallback(() => setContextMenu(null), [])
 
   // Resize handle
   const handleResizeStart = useCallback((e: React.MouseEvent) => {
@@ -422,7 +450,16 @@ export default function FileExplorerPanel({
         )}
 
         {/* Tree content */}
-        <div className="fe-tree">
+        <div
+          className="fe-tree"
+          onContextMenu={e => {
+            // Right-click on empty area (not on a node)
+            if ((e.target as HTMLElement).classList.contains('fe-tree')) {
+              e.preventDefault()
+              setContextMenu({ x: e.clientX, y: e.clientY, path: '.' })
+            }
+          }}
+        >
           {rootLoading && tree.length === 0 ? (
             <div className="fe-skeleton">
               {Array.from({ length: 8 }).map((_, i) => (
@@ -433,72 +470,115 @@ export default function FileExplorerPanel({
               ))}
             </div>
           ) : viewMode === 'files' ? (
-            flatNodes.map(({ node, depth }, i) => {
-              const dimmed = filterText && !node.name.toLowerCase().includes(filterText.toLowerCase())
-              return (
-                <div
-                  key={node.path}
-                  className={`fe-node ${node.path === selectedFile ? 'fe-node--selected' : ''} ${focusIndex === i ? 'fe-node--focused' : ''} ${node.git_status ? `fe-node--git-${node.git_status}` : ''} ${dimmed ? 'fe-node--dimmed' : ''}`}
-                  style={{ paddingLeft: depth * 16 + 4 }}
-                  role="treeitem"
-                  aria-expanded={node.is_dir ? node.expanded : undefined}
-                  aria-level={depth + 1}
-                  aria-selected={node.path === selectedFile}
-                  onClick={() => {
-                    setFocusIndex(i)
-                    if (node.is_dir) {
-                      toggleExpand(node.path)
-                    } else {
-                      onFileSelect(node.path)
-                    }
-                  }}
-                  onDoubleClick={() => {
-                    if (!node.is_dir && onFileDoubleClick) {
-                      onFileDoubleClick(node.path)
-                    }
-                  }}
-                  onContextMenu={e => {
-                    e.preventDefault()
-                    setContextMenu({ x: e.clientX, y: e.clientY, path: node.path })
-                  }}
-                >
-                  {/* Indent guides */}
-                  {depth > 0 && Array.from({ length: depth }).map((_, d) => (
-                    <span key={d} className="fe-indent-guide" style={{ left: d * 16 + 8 }} />
-                  ))}
-
-                  {/* Chevron for dirs */}
-                  {node.is_dir ? (
-                    <span className={`fe-chevron ${node.expanded ? 'fe-chevron--open' : ''}`}>
-                      <IconChevronRight size={14} />
-                    </span>
-                  ) : (
-                    <span className="fe-chevron fe-chevron--spacer" />
-                  )}
-
-                  {/* Icon */}
-                  <span className="fe-icon">
-                    {node.is_dir
-                      ? (node.expanded ? <IconFolderOpen size={16} /> : <IconFolder size={16} />)
-                      : <IconFile size={16} />
-                    }
-                  </span>
-
-                  {/* Name */}
-                  <span className="fe-name">{node.name}</span>
-
-                  {/* Meta: git badge */}
-                  {node.git_status && GIT_BADGE[node.git_status] && (
-                    <span className={`fe-git-badge fe-git-badge--${node.git_status}`}>
-                      {GIT_BADGE[node.git_status]}
-                    </span>
-                  )}
-
-                  {/* Loading spinner */}
-                  {node.loading && <span className="fe-spinner" />}
+            <>
+              {/* New file input at root level */}
+              {newFileInput && (newFileInput.dirPath === '.' || newFileInput.dirPath === '') && (
+                <div className="fe-node fe-node--new-file" style={{ paddingLeft: 4 }}>
+                  <span className="fe-chevron fe-chevron--spacer" />
+                  <span className="fe-icon"><IconFile size={16} /></span>
+                  <input
+                    ref={newFileInputRef}
+                    className="fe-new-file-input"
+                    placeholder="filename"
+                    onKeyDown={e => {
+                      if (e.key === 'Enter') handleNewFileSubmit((e.target as HTMLInputElement).value)
+                      if (e.key === 'Escape') handleNewFileCancel()
+                    }}
+                    onBlur={e => handleNewFileSubmit(e.target.value)}
+                  />
                 </div>
-              )
-            })
+              )}
+              {flatNodes.map(({ node, depth }, i) => {
+                const dimmed = filterText && !node.name.toLowerCase().includes(filterText.toLowerCase())
+                // Show new-file input row after an expanded directory node
+                const showNewFileAfter = newFileInput
+                  && node.is_dir && node.expanded
+                  && node.path === newFileInput.dirPath
+                return (
+                  <React.Fragment key={node.path}>
+                    <div
+                      className={`fe-node ${node.path === selectedFile ? 'fe-node--selected' : ''} ${focusIndex === i ? 'fe-node--focused' : ''} ${node.git_status ? `fe-node--git-${node.git_status}` : ''} ${dimmed ? 'fe-node--dimmed' : ''}`}
+                      style={{ paddingLeft: depth * 16 + 4 }}
+                      role="treeitem"
+                      aria-expanded={node.is_dir ? node.expanded : undefined}
+                      aria-level={depth + 1}
+                      aria-selected={node.path === selectedFile}
+                      onClick={() => {
+                        setFocusIndex(i)
+                        if (node.is_dir) {
+                          toggleExpand(node.path)
+                        } else {
+                          onFileSelect(node.path)
+                        }
+                      }}
+                      onDoubleClick={() => {
+                        if (!node.is_dir && onFileDoubleClick) {
+                          onFileDoubleClick(node.path)
+                        }
+                      }}
+                      onContextMenu={e => {
+                        e.preventDefault()
+                        setContextMenu({ x: e.clientX, y: e.clientY, path: node.path })
+                      }}
+                    >
+                      {/* Indent guides */}
+                      {depth > 0 && Array.from({ length: depth }).map((_, d) => (
+                        <span key={d} className="fe-indent-guide" style={{ left: d * 16 + 8 }} />
+                      ))}
+
+                      {/* Chevron for dirs */}
+                      {node.is_dir ? (
+                        <span className={`fe-chevron ${node.expanded ? 'fe-chevron--open' : ''}`}>
+                          <IconChevronRight size={14} />
+                        </span>
+                      ) : (
+                        <span className="fe-chevron fe-chevron--spacer" />
+                      )}
+
+                      {/* Icon */}
+                      <span className="fe-icon">
+                        {node.is_dir
+                          ? (node.expanded ? <IconFolderOpen size={16} /> : <IconFolder size={16} />)
+                          : <IconFile size={16} />
+                        }
+                      </span>
+
+                      {/* Name */}
+                      <span className="fe-name">{node.name}</span>
+
+                      {/* Meta: git badge */}
+                      {node.git_status && GIT_BADGE[node.git_status] && (
+                        <span className={`fe-git-badge fe-git-badge--${node.git_status}`}>
+                          {GIT_BADGE[node.git_status]}
+                        </span>
+                      )}
+
+                      {/* Loading spinner */}
+                      {node.loading && <span className="fe-spinner" />}
+                    </div>
+
+                    {/* Inline new-file input inside expanded directory */}
+                    {showNewFileAfter && (
+                      <div className="fe-node fe-node--new-file" style={{ paddingLeft: (depth + 1) * 16 + 4 }}>
+                        <span className="fe-chevron fe-chevron--spacer" />
+                        <span className="fe-icon"><IconFile size={16} /></span>
+                        <input
+                          ref={newFileInputRef}
+                          className="fe-new-file-input"
+                          placeholder="filename"
+                          onKeyDown={e => {
+                            if (e.key === 'Enter') handleNewFileSubmit((e.target as HTMLInputElement).value)
+                            if (e.key === 'Escape') handleNewFileCancel()
+                          }}
+                          onBlur={e => handleNewFileSubmit(e.target.value)}
+                        />
+                      </div>
+                    )}
+                  </React.Fragment>
+                )
+              })
+            }</>
+
           ) : (
             /* Changed files view */
             changedFiles.length === 0 ? (
@@ -553,19 +633,21 @@ export default function FileExplorerPanel({
         />
       )}
 
-      {/* Context menu */}
+      {/* Context menu with backdrop */}
       {contextMenu && (
-        <div
-          className="fe-context-menu"
-          style={{ left: contextMenu.x, top: contextMenu.y }}
-          onClick={e => e.stopPropagation()}
-        >
-          {onNewFile && <button onClick={() => handleNewFile(contextMenu.path)}>New File</button>}
-          <button onClick={() => handleCopyPath(contextMenu.path)}>Copy path</button>
-          <button onClick={() => handleCopyRelativePath(contextMenu.path)}>Copy relative path</button>
-          <button onClick={loadRoot}>Refresh</button>
-          <button onClick={handleCollapseAll}>Collapse all</button>
-        </div>
+        <>
+          <div className="fe-context-backdrop" onClick={closeContextMenu} onContextMenu={e => { e.preventDefault(); closeContextMenu() }} />
+          <div
+            className="fe-context-menu"
+            style={{ left: contextMenu.x, top: contextMenu.y }}
+          >
+            {onNewFile && <button onClick={() => handleNewFile(contextMenu.path)}>New File</button>}
+            <button onClick={() => handleCopyPath(contextMenu.path)}>Copy path</button>
+            <button onClick={() => handleCopyRelativePath(contextMenu.path)}>Copy relative path</button>
+            <button onClick={() => { closeContextMenu(); loadRoot() }}>Refresh</button>
+            <button onClick={handleCollapseAll}>Collapse all</button>
+          </div>
+        </>
       )}
     </>
   )

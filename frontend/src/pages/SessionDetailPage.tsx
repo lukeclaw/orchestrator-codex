@@ -128,7 +128,7 @@ export default function SessionDetailPage() {
   }, [editorTabs])
 
   const handleNewFile = useCallback((dirPath: string, fileName: string) => {
-    editorTabs.openNewFile(dirPath, fileName)
+    return editorTabs.openNewFile(dirPath, fileName)
   }, [editorTabs])
 
   // Viewer resize handle

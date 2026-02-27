@@ -46,7 +46,7 @@ export interface EditorTabsAPI {
   activeTabPath: string | null
   pendingClose: string | null
   openTab(path: string, preview?: boolean): void
-  openNewFile(dirPath: string, fileName: string): void
+  openNewFile(dirPath: string, fileName: string): Promise<boolean>
   closeTab(path: string): boolean
   confirmCloseTab(path: string): void
   cancelCloseTab(): void
@@ -324,38 +324,74 @@ export function useEditorTabs(sessionId: string): EditorTabsAPI {
   }, [fetchTabContent])
 
   // ------- openNewFile -------
-  const openNewFile = useCallback((dirPath: string, fileName: string) => {
+  const openNewFile = useCallback(async (dirPath: string, fileName: string): Promise<boolean> => {
     const path = dirPath ? `${dirPath}/${fileName}` : fileName
 
-    setTabs(prev => {
-      const existing = prev.find(t => t.path === path)
-      if (existing) {
-        setActiveTabPath(path)
-        return prev
-      }
-
-      const newTab: Tab = {
-        path,
-        fileName,
-        originalContent: '',
-        currentContent: '',
-        binary: false,
-        truncated: false,
-        totalLines: 0,
-        size: 0,
-        language: detectLanguage(path),
-        modified: null,
-        isPreview: false,
-        isNew: true,
-        loading: false,
-        error: null,
-        saving: false,
-      }
-
+    // Check if tab already exists
+    const existing = tabsRef.current.find(t => t.path === path)
+    if (existing) {
       setActiveTabPath(path)
-      return [...prev, newTab]
-    })
-  }, [])
+      return true
+    }
+
+    // Create tab in saving state
+    const newTab: Tab = {
+      path,
+      fileName,
+      originalContent: '',
+      currentContent: '',
+      binary: false,
+      truncated: false,
+      totalLines: 0,
+      size: 0,
+      language: detectLanguage(path),
+      modified: null,
+      isPreview: false,
+      isNew: true,
+      loading: false,
+      error: null,
+      saving: true,
+    }
+
+    setTabs(prev => [...prev, newTab])
+    setActiveTabPath(path)
+
+    // Immediately create the empty file on disk
+    try {
+      const data = await api<FileWriteResponse>(
+        `/api/sessions/${sessionId}/files/content`,
+        {
+          method: 'PUT',
+          body: JSON.stringify({
+            path,
+            content: '',
+            expected_mtime: null,
+            create: true,
+          }),
+        },
+      )
+      setTabs(prev => prev.map(t =>
+        t.path === path ? {
+          ...t,
+          originalContent: '',
+          modified: data.modified,
+          size: data.size,
+          isNew: false,
+          saving: false,
+        } : t
+      ))
+      return true
+    } catch (e) {
+      setTabs(prev => prev.map(t =>
+        t.path === path ? {
+          ...t,
+          saving: false,
+          error: e instanceof Error ? e.message : 'Failed to create file',
+        } : t
+      ))
+      return false
+    }
+  }, [sessionId])
 
   // ------- closeTab -------
   // Track which tab is pending close confirmation

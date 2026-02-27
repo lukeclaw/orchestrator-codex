@@ -358,6 +358,13 @@
   background: var(--accent);
 }
 
+/* Context menu backdrop (invisible, captures outside clicks) */
+.fe-context-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 99;
+}
+
 /* Context menu */
 .fe-context-menu {
   position: fixed;
@@ -384,6 +391,24 @@
 
 .fe-context-menu button:hover {
   background: var(--surface-hover);
+}
+
+/* Inline new-file input */
+.fe-node--new-file {
+  background: var(--surface-hover);
+}
+
+.fe-new-file-input {
+  flex: 1;
+  min-width: 0;
+  background: var(--surface);
+  border: 1px solid var(--accent);
+  border-radius: 3px;
+  color: var(--text-primary);
+  font-size: 13px;
+  padding: 1px 6px;
+  outline: none;
+  font-family: inherit;
 }
 
 /* Changed file view */
