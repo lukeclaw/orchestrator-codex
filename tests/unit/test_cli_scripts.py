@@ -176,6 +176,30 @@ class TestWorkerCliScripts:
             assert "--description-stdin" in content
             assert "description_stdin" in content
 
+    def test_context_script_has_delete_command(self):
+        """Verify orch-context has delete command."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            bin_dir = deploy_worker_scripts(tmpdir, "session-123")
+            content = _read_script(bin_dir, "orch-context")
+            assert "cmd_delete()" in content
+            assert "delete ID" in content
+
+    def test_context_script_has_update_command(self):
+        """Verify orch-context has update command."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            bin_dir = deploy_worker_scripts(tmpdir, "session-123")
+            content = _read_script(bin_dir, "orch-context")
+            assert "cmd_update()" in content
+
+    def test_context_script_has_project_scope_guard(self):
+        """Verify orch-context update/delete enforce project scope."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            bin_dir = deploy_worker_scripts(tmpdir, "session-123")
+            content = _read_script(bin_dir, "orch-context")
+            assert "verify_project_scope" in content
+            assert "Workers can only modify project-scoped items" in content
+            assert "belongs to a different project" in content
+
 
 @pytest.mark.allow_subprocess
 class TestJsonEncodeFunction:

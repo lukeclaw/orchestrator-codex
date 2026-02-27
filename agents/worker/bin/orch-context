@@ -10,6 +10,7 @@ show_help() {
     echo "  read ID [ID2 ...]         Read full content of specific context item(s)"
     echo "  add --title TITLE ...     Add a new context item to the project"
     echo "  update ID [options]       Update an existing context item"
+    echo "  delete ID                 Delete a context item"
     echo "  tasks                     List all project tasks"
     echo ""
     echo "Scopes:"
@@ -197,6 +198,56 @@ cmd_add() {
     echo "$response" | jq .
 }
 
+# Verify that a context item belongs to this worker's project
+verify_project_scope() {
+    local item_id="$1"
+    load_task_info || exit 1
+    
+    local item_json
+    item_json=$(curl -s "$API_BASE/api/context/$item_id")
+    
+    # Check if item exists
+    local item_scope
+    item_scope=$(echo "$item_json" | jq -r '.scope // empty')
+    if [[ -z "$item_scope" ]]; then
+        echo "Error: Context item $item_id not found" >&2
+        return 1
+    fi
+    
+    # Only allow project-scoped items belonging to this worker's project
+    if [[ "$item_scope" != "project" ]]; then
+        echo "Error: Cannot modify $item_scope-scoped context item $item_id. Workers can only modify project-scoped items." >&2
+        return 1
+    fi
+    
+    local item_project
+    item_project=$(echo "$item_json" | jq -r '.project_id // empty')
+    if [[ "$item_project" != "$PROJECT_ID" ]]; then
+        echo "Error: Context item $item_id belongs to a different project. Workers can only modify items in their own project." >&2
+        return 1
+    fi
+    
+    return 0
+}
+
+cmd_delete() {
+    [[ "$1" == "-h" || "$1" == "--help" ]] && show_help && exit 0
+    if [[ $# -eq 0 ]]; then
+        echo "Error: Context item ID is required" >&2
+        echo "Usage: orch-context delete ID" >&2
+        exit 1
+    fi
+    
+    local item_id="$1"
+    
+    verify_project_scope "$item_id" || exit 1
+    
+    local response
+    response=$(curl -s -X DELETE "$API_BASE/api/context/$item_id")
+    
+    echo "$response" | jq .
+}
+
 cmd_update() {
     [[ "$1" == "-h" || "$1" == "--help" ]] && show_help && exit 0
     if [[ $# -eq 0 ]]; then
@@ -207,6 +258,8 @@ cmd_update() {
     
     local item_id="$1"
     shift
+    
+    verify_project_scope "$item_id" || exit 1
     
     local title=""
     local content=""
@@ -285,6 +338,10 @@ case "$1" in
     update)
         shift
         cmd_update "$@"
+        ;;
+    delete)
+        shift
+        cmd_delete "$@"
         ;;
     tasks)
         shift

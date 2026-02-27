@@ -102,7 +102,16 @@ orch-context tasks
 
 # Contribute context for future workers
 orch-context add --title "Title" --description "Short desc" --content "Full content"
+
+# Update an existing context item (prefer over adding duplicates)
+orch-context update ITEM_ID --content "Updated content"
+orch-context update ITEM_ID --title "New Title" --description "New desc"
+
+# Delete an outdated or duplicate context item
+orch-context delete ITEM_ID
 ```
+
+**Important:** Before adding a new context item, check `orch-context list` for an existing item on the same topic. If one exists, use `orch-context update` to update it rather than creating a duplicate.
 
 ## Skills
 
