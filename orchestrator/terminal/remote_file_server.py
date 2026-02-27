@@ -46,7 +46,7 @@ _REMOTE_FILE_SERVER_SCRIPT = textwrap.dedent("""\
     def handle_list_dir(cmd):
         work_dir = cmd["work_dir"]
         rel_path = cmd["path"]
-        show_ignored = cmd.get("show_ignored", False)
+        show_hidden = cmd.get("show_hidden", cmd.get("show_ignored", True))
         max_depth = cmd.get("depth", 1)
 
         norm_work = os.path.normpath(work_dir)
@@ -59,12 +59,10 @@ _REMOTE_FILE_SERVER_SCRIPT = textwrap.dedent("""\
             respond({"error": "Directory not found"})
             return
 
-        # Git status (once, reused by all depths)
+        # Git status — always include --ignored so ignored files appear greyed out
         git_statuses = {}
         git_available = False
-        gcmd = ["git", "status", "--porcelain=v1", "-z"]
-        if show_ignored:
-            gcmd.append("--ignored")
+        gcmd = ["git", "status", "--porcelain=v1", "-z", "--ignored"]
         try:
             r = subprocess.run(gcmd, cwd=work_dir, capture_output=True, text=True, timeout=5)
             if r.returncode == 0:
@@ -73,7 +71,7 @@ _REMOTE_FILE_SERVER_SCRIPT = textwrap.dedent("""\
                     if len(entry) < 4:
                         continue
                     xy = entry[:2]
-                    p = entry[3:]
+                    p = entry[3:].rstrip("/")
                     code = xy[0] if xy[0] != " " else xy[1]
                     git_statuses[p] = GIT_STATUS_MAP.get(code, "modified")
         except Exception:
@@ -90,12 +88,14 @@ _REMOTE_FILE_SERVER_SCRIPT = textwrap.dedent("""\
                     prefix = p + "/"
                     child = [s for k, s in git_statuses.items() if k.startswith(prefix)]
                     if child:
-                        for sev in SEVERITY:
-                            if sev in child:
-                                ent["git_status"] = sev
-                                break
-                        else:
-                            ent["git_status"] = child[0]
+                        non_ignored = [s for s in child if s != "ignored"]
+                        if non_ignored:
+                            for sev in SEVERITY:
+                                if sev in non_ignored:
+                                    ent["git_status"] = sev
+                                    break
+                            else:
+                                ent["git_status"] = non_ignored[0]
                 if ent.get("children"):
                     apply_git(ent["children"])
 
@@ -104,9 +104,7 @@ _REMOTE_FILE_SERVER_SCRIPT = textwrap.dedent("""\
             try:
                 for e in os.scandir(abs_path):
                     name = e.name
-                    if not show_ignored and name in DEFAULT_IGNORED:
-                        continue
-                    if not show_ignored and name.startswith(".") and name != ".":
+                    if not show_hidden and name.startswith(".") and name != ".":
                         continue
                     rp = os.path.relpath(e.path, work_dir)
                     is_dir = e.is_dir(follow_symlinks=False)
@@ -296,6 +294,23 @@ _REMOTE_FILE_SERVER_SCRIPT = textwrap.dedent("""\
         shutil.move(src, dst)
         respond({"status": "ok"})
 
+    def handle_mkdir(cmd):
+        work_dir = cmd["work_dir"]
+        rel_path = cmd.get("path", "")
+        if not rel_path:
+            respond({"error": "No path provided"})
+            return
+        norm_work = os.path.normpath(work_dir)
+        target = os.path.normpath(os.path.join(work_dir, rel_path))
+        if not target.startswith(norm_work + os.sep) and target != norm_work:
+            respond({"error": "Path outside work_dir"})
+            return
+        if target == norm_work:
+            respond({"error": "Cannot mkdir work_dir itself"})
+            return
+        os.makedirs(target, exist_ok=True)
+        respond({"status": "ok"})
+
     HANDLERS = {
         "ping": handle_ping,
         "list_dir": handle_list_dir,
@@ -303,6 +318,7 @@ _REMOTE_FILE_SERVER_SCRIPT = textwrap.dedent("""\
         "write_file": handle_write_file,
         "delete": handle_delete,
         "move": handle_move,
+        "mkdir": handle_mkdir,
     }
 
     for line in sys.stdin:

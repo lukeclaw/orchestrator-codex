@@ -28,8 +28,10 @@ export function useFileExplorerState(sessionId?: string) {
   })
 
   const [showIgnored, setShowIgnored] = useState(() => {
-    try { return localStorage.getItem(SHOW_IGNORED_KEY) === 'true' }
-    catch { return false }
+    try {
+      const stored = localStorage.getItem(SHOW_IGNORED_KEY)
+      return stored === null ? true : stored === 'true'
+    } catch { return true }
   })
 
   const toggleOpen = useCallback(() => {

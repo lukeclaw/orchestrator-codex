@@ -220,20 +220,19 @@ def _resolve_session(db, session_id: str) -> SessionInfo:
 # ---------------------------------------------------------------------------
 # Git helpers
 # ---------------------------------------------------------------------------
-def _get_git_status(work_dir: str, show_ignored: bool) -> tuple[dict[str, str], bool]:
+def _get_git_status(work_dir: str) -> tuple[dict[str, str], bool]:
     """Return {relative_path: status_string} and git_available flag.
 
+    Always includes --ignored so ignored files can be shown greyed out.
     Uses a 5 s in-memory cache.  Subprocess has a 3 s timeout.
     """
-    cache_key = f"{work_dir}::{show_ignored}"
+    cache_key = f"{work_dir}::git_status"
     now = time.monotonic()
     cached = _git_cache.get(cache_key)
     if cached and now - cached[0] < _GIT_CACHE_TTL:
         return cached[1], True
 
-    cmd = ["git", "status", "--porcelain=v1", "-z"]
-    if show_ignored:
-        cmd.append("--ignored")
+    cmd = ["git", "status", "--porcelain=v1", "-z", "--ignored"]
 
     try:
         result = subprocess.run(
@@ -260,7 +259,7 @@ def _get_git_status(work_dir: str, show_ignored: bool) -> tuple[dict[str, str], 
             continue
         # Format: "XY path" where XY are the two status columns
         xy = entry[:2]
-        path_str = entry[3:]
+        path_str = entry[3:].rstrip("/")
         # Use the most significant status code
         code = xy[0] if xy[0] != " " else xy[1]
         status_name = _GIT_STATUS_MAP.get(code, "modified")
@@ -314,13 +313,13 @@ def _release_ssh_slot(host: str) -> None:
 
 
 # Self-contained Python script executed on the remote host via SSH stdin.
-# Takes: work_dir, relative_path, show_ignored_flag ("1"/"0"), depth
+# Takes: work_dir, relative_path, show_hidden_flag ("1"/"0"), depth
 _REMOTE_LIST_SCRIPT = textwrap.dedent("""\
     import json, os, subprocess, sys
 
     work_dir = sys.argv[1]
     rel_path = sys.argv[2]
-    show_ignored = sys.argv[3] == "1"
+    show_hidden = sys.argv[3] == "1"
     max_depth = int(sys.argv[4]) if len(sys.argv) > 4 else 1
 
     DEFAULT_IGNORED = {
@@ -347,9 +346,7 @@ _REMOTE_LIST_SCRIPT = textwrap.dedent("""\
     # Git status (once, reused by all depths)
     git_statuses = {}
     git_available = False
-    cmd = ["git", "status", "--porcelain=v1", "-z"]
-    if show_ignored:
-        cmd.append("--ignored")
+    cmd = ["git", "status", "--porcelain=v1", "-z", "--ignored"]
     try:
         r = subprocess.run(cmd, cwd=work_dir, capture_output=True, text=True, timeout=5)
         if r.returncode == 0:
@@ -358,7 +355,7 @@ _REMOTE_LIST_SCRIPT = textwrap.dedent("""\
                 if len(entry) < 4:
                     continue
                 xy = entry[:2]
-                p = entry[3:]
+                p = entry[3:].rstrip("/")
                 code = xy[0] if xy[0] != " " else xy[1]
                 git_statuses[p] = GIT_STATUS_MAP.get(code, "modified")
     except Exception:
@@ -375,12 +372,14 @@ _REMOTE_LIST_SCRIPT = textwrap.dedent("""\
                 prefix = p + "/"
                 child = [s for k, s in git_statuses.items() if k.startswith(prefix)]
                 if child:
-                    for sev in SEVERITY:
-                        if sev in child:
-                            ent["git_status"] = sev
-                            break
-                    else:
-                        ent["git_status"] = child[0]
+                    non_ignored = [s for s in child if s != "ignored"]
+                    if non_ignored:
+                        for sev in SEVERITY:
+                            if sev in non_ignored:
+                                ent["git_status"] = sev
+                                break
+                        else:
+                            ent["git_status"] = non_ignored[0]
             if ent.get("children"):
                 apply_git(ent["children"])
 
@@ -389,9 +388,7 @@ _REMOTE_LIST_SCRIPT = textwrap.dedent("""\
         try:
             for e in os.scandir(abs_path):
                 name = e.name
-                if not show_ignored and name in DEFAULT_IGNORED:
-                    continue
-                if not show_ignored and name.startswith(".") and name != ".":
+                if not show_hidden and name.startswith(".") and name != ".":
                     continue
                 rp = os.path.relpath(e.path, work_dir)
                 is_dir = e.is_dir(follow_symlinks=False)
@@ -453,7 +450,7 @@ def _run_ssh_bytes(host: str, script: bytes, args: list[str]) -> subprocess.Comp
 
 
 def _list_remote_dir_fallback(
-    host: str, work_dir: str, path: str, show_ignored: bool, depth: int = 1
+    host: str, work_dir: str, path: str, show_hidden: bool, depth: int = 1
 ) -> tuple[list[FileEntry], bool]:
     """List a directory on a remote host via SSH (one-shot fallback)."""
     _acquire_ssh_slot(host)
@@ -461,7 +458,7 @@ def _list_remote_dir_fallback(
         result = _run_ssh(
             host,
             _REMOTE_LIST_SCRIPT,
-            [work_dir, path, "1" if show_ignored else "0", str(depth)],
+            [work_dir, path, "1" if show_hidden else "0", str(depth)],
         )
     except subprocess.TimeoutExpired:
         raise HTTPException(status_code=504, detail="Remote directory listing timed out")
@@ -489,7 +486,7 @@ def _list_remote_dir_fallback(
 
 
 def _list_remote_dir(
-    host: str, work_dir: str, path: str, show_ignored: bool, depth: int = 1
+    host: str, work_dir: str, path: str, show_hidden: bool, depth: int = 1
 ) -> tuple[list[FileEntry], bool]:
     """List a directory on a remote host, preferring the persistent server."""
     t0 = time.monotonic()
@@ -500,7 +497,7 @@ def _list_remote_dir(
                 "action": "list_dir",
                 "work_dir": work_dir,
                 "path": path,
-                "show_ignored": show_ignored,
+                "show_hidden": show_hidden,
                 "depth": depth,
             }
         )
@@ -524,7 +521,7 @@ def _list_remote_dir(
             host,
             exc,
         )
-        result = _list_remote_dir_fallback(host, work_dir, path, show_ignored, depth)
+        result = _list_remote_dir_fallback(host, work_dir, path, show_hidden, depth)
         elapsed = time.monotonic() - t0
         logger.info(
             "list_remote_dir %s:%s took %.3fs (server=fallback)",
@@ -757,7 +754,7 @@ def _list_remote_dir_cached(
     host: str,
     work_dir: str,
     path: str,
-    show_ignored: bool,
+    show_hidden: bool,
     refresh: bool,
     depth: int = 1,
 ) -> tuple[list[FileEntry], bool]:
@@ -767,7 +764,7 @@ def _list_remote_dir_cached(
     if _cache_request_counter % 10 == 0:
         _cleanup_remote_caches()
 
-    cache_key = f"{host}::{work_dir}::{path}::{show_ignored}::{depth}"
+    cache_key = f"{host}::{work_dir}::{path}::{show_hidden}::{depth}"
     if not refresh:
         cached = _remote_dir_cache.get(cache_key)
         if cached:
@@ -776,7 +773,7 @@ def _list_remote_dir_cached(
                 logger.info("list_remote_dir %s:%s cache=hit", host, path)
                 return entries, git_avail
 
-    entries, git_available = _list_remote_dir(host, work_dir, path, show_ignored, depth)
+    entries, git_available = _list_remote_dir(host, work_dir, path, show_hidden, depth)
     _remote_dir_cache[cache_key] = (time.monotonic(), entries, git_available)
     return entries, git_available
 
@@ -849,7 +846,7 @@ def list_files(
     session_id: str,
     path: str = Query(default=".", description="Relative path within work_dir"),
     depth: int = Query(default=1, ge=1, le=5),
-    show_ignored: bool = Query(default=False),
+    show_hidden: bool = Query(default=True),
     refresh: bool = Query(default=False),
     db=Depends(get_db),
 ) -> DirectoryResponse:
@@ -860,7 +857,7 @@ def list_files(
 
     if info.is_remote:
         entries, git_available = _list_remote_dir_cached(
-            info.host, info.work_dir, path, show_ignored, refresh, depth
+            info.host, info.work_dir, path, show_hidden, refresh, depth
         )
     else:
         work_dir = info.work_dir
@@ -872,10 +869,10 @@ def list_files(
         if not os.path.isdir(target):
             raise HTTPException(status_code=404, detail="Directory not found")
 
-        entries = _scan_dir(target, work_dir, show_ignored, depth, current_depth=1)
+        entries = _scan_dir(target, work_dir, show_hidden, depth, current_depth=1)
 
-        # Git status
-        git_statuses, git_available = _get_git_status(work_dir, show_ignored)
+        # Git status — always include ignored files so they appear greyed out
+        git_statuses, git_available = _get_git_status(work_dir)
         if git_available:
             _apply_git_status(entries, git_statuses)
 
@@ -890,7 +887,7 @@ def list_files(
 def _scan_dir(
     abs_path: str,
     work_dir: str,
-    show_ignored: bool,
+    show_hidden: bool,
     max_depth: int,
     current_depth: int,
 ) -> list[FileEntry]:
@@ -900,11 +897,8 @@ def _scan_dir(
         with os.scandir(abs_path) as it:
             for entry in it:
                 name = entry.name
-                # Hide common ignored dirs unless show_ignored
-                if not show_ignored and name in _DEFAULT_IGNORED:
-                    continue
-                # Skip hidden files by default (unless show_ignored)
-                if not show_ignored and name.startswith(".") and name != ".":
+                # Skip dotfiles unless show_hidden is on
+                if not show_hidden and name.startswith(".") and name != ".":
                     continue
 
                 rel_path = os.path.relpath(entry.path, work_dir)
@@ -930,7 +924,7 @@ def _scan_dir(
                     sub_children = _scan_dir(
                         entry.path,
                         work_dir,
-                        show_ignored,
+                        show_hidden,
                         max_depth,
                         current_depth + 1,
                     )
@@ -962,11 +956,18 @@ def _apply_git_status(entries: list[FileEntry], statuses: dict[str, str]) -> Non
         if path in statuses:
             entry.git_status = statuses[path]
         elif entry.is_dir:
-            # Propagate: if any child has status, bubble up highest severity
+            # Propagate: if any child has status, bubble up highest severity.
+            # But only mark a folder as "ignored" if git explicitly reported it
+            # (e.g. "!! dirname/") — not merely because all known children are
+            # ignored, since tracked clean files don't appear in git status.
             prefix = path + "/"
             child_statuses = [s for p, s in statuses.items() if p.startswith(prefix)]
             if child_statuses:
-                entry.git_status = _highest_severity(child_statuses)
+                non_ignored = [s for s in child_statuses if s != "ignored"]
+                if non_ignored:
+                    entry.git_status = _highest_severity(non_ignored)
+                # else: all children are ignored, but we don't propagate "ignored"
+                # to the folder — only git's direct "!! dir/" marking does that.
         # Recurse into pre-fetched children
         if entry.children:
             _apply_git_status(entry.children, statuses)
@@ -1504,9 +1505,7 @@ def _delete_remote_fallback(host: str, work_dir: str, path: str) -> DeleteRespon
 def _delete_remote(host: str, work_dir: str, path: str) -> DeleteResponse:
     try:
         server = get_remote_file_server(host)
-        data = server.execute(
-            {"action": "delete", "work_dir": work_dir, "path": path}
-        )
+        data = server.execute({"action": "delete", "work_dir": work_dir, "path": path})
         if "error" in data:
             # Any error from persistent server → fall back to one-shot SSH
             # so stale servers (missing new handlers) degrade gracefully.
@@ -1596,7 +1595,10 @@ _REMOTE_MOVE_SCRIPT = textwrap.dedent("""\
 
 
 def _move_remote_fallback(
-    host: str, work_dir: str, from_path: str, to_path: str,
+    host: str,
+    work_dir: str,
+    from_path: str,
+    to_path: str,
 ) -> MoveResponse:
     _acquire_ssh_slot(host)
     try:
@@ -1620,7 +1622,10 @@ def _move_remote_fallback(
 
 
 def _move_remote(
-    host: str, work_dir: str, from_path: str, to_path: str,
+    host: str,
+    work_dir: str,
+    from_path: str,
+    to_path: str,
 ) -> MoveResponse:
     try:
         server = get_remote_file_server(host)
@@ -1644,3 +1649,91 @@ def _move_remote(
             exc,
         )
         return _move_remote_fallback(host, work_dir, from_path, to_path)
+
+
+# ---------------------------------------------------------------------------
+# Create directory (mkdir)
+# ---------------------------------------------------------------------------
+class MkdirRequest(BaseModel):
+    path: str
+
+
+class MkdirResponse(BaseModel):
+    status: str
+
+
+@router.post("/sessions/{session_id}/files/mkdir")
+def mkdir(
+    session_id: str,
+    body: MkdirRequest,
+    db=Depends(get_db),
+) -> MkdirResponse:
+    """Create a directory (including intermediate parents)."""
+    _check_rate_limit(session_id)
+    _validate_path(body.path)
+    _validate_not_root(body.path)
+    info = _resolve_session(db, session_id)
+
+    if info.is_remote:
+        return _mkdir_remote(info.host, info.work_dir, body.path)
+    return _mkdir_local(info.work_dir, body.path)
+
+
+def _mkdir_local(work_dir: str, path: str) -> MkdirResponse:
+    abs_path = os.path.normpath(os.path.join(work_dir, path))
+    if not abs_path.startswith(os.path.normpath(work_dir) + os.sep):
+        raise HTTPException(status_code=400, detail="Path outside work_dir")
+    os.makedirs(abs_path, exist_ok=True)
+    return MkdirResponse(status="ok")
+
+
+_REMOTE_MKDIR_SCRIPT = textwrap.dedent("""\
+    import json, os, sys
+
+    work_dir = sys.argv[1]
+    rel_path = sys.argv[2]
+
+    norm_work = os.path.normpath(work_dir)
+    target = os.path.normpath(os.path.join(work_dir, rel_path))
+    if not target.startswith(norm_work + os.sep):
+        print(json.dumps({"error": "Path outside work_dir"}))
+        sys.exit(1)
+    os.makedirs(target, exist_ok=True)
+    print(json.dumps({"status": "ok"}))
+""")
+
+
+def _mkdir_remote_fallback(host: str, work_dir: str, path: str) -> MkdirResponse:
+    _acquire_ssh_slot(host)
+    try:
+        result = _run_ssh(host, _REMOTE_MKDIR_SCRIPT, [work_dir, path])
+    except subprocess.TimeoutExpired:
+        raise HTTPException(status_code=504, detail="Remote mkdir timed out")
+    finally:
+        _release_ssh_slot(host)
+
+    if result.returncode != 0:
+        try:
+            err = json.loads(result.stdout)
+            detail = err.get("error", "Remote mkdir failed")
+        except (json.JSONDecodeError, KeyError):
+            detail = result.stderr.strip() or "Remote mkdir failed"
+        raise HTTPException(status_code=502, detail=detail)
+
+    return MkdirResponse(status="ok")
+
+
+def _mkdir_remote(host: str, work_dir: str, path: str) -> MkdirResponse:
+    try:
+        server = get_remote_file_server(host)
+        data = server.execute({"action": "mkdir", "work_dir": work_dir, "path": path})
+        if "error" in data:
+            raise RuntimeError(data["error"])
+        return MkdirResponse(status="ok")
+    except (RuntimeError, OSError, json.JSONDecodeError) as exc:
+        logger.warning(
+            "Persistent server failed for mkdir on %s, falling back: %s",
+            host,
+            exc,
+        )
+        return _mkdir_remote_fallback(host, work_dir, path)

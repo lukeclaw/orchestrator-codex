@@ -8,6 +8,8 @@ import {
   IconFile,
   IconFilter,
   IconX,
+  IconEye,
+  IconEyeOff,
 } from '../common/Icons'
 import './FileExplorerPanel.css'
 
@@ -102,6 +104,54 @@ function isAncestor(ancestor: string, descendant: string): boolean {
   return descendant === ancestor || descendant.startsWith(ancestor + '/')
 }
 
+// --- Optimistic tree mutations ---
+
+/** Remove a node by path from the tree. */
+function removeNode(nodes: TreeNode[], path: string): TreeNode[] {
+  return nodes
+    .filter(n => n.path !== path)
+    .map(n => n.children ? { ...n, children: removeNode(n.children, path) } : n)
+}
+
+/** Insert a node into a directory in the tree (sorted by name). */
+function insertNode(nodes: TreeNode[], dirPath: string, node: TreeNode): TreeNode[] {
+  if (dirPath === '' || dirPath === '.') {
+    // Insert at root level, sorted: dirs first, then alphabetical
+    const result = [...nodes, node]
+    return result.sort((a, b) => {
+      if (a.is_dir !== b.is_dir) return a.is_dir ? -1 : 1
+      return a.name.localeCompare(b.name)
+    })
+  }
+  return nodes.map(n => {
+    if (n.path === dirPath && n.children) {
+      const children = [...n.children, node].sort((a, b) => {
+        if (a.is_dir !== b.is_dir) return a.is_dir ? -1 : 1
+        return a.name.localeCompare(b.name)
+      })
+      return { ...n, children, expanded: true }
+    }
+    if (n.children) return { ...n, children: insertNode(n.children, dirPath, node) }
+    return n
+  })
+}
+
+/** Update all paths under a renamed/moved node. */
+function renamePaths(node: TreeNode, oldPath: string, newPath: string): TreeNode {
+  const updated: TreeNode = {
+    ...node,
+    path: newPath,
+    name: extractName(newPath),
+  }
+  if (node.children) {
+    updated.children = node.children.map(child => {
+      const childNewPath = newPath + child.path.slice(oldPath.length)
+      return renamePaths(child, child.path, childNewPath)
+    })
+  }
+  return updated
+}
+
 // --- Component ---
 
 export default function FileExplorerPanel({
@@ -139,6 +189,10 @@ export default function FileExplorerPanel({
   const [newFileInput, setNewFileInput] = useState<{ dirPath: string; depth: number } | null>(null)
   const newFileInputRef = useRef<HTMLInputElement>(null)
   const newFileSubmittedRef = useRef(false)
+  // Inline new-folder input
+  const [newFolderInput, setNewFolderInput] = useState<{ dirPath: string; depth: number } | null>(null)
+  const newFolderInputRef = useRef<HTMLInputElement>(null)
+  const newFolderSubmittedRef = useRef(false)
   // Inline rename input
   const [renameTarget, setRenameTarget] = useState<{ path: string; depth: number } | null>(null)
   const renameInputRef = useRef<HTMLInputElement>(null)
@@ -157,7 +211,7 @@ export default function FileExplorerPanel({
 
   // Fetch root directory
   const fetchDir = useCallback(async (path: string = '.', depth = 1): Promise<{ entries: FileEntry[]; gitAvailable: boolean }> => {
-    const params = new URLSearchParams({ path, depth: String(depth), show_ignored: String(showIgnored) })
+    const params = new URLSearchParams({ path, depth: String(depth), show_hidden: String(showIgnored) })
     const data = await api<DirectoryResponse>(
       `/api/sessions/${sessionId}/files?${params}`
     )
@@ -165,10 +219,7 @@ export default function FileExplorerPanel({
   }, [sessionId, showIgnored])
 
   // Load root on mount / refresh — depth=5 prefetches multiple levels
-  const refreshingRef = useRef(false)
   const loadRoot = useCallback(async () => {
-    if (refreshingRef.current) return
-    refreshingRef.current = true
     setRootLoading(true)
     try {
       const { entries } = await fetchDir('.', 5)
@@ -177,7 +228,6 @@ export default function FileExplorerPanel({
       // Silently fail - work_dir may not exist yet
     } finally {
       setRootLoading(false)
-      refreshingRef.current = false
     }
   }, [fetchDir])
 
@@ -185,7 +235,7 @@ export default function FileExplorerPanel({
   useEffect(() => {
     if (!isOpen) return
     loadRoot()
-    const id = setInterval(loadRoot, 3000)
+    const id = setInterval(loadRoot, 10000)
     return () => clearInterval(id)
   }, [isOpen, loadRoot])
 
@@ -325,29 +375,92 @@ export default function FileExplorerPanel({
     setNewFileInput(null)
     if (name) {
       const dirPath = newFileInput.dirPath === '.' ? '' : newFileInput.dirPath
+      const filePath = dirPath ? `${dirPath}/${name}` : name
+      // Optimistic: insert node into tree immediately
+      const newNode: TreeNode = {
+        name, path: filePath, is_dir: false,
+        size: 0, modified: Date.now() / 1000, children_count: null,
+        git_status: 'untracked', human_size: '0 B', children: undefined,
+      }
+      setTree(prev => insertNode(prev, dirPath || '.', newNode))
       const ok = await onNewFile(dirPath, name)
-      if (ok) {
-        // Refresh tree to show the newly created file
-        loadRoot()
+      if (!ok) {
+        // Revert if creation failed
+        setTree(prev => removeNode(prev, filePath))
       }
     }
-  }, [newFileInput, onNewFile, loadRoot])
+  }, [newFileInput, onNewFile, setTree])
 
   const handleNewFileCancel = useCallback(() => {
     setNewFileInput(null)
   }, [])
 
+  // New folder — context menu handler
+  const handleNewFolder = useCallback((contextPath: string) => {
+    setContextMenu(null)
+    const node = findNode(treeSnapshotRef.current, contextPath)
+    const isDir = node?.is_dir ?? contextPath === '.'
+    const dirPath = isDir ? contextPath : contextPath.split('/').slice(0, -1).join('/')
+    let depth = 0
+    if (dirPath && dirPath !== '.') {
+      depth = dirPath.split('/').length
+    }
+    if (isDir && node && !node.expanded) {
+      toggleExpand(contextPath)
+    }
+    newFolderSubmittedRef.current = false
+    setNewFolderInput({ dirPath, depth })
+    setTimeout(() => newFolderInputRef.current?.focus(), 0)
+  }, [findNode, toggleExpand])
+
+  const handleNewFolderSubmit = useCallback(async (value: string) => {
+    if (newFolderSubmittedRef.current) return
+    if (!newFolderInput) return
+    newFolderSubmittedRef.current = true
+    const name = value.trim()
+    setNewFolderInput(null)
+    if (name) {
+      const dirPath = newFolderInput.dirPath === '.' ? '' : newFolderInput.dirPath
+      const folderPath = dirPath ? `${dirPath}/${name}` : name
+      // Optimistic: insert folder node into tree immediately
+      const newNode: TreeNode = {
+        name, path: folderPath, is_dir: true,
+        size: null, modified: Date.now() / 1000, children_count: 0,
+        git_status: null, human_size: null, children: [], expanded: true,
+      }
+      setTree(prev => insertNode(prev, dirPath || '.', newNode))
+      try {
+        await api(`/api/sessions/${sessionId}/files/mkdir`, {
+          method: 'POST',
+          body: JSON.stringify({ path: folderPath }),
+        })
+      } catch (e) {
+        // Revert on failure
+        setTree(prev => removeNode(prev, folderPath))
+        notify(e instanceof Error ? e.message : 'Failed to create folder', 'error')
+      }
+    }
+  }, [newFolderInput, sessionId, setTree, notify])
+
+  const handleNewFolderCancel = useCallback(() => {
+    setNewFolderInput(null)
+  }, [])
+
   // Delete handler — right-click → Delete is already intentional, no confirmation needed
   const handleDelete = useCallback(async (path: string) => {
     setContextMenu(null)
+    // Optimistic: remove from tree immediately
+    const snapshot = treeSnapshotRef.current
+    setTree(prev => removeNode(prev, path))
+    onFileDeleted?.(path)
     try {
       await api(`/api/sessions/${sessionId}/files?path=${encodeURIComponent(path)}`, { method: 'DELETE' })
-      onFileDeleted?.(path)
-      loadRoot()
     } catch (e) {
+      // Revert on failure
+      setTree(snapshot)
       notify(e instanceof Error ? e.message : 'Failed to delete', 'error')
     }
-  }, [sessionId, onFileDeleted, loadRoot, notify])
+  }, [sessionId, onFileDeleted, setTree, notify])
 
   // Rename handler — show inline input
   const handleRenameStart = useCallback((path: string) => {
@@ -382,17 +495,28 @@ export default function FileExplorerPanel({
     if (!newName || newName === extractName(renameTarget.path)) return
     const parent = parentDir(renameTarget.path)
     const newPath = parent ? `${parent}/${newName}` : newName
+    // Optimistic: update the node path/name in tree immediately
+    const snapshot = treeSnapshotRef.current
+    setTree(prev => {
+      const walk = (nodes: TreeNode[]): TreeNode[] =>
+        nodes.map(n => {
+          if (n.path === renameTarget.path) return renamePaths(n, renameTarget.path, newPath)
+          if (n.children) return { ...n, children: walk(n.children) }
+          return n
+        })
+      return walk(prev)
+    })
+    onFileRenamed?.(renameTarget.path, newPath)
     try {
       await api(`/api/sessions/${sessionId}/files/move`, {
         method: 'POST',
         body: JSON.stringify({ from_path: renameTarget.path, to_path: newPath }),
       })
-      onFileRenamed?.(renameTarget.path, newPath)
-      loadRoot()
     } catch (e) {
+      setTree(snapshot)
       notify(e instanceof Error ? e.message : 'Failed to rename', 'error')
     }
-  }, [renameTarget, sessionId, onFileRenamed, loadRoot, notify])
+  }, [renameTarget, sessionId, onFileRenamed, setTree, notify])
 
   const handleRenameCancel = useCallback(() => {
     setRenameTarget(null)
@@ -463,14 +587,29 @@ export default function FileExplorerPanel({
       const fileName = extractName(sourcePath)
       const toPath = targetDir === '.' || targetDir === '' ? fileName : `${targetDir}/${fileName}`
 
+      // Optimistic: move node in tree immediately
+      const snapshot = treeSnapshotRef.current
+      const sourceNode = findNode(snapshot, sourcePath)
+      if (sourceNode) {
+        const movedNode = renamePaths(sourceNode, sourcePath, toPath)
+        setTree(prev => {
+          let next = removeNode(prev, sourcePath)
+          // Expand target dir if collapsed
+          if (targetDir !== '.' && targetDir !== '') {
+            next = updateNode(next, targetDir, n => ({ ...n, expanded: true }))
+          }
+          return insertNode(next, targetDir, movedNode)
+        })
+      }
+      onFileRenamed?.(sourcePath, toPath)
+
       try {
         await api(`/api/sessions/${sessionId}/files/move`, {
           method: 'POST',
           body: JSON.stringify({ from_path: sourcePath, to_path: toPath }),
         })
-        onFileRenamed?.(sourcePath, toPath)
-        loadRoot()
       } catch (err) {
+        setTree(snapshot)
         notify(err instanceof Error ? err.message : 'Failed to move', 'error')
       }
     }
@@ -481,7 +620,7 @@ export default function FileExplorerPanel({
       document.removeEventListener('mousemove', handleMouseMove)
       document.removeEventListener('mouseup', handleMouseUp)
     }
-  }, [dragState, sessionId, onFileRenamed, loadRoot, notify, updateDropTarget])
+  }, [dragState, sessionId, onFileRenamed, notify, updateDropTarget, findNode, setTree, updateNode])
 
   // Set cursor to grabbing during active drag
   useEffect(() => {
@@ -592,6 +731,14 @@ export default function FileExplorerPanel({
           <div className="fe-header-actions">
             <button
               className="fe-header-btn"
+              onClick={onToggleIgnored}
+              title={showIgnored ? 'Hide hidden files' : 'Show hidden files'}
+              style={{ opacity: showIgnored ? 1 : 0.5 }}
+            >
+              {showIgnored ? <IconEye size={14} /> : <IconEyeOff size={14} />}
+            </button>
+            <button
+              className="fe-header-btn"
               onClick={() => {
                 setShowFilter(prev => !prev)
                 if (!showFilter) setTimeout(() => filterInputRef.current?.focus(), 0)
@@ -675,12 +822,33 @@ export default function FileExplorerPanel({
                   />
                 </div>
               )}
+              {/* New folder input at root level */}
+              {newFolderInput && (newFolderInput.dirPath === '.' || newFolderInput.dirPath === '') && (
+                <div className="fe-node fe-node--new-file" style={{ paddingLeft: 4 }}>
+                  <span className="fe-chevron fe-chevron--spacer" />
+                  <span className="fe-icon"><IconFolder size={16} /></span>
+                  <input
+                    ref={newFolderInputRef}
+                    className="fe-new-file-input"
+                    placeholder="folder name"
+                    onKeyDown={e => {
+                      e.stopPropagation()
+                      if (e.key === 'Enter') handleNewFolderSubmit((e.target as HTMLInputElement).value)
+                      if (e.key === 'Escape') handleNewFolderCancel()
+                    }}
+                    onBlur={e => handleNewFolderSubmit(e.target.value)}
+                  />
+                </div>
+              )}
               {flatNodes.map(({ node, depth }, i) => {
                 const dimmed = filterText && !node.name.toLowerCase().includes(filterText.toLowerCase())
-                // Show new-file input row after an expanded directory node
+                // Show new-file/folder input row after an expanded directory node
                 const showNewFileAfter = newFileInput
                   && node.is_dir && node.expanded
                   && node.path === newFileInput.dirPath
+                const showNewFolderAfter = newFolderInput
+                  && node.is_dir && node.expanded
+                  && node.path === newFolderInput.dirPath
                 const isRenaming = renameTarget?.path === node.path
                 const isDragging = dragState?.active && dragState.sourcePath === node.path
                 const isDropTarget = node.is_dir && dropTarget === node.path
@@ -783,6 +951,24 @@ export default function FileExplorerPanel({
                         />
                       </div>
                     )}
+                    {/* Inline new-folder input inside expanded directory */}
+                    {showNewFolderAfter && (
+                      <div className="fe-node fe-node--new-file" style={{ paddingLeft: (depth + 1) * 16 + 4 }}>
+                        <span className="fe-chevron fe-chevron--spacer" />
+                        <span className="fe-icon"><IconFolder size={16} /></span>
+                        <input
+                          ref={newFolderInputRef}
+                          className="fe-new-file-input"
+                          placeholder="folder name"
+                          onKeyDown={e => {
+                            e.stopPropagation()
+                            if (e.key === 'Enter') handleNewFolderSubmit((e.target as HTMLInputElement).value)
+                            if (e.key === 'Escape') handleNewFolderCancel()
+                          }}
+                          onBlur={e => handleNewFolderSubmit(e.target.value)}
+                        />
+                      </div>
+                    )}
                   </React.Fragment>
                 )
               })
@@ -808,6 +994,7 @@ export default function FileExplorerPanel({
             style={{ left: contextMenu.x, top: contextMenu.y }}
           >
             {onNewFile && <button onClick={() => handleNewFile(contextMenu.path)}>New File</button>}
+            <button onClick={() => handleNewFolder(contextMenu.path)}>New Folder</button>
             {contextMenu.path !== '.' && (
               <button onClick={() => handleRenameStart(contextMenu.path)}>Rename</button>
             )}

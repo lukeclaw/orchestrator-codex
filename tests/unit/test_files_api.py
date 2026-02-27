@@ -23,6 +23,8 @@ from orchestrator.api.routes.files import (
     _highest_severity,
     _human_size,
     _list_remote_dir,
+    _mkdir_local,
+    _mkdir_remote,
     _move_local,
     _move_remote,
     _read_remote_file,
@@ -130,7 +132,7 @@ class TestGitStatusParsing:
             returncode=0,
             stdout=" M src/main.py\0?? new_file.txt\0",
         )
-        statuses, available = _get_git_status("/tmp/test", False)
+        statuses, available = _get_git_status("/tmp/test")
         assert available is True
         assert statuses.get("src/main.py") == "modified"
         assert statuses.get("new_file.txt") == "untracked"
@@ -140,20 +142,20 @@ class TestGitStatusParsing:
         import subprocess
 
         mock_run.side_effect = subprocess.TimeoutExpired(cmd="git", timeout=3)
-        statuses, available = _get_git_status("/tmp/test_timeout", False)
+        statuses, available = _get_git_status("/tmp/test_timeout")
         assert available is False
         assert statuses == {}
 
     @patch("orchestrator.api.routes.files.subprocess.run")
     def test_git_not_found(self, mock_run):
         mock_run.side_effect = FileNotFoundError()
-        statuses, available = _get_git_status("/tmp/no_git", False)
+        statuses, available = _get_git_status("/tmp/no_git")
         assert available is False
 
     @patch("orchestrator.api.routes.files.subprocess.run")
     def test_nonzero_return(self, mock_run):
         mock_run.return_value = MagicMock(returncode=128, stdout="")
-        statuses, available = _get_git_status("/tmp/not_repo", False)
+        statuses, available = _get_git_status("/tmp/not_repo")
         assert available is False
 
 
@@ -1045,3 +1047,74 @@ class TestMoveRemote:
 
         assert resp.status == "ok"
         mock_ssh.assert_called_once()  # fallback was used
+
+
+class TestMkdirLocal:
+    def test_mkdir_creates_directory(self, tmp_path):
+        resp = _mkdir_local(str(tmp_path), "newdir")
+        assert resp.status == "ok"
+        assert (tmp_path / "newdir").is_dir()
+
+    def test_mkdir_creates_nested_directory(self, tmp_path):
+        resp = _mkdir_local(str(tmp_path), "a/b/c")
+        assert resp.status == "ok"
+        assert (tmp_path / "a" / "b" / "c").is_dir()
+
+    def test_mkdir_existing_dir_is_ok(self, tmp_path):
+        (tmp_path / "already").mkdir()
+        resp = _mkdir_local(str(tmp_path), "already")
+        assert resp.status == "ok"
+
+    def test_mkdir_path_traversal(self, tmp_path):
+        with pytest.raises(HTTPException) as exc_info:
+            _mkdir_local(str(tmp_path), "../outside")
+        assert exc_info.value.status_code == 400
+
+
+class TestMkdirRemote:
+    @patch(
+        "orchestrator.api.routes.files.get_remote_file_server",
+        side_effect=RuntimeError("no server"),
+    )
+    @patch("orchestrator.api.routes.files._run_ssh")
+    def test_mkdir_remote_success(self, mock_ssh, _mock_server):
+        mock_ssh.return_value = MagicMock(
+            returncode=0,
+            stdout=json.dumps({"status": "ok"}),
+            stderr="",
+        )
+        resp = _mkdir_remote("host", "/work", "newdir")
+        assert resp.status == "ok"
+
+    @patch(
+        "orchestrator.api.routes.files.get_remote_file_server",
+        side_effect=RuntimeError("no server"),
+    )
+    @patch("orchestrator.api.routes.files._run_ssh")
+    def test_mkdir_remote_timeout(self, mock_ssh, _mock_server):
+        mock_ssh.side_effect = subprocess.TimeoutExpired(cmd="ssh", timeout=15)
+        with pytest.raises(HTTPException) as exc_info:
+            _mkdir_remote("host", "/work", "newdir")
+        assert exc_info.value.status_code == 504
+
+    @patch("orchestrator.api.routes.files._run_ssh")
+    def test_mkdir_falls_back_when_persistent_server_returns_unknown_action(
+        self, mock_ssh
+    ):
+        mock_server = MagicMock()
+        mock_server.execute.return_value = {"error": "Unknown action: mkdir"}
+
+        mock_ssh.return_value = MagicMock(
+            returncode=0,
+            stdout=json.dumps({"status": "ok"}),
+            stderr="",
+        )
+
+        with patch(
+            "orchestrator.api.routes.files.get_remote_file_server",
+            return_value=mock_server,
+        ):
+            resp = _mkdir_remote("host", "/work", "newdir")
+
+        assert resp.status == "ok"
+        mock_ssh.assert_called_once()

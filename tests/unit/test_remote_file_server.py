@@ -447,6 +447,59 @@ class TestRemoteFileServerScript:
             proc.kill()
             proc.wait()
 
+    def test_mkdir_creates_directory(self, tmp_path):
+        proc = self._start_local_server()
+        try:
+            resp = self._send_command(
+                proc,
+                {
+                    "action": "mkdir",
+                    "work_dir": str(tmp_path),
+                    "path": "newdir",
+                },
+            )
+            assert resp == {"status": "ok"}
+            assert (tmp_path / "newdir").is_dir()
+        finally:
+            proc.stdin.close()
+            proc.kill()
+            proc.wait()
+
+    def test_mkdir_nested(self, tmp_path):
+        proc = self._start_local_server()
+        try:
+            resp = self._send_command(
+                proc,
+                {
+                    "action": "mkdir",
+                    "work_dir": str(tmp_path),
+                    "path": "a/b/c",
+                },
+            )
+            assert resp == {"status": "ok"}
+            assert (tmp_path / "a" / "b" / "c").is_dir()
+        finally:
+            proc.stdin.close()
+            proc.kill()
+            proc.wait()
+
+    def test_mkdir_work_dir_rejected(self, tmp_path):
+        proc = self._start_local_server()
+        try:
+            resp = self._send_command(
+                proc,
+                {
+                    "action": "mkdir",
+                    "work_dir": str(tmp_path),
+                    "path": "",
+                },
+            )
+            assert "error" in resp
+        finally:
+            proc.stdin.close()
+            proc.kill()
+            proc.wait()
+
     def test_multiple_commands(self, tmp_path):
         """Verify the server handles multiple sequential commands."""
         (tmp_path / "a.py").write_text("file a")
