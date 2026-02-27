@@ -4,7 +4,6 @@
   display: flex;
   flex-direction: column;
   background: var(--bg);
-  border-right: 1px solid var(--border);
   overflow: hidden;
   transition: width 300ms ease-out, opacity 300ms ease-out;
   opacity: 0;
@@ -337,13 +336,22 @@
   cursor: not-allowed;
 }
 
-/* Resize handle */
+/* Resize handle — 1px divider that widens on hover */
 .fe-resize-handle {
-  width: 4px;
+  width: 1px;
   cursor: col-resize;
-  background: transparent;
-  transition: background 0.15s;
+  background: var(--border);
   flex-shrink: 0;
+  position: relative;
+}
+
+.fe-resize-handle::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -2px;
+  width: 5px;
 }
 
 .fe-resize-handle:hover {

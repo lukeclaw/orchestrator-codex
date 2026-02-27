@@ -52,10 +52,15 @@ select:focus {
   border-color: var(--accent);
 }
 
-/* Scrollbar */
+/* Scrollbar — unified thin style, matching the brain sidebar terminal */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+
 ::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  width: 6px;
+  height: 6px;
 }
 
 ::-webkit-scrollbar-track {
@@ -63,12 +68,12 @@ select:focus {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: var(--border);
-  border-radius: 4px;
+  background: rgba(110, 118, 129, 0.4);
+  border-radius: 3px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: var(--text-muted);
+  background: rgba(110, 118, 129, 0.7);
 }
 
 ::-webkit-scrollbar-corner {

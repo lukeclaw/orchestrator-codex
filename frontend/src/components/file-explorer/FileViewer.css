@@ -4,7 +4,6 @@
   display: flex;
   flex-direction: column;
   background: var(--bg);
-  border-bottom: 1px solid var(--border);
   overflow: hidden;
   transition: height 300ms ease-out, opacity 300ms ease-out;
   min-height: 0;
@@ -136,19 +135,34 @@
 /* Content */
 .fe-viewer__content {
   flex: 1;
-  overflow: auto;
+  overflow: hidden;
   min-height: 0;
+  display: flex;
+  flex-direction: column;
 }
 
 /* Source view */
 .fe-viewer__source {
-  overflow: auto;
-  height: 100%;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
 }
 
 /* Override Markdown wrapper styles for file viewer code rendering */
 .fe-viewer__code-wrap {
   margin: 0;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.fe-viewer__code-wrap .markdown-content {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
 }
 
 .fe-viewer__code-wrap .code-block {
@@ -157,6 +171,8 @@
   border: none;
   font-size: 13px;
   line-height: 1.5;
+  flex: 1;
+  min-height: 0;
 }
 
 .fe-viewer__code-wrap .markdown-copy-btn {

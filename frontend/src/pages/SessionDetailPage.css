@@ -199,13 +199,22 @@
   height: 100%;
 }
 
-/* Viewer resize handle (horizontal) */
+/* Viewer resize handle (horizontal) — 1px divider that widens on hover */
 .fe-viewer-resize {
-  height: 4px;
+  height: 1px;
   cursor: row-resize;
-  background: transparent;
-  transition: background 0.15s;
+  background: var(--border);
   flex-shrink: 0;
+  position: relative;
+}
+
+.fe-viewer-resize::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: -2px;
+  height: 5px;
 }
 
 .fe-viewer-resize:hover {
