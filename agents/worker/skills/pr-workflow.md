@@ -84,6 +84,9 @@ If conflicts arise that you're unsure about: **STOP and wait for help.**
 **Case E — PR has merge conflicts you're unsure about:**
 **STOP and wait for help.**
 
+**Case F — PR targets another open PR's branch (chained PR):**
+Keep it as draft. Do not mark ready for review. Once the upstream PR merges, GitHub automatically retargets the chained PR to `master`. At that point, treat it like Case C (rebase, run checks, mark ready if clean and within working hours).
+
 ---
 
 ## Create New PRs
@@ -147,12 +150,13 @@ Include the actual output — not just "tests pass". Reviewers should be able to
    gh api repos/OWNER/REPO/pulls/N/comments
    gh api repos/OWNER/REPO/issues/N/comments
    ```
-2. **Address each comment** — Evaluate whether the feedback is valid, then make changes if needed
-3. **Respond to comments** — Use `gh` CLI to reply to review threads. Adjust tone based on the reviewer:
+2. **Check if you already replied** — Before posting, review the thread to see if your previous reply already exists. Only post again if there is genuinely new information to add (e.g., a new code fix, a direct answer to a follow-up question). If you do reply again, continue the conversation naturally — don't repeat what you already said or post a generic status update.
+3. **Address each comment** — Evaluate whether the feedback is valid, then make changes if needed
+4. **Respond to comments** — Use `gh` CLI to reply to review threads. Adjust tone based on the reviewer:
    - **Human reviewers** (priority): Write conversationally — explain your reasoning, acknowledge their point, invite follow-up. They will read and may respond. Always address human reviews first.
    - **Bot accounts** (`Copilot`, `github-actions[bot]`, `linkedin-svc`, `copilot-pull-request-reviewer[bot]`): Take with a grain of salt — bot suggestions are often not relevant to the PR or not applicable. Only act on feedback that is clearly valid. Keep replies short and factual. Bots won't read your reply.
-4. **Push fixes** — Commit and push (use the rebase pattern)
-5. **Notify the user** — Send a mandatory human interaction notification with the exact comment URL and your full reply text
+5. **Push fixes** — Commit and push (use the rebase pattern)
+6. **Notify the user** — Send a mandatory human interaction notification with the exact comment URL and your full reply text
 
 ### `gh api` Usage
 
