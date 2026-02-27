@@ -98,10 +98,12 @@ export default function SessionDetailPage() {
         e.preventDefault()
         if (editorTabs.activeTabPath) editorTabs.saveTab(editorTabs.activeTabPath)
       }
-      // Ctrl+W: close active tab
+      // Cmd/Ctrl+W: close active tab when file viewer is open
       if ((e.ctrlKey || e.metaKey) && e.key === 'w' && !e.shiftKey) {
-        e.preventDefault()
-        if (editorTabs.activeTabPath) editorTabs.closeTab(editorTabs.activeTabPath)
+        if (fe.open && editorTabs.activeTabPath) {
+          e.preventDefault()
+          editorTabs.closeTab(editorTabs.activeTabPath)
+        }
       }
     }
     document.addEventListener('keydown', handler)
@@ -506,9 +508,12 @@ export default function SessionDetailPage() {
                   sessionId={id}
                   tabs={editorTabs.tabs}
                   activeTabPath={editorTabs.activeTabPath}
+                  pendingClose={editorTabs.pendingClose}
                   onTabSelect={editorTabs.setActiveTab}
                   onTabClose={editorTabs.closeTab}
                   onTabPin={editorTabs.pinTab}
+                  onConfirmClose={editorTabs.confirmCloseTab}
+                  onCancelClose={editorTabs.cancelCloseTab}
                   onContentChange={editorTabs.updateContent}
                   onSave={editorTabs.saveTab}
                   isDirty={editorTabs.isDirty}

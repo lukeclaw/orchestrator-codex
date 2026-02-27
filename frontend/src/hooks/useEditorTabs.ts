@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from 'react'
+import { useState, useCallback, useRef, useEffect } from 'react'
 import { api } from '../api/client'
 
 // ---------------------------------------------------------------------------
@@ -44,9 +44,12 @@ export interface Tab {
 export interface EditorTabsAPI {
   tabs: Tab[]
   activeTabPath: string | null
+  pendingClose: string | null
   openTab(path: string, preview?: boolean): void
   openNewFile(dirPath: string, fileName: string): void
   closeTab(path: string): boolean
+  confirmCloseTab(path: string): void
+  cancelCloseTab(): void
   setActiveTab(path: string): void
   pinTab(path: string): void
   updateContent(path: string, content: string): void
@@ -95,6 +98,41 @@ function detectLanguage(path: string): string | null {
 }
 
 // ---------------------------------------------------------------------------
+// Persistence helpers
+// ---------------------------------------------------------------------------
+
+function cacheKey(sessionId: string): string {
+  return `editor-tabs:${sessionId}`
+}
+
+interface CachedTabState {
+  paths: string[]
+  active: string | null
+}
+
+function loadCachedTabs(sessionId: string): CachedTabState | null {
+  try {
+    const raw = sessionStorage.getItem(cacheKey(sessionId))
+    if (!raw) return null
+    return JSON.parse(raw) as CachedTabState
+  } catch {
+    return null
+  }
+}
+
+function saveCachedTabs(sessionId: string, tabs: Tab[], active: string | null) {
+  try {
+    const state: CachedTabState = {
+      paths: tabs.filter(t => !t.isNew).map(t => t.path),
+      active,
+    }
+    sessionStorage.setItem(cacheKey(sessionId), JSON.stringify(state))
+  } catch {
+    // Ignore storage errors
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Hook
 // ---------------------------------------------------------------------------
 
@@ -102,6 +140,9 @@ export function useEditorTabs(sessionId: string): EditorTabsAPI {
   const [tabs, setTabs] = useState<Tab[]>([])
   const [activeTabPath, setActiveTabPath] = useState<string | null>(null)
   const abortControllers = useRef<Map<string, AbortController>>(new Map())
+  const tabsRef = useRef<Tab[]>(tabs)
+  tabsRef.current = tabs
+  const restoredRef = useRef(false)
 
   // ------- fetch content helper -------
   const fetchTabContent = useCallback(async (path: string) => {
@@ -154,6 +195,44 @@ export function useEditorTabs(sessionId: string): EditorTabsAPI {
       abortControllers.current.delete(path)
     }
   }, [sessionId])
+
+  // ------- restore cached tabs on mount -------
+  useEffect(() => {
+    if (restoredRef.current) return
+    restoredRef.current = true
+    const cached = loadCachedTabs(sessionId)
+    if (!cached || cached.paths.length === 0) return
+
+    const newTabs: Tab[] = cached.paths.map(path => ({
+      path,
+      fileName: extractFileName(path),
+      originalContent: null,
+      currentContent: null,
+      binary: false,
+      truncated: false,
+      totalLines: null,
+      size: 0,
+      language: detectLanguage(path),
+      modified: null,
+      isPreview: false,
+      isNew: false,
+      loading: true,
+      error: null,
+      saving: false,
+    }))
+
+    setTabs(newTabs)
+    setActiveTabPath(cached.active && cached.paths.includes(cached.active) ? cached.active : cached.paths[0])
+    for (const path of cached.paths) {
+      fetchTabContent(path)
+    }
+  }, [sessionId, fetchTabContent])
+
+  // ------- persist tab paths on change -------
+  useEffect(() => {
+    if (!restoredRef.current) return
+    saveCachedTabs(sessionId, tabs, activeTabPath)
+  }, [sessionId, tabs, activeTabPath])
 
   // ------- openTab -------
   const openTab = useCallback((path: string, preview = true) => {
@@ -257,20 +336,35 @@ export function useEditorTabs(sessionId: string): EditorTabsAPI {
   }, [])
 
   // ------- closeTab -------
+  // Track which tab is pending close confirmation
+  const [pendingClose, setPendingClose] = useState<string | null>(null)
+
   const closeTab = useCallback((path: string): boolean => {
-    const tab = tabs.find(t => t.path === path)
-    if (!tab) return true
-
-    const dirty = tab.isNew
-      ? (tab.currentContent ?? '') !== ''
-      : tab.originalContent !== tab.currentContent
-
-    if (dirty) {
-      if (!window.confirm('You have unsaved changes. Close anyway?')) {
+    const tab = tabsRef.current.find(t => t.path === path)
+    if (tab) {
+      const dirty = tab.isNew
+        ? (tab.currentContent ?? '') !== ''
+        : tab.originalContent !== tab.currentContent
+      if (dirty) {
+        setPendingClose(path)
         return false
       }
     }
 
+    doCloseTab(path)
+    return true
+  }, [])
+
+  const confirmCloseTab = useCallback((path: string) => {
+    setPendingClose(null)
+    doCloseTab(path)
+  }, [])
+
+  const cancelCloseTab = useCallback(() => {
+    setPendingClose(null)
+  }, [])
+
+  const doCloseTab = useCallback((path: string) => {
     // Cancel any inflight request
     const ctrl = abortControllers.current.get(path)
     if (ctrl) ctrl.abort()
@@ -291,8 +385,7 @@ export function useEditorTabs(sessionId: string): EditorTabsAPI {
 
       return next
     })
-    return true
-  }, [tabs])
+  }, [])
 
   // ------- setActiveTab -------
   const setActive = useCallback((path: string) => {
@@ -415,9 +508,12 @@ export function useEditorTabs(sessionId: string): EditorTabsAPI {
   return {
     tabs,
     activeTabPath,
+    pendingClose,
     openTab,
     openNewFile,
     closeTab,
+    confirmCloseTab,
+    cancelCloseTab,
     setActiveTab: setActive,
     pinTab,
     updateContent,

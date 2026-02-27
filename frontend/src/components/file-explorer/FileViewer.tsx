@@ -1,6 +1,6 @@
 import { useState, useCallback, useRef, useEffect } from 'react'
 import Editor from '@monaco-editor/react'
-import { IconX } from '../common/Icons'
+import { IconX, IconSave, IconPencil, IconEye } from '../common/Icons'
 import Markdown from '../common/Markdown'
 import type { Tab } from '../../hooks/useEditorTabs'
 import './FileViewer.css'
@@ -13,9 +13,12 @@ interface FileViewerProps {
   sessionId: string
   tabs: Tab[]
   activeTabPath: string | null
+  pendingClose: string | null
   onTabSelect: (path: string) => void
   onTabClose: (path: string) => boolean
   onTabPin: (path: string) => void
+  onConfirmClose: (path: string) => void
+  onCancelClose: () => void
   onContentChange: (path: string, content: string) => void
   onSave: (path: string) => Promise<boolean>
   isDirty: (path: string) => boolean
@@ -30,21 +33,6 @@ const IMAGE_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.gif', '.bmp', '.svg
 function isImage(path: string): boolean {
   const ext = path.slice(path.lastIndexOf('.')).toLowerCase()
   return IMAGE_EXTENSIONS.has(ext)
-}
-
-function humanSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
-}
-
-function timeAgo(epoch: number): string {
-  const secs = Math.floor(Date.now() / 1000 - epoch)
-  if (secs < 60) return 'just now'
-  if (secs < 3600) return `${Math.floor(secs / 60)}m ago`
-  if (secs < 86400) return `${Math.floor(secs / 3600)}h ago`
-  if (secs < 2592000) return `${Math.floor(secs / 86400)}d ago`
-  return `${Math.floor(secs / 2592000)}mo ago`
 }
 
 /** Map our language names to Monaco's language IDs. */
@@ -74,9 +62,12 @@ export default function FileViewer({
   sessionId,
   tabs,
   activeTabPath,
+  pendingClose,
   onTabSelect,
   onTabClose,
   onTabPin,
+  onConfirmClose,
+  onCancelClose,
   onContentChange,
   onSave,
   isDirty,
@@ -100,6 +91,19 @@ export default function FileViewer({
     const el = tabBarRef.current.querySelector(`[data-tab-path="${CSS.escape(activeTabPath)}"]`)
     if (el) el.scrollIntoView({ block: 'nearest', inline: 'nearest' })
   }, [activeTabPath])
+
+  // Horizontal scroll on mouse wheel
+  useEffect(() => {
+    const bar = tabBarRef.current
+    if (!bar) return
+    const onWheel = (e: WheelEvent) => {
+      if (e.deltaY === 0) return
+      e.preventDefault()
+      bar.scrollLeft += e.deltaY
+    }
+    bar.addEventListener('wheel', onWheel, { passive: false })
+    return () => bar.removeEventListener('wheel', onWheel)
+  }, [])
 
   if (tabs.length === 0) {
     return (
@@ -127,26 +131,22 @@ export default function FileViewer({
             >
               {dirty && <span className="fe-viewer__dirty-dot" />}
               <span className="fe-viewer__tab-name">{tab.fileName}</span>
-              <span className="fe-viewer__tab-meta">
-                {humanSize(tab.size)}
-                {tab.modified != null && <> &middot; {timeAgo(tab.modified)}</>}
-              </span>
               {dirty && (
                 <button
-                  className="fe-viewer__tab-save"
+                  className="fe-viewer__tab-icon-btn save"
                   onClick={(e) => { e.stopPropagation(); onSave(tab.path) }}
                   title="Save (Ctrl+S)"
                 >
-                  {tab.saving ? '...' : 'Save'}
+                  <IconSave size={12} />
                 </button>
               )}
               {isMarkdownFile(tab.path) && active && (
                 <button
-                  className={`fe-viewer__tab-preview-toggle${(mdPreviewMode[tab.path] ?? true) ? ' active' : ''}`}
+                  className="fe-viewer__tab-icon-btn"
                   onClick={(e) => { e.stopPropagation(); toggleMdPreview(tab.path) }}
                   title={(mdPreviewMode[tab.path] ?? true) ? 'Switch to editor' : 'Switch to preview'}
                 >
-                  {(mdPreviewMode[tab.path] ?? true) ? 'Edit' : 'Preview'}
+                  {(mdPreviewMode[tab.path] ?? true) ? <IconPencil size={12} /> : <IconEye size={12} />}
                 </button>
               )}
               <button
@@ -160,6 +160,16 @@ export default function FileViewer({
           )
         })}
       </div>
+
+      {/* Unsaved changes confirmation */}
+      {pendingClose && (
+        <div className="fe-viewer__close-confirm">
+          <span>Unsaved changes will be lost.</span>
+          <button className="fe-viewer__close-confirm-btn save" onClick={() => { onSave(pendingClose).then(ok => { if (ok) onConfirmClose(pendingClose) }); onCancelClose() }}>Save</button>
+          <button className="fe-viewer__close-confirm-btn discard" onClick={() => onConfirmClose(pendingClose)}>Discard</button>
+          <button className="fe-viewer__close-confirm-btn cancel" onClick={onCancelClose}>Cancel</button>
+        </div>
+      )}
 
       {/* Content area */}
       <div className="fe-viewer__content">

@@ -85,55 +85,35 @@
   min-width: 0;
 }
 
-/* Meta info (size, time) inline in tab */
-.fe-viewer__tab-meta {
-  font-size: 10px;
-  color: var(--text-muted);
-  opacity: 0.7;
-  white-space: nowrap;
-  flex-shrink: 0;
-}
-
-/* Inline save button in tab */
-.fe-viewer__tab-save {
-  font-size: 10px;
-  padding: 1px 6px;
-  background: var(--blue, #58a6ff);
+/* Icon buttons in tab (save, md preview toggle) */
+.fe-viewer__tab-icon-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  background: none;
   border: none;
-  border-radius: 3px;
-  color: white;
+  color: var(--text-muted);
+  border-radius: var(--radius);
   cursor: pointer;
+  transition: color 0.1s, background 0.1s;
   flex-shrink: 0;
-  transition: opacity 0.15s;
-  white-space: nowrap;
-  line-height: 1.4;
+  padding: 0;
 }
 
-.fe-viewer__tab-save:hover {
-  opacity: 0.85;
-}
-
-/* Markdown preview toggle in tab */
-.fe-viewer__tab-preview-toggle {
-  font-size: 10px;
-  padding: 1px 6px;
-  background: var(--surface-hover);
-  border: 1px solid var(--border);
-  border-radius: 3px;
+.fe-viewer__tab-icon-btn:hover {
   color: var(--text-primary);
-  cursor: pointer;
-  flex-shrink: 0;
-  transition: background 0.15s;
-  white-space: nowrap;
-  line-height: 1.4;
-}
-
-.fe-viewer__tab-preview-toggle:hover {
-  background: var(--border);
-}
-
-.fe-viewer__tab-preview-toggle.active {
   background: var(--surface-hover);
+}
+
+.fe-viewer__tab-icon-btn.save {
+  color: var(--blue, #58a6ff);
+}
+
+.fe-viewer__tab-icon-btn.save:hover {
+  color: white;
+  background: var(--blue, #58a6ff);
 }
 
 .fe-viewer__tab-close {
@@ -161,6 +141,49 @@
 .fe-viewer__tab-close:hover {
   color: var(--text-primary);
   background: var(--surface-hover);
+}
+
+/* Close confirmation bar */
+.fe-viewer__close-confirm {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 10px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border-subtle);
+  font-size: 12px;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.fe-viewer__close-confirm-btn {
+  font-size: 11px;
+  padding: 2px 8px;
+  border: none;
+  border-radius: 3px;
+  cursor: pointer;
+  line-height: 1.4;
+  transition: opacity 0.15s;
+}
+
+.fe-viewer__close-confirm-btn:hover {
+  opacity: 0.85;
+}
+
+.fe-viewer__close-confirm-btn.save {
+  background: var(--blue, #58a6ff);
+  color: white;
+}
+
+.fe-viewer__close-confirm-btn.discard {
+  background: var(--red, #f85149);
+  color: white;
+}
+
+.fe-viewer__close-confirm-btn.cancel {
+  background: var(--surface-hover);
+  color: var(--text-primary);
+  border: 1px solid var(--border);
 }
 
 /* Content */
