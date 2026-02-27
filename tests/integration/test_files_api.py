@@ -72,7 +72,7 @@ def client_with_remote_session(tmp_path):
     _remote_content_cache.clear()
 
     def fake_run_ssh(host, script, args):
-        """Execute the remote script locally instead of via SSH."""
+        """Execute the remote script locally instead of via SSH (text mode)."""
         import sys
 
         result = subprocess.run(
@@ -84,7 +84,20 @@ def client_with_remote_session(tmp_path):
         )
         return result
 
-    with patch("orchestrator.api.routes.files._run_ssh", side_effect=fake_run_ssh):
+    def fake_run_ssh_bytes(host, script, args):
+        """Execute the remote script locally instead of via SSH (bytes mode)."""
+        import sys
+
+        result = subprocess.run(
+            [sys.executable, "-"] + args,
+            input=script,
+            capture_output=True,
+            timeout=15,
+        )
+        return result
+
+    with patch("orchestrator.api.routes.files._run_ssh", side_effect=fake_run_ssh), \
+         patch("orchestrator.api.routes.files._run_ssh_bytes", side_effect=fake_run_ssh_bytes):
         with TestClient(app) as c:
             yield c, session.id, tmp_path
 
@@ -522,6 +535,135 @@ class TestRemoteCaching:
         assert resp3.status_code == 200
         names3 = [e["name"] for e in resp3.json()["entries"]]
         assert "b.txt" in names3
+
+
+class TestWriteFile:
+    def test_write_and_read_back(self, client_with_session):
+        client, session_id, tmp_path = client_with_session
+        (tmp_path / "editable.py").write_text("original")
+
+        resp = client.put(
+            f"/api/sessions/{session_id}/files/content",
+            json={"path": "editable.py", "content": "modified content"},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["conflict"] is False
+        assert data["size"] == len("modified content")
+
+        # Read back
+        resp = client.get(
+            f"/api/sessions/{session_id}/files/content?path=editable.py"
+        )
+        assert resp.json()["content"] == "modified content"
+
+    def test_write_new_file_and_read_back(self, client_with_session):
+        client, session_id, tmp_path = client_with_session
+
+        resp = client.put(
+            f"/api/sessions/{session_id}/files/content",
+            json={
+                "path": "newdir/newfile.txt",
+                "content": "hello new file",
+                "create": True,
+            },
+        )
+        assert resp.status_code == 200
+        assert resp.json()["conflict"] is False
+
+        # Read back
+        resp = client.get(
+            f"/api/sessions/{session_id}/files/content?path=newdir/newfile.txt"
+        )
+        assert resp.status_code == 200
+        assert resp.json()["content"] == "hello new file"
+
+    def test_write_conflict_detection(self, client_with_session):
+        client, session_id, tmp_path = client_with_session
+        (tmp_path / "conflict.py").write_text("original")
+
+        # Use a stale mtime
+        resp = client.put(
+            f"/api/sessions/{session_id}/files/content",
+            json={
+                "path": "conflict.py",
+                "content": "new content",
+                "expected_mtime": 1000000.0,
+            },
+        )
+        assert resp.status_code == 200
+        assert resp.json()["conflict"] is True
+        # File should be unchanged
+        assert (tmp_path / "conflict.py").read_text() == "original"
+
+    def test_write_oversize_rejected(self, client_with_session):
+        client, session_id, tmp_path = client_with_session
+        (tmp_path / "big.txt").write_text("x")
+
+        large_content = "x" * (3 * 1024 * 1024)  # 3MB > 2MB limit
+        resp = client.put(
+            f"/api/sessions/{session_id}/files/content",
+            json={"path": "big.txt", "content": large_content},
+        )
+        assert resp.status_code == 413
+
+    def test_write_path_traversal_rejected(self, client_with_session):
+        client, session_id, _ = client_with_session
+        resp = client.put(
+            f"/api/sessions/{session_id}/files/content",
+            json={"path": "../../etc/passwd", "content": "hack"},
+        )
+        assert resp.status_code == 400
+
+
+class TestRemoteWriteFile:
+    def test_write_and_read_back_remote(self, client_with_remote_session):
+        client, session_id, tmp_path = client_with_remote_session
+        (tmp_path / "remote_edit.py").write_text("original remote")
+
+        resp = client.put(
+            f"/api/sessions/{session_id}/files/content",
+            json={"path": "remote_edit.py", "content": "updated remote"},
+        )
+        assert resp.status_code == 200
+        assert resp.json()["conflict"] is False
+
+        # Read back (refresh to bypass cache)
+        resp = client.get(
+            f"/api/sessions/{session_id}/files/content?path=remote_edit.py&refresh=true"
+        )
+        assert resp.status_code == 200
+        assert resp.json()["content"] == "updated remote"
+
+    def test_write_new_file_remote(self, client_with_remote_session):
+        client, session_id, tmp_path = client_with_remote_session
+
+        resp = client.put(
+            f"/api/sessions/{session_id}/files/content",
+            json={
+                "path": "new_remote.txt",
+                "content": "new remote file",
+                "create": True,
+            },
+        )
+        assert resp.status_code == 200
+        assert resp.json()["conflict"] is False
+        assert (tmp_path / "new_remote.txt").read_text() == "new remote file"
+
+    def test_write_conflict_remote(self, client_with_remote_session):
+        client, session_id, tmp_path = client_with_remote_session
+        (tmp_path / "conflict_remote.py").write_text("original")
+
+        resp = client.put(
+            f"/api/sessions/{session_id}/files/content",
+            json={
+                "path": "conflict_remote.py",
+                "content": "new",
+                "expected_mtime": 1000000.0,
+            },
+        )
+        assert resp.status_code == 200
+        assert resp.json()["conflict"] is True
 
 
 class TestRemoteEndToEndFlow:

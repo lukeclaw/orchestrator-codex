@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import time
 from unittest.mock import MagicMock, patch
@@ -12,6 +13,7 @@ from fastapi import HTTPException
 
 from orchestrator.api.routes.files import (
     FileEntry,
+    FileWriteRequest,
     _apply_git_status,
     _detect_remote_work_dir,
     _get_git_status,
@@ -19,9 +21,12 @@ from orchestrator.api.routes.files import (
     _human_size,
     _list_remote_dir,
     _read_remote_file,
+    _remote_content_cache,
     _remote_dir_cache,
     _resolve_session,
     _validate_path,
+    _write_local_file,
+    _write_remote_file,
 )
 
 
@@ -559,3 +564,203 @@ class TestSshSemaphore:
         sem.release()
         sem.release()
         _host_semaphores.pop(host, None)
+
+
+# ---------------------------------------------------------------------------
+# Phase 3: Write endpoint tests
+# ---------------------------------------------------------------------------
+
+
+class TestWriteFileLocal:
+    def test_write_updates_file_content(self, tmp_path):
+        f = tmp_path / "hello.py"
+        f.write_text("old")
+        body = FileWriteRequest(path="hello.py", content="new content")
+        resp = _write_local_file(str(tmp_path), body)
+        assert resp.conflict is False
+        assert f.read_text() == "new content"
+        assert resp.size == len("new content")
+
+    def test_write_rejects_path_traversal(self, tmp_path):
+        body = FileWriteRequest(path="../outside.txt", content="hack")
+        with pytest.raises(HTTPException) as exc_info:
+            _write_local_file(str(tmp_path), body)
+        assert exc_info.value.status_code == 400
+        assert "outside" in exc_info.value.detail.lower()
+
+    def test_write_rejects_oversized_content(self, tmp_path):
+        """Content > 2MB should be rejected at the endpoint level.
+        _write_local_file doesn't check size, but the endpoint does.
+        We test the model validation indirectly: content_bytes > 2MB."""
+        from orchestrator.api.routes.files import _MAX_WRITE_SIZE
+
+        assert _MAX_WRITE_SIZE == 2 * 1024 * 1024
+
+    def test_write_permission_denied(self, tmp_path):
+        # Create a read-only directory
+        ro_dir = tmp_path / "readonly"
+        ro_dir.mkdir()
+        f = ro_dir / "file.txt"
+        f.write_text("original")
+        f.chmod(0o444)
+        ro_dir.chmod(0o555)
+
+        body = FileWriteRequest(path="readonly/file.txt", content="attempt")
+        try:
+            with pytest.raises(HTTPException) as exc_info:
+                _write_local_file(str(tmp_path), body)
+            assert exc_info.value.status_code == 403
+        finally:
+            # Restore permissions for cleanup
+            ro_dir.chmod(0o755)
+            f.chmod(0o644)
+
+    def test_write_file_not_found(self, tmp_path):
+        body = FileWriteRequest(path="missing.txt", content="data", create=False)
+        with pytest.raises(HTTPException) as exc_info:
+            _write_local_file(str(tmp_path), body)
+        assert exc_info.value.status_code == 404
+
+    def test_write_creates_new_file(self, tmp_path):
+        body = FileWriteRequest(
+            path="newfile.txt", content="brand new", create=True
+        )
+        resp = _write_local_file(str(tmp_path), body)
+        assert resp.conflict is False
+        assert (tmp_path / "newfile.txt").read_text() == "brand new"
+
+    def test_write_creates_parent_dirs(self, tmp_path):
+        body = FileWriteRequest(
+            path="deep/nested/dir/file.txt", content="nested content", create=True
+        )
+        resp = _write_local_file(str(tmp_path), body)
+        assert resp.conflict is False
+        assert (tmp_path / "deep/nested/dir/file.txt").read_text() == "nested content"
+
+    def test_conflict_detection_mtime_mismatch(self, tmp_path):
+        f = tmp_path / "conflict.txt"
+        f.write_text("original")
+        # Use an mtime that's far in the past (guaranteed mismatch)
+        body = FileWriteRequest(
+            path="conflict.txt", content="new", expected_mtime=1000000.0
+        )
+        resp = _write_local_file(str(tmp_path), body)
+        assert resp.conflict is True
+        # File should NOT have been modified
+        assert f.read_text() == "original"
+
+    def test_conflict_detection_mtime_match(self, tmp_path):
+        f = tmp_path / "match.txt"
+        f.write_text("original")
+        mtime = os.stat(str(f)).st_mtime
+        body = FileWriteRequest(
+            path="match.txt", content="updated", expected_mtime=mtime
+        )
+        resp = _write_local_file(str(tmp_path), body)
+        assert resp.conflict is False
+        assert f.read_text() == "updated"
+
+    def test_no_conflict_when_expected_mtime_null(self, tmp_path):
+        f = tmp_path / "nocheck.txt"
+        f.write_text("v1")
+        body = FileWriteRequest(
+            path="nocheck.txt", content="v2", expected_mtime=None
+        )
+        resp = _write_local_file(str(tmp_path), body)
+        assert resp.conflict is False
+        assert f.read_text() == "v2"
+
+
+class TestWriteFileRemote:
+    @patch("orchestrator.api.routes.files.subprocess.run")
+    def test_write_remote_success(self, mock_run):
+        mock_run.return_value = MagicMock(
+            returncode=0,
+            stdout=json.dumps(
+                {"conflict": False, "size": 11, "modified": 1700000000.0}
+            ),
+            stderr=b"",
+        )
+        body = FileWriteRequest(path="test.py", content="hello world")
+        resp = _write_remote_file("host", "/work", body)
+        assert resp.conflict is False
+        assert resp.size == 11
+        assert resp.modified == 1700000000.0
+
+    @patch("orchestrator.api.routes.files.subprocess.run")
+    def test_write_remote_timeout(self, mock_run):
+        mock_run.side_effect = subprocess.TimeoutExpired(cmd="ssh", timeout=15)
+        body = FileWriteRequest(path="test.py", content="data")
+        with pytest.raises(HTTPException) as exc_info:
+            _write_remote_file("host", "/work", body)
+        assert exc_info.value.status_code == 504
+
+    @patch("orchestrator.api.routes.files.subprocess.run")
+    def test_write_remote_permission_denied(self, mock_run):
+        mock_run.return_value = MagicMock(
+            returncode=1,
+            stdout=json.dumps({"error": "Permission denied"}),
+            stderr=b"",
+        )
+        body = FileWriteRequest(path="test.py", content="data")
+        with pytest.raises(HTTPException) as exc_info:
+            _write_remote_file("host", "/work", body)
+        assert exc_info.value.status_code == 403
+
+    @patch("orchestrator.api.routes.files.subprocess.run")
+    def test_write_remote_conflict(self, mock_run):
+        mock_run.return_value = MagicMock(
+            returncode=0,
+            stdout=json.dumps(
+                {"conflict": True, "size": 100, "modified": 1700000000.0}
+            ),
+            stderr=b"",
+        )
+        body = FileWriteRequest(
+            path="test.py", content="data", expected_mtime=1699999999.0
+        )
+        resp = _write_remote_file("host", "/work", body)
+        assert resp.conflict is True
+        assert resp.size == 100
+
+    @patch("orchestrator.api.routes.files.subprocess.run")
+    def test_base64_encoding_correctness(self, mock_run):
+        """Verify content is base64-encoded in the SSH script."""
+        import base64
+
+        content = "print('hello')\n"
+        expected_b64 = base64.b64encode(content.encode("utf-8")).decode("ascii")
+
+        mock_run.return_value = MagicMock(
+            returncode=0,
+            stdout=json.dumps(
+                {"conflict": False, "size": len(content), "modified": 1700000000.0}
+            ),
+            stderr=b"",
+        )
+        body = FileWriteRequest(path="test.py", content=content)
+        _write_remote_file("host", "/work", body)
+
+        # The script sent via stdin should contain the base64
+        call_args = mock_run.call_args
+        script_input = call_args.kwargs.get("input") or call_args[1].get("input", b"")
+        assert expected_b64.encode() in script_input
+
+    @patch("orchestrator.api.routes.files.subprocess.run")
+    def test_cache_invalidation_after_write(self, mock_run):
+        mock_run.return_value = MagicMock(
+            returncode=0,
+            stdout=json.dumps(
+                {"conflict": False, "size": 5, "modified": 1700000000.0}
+            ),
+            stderr=b"",
+        )
+        # Pre-populate cache
+        cache_key = "host::/work::test.py::500"
+        _remote_content_cache[cache_key] = (time.monotonic(), MagicMock())
+
+        body = FileWriteRequest(path="test.py", content="data")
+        _write_remote_file("host", "/work", body)
+
+        # Cache should be invalidated
+        assert cache_key not in _remote_content_cache

@@ -5,6 +5,7 @@ import { useNotify } from '../context/NotificationContext'
 import { useApp } from '../context/AppContext'
 import { useSmartPaste } from '../hooks/useSmartPaste'
 import { useFileExplorerState } from '../hooks/useFileExplorerState'
+import { useEditorTabs } from '../hooks/useEditorTabs'
 import TerminalView from '../components/terminal/TerminalView'
 import FileExplorerPanel from '../components/file-explorer/FileExplorerPanel'
 import FileViewer from '../components/file-explorer/FileViewer'
@@ -29,7 +30,8 @@ export default function SessionDetailPage() {
   const session = sessions.find(s => s.id === id) || null
   const tasks = allTasks.filter(t => t.assigned_session_id === id)
   const isRdev = session?.host?.includes('/') ?? false
-  
+  const isRemote = session?.host ? session.host !== 'localhost' : false
+
   const { readClipboard } = useSmartPaste()
   const terminalFocusRef = useRef<(() => void) | null>(null)
 
@@ -39,13 +41,13 @@ export default function SessionDetailPage() {
 
   // File explorer state
   const fe = useFileExplorerState()
-  const [selectedFile, setSelectedFile] = useState<string | null>(null)
-  const [pinnedFile, setPinnedFile] = useState<string | null>(null)
+  const editorTabs = useEditorTabs(id!)
 
   // Local state for page-specific data
   const [error, setError] = useState('')
   const [actionPending, setActionPending] = useState(false)
   const [pasting, setPasting] = useState(false)
+  const [hintDismissed, setHintDismissed] = useState(false)
   const [showAssignTask, setShowAssignTask] = useState(false)
 
   // Record that user viewed this session
@@ -83,38 +85,49 @@ export default function SessionDetailPage() {
     }
   }, [id, isRdev])
 
-  // Ctrl+Shift+E to toggle file explorer
+  // Keyboard shortcuts
   useEffect(() => {
     const handler = (e: globalThis.KeyboardEvent) => {
+      // Ctrl+Shift+E to toggle file explorer
       if (e.ctrlKey && e.shiftKey && e.key === 'E') {
         e.preventDefault()
         fe.toggleOpen()
       }
+      // Ctrl+S: save active tab
+      if ((e.ctrlKey || e.metaKey) && e.key === 's' && !e.shiftKey) {
+        e.preventDefault()
+        if (editorTabs.activeTabPath) editorTabs.saveTab(editorTabs.activeTabPath)
+      }
+      // Ctrl+W: close active tab
+      if ((e.ctrlKey || e.metaKey) && e.key === 'w' && !e.shiftKey) {
+        e.preventDefault()
+        if (editorTabs.activeTabPath) editorTabs.closeTab(editorTabs.activeTabPath)
+      }
     }
     document.addEventListener('keydown', handler)
     return () => document.removeEventListener('keydown', handler)
-  }, [fe.toggleOpen])
+  }, [fe.toggleOpen, editorTabs])
+
+  // Warn before leaving with unsaved changes
+  useEffect(() => {
+    if (!editorTabs.hasAnyDirty) return
+    const handler = (e: BeforeUnloadEvent) => { e.preventDefault(); e.returnValue = '' }
+    window.addEventListener('beforeunload', handler)
+    return () => window.removeEventListener('beforeunload', handler)
+  }, [editorTabs.hasAnyDirty])
 
   // File explorer handlers
   const handleFileSelect = useCallback((path: string) => {
-    if (pinnedFile) {
-      // If there's a pinned file, preview is temporary
-      setSelectedFile(path)
-    } else {
-      setSelectedFile(path)
-    }
-  }, [pinnedFile])
+    editorTabs.openTab(path, false)  // single-click = new pinned tab
+  }, [editorTabs])
 
-  const handleFileClose = useCallback(() => {
-    setSelectedFile(null)
-    setPinnedFile(null)
-  }, [])
+  const handleFileDoubleClick = useCallback((path: string) => {
+    editorTabs.openTab(path, false)  // double-click = pinned
+  }, [editorTabs])
 
-  const handleFilePin = useCallback(() => {
-    if (selectedFile) {
-      setPinnedFile(prev => prev === selectedFile ? null : selectedFile)
-    }
-  }, [selectedFile])
+  const handleNewFile = useCallback((dirPath: string, fileName: string) => {
+    editorTabs.openNewFile(dirPath, fileName)
+  }, [editorTabs])
 
   // Viewer resize handle
   const handleViewerResizeStart = useCallback((e: React.MouseEvent) => {
@@ -462,14 +475,6 @@ export default function SessionDetailPage() {
         </div>
       </div>
 
-      {/* Screen copy mode hint for rdev sessions - only show when Claude is running fine */}
-      {isRdev && ['idle', 'working', 'waiting', 'paused'].includes(session.status) && (
-        <div className="sd-rdev-hint">
-          <span className="sd-rdev-hint-icon">💡</span>
-          <span>Rdev claude code runs in screen. To view history: <kbd>Ctrl-A</kbd> + <kbd>[</kbd> to enter copy mode, <kbd>PageUp</kbd>/<kbd>PageDown</kbd> to scroll, <kbd>Esc</kbd> to exit</span>
-        </div>
-      )}
-
       {/* Main content area: file explorer + viewer + terminal */}
       <div className={`fe-content-area ${fe.open ? 'fe-content-area--open' : ''}`}>
         {/* File explorer panel (left) */}
@@ -481,7 +486,9 @@ export default function SessionDetailPage() {
             width={fe.panelWidth}
             onWidthChange={fe.updateWidth}
             onFileSelect={handleFileSelect}
-            selectedFile={selectedFile}
+            onFileDoubleClick={handleFileDoubleClick}
+            onNewFile={handleNewFile}
+            selectedFile={editorTabs.activeTabPath}
             viewMode={fe.viewMode}
             onViewModeChange={fe.updateViewMode}
             showIgnored={fe.showIgnored}
@@ -492,15 +499,19 @@ export default function SessionDetailPage() {
         {/* Right pane: viewer (top) + terminal (bottom) */}
         <div className="fe-right-pane">
           {/* File viewer */}
-          {fe.open && selectedFile && id && (
+          {fe.open && editorTabs.tabs.length > 0 && id && (
             <>
               <div className="fe-viewer-area" style={{ height: `${fe.viewerHeightRatio * 100}%` }}>
                 <FileViewer
                   sessionId={id}
-                  filePath={selectedFile}
-                  isPinned={pinnedFile === selectedFile}
-                  onClose={handleFileClose}
-                  onPin={handleFilePin}
+                  tabs={editorTabs.tabs}
+                  activeTabPath={editorTabs.activeTabPath}
+                  onTabSelect={editorTabs.setActiveTab}
+                  onTabClose={editorTabs.closeTab}
+                  onTabPin={editorTabs.pinTab}
+                  onContentChange={editorTabs.updateContent}
+                  onSave={editorTabs.saveTab}
+                  isDirty={editorTabs.isDirty}
                 />
               </div>
               <div className="fe-viewer-resize" onMouseDown={handleViewerResizeStart} />
@@ -509,10 +520,18 @@ export default function SessionDetailPage() {
 
           {/* Terminal */}
           <div className="sd-terminal-area">
-            {fe.open && selectedFile && (
+            {fe.open && editorTabs.tabs.length > 0 && (
               <div className="sd-terminal-header">TERMINAL</div>
             )}
-            <TerminalView sessionId={session.id} sessionStatus={session.status} disableScrollback={isRdev} onFocusRef={(fn) => { terminalFocusRef.current = fn }} onImagePaste={handleImagePaste} onTextPaste={handleTextPaste} />
+            {/* Screen copy mode hint for remote sessions */}
+            {isRemote && !hintDismissed && ['idle', 'working', 'waiting', 'paused'].includes(session.status) && (
+              <div className="sd-rdev-hint">
+                <span className="sd-rdev-hint-icon">💡</span>
+                <span>Remote claude code runs in screen. To view history: <kbd>Ctrl-A</kbd> + <kbd>[</kbd> to enter copy mode, <kbd>PageUp</kbd>/<kbd>PageDown</kbd> to scroll, <kbd>Esc</kbd> to exit</span>
+                <button className="sd-rdev-hint-dismiss" onClick={() => setHintDismissed(true)} title="Dismiss">✕</button>
+              </div>
+            )}
+            <TerminalView sessionId={session.id} sessionStatus={session.status} disableScrollback={isRemote} onFocusRef={(fn) => { terminalFocusRef.current = fn }} onImagePaste={handleImagePaste} onTextPaste={handleTextPaste} />
           </div>
         </div>
       </div>
@@ -552,7 +571,7 @@ export default function SessionDetailPage() {
         </div>
         <div className="sd-footer-right">
           {/* File explorer toggle */}
-          {(session.work_dir || isRdev) && (
+          {(session.work_dir || isRemote) && (
             <>
               <label className="sd-fe-toggle" title="Toggle file explorer (Ctrl+Shift+E)">
                 <span className="sd-fe-toggle-label">Files</span>

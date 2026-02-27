@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import base64
 import json
 import logging
 import mimetypes
 import os
 import subprocess
+import tempfile
 import textwrap
 import threading
 import time
@@ -417,13 +419,26 @@ _REMOTE_LIST_SCRIPT = textwrap.dedent("""\
 
 
 def _run_ssh(host: str, script: str, args: list[str]) -> subprocess.CompletedProcess:
-    """Execute a Python script on a remote host via SSH stdin."""
+    """Execute a Python script on a remote host via SSH stdin (text mode)."""
     cmd = ["ssh", *_SSH_OPTS, host, "python3", "-"] + args
     return subprocess.run(
         cmd,
         input=script,
         capture_output=True,
         text=True,
+        timeout=_SSH_TIMEOUT,
+    )
+
+
+def _run_ssh_bytes(
+    host: str, script: bytes, args: list[str]
+) -> subprocess.CompletedProcess:
+    """Execute a Python script on a remote host via SSH stdin (bytes mode)."""
+    cmd = ["ssh", *_SSH_OPTS, host, "python3", "-"] + args
+    return subprocess.run(
+        cmd,
+        input=script,
+        capture_output=True,
         timeout=_SSH_TIMEOUT,
     )
 
@@ -958,6 +973,218 @@ def read_file_content(
         binary=False,
         language=language,
         modified=file_modified,
+    )
+
+
+# ---------------------------------------------------------------------------
+# File writing
+# ---------------------------------------------------------------------------
+_MAX_WRITE_SIZE = 2 * 1024 * 1024  # 2 MB
+
+
+class FileWriteRequest(BaseModel):
+    path: str
+    content: str
+    expected_mtime: float | None = None  # conflict detection
+    create: bool = False  # allow creating new files
+
+
+class FileWriteResponse(BaseModel):
+    path: str
+    size: int
+    modified: float
+    conflict: bool = False
+
+
+@router.put("/sessions/{session_id}/files/content")
+def write_file_content(
+    session_id: str,
+    body: FileWriteRequest,
+    db=Depends(get_db),
+) -> FileWriteResponse:
+    """Write file contents with optional conflict detection via mtime."""
+    _check_rate_limit(session_id)
+    _validate_path(body.path)
+    info = _resolve_session(db, session_id)
+
+    content_bytes = body.content.encode("utf-8")
+    if len(content_bytes) > _MAX_WRITE_SIZE:
+        raise HTTPException(status_code=413, detail="Content too large (>2MB)")
+
+    if info.is_remote:
+        return _write_remote_file(info.host, info.work_dir, body)
+    return _write_local_file(info.work_dir, body)
+
+
+def _write_local_file(work_dir: str, body: FileWriteRequest) -> FileWriteResponse:
+    """Write a file on the local filesystem with atomic rename."""
+    abs_path = os.path.normpath(os.path.join(work_dir, body.path))
+    if not abs_path.startswith(os.path.normpath(work_dir)):
+        raise HTTPException(status_code=400, detail="Path outside work_dir")
+
+    if not body.create and not os.path.isfile(abs_path):
+        raise HTTPException(status_code=404, detail="File not found")
+
+    if body.create:
+        os.makedirs(os.path.dirname(abs_path), exist_ok=True)
+
+    # Conflict detection
+    if body.expected_mtime is not None and os.path.isfile(abs_path):
+        current_mtime = os.stat(abs_path).st_mtime
+        if abs(current_mtime - body.expected_mtime) > 0.5:
+            return FileWriteResponse(
+                path=body.path,
+                size=os.path.getsize(abs_path),
+                modified=current_mtime,
+                conflict=True,
+            )
+
+    # Atomic write: temp file + rename
+    dir_name = os.path.dirname(abs_path)
+    try:
+        fd, tmp = tempfile.mkstemp(dir=dir_name, suffix=".tmp")
+    except PermissionError:
+        raise HTTPException(status_code=403, detail="Permission denied")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8", newline="") as f:
+            f.write(body.content)
+        os.replace(tmp, abs_path)  # atomic on same filesystem
+    except PermissionError:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise HTTPException(status_code=403, detail="Permission denied")
+    except Exception:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
+
+    stat = os.stat(abs_path)
+    # Invalidate remote content cache entry if present
+    _remote_content_cache.pop(f"localhost::{work_dir}::{body.path}::500", None)
+    return FileWriteResponse(
+        path=body.path, size=stat.st_size, modified=stat.st_mtime
+    )
+
+
+# Self-contained Python script for writing file content on a remote host.
+_REMOTE_WRITE_SCRIPT = textwrap.dedent("""\
+    import base64, json, os, sys, tempfile
+
+    work_dir, rel_path, mtime_arg, create_arg = sys.argv[1:5]
+    expected_mtime = float(mtime_arg) if mtime_arg != "none" else None
+    allow_create = create_arg == "true"
+
+    target = os.path.normpath(os.path.join(work_dir, rel_path))
+    if not target.startswith(os.path.normpath(work_dir)):
+        print(json.dumps({"error": "Path outside work_dir"}))
+        sys.exit(1)
+
+    if not allow_create and not os.path.isfile(target):
+        print(json.dumps({"error": "File not found"}))
+        sys.exit(1)
+
+    if allow_create:
+        os.makedirs(os.path.dirname(target), exist_ok=True)
+
+    # Conflict detection
+    if expected_mtime is not None and os.path.isfile(target):
+        cur = os.stat(target).st_mtime
+        if abs(cur - expected_mtime) > 0.5:
+            print(json.dumps({"conflict": True, "size": os.path.getsize(target), "modified": cur}))
+            sys.exit(0)
+
+    content = base64.b64decode("__CONTENT_B64__").decode("utf-8")
+
+    # Atomic write
+    fd, tmp = tempfile.mkstemp(dir=os.path.dirname(target), suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8", newline="") as f:
+            f.write(content)
+        os.replace(tmp, target)
+    except PermissionError:
+        os.unlink(tmp)
+        print(json.dumps({"error": "Permission denied"}))
+        sys.exit(1)
+
+    st = os.stat(target)
+    print(json.dumps({"conflict": False, "size": st.st_size, "modified": st.st_mtime}))
+""")
+
+
+def _write_remote_file(
+    host: str, work_dir: str, body: FileWriteRequest
+) -> FileWriteResponse:
+    """Write a file on a remote host via SSH."""
+    content_b64 = base64.b64encode(body.content.encode("utf-8")).decode("ascii")
+    script = _REMOTE_WRITE_SCRIPT.replace("__CONTENT_B64__", content_b64)
+
+    mtime_arg = str(body.expected_mtime) if body.expected_mtime is not None else "none"
+    create_arg = "true" if body.create else "false"
+
+    _acquire_ssh_slot(host)
+    try:
+        result = _run_ssh_bytes(
+            host,
+            script.encode(),
+            [work_dir, body.path, mtime_arg, create_arg],
+        )
+    except subprocess.TimeoutExpired:
+        raise HTTPException(status_code=504, detail="Remote file write timed out")
+    finally:
+        _release_ssh_slot(host)
+
+    stdout_str = (
+        result.stdout
+        if isinstance(result.stdout, str)
+        else result.stdout.decode(errors="replace")
+    )
+    stderr_str = (
+        result.stderr
+        if isinstance(result.stderr, str)
+        else result.stderr.decode(errors="replace")
+    )
+
+    if result.returncode != 0:
+        try:
+            err = json.loads(stdout_str)
+            detail = err.get("error", "Remote write failed")
+        except (json.JSONDecodeError, KeyError):
+            detail = stderr_str.strip() or "Remote write failed"
+        if "not found" in detail.lower():
+            raise HTTPException(status_code=404, detail=detail)
+        if "permission denied" in detail.lower():
+            raise HTTPException(status_code=403, detail=detail)
+        raise HTTPException(status_code=502, detail=detail)
+
+    try:
+        data = json.loads(stdout_str)
+    except json.JSONDecodeError:
+        raise HTTPException(
+            status_code=502, detail="Invalid response from remote host"
+        )
+
+    if data.get("conflict"):
+        return FileWriteResponse(
+            path=body.path,
+            size=data["size"],
+            modified=data["modified"],
+            conflict=True,
+        )
+
+    # Invalidate content cache for this file
+    for key in list(_remote_content_cache.keys()):
+        if f"::{body.path}::" in key:
+            _remote_content_cache.pop(key, None)
+
+    return FileWriteResponse(
+        path=body.path,
+        size=data["size"],
+        modified=data["modified"],
+        conflict=False,
     )
 
 

@@ -49,6 +49,8 @@ interface FileExplorerPanelProps {
   width: number
   onWidthChange: (w: number) => void
   onFileSelect: (path: string) => void
+  onFileDoubleClick?: (path: string) => void
+  onNewFile?: (dirPath: string, fileName: string) => void
   selectedFile: string | null
   viewMode: ViewMode
   onViewModeChange: (mode: ViewMode) => void
@@ -86,6 +88,8 @@ export default function FileExplorerPanel({
   width,
   onWidthChange,
   onFileSelect,
+  onFileDoubleClick,
+  onNewFile,
   selectedFile,
   viewMode,
   onViewModeChange,
@@ -252,6 +256,18 @@ export default function FileExplorerPanel({
     })
     setContextMenu(null)
   }, [])
+
+  const handleNewFile = useCallback((contextPath: string) => {
+    setContextMenu(null)
+    if (!onNewFile) return
+    // Determine directory: if the context target is a dir, use it; otherwise use parent
+    const node = findNode(treeSnapshotRef.current, contextPath)
+    const dirPath = node?.is_dir ? contextPath : contextPath.split('/').slice(0, -1).join('/')
+    const fileName = window.prompt('Enter file name:')
+    if (fileName && fileName.trim()) {
+      onNewFile(dirPath, fileName.trim())
+    }
+  }, [onNewFile, findNode])
 
   // Keyboard navigation
   const handleKeyDown = useCallback((e: KeyboardEvent<HTMLDivElement>) => {
@@ -436,6 +452,11 @@ export default function FileExplorerPanel({
                       onFileSelect(node.path)
                     }
                   }}
+                  onDoubleClick={() => {
+                    if (!node.is_dir && onFileDoubleClick) {
+                      onFileDoubleClick(node.path)
+                    }
+                  }}
                   onContextMenu={e => {
                     e.preventDefault()
                     setContextMenu({ x: e.clientX, y: e.clientY, path: node.path })
@@ -539,6 +560,7 @@ export default function FileExplorerPanel({
           style={{ left: contextMenu.x, top: contextMenu.y }}
           onClick={e => e.stopPropagation()}
         >
+          {onNewFile && <button onClick={() => handleNewFile(contextMenu.path)}>New File</button>}
           <button onClick={() => handleCopyPath(contextMenu.path)}>Copy path</button>
           <button onClick={() => handleCopyRelativePath(contextMenu.path)}>Copy relative path</button>
           <button onClick={loadRoot}>Refresh</button>

@@ -1,27 +1,29 @@
-import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
-import { api } from '../../api/client'
+import { useState, useCallback, useRef, useEffect } from 'react'
+import Editor from '@monaco-editor/react'
+import { IconX } from '../common/Icons'
 import Markdown from '../common/Markdown'
-import { IconX, IconPin } from '../common/Icons'
+import type { Tab } from '../../hooks/useEditorTabs'
 import './FileViewer.css'
 
-interface FileContentResponse {
-  path: string
-  content: string
-  truncated: boolean
-  total_lines: number | null
-  size: number
-  binary: boolean
-  language: string | null
-  modified: number | null
-}
+// ---------------------------------------------------------------------------
+// Props
+// ---------------------------------------------------------------------------
 
 interface FileViewerProps {
   sessionId: string
-  filePath: string | null
-  isPinned: boolean
-  onClose: () => void
-  onPin: () => void
+  tabs: Tab[]
+  activeTabPath: string | null
+  onTabSelect: (path: string) => void
+  onTabClose: (path: string) => boolean
+  onTabPin: (path: string) => void
+  onContentChange: (path: string, content: string) => void
+  onSave: (path: string) => Promise<boolean>
+  isDirty: (path: string) => boolean
 }
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
 
 const IMAGE_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.gif', '.bmp', '.svg', '.webp', '.ico'])
 
@@ -45,62 +47,61 @@ function timeAgo(epoch: number): string {
   return `${Math.floor(secs / 2592000)}mo ago`
 }
 
-export default function FileViewer({ sessionId, filePath, isPinned, onClose, onPin }: FileViewerProps) {
-  const [content, setContent] = useState<FileContentResponse | null>(null)
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const [showPreview, setShowPreview] = useState(true)
-  const abortRef = useRef<AbortController | null>(null)
+/** Map our language names to Monaco's language IDs. */
+function monacoLanguage(lang: string | null): string {
+  const map: Record<string, string> = {
+    python: 'python', javascript: 'javascript', typescript: 'typescript',
+    json: 'json', yaml: 'yaml', html: 'html', css: 'css', scss: 'scss', less: 'less',
+    bash: 'shell', shell: 'shell', rust: 'rust', go: 'go', java: 'java',
+    c: 'c', cpp: 'cpp', ruby: 'ruby', php: 'php', sql: 'sql',
+    xml: 'xml', markdown: 'markdown', dockerfile: 'dockerfile',
+    toml: 'ini', lua: 'lua', swift: 'swift', kotlin: 'kotlin',
+    hcl: 'hcl', r: 'r', ini: 'ini', csv: 'plaintext',
+    gradle: 'groovy', makefile: 'makefile', gitignore: 'plaintext',
+  }
+  return map[lang ?? ''] ?? 'plaintext'
+}
 
-  const fetchContent = useCallback(async (path: string) => {
-    // Abort previous request
-    abortRef.current?.abort()
-    const controller = new AbortController()
-    abortRef.current = controller
+function isMarkdownFile(path: string): boolean {
+  return path.endsWith('.md') || path.endsWith('.markdown')
+}
 
-    setLoading(true)
-    setError(null)
+// ---------------------------------------------------------------------------
+// Component
+// ---------------------------------------------------------------------------
 
-    try {
-      const params = new URLSearchParams({ path })
-      const data = await api<FileContentResponse>(
-        `/api/sessions/${sessionId}/files/content?${params}`,
-        { signal: controller.signal },
-      )
-      if (!controller.signal.aborted) {
-        setContent(data)
-        setLoading(false)
-      }
-    } catch (e) {
-      if (e instanceof DOMException && e.name === 'AbortError') return
-      if (!controller.signal.aborted) {
-        setError(e instanceof Error ? e.message : 'Failed to load file')
-        setLoading(false)
-      }
-    }
-  }, [sessionId])
+export default function FileViewer({
+  sessionId,
+  tabs,
+  activeTabPath,
+  onTabSelect,
+  onTabClose,
+  onTabPin,
+  onContentChange,
+  onSave,
+  isDirty,
+}: FileViewerProps) {
+  // For markdown files: whether showing preview (true) or editor (false)
+  const [mdPreviewMode, setMdPreviewMode] = useState<Record<string, boolean>>({})
+  const tabBarRef = useRef<HTMLDivElement>(null)
 
+  const activeTab = tabs.find(t => t.path === activeTabPath) ?? null
+  const isMarkdown = activeTab ? isMarkdownFile(activeTab.path) : false
+  // Markdown defaults to preview; toggle switches to editor
+  const showingMdPreview = activeTab && isMarkdown ? (mdPreviewMode[activeTab.path] ?? true) : false
+
+  const toggleMdPreview = useCallback((path: string) => {
+    setMdPreviewMode(prev => ({ ...prev, [path]: !(prev[path] ?? true) }))
+  }, [])
+
+  // Scroll active tab into view
   useEffect(() => {
-    if (filePath) {
-      fetchContent(filePath)
-      // Default to preview for markdown files
-      setShowPreview(filePath.endsWith('.md') || filePath.endsWith('.markdown'))
-    } else {
-      setContent(null)
-    }
-    return () => {
-      abortRef.current?.abort()
-    }
-  }, [filePath, fetchContent])
+    if (!tabBarRef.current || !activeTabPath) return
+    const el = tabBarRef.current.querySelector(`[data-tab-path="${CSS.escape(activeTabPath)}"]`)
+    if (el) el.scrollIntoView({ block: 'nearest', inline: 'nearest' })
+  }, [activeTabPath])
 
-  // Wrap source content in a fenced code block for syntax-highlighted rendering
-  const sourceAsMarkdown = useMemo(() => {
-    if (!content || content.binary) return ''
-    const lang = content.language || ''
-    return '```' + lang + '\n' + content.content + '\n```'
-  }, [content])
-
-  if (!filePath) {
+  if (tabs.length === 0) {
     return (
       <div className="fe-viewer fe-viewer--empty">
         <span className="fe-viewer-placeholder">Select a file to view</span>
@@ -108,49 +109,61 @@ export default function FileViewer({ sessionId, filePath, isPinned, onClose, onP
     )
   }
 
-  const fileName = filePath.split('/').pop() || filePath
-  const isMarkdown = content?.language === 'markdown'
-
   return (
     <div className="fe-viewer">
-      {/* Tab header */}
-      <div className="fe-viewer__header">
-        <span className={`fe-viewer__tab ${!isPinned ? 'fe-viewer__tab--preview' : ''}`}>
-          {fileName}
-          {content && (
-            <span className="fe-viewer__size">
-              {humanSize(content.size)}
-              {content.modified != null && <> &middot; {timeAgo(content.modified)}</>}
-            </span>
-          )}
-        </span>
-        <div className="fe-viewer__actions">
-          {isMarkdown && (
-            <label className="fe-viewer__md-toggle" title="Toggle between source and preview">
-              <span className={`fe-viewer__md-label ${!showPreview ? 'fe-viewer__md-label--active' : ''}`}>Source</span>
+      {/* Tab bar */}
+      <div className="fe-viewer__tab-bar" ref={tabBarRef}>
+        {tabs.map(tab => {
+          const dirty = isDirty(tab.path)
+          const active = tab.path === activeTabPath
+          return (
+            <div
+              key={tab.path}
+              data-tab-path={tab.path}
+              className={`fe-viewer__tab-item${active ? ' active' : ''}${tab.isPreview ? ' preview' : ''}`}
+              onClick={() => onTabSelect(tab.path)}
+              onDoubleClick={() => onTabPin(tab.path)}
+              title={tab.path}
+            >
+              {dirty && <span className="fe-viewer__dirty-dot" />}
+              <span className="fe-viewer__tab-name">{tab.fileName}</span>
+              <span className="fe-viewer__tab-meta">
+                {humanSize(tab.size)}
+                {tab.modified != null && <> &middot; {timeAgo(tab.modified)}</>}
+              </span>
+              {dirty && (
+                <button
+                  className="fe-viewer__tab-save"
+                  onClick={(e) => { e.stopPropagation(); onSave(tab.path) }}
+                  title="Save (Ctrl+S)"
+                >
+                  {tab.saving ? '...' : 'Save'}
+                </button>
+              )}
+              {isMarkdownFile(tab.path) && active && (
+                <button
+                  className={`fe-viewer__tab-preview-toggle${(mdPreviewMode[tab.path] ?? true) ? ' active' : ''}`}
+                  onClick={(e) => { e.stopPropagation(); toggleMdPreview(tab.path) }}
+                  title={(mdPreviewMode[tab.path] ?? true) ? 'Switch to editor' : 'Switch to preview'}
+                >
+                  {(mdPreviewMode[tab.path] ?? true) ? 'Edit' : 'Preview'}
+                </button>
+              )}
               <button
-                className={`fe-viewer__md-switch ${showPreview ? 'on' : ''}`}
-                onClick={() => setShowPreview(p => !p)}
-                role="switch"
-                aria-checked={showPreview}
+                className="fe-viewer__tab-close"
+                onClick={(e) => { e.stopPropagation(); onTabClose(tab.path) }}
+                title="Close"
               >
-                <span className="fe-viewer__md-knob" />
+                <IconX size={12} />
               </button>
-              <span className={`fe-viewer__md-label ${showPreview ? 'fe-viewer__md-label--active' : ''}`}>Preview</span>
-            </label>
-          )}
-          <button className="fe-viewer__pin" onClick={onPin} title={isPinned ? 'Unpin' : 'Pin'}>
-            <IconPin size={14} />
-          </button>
-          <button className="fe-viewer__close" onClick={onClose} title="Close">
-            <IconX size={14} />
-          </button>
-        </div>
+            </div>
+          )
+        })}
       </div>
 
       {/* Content area */}
       <div className="fe-viewer__content">
-        {loading && (
+        {activeTab && activeTab.loading && (
           <div className="fe-viewer__skeleton">
             {Array.from({ length: 8 }).map((_, i) => (
               <div key={i} className="fe-viewer__skeleton-line" style={{ width: `${40 + Math.random() * 50}%` }} />
@@ -158,37 +171,61 @@ export default function FileViewer({ sessionId, filePath, isPinned, onClose, onP
           </div>
         )}
 
-        {error && (
+        {activeTab && activeTab.error && !activeTab.loading && (
           <div className="fe-viewer__error">
-            <span>{error}</span>
-            <button onClick={() => filePath && fetchContent(filePath)}>Retry</button>
+            <span>{activeTab.error}</span>
           </div>
         )}
 
-        {content && !loading && !error && (
+        {activeTab && !activeTab.loading && !activeTab.error && (
           <>
-            {content.binary && filePath && isImage(filePath) ? (
+            {activeTab.binary && isImage(activeTab.path) ? (
               <div className="fe-viewer__image">
                 <img
-                  src={`/api/sessions/${sessionId}/files/raw?path=${encodeURIComponent(filePath)}`}
-                  alt={filePath.split('/').pop() || filePath}
+                  src={`/api/sessions/${sessionId}/files/raw?path=${encodeURIComponent(activeTab.path)}`}
+                  alt={activeTab.fileName}
                 />
               </div>
-            ) : content.binary ? (
+            ) : activeTab.binary ? (
               <div className="fe-viewer__binary">Binary file — preview not available</div>
-            ) : isMarkdown && showPreview ? (
+            ) : showingMdPreview ? (
               <div className="fe-md-preview">
-                <Markdown>{content.content}</Markdown>
+                <Markdown>{activeTab.currentContent ?? ''}</Markdown>
               </div>
             ) : (
-              <div className="fe-viewer__source">
-                <Markdown className="fe-viewer__code-wrap">{sourceAsMarkdown}</Markdown>
+              <div className="fe-viewer__monaco">
+                <Editor
+                  height="100%"
+                  language={monacoLanguage(activeTab.language)}
+                  value={activeTab.currentContent ?? ''}
+                  onChange={(value) => onContentChange(activeTab.path, value ?? '')}
+                  theme="vs-dark"
+                  options={{
+                    minimap: { enabled: true, scale: 1, showSlider: 'mouseover' },
+                    fontSize: 12,
+                    lineHeight: 19,
+                    lineNumbers: 'on',
+                    scrollBeyondLastLine: false,
+                    wordWrap: 'on',
+                    readOnly: false,
+                    automaticLayout: true,
+                    tabSize: 2,
+                    renderWhitespace: 'none',
+                    overviewRulerLanes: 0,
+                    hideCursorInOverviewRuler: true,
+                    scrollbar: {
+                      verticalScrollbarSize: 10,
+                      horizontalScrollbarSize: 10,
+                    },
+                  }}
+                />
               </div>
             )}
 
-            {content.truncated && (
+            {activeTab.truncated && (
               <div className="fe-viewer__truncated">
-                File truncated — showing {content.content.split('\n').length} of {content.total_lines} lines
+                File truncated — showing {(activeTab.currentContent ?? '').split('\n').length} of {activeTab.totalLines} lines.
+                Editing disabled for truncated files.
               </div>
             )}
           </>

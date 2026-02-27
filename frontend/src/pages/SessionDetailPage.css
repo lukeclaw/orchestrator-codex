@@ -169,6 +169,25 @@
   color: var(--text-primary);
 }
 
+.sd-rdev-hint-dismiss {
+  margin-left: auto;
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 14px;
+  padding: 2px 4px;
+  line-height: 1;
+  border-radius: var(--radius);
+  flex-shrink: 0;
+  transition: color 0.15s, background 0.15s;
+}
+
+.sd-rdev-hint-dismiss:hover {
+  color: var(--text-primary);
+  background: rgba(139, 92, 246, 0.15);
+}
+
 /* File Explorer Content Area */
 .fe-content-area {
   display: flex;
