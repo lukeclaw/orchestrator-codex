@@ -24,7 +24,7 @@ show_help() {
     echo "  --content TEXT            Content body (use --content-stdin for multi-line)"
     echo "  --content-stdin           Read content from stdin (for multi-line content)"
     echo "  --description DESC        Short description (optional)"
-    echo "  --category CAT            Category (default: worker_note)"
+    echo "  --category CAT            Category: instruction|reference (optional)"
     echo ""
     echo "Examples:"
     echo "  orch-context list --scope project    # List project context (titles + descriptions)"
@@ -120,7 +120,7 @@ cmd_add() {
     local title=""
     local content=""
     local description=""
-    local category="worker_note"
+    local category=""
     local content_from_stdin=false
     
     while [[ $# -gt 0 ]]; do
@@ -184,9 +184,9 @@ cmd_add() {
             content: $content,
             scope: "project",
             project_id: $project_id,
-            category: $category,
             source: $source
-        } + (if $description != "" then {description: $description} else {} end)'
+        } + (if $description != "" then {description: $description} else {} end)
+          + (if $category != "" then {category: $category} else {} end)'
     )
     
     # POST to API

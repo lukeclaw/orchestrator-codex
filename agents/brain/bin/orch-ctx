@@ -26,7 +26,7 @@ show_help() {
     echo "  --description DESC            Brief description"
     echo "  --scope SCOPE                 Scope: global|brain|project (default: global)"
     echo "  --project-id ID               Project ID (required if scope=project)"
-    echo "  --category CAT                Category: instruction|requirement|convention|reference|note"
+    echo "  --category CAT                Category: instruction|reference (optional)"
     echo ""
     echo "Examples:"
     echo "  orch-ctx list --scope global"

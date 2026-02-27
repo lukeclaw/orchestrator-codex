@@ -9,7 +9,7 @@ import './ContextPage.css'
 type SortKey = 'title' | 'scope' | 'category' | 'project' | 'updated'
 type SortDir = 'asc' | 'desc'
 
-const CATEGORIES = ['instruction', 'requirement', 'convention', 'reference', 'note']
+const CATEGORIES = ['instruction', 'reference']
 const SCOPE_ORDER: Record<string, number> = { global: 2, brain: 1, project: 0 }
 
 export default function ContextPage() {

@@ -27,10 +27,7 @@ interface Props {
 const CATEGORY_OPTIONS = [
   { value: '', label: 'No category', className: 'cm-cat-none' },
   { value: 'instruction', label: 'Instruction', className: 'cm-cat-instruction' },
-  { value: 'requirement', label: 'Requirement', className: 'cm-cat-requirement' },
-  { value: 'convention', label: 'Convention', className: 'cm-cat-convention' },
   { value: 'reference', label: 'Reference', className: 'cm-cat-reference' },
-  { value: 'note', label: 'Note', className: 'cm-cat-note' },
 ]
 
 export default function ContextModal({ context, projectId, projects = [], isNew, initialContent, onClose, onSave, onDelete }: Props) {

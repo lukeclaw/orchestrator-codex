@@ -111,3 +111,48 @@ class TestContextAPI:
     def test_delete_not_found(self, client):
         resp = client.delete("/api/context/nonexistent")
         assert resp.status_code == 404
+
+    def test_create_defaults_to_no_category(self, client):
+        resp = client.post("/api/context", json={
+            "title": "No cat",
+            "content": "Should have null category",
+        })
+        assert resp.status_code == 201
+        assert resp.json()["category"] is None
+
+    def test_create_with_instruction_category(self, client):
+        resp = client.post("/api/context", json={
+            "title": "Must follow",
+            "content": "Use 2-space indent",
+            "category": "instruction",
+        })
+        assert resp.status_code == 201
+        assert resp.json()["category"] == "instruction"
+
+    def test_create_with_reference_category(self, client):
+        resp = client.post("/api/context", json={
+            "title": "API docs",
+            "content": "See https://...",
+            "category": "reference",
+        })
+        assert resp.status_code == 201
+        assert resp.json()["category"] == "reference"
+
+    def test_filter_by_category(self, client):
+        client.post("/api/context", json={
+            "title": "Rule", "content": "mandatory", "category": "instruction",
+        })
+        client.post("/api/context", json={
+            "title": "Info", "content": "background", "category": "reference",
+        })
+        client.post("/api/context", json={
+            "title": "Note", "content": "general",
+        })
+
+        instructions = client.get("/api/context?category=instruction").json()
+        assert len(instructions) == 1
+        assert instructions[0]["title"] == "Rule"
+
+        references = client.get("/api/context?category=reference").json()
+        assert len(references) == 1
+        assert references[0]["title"] == "Info"
