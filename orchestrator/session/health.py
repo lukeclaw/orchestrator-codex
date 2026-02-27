@@ -670,7 +670,10 @@ def check_and_update_worker_health(db, session, tunnel_manager=None) -> dict:
                 "needs_reconnect": True,
             }
     else:
-        alive, reason = check_claude_process_local(session.id)
+        # Use claude_session_id when available — after /clear or /compact,
+        # Claude may be running with a different session ID than session.id.
+        local_check_id = session.claude_session_id or session.id
+        alive, reason = check_claude_process_local(local_check_id)
         if not alive:
             if session.status != "disconnected":
                 repo.update_session(db, session.id, status="disconnected")

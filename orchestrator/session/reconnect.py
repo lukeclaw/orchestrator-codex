@@ -1055,8 +1055,11 @@ def reconnect_local_worker(
         ensure_window(tmux_sess, tmux_win, cwd=tmp_dir)
 
         # Check if Claude is still running
+        # Use claude_session_id when available — after /clear or reconnect,
+        # Claude may be running with a different ID than session.id.
+        local_check_id = session.claude_session_id or session.id
         if check_tui_running_in_pane(tmux_sess, tmux_win):
-            alive, _ = check_claude_process_local(session.id)
+            alive, _ = check_claude_process_local(local_check_id)
             if alive:
                 logger.info("Reconnect local %s: Claude still running, nothing to do", session.name)
                 return True

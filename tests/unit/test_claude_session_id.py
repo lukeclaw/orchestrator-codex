@@ -299,6 +299,116 @@ class TestReconnectUsesClaudeSessionId:
 
 
 # =============================================================================
+# Health check uses claude_session_id for local workers
+# =============================================================================
+
+class TestHealthCheckUsesClaudeSessionId:
+    """Regression: health check must use claude_session_id (not session.id)
+    when checking local worker processes via ps.
+
+    After /clear or /compact, Claude may be running with a different session ID
+    than the orchestrator's session.id. If the health check only looks for
+    session.id in ps output, it falsely reports Claude as dead and triggers
+    an unnecessary reconnect loop.
+    """
+
+    @patch('orchestrator.session.health.check_claude_process_local')
+    def test_health_check_uses_claude_session_id_when_set(self, mock_check, db):
+        """Health check should search for claude_session_id in ps, not session.id."""
+        from orchestrator.session.health import check_and_update_worker_health
+
+        s = repo.create_session(db, "test-local-health", "localhost")
+        # Simulate /clear — claude_session_id diverges from session.id
+        new_claude_id = "new-claude-sess-xyz"
+        repo.update_session(db, s.id, claude_session_id=new_claude_id)
+        s = repo.get_session(db, s.id)
+
+        mock_check.return_value = (True, "Claude process running")
+
+        check_and_update_worker_health(db, s)
+
+        # Must be called with claude_session_id, NOT session.id
+        mock_check.assert_called_once_with(new_claude_id)
+
+    @patch('orchestrator.session.health.check_claude_process_local')
+    def test_health_check_falls_back_to_session_id(self, mock_check, db):
+        """When claude_session_id is None, fall back to session.id."""
+        from orchestrator.session.health import check_and_update_worker_health
+
+        s = repo.create_session(db, "test-local-fallback", "localhost")
+        # Force claude_session_id to None (e.g., legacy row)
+        db.execute("UPDATE sessions SET claude_session_id = NULL WHERE id = ?", (s.id,))
+        db.commit()
+        s = repo.get_session(db, s.id)
+
+        mock_check.return_value = (True, "Claude process running")
+
+        check_and_update_worker_health(db, s)
+
+        # Should fall back to session.id
+        mock_check.assert_called_once_with(s.id)
+
+    @patch('orchestrator.session.health.check_claude_process_local')
+    def test_health_check_false_negative_without_fix(self, mock_check, db):
+        """Demonstrate that using session.id when claude_session_id differs
+        would cause a false 'disconnected' status."""
+        from orchestrator.session.health import check_and_update_worker_health
+
+        s = repo.create_session(db, "test-false-neg", "localhost")
+        repo.update_session(db, s.id, status="working",
+                            claude_session_id="different-id-after-clear")
+        s = repo.get_session(db, s.id)
+
+        # Claude is running — but only findable by claude_session_id
+        mock_check.return_value = (True, "Claude process running")
+
+        result = check_and_update_worker_health(db, s)
+
+        # With the fix: health check finds Claude → alive
+        assert result["alive"] is True
+        # Verify it searched with the correct ID
+        mock_check.assert_called_once_with("different-id-after-clear")
+
+
+# =============================================================================
+# Reconnect uses claude_session_id for local "is Claude running?" check
+# =============================================================================
+
+class TestReconnectLocalUsesClaudeSessionId:
+    """Regression: reconnect_local_worker's initial 'is Claude running?' check
+    must also use claude_session_id when available."""
+
+    @patch('orchestrator.session.health.check_claude_process_local')
+    @patch('orchestrator.session.reconnect.check_tui_running_in_pane', return_value=True)
+    def test_reconnect_checks_claude_session_id(self, mock_tui, mock_check):
+        """reconnect_local_worker should use claude_session_id for ps check."""
+        from orchestrator.session.reconnect import reconnect_local_worker
+
+        mock_check.return_value = (True, "Claude process running")
+
+        session = Session(
+            id="orch-id-123",
+            name="test-worker",
+            host="localhost",
+            work_dir="/tmp/test",
+            claude_session_id="claude-id-xyz",
+        )
+
+        with patch('orchestrator.session.reconnect.get_reconnect_lock') as mock_lock:
+            mock_lock.return_value = MagicMock()
+            mock_lock.return_value.acquire.return_value = True
+            with patch('orchestrator.terminal.manager.ensure_window'):
+                result = reconnect_local_worker(
+                    session, "orch", "test-worker", 8093, "/tmp/test-dir"
+                )
+
+        # Should detect Claude is running and return True (nothing to do)
+        assert result is True
+        # Must search for claude_session_id, not session.id
+        mock_check.assert_called_once_with("claude-id-xyz")
+
+
+# =============================================================================
 # Claude launch recovery tests
 # =============================================================================
 
