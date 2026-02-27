@@ -539,6 +539,16 @@ def _launch_claude_in_screen(
             return
 
     repo.update_session(conn, session.id, status="waiting")
+
+    # Detect work_dir if not set (e.g., created without specifying a path)
+    if not session.work_dir:
+        from orchestrator.api.routes.files import _detect_remote_work_dir
+        time.sleep(3)  # Give Claude a moment to start
+        detected = _detect_remote_work_dir(session.host, session.id)
+        if detected:
+            repo.update_session(conn, session.id, work_dir=detected)
+            logger.info("Reconnect %s: detected work_dir: %s", session.name, detected)
+
     logger.info("Reconnect %s: SUCCESS - launched Claude in screen session", session.name)
 
 
@@ -898,6 +908,15 @@ def reconnect_remote_worker(
                 if not (tunnel_manager and tunnel_manager.is_alive(session.id)):
                     _ensure_tunnel(session, tunnel_manager, repo, conn)
                 repo.update_session(conn, session.id, status="waiting")
+
+                # Detect work_dir if not set
+                if not session.work_dir:
+                    from orchestrator.api.routes.files import _detect_remote_work_dir
+                    detected = _detect_remote_work_dir(session.host, session.id)
+                    if detected:
+                        repo.update_session(conn, session.id, work_dir=detected)
+                        logger.info("Reconnect %s: detected work_dir: %s", session.name, detected)
+
                 logger.info("Reconnect %s: already alive, tunnel fixed if needed", session.name)
                 return
 

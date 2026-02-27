@@ -211,12 +211,13 @@ export default function FileExplorerPanel({
 
   // Fetch root directory
   const fetchDir = useCallback(async (path: string = '.', depth = 1): Promise<{ entries: FileEntry[]; gitAvailable: boolean }> => {
+    if (!workDir) return { entries: [], gitAvailable: false }
     const params = new URLSearchParams({ path, depth: String(depth), show_hidden: String(showIgnored) })
     const data = await api<DirectoryResponse>(
       `/api/sessions/${sessionId}/files?${params}`
     )
     return { entries: data.entries, gitAvailable: data.git_available }
-  }, [sessionId, showIgnored])
+  }, [sessionId, showIgnored, workDir])
 
   // Load root on mount / refresh — depth=5 prefetches multiple levels
   const loadRoot = useCallback(async () => {
@@ -231,13 +232,13 @@ export default function FileExplorerPanel({
     }
   }, [fetchDir])
 
-  // Initial load + auto-refresh every 3s while panel is open
+  // Initial load + auto-refresh every 10s while panel is open
   useEffect(() => {
-    if (!isOpen) return
+    if (!isOpen || !workDir) return
     loadRoot()
     const id = setInterval(loadRoot, 10000)
     return () => clearInterval(id)
-  }, [isOpen, loadRoot])
+  }, [isOpen, workDir, loadRoot])
 
   // Find a node by path in a tree
   const findNode = useCallback((nodes: TreeNode[], path: string): TreeNode | null => {

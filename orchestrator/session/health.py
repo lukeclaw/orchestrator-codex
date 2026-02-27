@@ -716,6 +716,16 @@ def check_and_update_worker_health(db, session, tunnel_manager=None) -> dict:
                 }
 
             # --- All good: screen + Claude alive, tunnel alive, pane attached ---
+            # Safety net: detect work_dir if still missing
+            if not session.work_dir:
+                from orchestrator.api.routes.files import _detect_remote_work_dir
+                detected = _detect_remote_work_dir(session.host, session.id)
+                if detected:
+                    repo.update_session(db, session.id, work_dir=detected)
+                    logger.info(
+                        "Health check: %s detected missing work_dir: %s", session.name, detected
+                    )
+
             current_status = session.status
             if current_status in ("screen_detached", "error", "disconnected"):
                 repo.update_session(db, session.id, status="waiting")

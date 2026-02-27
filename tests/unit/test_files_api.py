@@ -14,7 +14,6 @@ from fastapi import HTTPException
 from orchestrator.api.routes.files import (
     FileEntry,
     FileWriteRequest,
-    MoveRequest,
     _apply_git_status,
     _delete_local,
     _delete_remote,

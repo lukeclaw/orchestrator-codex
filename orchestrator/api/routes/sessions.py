@@ -247,10 +247,21 @@ def create_session(body: SessionCreate, request: Request, db=Depends(get_db)):
                     disabled_builtin_names=remote_disabled_builtins,
                 )
                 if result["ok"]:
+                    # Detect work_dir if not provided at creation
+                    detected_work_dir = work_dir
+                    if not detected_work_dir:
+                        from orchestrator.api.routes.files import _detect_remote_work_dir
+                        time.sleep(3)  # Give Claude a moment to start
+                        detected = _detect_remote_work_dir(body.host, s.id)
+                        if detected:
+                            detected_work_dir = detected
+                            logger.info("Detected work_dir for %s: %s", sanitized_name, detected)
+
                     repo.update_session(
                         bg_conn, s.id,
                         status="working",
                         tunnel_pid=result.get("tunnel_pid"),
+                        work_dir=detected_work_dir,
                     )
                     if body.task_id:
                         from orchestrator.state.repositories import tasks
