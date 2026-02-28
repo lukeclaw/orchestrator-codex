@@ -1,7 +1,7 @@
 """Trends API: historical throughput, worker heatmap, and worker-hours."""
 
 import sqlite3
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
@@ -20,9 +20,16 @@ def get_trends(
 ):
     days = VALID_RANGES.get(range, 7)
     since = (datetime.now().astimezone() - timedelta(days=days)).strftime("%Y-%m-%d")
+    # Heatmap groups by day-of-week so we need exactly N days (no DOW
+    # collisions).  Use a full UTC timestamp of midnight local time
+    # (days-1) ago so the boundary respects the user's timezone.
+    local_start = (datetime.now().astimezone() - timedelta(days=days - 1)).replace(
+        hour=0, minute=0, second=0, microsecond=0
+    )
+    heatmap_since = local_start.astimezone(UTC).isoformat()
 
     throughput = status_events.query_throughput(conn, since)
-    heatmap = status_events.query_worker_heatmap(conn, since)
+    heatmap = status_events.query_worker_heatmap(conn, heatmap_since)
     worker_hours = status_events.query_worker_hours(conn, since)
 
     return {
@@ -56,9 +63,15 @@ def get_trend_detail(
 
     elif chart == "heatmap":
         if day_of_week is None or hour is None:
-            raise HTTPException(status_code=400, detail="day_of_week and hour are required for heatmap detail")
+            raise HTTPException(
+                status_code=400,
+                detail="day_of_week and hour are required for heatmap detail",
+            )
         days = VALID_RANGES.get(range, 7)
-        since = (datetime.now().astimezone() - timedelta(days=days)).strftime("%Y-%m-%d")
+        local_start = (datetime.now().astimezone() - timedelta(days=days - 1)).replace(
+            hour=0, minute=0, second=0, microsecond=0
+        )
+        since = local_start.astimezone(UTC).isoformat()
         items = status_events.query_heatmap_detail(conn, day_of_week, hour, since)
         return {"chart": chart, "day_of_week": day_of_week, "hour": hour, "items": items}
 
