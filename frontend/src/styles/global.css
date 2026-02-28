@@ -6,13 +6,14 @@
   padding: 0;
 }
 
-/* Disable drag-to-select everywhere except text inputs and readable content */
-*:not(input):not(textarea):not([contenteditable="true"]):not(pre):not(code) {
+/* Disable drag-to-select everywhere, then re-enable for readable content */
+* {
   user-select: none;
   -webkit-user-select: none;
 }
 
-pre, code, .markdown-content, .markdown-content * {
+input, textarea, [contenteditable="true"],
+pre, code, .markdown-wrapper, .markdown-content, .markdown-content * {
   user-select: text;
   -webkit-user-select: text;
 }
