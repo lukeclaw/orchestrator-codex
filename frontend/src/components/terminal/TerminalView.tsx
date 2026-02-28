@@ -39,6 +39,7 @@ export default function TerminalView({ sessionId, wsPath, sessionStatus, disable
   const [isFocused, setIsFocused] = useState(false)
   const [connectionState, setConnectionState] = useState<ConnectionState>('disconnected')
   const [reconnectCountdown, setReconnectCountdown] = useState<number | null>(null)
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null)
   
   // Terminal is locked when session is in 'connecting' state (background op in progress)
   const isLocked = sessionStatus === 'connecting'
@@ -362,9 +363,75 @@ export default function TerminalView({ sessionId, wsPath, sessionStatus, disable
     connectionState === 'reconnecting' && 'terminal-reconnecting',
   ].filter(Boolean).join(' ')
 
+  // Right-click context menu handlers
+  const handleContextMenu = useCallback((e: React.MouseEvent) => {
+    e.preventDefault()
+    setContextMenu({ x: e.clientX, y: e.clientY })
+  }, [])
+
+  const closeContextMenu = useCallback(() => setContextMenu(null), [])
+
+  const handleCopy = useCallback(async () => {
+    const terminal = terminalRef.current
+    if (terminal) {
+      const selection = terminal.getSelection()
+      if (selection) {
+        await navigator.clipboard.writeText(selection)
+      }
+    }
+    setContextMenu(null)
+  }, [])
+
+  const handlePaste = useCallback(async () => {
+    setContextMenu(null)
+    try {
+      // Read clipboard via backend (uses pbpaste/osascript natively, no browser permission popup)
+      const res = await fetch('/api/clipboard')
+      if (!res.ok) throw new Error('Backend clipboard read failed')
+      const data: { text: string | null; image_base64: string | null } = await res.json()
+
+      if (data.image_base64 && onImagePasteRef.current) {
+        // Convert base64 to File and delegate to image paste handler
+        const blob = await fetch(`data:image/png;base64,${data.image_base64}`).then(r => r.blob())
+        onImagePasteRef.current(new File([blob], 'clipboard.png', { type: 'image/png' }))
+      } else if (data.text) {
+        const trimmed = data.text.trim()
+        if (trimmed.length > 1000 && onTextPasteRef.current) {
+          // Long text: delegate to parent handler (saves to file)
+          onTextPasteRef.current(trimmed)
+        } else if (trimmed) {
+          // Short text: send directly via WebSocket
+          const ws = wsRef.current
+          if (ws?.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({ type: 'input', data: trimmed }))
+          }
+        }
+      }
+    } catch {
+      // Backend unavailable — try browser clipboard as last resort
+      try {
+        const text = await navigator.clipboard.readText()
+        if (text) {
+          const ws = wsRef.current
+          if (ws?.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({ type: 'input', data: text }))
+          }
+        }
+      } catch {
+        // Clipboard read denied or empty
+      }
+    }
+    terminalRef.current?.focus()
+  }, [])
+
   return (
     <div className={containerClasses}>
-      <div className={`terminal-view${disableScrollback ? ' no-scrollbar' : ''}`} ref={termRef} data-testid="terminal-view" />
+      <div
+        className={`terminal-view${disableScrollback ? ' no-scrollbar' : ''}`}
+        ref={termRef}
+        data-testid="terminal-view"
+        onContextMenu={handleContextMenu}
+      />
       {showOverlay && (
         <div className="terminal-overlay">
           <div className="terminal-overlay-content">
@@ -376,6 +443,15 @@ export default function TerminalView({ sessionId, wsPath, sessionStatus, disable
             )}
           </div>
         </div>
+      )}
+      {contextMenu && (
+        <>
+          <div className="terminal-context-backdrop" onClick={closeContextMenu} onContextMenu={e => { e.preventDefault(); closeContextMenu() }} />
+          <div className="terminal-context-menu" style={{ left: contextMenu.x, top: contextMenu.y }}>
+            <button onClick={handleCopy} disabled={!terminalRef.current?.getSelection()}>Copy</button>
+            <button onClick={handlePaste}>Paste</button>
+          </div>
+        </>
       )}
     </div>
   )
