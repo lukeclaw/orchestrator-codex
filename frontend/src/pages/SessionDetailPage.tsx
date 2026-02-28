@@ -392,25 +392,26 @@ export default function SessionDetailPage() {
   // Handle image paste from Cmd+V in terminal (no permission popup)
   const handleImagePaste = useCallback(async (file: File) => {
     if (!id) return
-    const reader = new FileReader()
-    reader.onload = async () => {
-      try {
-        const base64 = (reader.result as string).split(',')[1]
-        const res = await api<{ ok: boolean; file_path: string; filename: string }>(
-          `/api/sessions/${id}/paste-image`,
-          { method: 'POST', body: JSON.stringify({ image_data: base64 }) },
-        )
-        if (res.ok) {
-          await api(`/api/sessions/${id}/type`, {
-            method: 'POST',
-            body: JSON.stringify({ text: res.file_path }),
-          })
-        }
-      } catch (e) {
-        notify(e instanceof Error ? e.message : 'Failed to paste image', 'error')
+    const base64 = await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader()
+      reader.onload = () => resolve((reader.result as string).split(',')[1])
+      reader.onerror = reject
+      reader.readAsDataURL(file)
+    })
+    try {
+      const res = await api<{ ok: boolean; file_path: string; filename: string }>(
+        `/api/sessions/${id}/paste-image`,
+        { method: 'POST', body: JSON.stringify({ image_data: base64 }) },
+      )
+      if (res.ok) {
+        await api(`/api/sessions/${id}/type`, {
+          method: 'POST',
+          body: JSON.stringify({ text: res.file_path }),
+        })
       }
+    } catch (e) {
+      notify(e instanceof Error ? e.message : 'Failed to paste image', 'error')
     }
-    reader.readAsDataURL(file)
   }, [id, notify])
 
   const handlePaste = useCallback(async () => {

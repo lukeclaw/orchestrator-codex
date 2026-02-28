@@ -154,28 +154,29 @@ export default function BrainPanel({
 
   // Handle image paste from Cmd+V in terminal
   const handleImagePaste = useCallback(async (file: File) => {
-    const reader = new FileReader()
-    reader.onload = async () => {
-      try {
-        const base64 = (reader.result as string).split(',')[1]
-        const result = await api<{ ok: boolean; file_path: string; filename: string }>(
-          '/api/brain/paste-image',
-          {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ image_data: base64 }),
-          }
-        )
-        if (result.ok && result.file_path) {
-          if (terminalInputRef.current) {
-            terminalInputRef.current(result.file_path)
-          }
+    const base64 = await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader()
+      reader.onload = () => resolve((reader.result as string).split(',')[1])
+      reader.onerror = reject
+      reader.readAsDataURL(file)
+    })
+    try {
+      const result = await api<{ ok: boolean; file_path: string; filename: string }>(
+        '/api/brain/paste-image',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ image_data: base64 }),
         }
-      } catch (e) {
-        notify(e instanceof Error ? e.message : 'Failed to paste image', 'error')
+      )
+      if (result.ok && result.file_path) {
+        if (terminalInputRef.current) {
+          terminalInputRef.current(result.file_path)
+        }
       }
+    } catch (e) {
+      notify(e instanceof Error ? e.message : 'Failed to paste image', 'error')
     }
-    reader.readAsDataURL(file)
   }, [notify])
 
   // Drag resize

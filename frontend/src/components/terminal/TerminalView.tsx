@@ -262,7 +262,8 @@ export default function TerminalView({ sessionId, wsPath, sessionStatus, disable
       textarea.addEventListener('blur', handleBlur)
     }
 
-    // Intercept Cmd+V paste on the xterm textarea for images and long text
+    // Intercept Cmd+V paste on the xterm textarea — all paste types go through
+    // our handler so we can track pasting state for the animation.
     const handlePaste = (e: ClipboardEvent) => {
       // Check for image files first
       const files = e.clipboardData?.files
@@ -271,7 +272,6 @@ export default function TerminalView({ sessionId, wsPath, sessionStatus, disable
         if (imageFile) {
           e.preventDefault()
           e.stopPropagation()
-          // Track pasting state for animation
           onPastingChangeRef.current?.(true)
           Promise.resolve(onImagePasteRef.current?.(imageFile)).finally(() => {
             onPastingChangeRef.current?.(false)
@@ -279,19 +279,28 @@ export default function TerminalView({ sessionId, wsPath, sessionStatus, disable
           return
         }
       }
-      // Check for long text (>1000 chars) — save to file instead of dumping into terminal
       const text = e.clipboardData?.getData('text/plain')
-      if (text && text.length > 1000 && onTextPasteRef.current) {
-        e.preventDefault()
-        e.stopPropagation()
-        // Track pasting state for animation
-        onPastingChangeRef.current?.(true)
-        Promise.resolve(onTextPasteRef.current(text)).finally(() => {
-          onPastingChangeRef.current?.(false)
+      if (!text) return
+      // Intercept ALL text paste (short and long) so animation tracks delivery
+      e.preventDefault()
+      e.stopPropagation()
+      onPastingChangeRef.current?.(true)
+      const trimmed = text.trim()
+      let task: Promise<unknown>
+      if (trimmed.length > 1000 && onTextPasteRef.current) {
+        // Long text: delegate to parent handler (saves to file)
+        task = Promise.resolve(onTextPasteRef.current(trimmed))
+      } else {
+        // Short text: send via REST API (awaits delivery to remote terminal)
+        task = fetch(`/api/sessions/${sessionId}/send`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ message: trimmed }),
         })
-        return
       }
-      // Short text: let xterm handle natively
+      task.finally(() => {
+        onPastingChangeRef.current?.(false)
+      })
     }
     if (textarea) {
       textarea.addEventListener('paste', handlePaste)
@@ -395,6 +404,15 @@ export default function TerminalView({ sessionId, wsPath, sessionStatus, disable
 
   const [ctxPasting, setCtxPasting] = useState(false)
 
+  // Send short text via REST API (awaits round-trip, so animation tracks actual delivery)
+  const sendTextViaApi = useCallback(async (text: string) => {
+    await fetch(`/api/sessions/${sessionId}/send`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message: text }),
+    })
+  }, [sessionId])
+
   const handlePaste = useCallback(async () => {
     setContextMenu(null)
     setCtxPasting(true)
@@ -408,18 +426,15 @@ export default function TerminalView({ sessionId, wsPath, sessionStatus, disable
       if (data.image_base64 && onImagePasteRef.current) {
         // Convert base64 to File and delegate to image paste handler
         const blob = await fetch(`data:image/png;base64,${data.image_base64}`).then(r => r.blob())
-        onImagePasteRef.current(new File([blob], 'clipboard.png', { type: 'image/png' }))
+        await onImagePasteRef.current(new File([blob], 'clipboard.png', { type: 'image/png' }))
       } else if (data.text) {
         const trimmed = data.text.trim()
         if (trimmed.length > 1000 && onTextPasteRef.current) {
           // Long text: delegate to parent handler (saves to file)
-          onTextPasteRef.current(trimmed)
+          await onTextPasteRef.current(trimmed)
         } else if (trimmed) {
-          // Short text: send directly via WebSocket
-          const ws = wsRef.current
-          if (ws?.readyState === WebSocket.OPEN) {
-            ws.send(JSON.stringify({ type: 'input', data: trimmed }))
-          }
+          // Short text: send via REST API (awaits delivery)
+          await sendTextViaApi(trimmed)
         }
       }
     } catch {
@@ -427,10 +442,7 @@ export default function TerminalView({ sessionId, wsPath, sessionStatus, disable
       try {
         const text = await navigator.clipboard.readText()
         if (text) {
-          const ws = wsRef.current
-          if (ws?.readyState === WebSocket.OPEN) {
-            ws.send(JSON.stringify({ type: 'input', data: text }))
-          }
+          await sendTextViaApi(text)
         }
       } catch {
         // Clipboard read denied or empty
@@ -440,7 +452,7 @@ export default function TerminalView({ sessionId, wsPath, sessionStatus, disable
       onPastingChangeRef.current?.(false)
     }
     terminalRef.current?.focus()
-  }, [])
+  }, [sendTextViaApi])
 
   return (
     <div className={containerClasses}>
