@@ -3,6 +3,7 @@ import { useSkills } from '../hooks/useSkills'
 import type { Skill } from '../api/types'
 import SkillCard from '../components/skills/SkillCard'
 import SkillModal from '../components/skills/SkillModal'
+import { IconBrain, IconLaptop } from '../components/common/Icons'
 import './SkillsPage.css'
 
 export default function SkillsPage() {
@@ -53,15 +54,16 @@ export default function SkillsPage() {
   return (
     <div className="skills-page">
       <div className="page-header">
-        <h1>Skills</h1>
+        <div>
+          <h1>Skills</h1>
+          <p className="skills-note">Changes take effect on new sessions only.</p>
+        </div>
         <div className="page-header-actions">
           <button className="btn btn-primary btn-sm" onClick={() => setShowNewSkill(true)}>
             + New Skill
           </button>
         </div>
       </div>
-
-      <p className="skills-note">Skill changes take effect on new sessions only.</p>
 
       {loading ? (
         <p className="empty-state">Loading...</p>
@@ -71,7 +73,7 @@ export default function SkillsPage() {
         <>
           {brainSkills.length > 0 && (
             <div className="skills-section">
-              <h2 className="skills-section-title">Brain</h2>
+              <h2 className="skills-section-title"><IconBrain size={14} /> Brain</h2>
               <div className="skills-grid">
                 {brainSkills.map(skill => (
                   <SkillCard
@@ -87,7 +89,7 @@ export default function SkillsPage() {
 
           {workerSkills.length > 0 && (
             <div className="skills-section">
-              <h2 className="skills-section-title">Worker</h2>
+              <h2 className="skills-section-title"><IconLaptop size={14} /> Worker</h2>
               <div className="skills-grid">
                 {workerSkills.map(skill => (
                   <SkillCard

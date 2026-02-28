@@ -2,20 +2,25 @@
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  padding: 16px;
+  padding: 12px;
   cursor: pointer;
-  transition: border-color 0.15s, opacity 0.15s;
+  transition: border-color 0.15s, box-shadow 0.15s, opacity 0.15s;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 8px;
 }
 
 .skill-card:hover {
-  border-color: var(--text-muted);
+  border-color: var(--accent);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
 }
 
 .skill-card.disabled {
-  opacity: 0.55;
+  opacity: 0.5;
+}
+
+.skill-card.disabled:hover {
+  opacity: 0.6;
 }
 
 /* Header: name + badge + toggle */
@@ -25,13 +30,9 @@
   gap: 8px;
 }
 
-.skill-card-header-spacer {
-  flex: 1;
-}
-
 .skill-card-name {
   font-family: var(--font-mono);
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 600;
   color: var(--text-primary);
   overflow: hidden;
@@ -41,10 +42,10 @@
 
 .skill-card-badge {
   flex-shrink: 0;
-  font-size: 10px;
+  font-size: 9px;
   font-weight: 700;
   letter-spacing: 0.5px;
-  padding: 2px 6px;
+  padding: 2px 5px;
   border-radius: 4px;
   text-transform: uppercase;
 }
@@ -62,6 +63,7 @@
 /* Toggle switch */
 .skill-card-toggle {
   flex-shrink: 0;
+  margin-left: auto;
   width: 28px;
   height: 16px;
   border-radius: 8px;
@@ -93,25 +95,14 @@
   transform: translateX(12px);
 }
 
-/* Warning for disabled built-in */
-.skill-card-warning {
-  font-size: 11px;
-  color: #d29922;
-  background: rgba(210, 153, 34, 0.1);
-  border: 1px solid rgba(210, 153, 34, 0.25);
-  border-radius: 4px;
-  padding: 4px 8px;
-  line-height: 1.3;
-}
-
 /* Body: description */
 .skill-card-body {
   flex: 1;
 }
 
 .skill-card-desc {
-  font-size: 13px;
-  line-height: 1.4;
+  font-size: 12px;
+  line-height: 1.5;
   color: var(--text-secondary);
   margin: 0;
   display: -webkit-box;
@@ -125,16 +116,28 @@
   font-style: italic;
 }
 
+/* Warning for disabled built-in */
+.skill-card-warning {
+  font-size: 11px;
+  color: #d29922;
+  margin-top: 6px;
+  line-height: 1.3;
+}
+
 /* Footer: meta */
 .skill-card-footer {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 6px;
+  padding-top: 8px;
   border-top: 1px solid var(--border);
-  padding-top: 10px;
 }
 
 .skill-card-meta {
   font-size: 11px;
   color: var(--text-muted);
+}
+
+.skill-card-time {
+  margin-left: auto;
 }

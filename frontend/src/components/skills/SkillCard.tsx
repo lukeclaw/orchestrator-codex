@@ -16,7 +16,6 @@ export default function SkillCard({ skill, onClick, onToggleEnabled }: Props) {
         <span className={`skill-card-badge ${skill.type === 'built_in' ? 'built-in' : 'custom'}`}>
           {skill.type === 'built_in' ? 'BUILT-IN' : 'CUSTOM'}
         </span>
-        <div className="skill-card-header-spacer" />
         <button
           className={`skill-card-toggle ${skill.enabled ? 'on' : ''}`}
           onClick={e => { e.stopPropagation(); onToggleEnabled() }}
@@ -25,21 +24,21 @@ export default function SkillCard({ skill, onClick, onToggleEnabled }: Props) {
           <span className="skill-card-toggle-knob" />
         </button>
       </div>
-      {!skill.enabled && skill.type === 'built_in' && (
-        <div className="skill-card-warning">
-          Disabling built-in skills may break core functionality
-        </div>
-      )}
       <div className="skill-card-body">
         {skill.description ? (
           <p className="skill-card-desc">{skill.description}</p>
         ) : (
           <p className="skill-card-desc empty">No description</p>
         )}
+        {!skill.enabled && skill.type === 'built_in' && (
+          <div className="skill-card-warning">
+            Disabling built-in skills may break core functionality
+          </div>
+        )}
       </div>
       <div className="skill-card-footer">
         <span className="skill-card-meta">{skill.line_count} lines</span>
-        <span className="skill-card-meta">{timeAgo(skill.updated_at)}</span>
+        <span className="skill-card-meta skill-card-time">{timeAgo(skill.updated_at)}</span>
       </div>
     </div>
   )
