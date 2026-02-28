@@ -31,14 +31,16 @@ export default function TagDropdown({ value, options, onChange, disabled = false
       }
     }
     
-    // Use setTimeout to avoid the click that opened the menu from immediately closing it
+    // Use capture phase so the listener fires even when stopPropagation is
+    // called (e.g. inside modals). setTimeout avoids the opening click closing
+    // the menu immediately.
     const timeoutId = setTimeout(() => {
-      document.addEventListener('click', handleClickOutside)
+      document.addEventListener('click', handleClickOutside, true)
     }, 0)
-    
+
     return () => {
       clearTimeout(timeoutId)
-      document.removeEventListener('click', handleClickOutside)
+      document.removeEventListener('click', handleClickOutside, true)
     }
   }, [open])
 
