@@ -345,7 +345,16 @@ export default function WorkerCard({
               <span className="wc-task-title">{assignedTask.title}</span>
             </Link>
           ) : (
-            <span className="wc-no-task">No task</span>
+            <span
+              className="wc-assign-task-btn"
+              onClick={e => { e.stopPropagation(); navigate(`/workers/${session.id}`) }}
+              title="Assign a task to this worker"
+            >
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="16" /><line x1="8" y1="12" x2="16" y2="12" />
+              </svg>
+              Assign task
+            </span>
           )}
           {Object.keys(tunnels).length > 0 && (
             <div className="wc-tunnels">

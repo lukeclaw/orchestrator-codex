@@ -343,19 +343,22 @@
 }
 
 .sd-assign-task-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   font-size: 12px;
+  font-weight: 500;
   color: var(--green, #3fb950);
   background: rgba(63, 185, 80, 0.08);
-  border: 1px dashed rgba(63, 185, 80, 0.4);
+  border: none;
   border-radius: 4px;
-  padding: 3px 10px;
+  padding: 4px 10px;
   cursor: pointer;
-  transition: background 0.15s, border-color 0.15s;
+  transition: background 0.15s, color 0.15s;
 }
 
 .sd-assign-task-btn:hover {
   background: rgba(63, 185, 80, 0.18);
-  border-color: rgba(63, 185, 80, 0.7);
 }
 
 /* Tunnel badges */

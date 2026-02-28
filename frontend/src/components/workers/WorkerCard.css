@@ -319,10 +319,23 @@
   min-width: 0;
 }
 
-.wc-no-task {
+.wc-assign-task-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
   font-size: 11px;
-  color: var(--text-muted);
-  font-style: italic;
+  font-weight: 500;
+  color: var(--green, #3fb950);
+  background: rgba(63, 185, 80, 0.08);
+  border: none;
+  border-radius: 4px;
+  padding: 3px 8px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.wc-assign-task-btn:hover {
+  background: rgba(63, 185, 80, 0.18);
 }
 
 .wc-activity {
