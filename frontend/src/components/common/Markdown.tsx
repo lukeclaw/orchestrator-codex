@@ -240,7 +240,12 @@ function parseInline(text: string): string {
     // Images (must be before links since syntax is similar)
     .replace(/!\[([^\]]*)\]\(([^)\s]+)(?:\s+"([^"]*)")?\)/g, '<img src="$2" alt="$1" title="$3" />')
     // Links
-    .replace(/\[([^\]]+)\]\(([^)\s]+)(?:\s+"([^"]*)")?\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer" title="$3">$1</a>')
+    .replace(/\[([^\]]+)\]\(([^)\s]+)(?:\s+"([^"]*)")?\)/g, (_, text, href, title) => {
+      if (href.startsWith('#')) {
+        return `<a href="${href}" class="anchor-link"${title ? ` title="${title}"` : ''}>${text}</a>`
+      }
+      return `<a href="${href}" target="_blank" rel="noopener noreferrer"${title ? ` title="${title}"` : ''}>${text}</a>`
+    })
     // Autolinks (bare URLs) - match http/https URLs not already in href/src
     .replace(/(?<![">])(https?:\/\/[^\s<]+[^\s<.,;:!?'")\]])/g, '<a href="$1" target="_blank" rel="noopener noreferrer">$1</a>')
     // Bold + italic with asterisks (can work intraword)
@@ -272,6 +277,16 @@ function parseInline(text: string): string {
   }
 
   return processed
+}
+
+// Generate a URL-friendly slug from heading text
+function slugify(text: string): string {
+  return text
+    .toLowerCase()
+    .replace(/[^\w\s-]/g, '')
+    .replace(/\s+/g, '-')
+    .replace(/-+/g, '-')
+    .trim()
 }
 
 // Escape HTML for code blocks (no inline parsing)
@@ -450,7 +465,8 @@ function renderTokens(tokens: Token[]): string {
     switch (token.type) {
       case 'heading':
         const tag = `h${token.level}`
-        return `<${tag}>${parseInline(token.content)}</${tag}>`
+        const id = slugify(token.content)
+        return `<${tag} id="${id}">${parseInline(token.content)}</${tag}>`
       
       case 'paragraph':
         return `<p>${parseInline(token.content)}</p>`
@@ -527,7 +543,18 @@ export default function Markdown({ children, className }: Props) {
         dangerouslySetInnerHTML={{ __html: html }}
         onClick={e => {
           const anchor = (e.target as HTMLElement).closest('a')
-          if (anchor?.href && /^https?:\/\//.test(anchor.href)) {
+          if (!anchor) return
+          const rawHref = anchor.getAttribute('href')
+          if (rawHref?.startsWith('#')) {
+            e.preventDefault()
+            const targetId = rawHref.slice(1)
+            const target = (e.currentTarget as HTMLElement).querySelector(`[id="${targetId}"]`)
+            if (target) {
+              target.scrollIntoView({ behavior: 'smooth' })
+            }
+            return
+          }
+          if (anchor.href && /^https?:\/\//.test(anchor.href)) {
             e.preventDefault()
             openUrl(anchor.href)
           }

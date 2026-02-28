@@ -111,6 +111,34 @@ describe('Markdown renderer', () => {
     expect((html.match(/<ol>/g) || []).length).toBe(1)
   })
 
+  it('renders headings with id attributes', () => {
+    const input = `## Triage Rules`
+    const tokens = tokenize(input)
+    const html = renderTokens(tokens)
+    
+    expect(html).toContain('<h2 id="triage-rules">')
+    expect(html).toContain('Triage Rules')
+  })
+
+  it('renders anchor links without target="_blank"', () => {
+    const input = `See [Triage Rules](#triage-rules) for details`
+    const tokens = tokenize(input)
+    const html = renderTokens(tokens)
+    
+    expect(html).toContain('href="#triage-rules"')
+    expect(html).toContain('class="anchor-link"')
+    expect(html).not.toContain('target="_blank"')
+  })
+
+  it('renders external links with target="_blank"', () => {
+    const input = `Visit [Google](https://google.com) for search`
+    const tokens = tokenize(input)
+    const html = renderTokens(tokens)
+    
+    expect(html).toContain('href="https://google.com"')
+    expect(html).toContain('target="_blank"')
+  })
+
   it('preserves special characters in list items', () => {
     const input = `1. Check if member id < 0
 2. Check if value > 100`
