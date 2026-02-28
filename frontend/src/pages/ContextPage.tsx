@@ -3,45 +3,62 @@ import { useApp } from '../context/AppContext'
 import { useContextItems } from '../hooks/useContextItems'
 import type { ContextItem } from '../api/types'
 import { timeAgo, parseDate } from '../components/common/TimeAgo'
+import { IconContext, IconFilter, IconSearch } from '../components/common/Icons'
 import ContextModal from '../components/context/ContextModal'
 import './ContextPage.css'
 
 type SortKey = 'title' | 'scope' | 'category' | 'project' | 'updated'
 type SortDir = 'asc' | 'desc'
 
-const CATEGORIES = ['instruction', 'reference']
 const SCOPE_ORDER: Record<string, number> = { global: 2, brain: 1, project: 0 }
+const SCOPE_COLORS: Record<string, string> = { global: '#58a6ff', brain: '#bc8cff', project: '#3fb950' }
+const SCOPE_LABELS: Record<string, string> = { global: 'Global', brain: 'Brain', project: 'Project' }
+const SCOPES = ['global', 'brain', 'project'] as const
 
 export default function ContextPage() {
   const { projects } = useApp()
   const [scopeFilter, setScopeFilter] = useState<string>('')
-  const [categoryFilter, setCategoryFilter] = useState<string>('')
   const [projectFilter, setProjectFilter] = useState<string>('')
   const [searchText, setSearchText] = useState('')
-  const [debouncedSearch, setDebouncedSearch] = useState('')
   const [selectedContext, setSelectedContext] = useState<ContextItem | null>(null)
   const [showNewContext, setShowNewContext] = useState(false)
   const [sortKey, setSortKey] = useState<SortKey>('scope')
   const [sortDir, setSortDir] = useState<SortDir>('desc')
-  const searchTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  const [showProjectDropdown, setShowProjectDropdown] = useState(false)
+  const projectThRef = useRef<HTMLTableCellElement>(null)
 
   const { items, loading, fetch, getItem, create, update, remove } = useContextItems({
-    scope: scopeFilter || undefined,
     project_id: projectFilter || undefined,
-    category: categoryFilter || undefined,
-    search: debouncedSearch || undefined,
   })
 
   useEffect(() => {
-    clearTimeout(searchTimer.current)
-    searchTimer.current = setTimeout(() => {
-      setDebouncedSearch(searchText)
-    }, 300)
-    return () => clearTimeout(searchTimer.current)
-  }, [searchText])
+    if (!showProjectDropdown) return
+    function handleClickOutside(e: MouseEvent) {
+      if (projectThRef.current && !projectThRef.current.contains(e.target as Node)) {
+        setShowProjectDropdown(false)
+      }
+    }
+    function handleEscape(e: KeyboardEvent) {
+      if (e.key === 'Escape') setShowProjectDropdown(false)
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    document.addEventListener('keydown', handleEscape)
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside)
+      document.removeEventListener('keydown', handleEscape)
+    }
+  }, [showProjectDropdown])
 
   const projectMap = useMemo(() => new Map(projects.map(p => [p.id, p])), [projects])
   const getProjectName = (id: string | null) => id ? projectMap.get(id)?.name || id.slice(0, 8) : null
+
+  // Scope counts computed from all items (before scope/search filter)
+  const scopeCounts = useMemo(() => {
+    return items.reduce<Record<string, number>>((acc, item) => {
+      acc[item.scope] = (acc[item.scope] || 0) + 1
+      return acc
+    }, {})
+  }, [items])
 
   function getSortValue(item: ContextItem, key: SortKey): string | number {
     switch (key) {
@@ -54,14 +71,24 @@ export default function ContextPage() {
     }
   }
 
+  // Apply scope + search filters client-side, then sort
   const sortedItems = useMemo(() => {
-    return [...items].sort((a, b) => {
+    let filtered = items
+    if (scopeFilter) filtered = filtered.filter(i => i.scope === scopeFilter)
+    if (searchText) {
+      const q = searchText.toLowerCase()
+      filtered = filtered.filter(i =>
+        i.title.toLowerCase().includes(q) ||
+        (i.description && i.description.toLowerCase().includes(q))
+      )
+    }
+    return [...filtered].sort((a, b) => {
       const aVal = getSortValue(a, sortKey)
       const bVal = getSortValue(b, sortKey)
       const cmp = aVal < bVal ? -1 : aVal > bVal ? 1 : 0
       return sortDir === 'asc' ? cmp : -cmp
     })
-  }, [items, sortKey, sortDir])
+  }, [items, scopeFilter, searchText, sortKey, sortDir])
 
   function handleSort(key: SortKey) {
     if (sortKey === key) {
@@ -80,7 +107,73 @@ export default function ContextPage() {
         onClick={() => handleSort(k)}
       >
         {children}
-        {active && <span className="sort-arrow">{sortDir === 'asc' ? '↑' : '↓'}</span>}
+        <svg
+          className={`sort-chevron${active && sortDir === 'asc' ? ' asc' : ''}`}
+          width="10"
+          height="10"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2.5"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
+          <polyline points="6 9 12 15 18 9" />
+        </svg>
+      </th>
+    )
+  }
+
+  // Project header: sort + filter dropdown
+  function ProjectHeader() {
+    const active = sortKey === 'project'
+    const projName = projectFilter ? getProjectName(projectFilter) : null
+    return (
+      <th
+        ref={projectThRef}
+        className={`pt-th sortable ${active ? 'active' : ''} ctx-th-project`}
+      >
+        <span className="ctx-th-project-row" onClick={() => handleSort('project')}>
+          {projName || 'Project'}
+          <svg
+            className={`sort-chevron${active && sortDir === 'asc' ? ' asc' : ''}`}
+            width="10"
+            height="10"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2.5"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <polyline points="6 9 12 15 18 9" />
+          </svg>
+        </span>
+        <button
+          className={`ctx-th-icon-btn${projectFilter ? ' active' : ''}`}
+          onClick={e => { e.stopPropagation(); setShowProjectDropdown(p => !p) }}
+          type="button"
+          title="Filter by project"
+        >
+          <IconFilter size={13} />
+        </button>
+        {showProjectDropdown && (
+          <div className="ctx-project-dropdown">
+            <button
+              className={`ctx-project-option${!projectFilter ? ' selected' : ''}`}
+              onClick={() => { setProjectFilter(''); setShowProjectDropdown(false) }}
+              type="button"
+            >All Projects</button>
+            {projects.map(p => (
+              <button
+                key={p.id}
+                className={`ctx-project-option${projectFilter === p.id ? ' selected' : ''}`}
+                onClick={() => { setProjectFilter(p.id); setShowProjectDropdown(false) }}
+                type="button"
+              >{p.name}</button>
+            ))}
+          </div>
+        )}
       </th>
     )
   }
@@ -107,10 +200,17 @@ export default function ContextPage() {
     await remove(id)
   }
 
-  const hasFilters = scopeFilter || categoryFilter || projectFilter || searchText
+  const hasFilters = scopeFilter || projectFilter || searchText
+
+  function clearAllFilters() {
+    setScopeFilter('')
+    setProjectFilter('')
+    setSearchText('')
+  }
 
   return (
     <div className="context-page">
+      {/* Header: title + count + actions */}
       <div className="page-header">
         <h1>Context</h1>
         <div className="page-header-actions">
@@ -121,51 +221,66 @@ export default function ContextPage() {
         </div>
       </div>
 
-      {/* Filters */}
-      <div className="ctx-filters">
-        <input
-          className="search-input"
-          type="text"
-          placeholder="Search context..."
-          value={searchText}
-          onChange={e => setSearchText(e.target.value)}
-          data-testid="context-search"
-        />
-        <select className="filter-select" value={scopeFilter} onChange={e => setScopeFilter(e.target.value)}>
-          <option value="">All Scopes</option>
-          <option value="global">Global</option>
-          <option value="brain">Brain</option>
-          <option value="project">Project</option>
-        </select>
-        <select className="filter-select" value={categoryFilter} onChange={e => setCategoryFilter(e.target.value)}>
-          <option value="">All Categories</option>
-          {CATEGORIES.map(c => (
-            <option key={c} value={c}>{c}</option>
+      {/* Scope pills + inline search */}
+      {items.length > 0 && (
+        <div className="ctx-scope-bar">
+          {SCOPES.filter(s => scopeCounts[s]).map(scope => (
+            <button
+              key={scope}
+              className={`ctx-scope-pill${scopeFilter === scope ? ' active' : ''}`}
+              onClick={() => setScopeFilter(scopeFilter === scope ? '' : scope)}
+              type="button"
+            >
+              <span className="ctx-scope-dot" style={{ background: SCOPE_COLORS[scope] }} />
+              <span className="ctx-scope-pill-count">{scopeCounts[scope]}</span>
+              <span className="ctx-scope-pill-label">{SCOPE_LABELS[scope]}</span>
+            </button>
           ))}
-        </select>
-        {(scopeFilter === 'project' || projectFilter) && (
-          <select className="filter-select" value={projectFilter} onChange={e => setProjectFilter(e.target.value)}>
-            <option value="">All Projects</option>
-            {projects.map(p => (
-              <option key={p.id} value={p.id}>{p.name}</option>
-            ))}
-          </select>
-        )}
-        {hasFilters && (
-          <button
-            className="btn btn-sm btn-secondary"
-            onClick={() => { setScopeFilter(''); setCategoryFilter(''); setProjectFilter(''); setSearchText('') }}
-          >
-            Clear Filters
-          </button>
-        )}
-      </div>
+          <div className="ctx-search-inline">
+            <IconSearch size={13} className="ctx-search-inline-icon" />
+            <input
+              className="ctx-search-inline-input"
+              type="text"
+              placeholder="Filter..."
+              value={searchText}
+              onChange={e => setSearchText(e.target.value)}
+              data-testid="context-search"
+            />
+            {searchText && (
+              <button
+                className="ctx-search-inline-clear"
+                onMouseDown={e => { e.preventDefault(); setSearchText('') }}
+                type="button"
+              >&times;</button>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Table */}
       {loading ? (
         <p className="empty-state">Loading...</p>
       ) : sortedItems.length === 0 ? (
-        <p className="empty-state">No context items found.</p>
+        <div className="ctx-empty-state">
+          {hasFilters ? (
+            <>
+              <IconFilter size={32} />
+              <p>No context items match your filters.</p>
+              <button className="btn btn-secondary" onClick={clearAllFilters}>
+                Clear Filters
+              </button>
+            </>
+          ) : (
+            <>
+              <IconContext size={48} />
+              <h3>No context items yet</h3>
+              <p>Add context to give your AI workers instructions, references, and project knowledge.</p>
+              <button className="btn btn-primary" onClick={() => setShowNewContext(true)}>
+                + Add Context
+              </button>
+            </>
+          )}
+        </div>
       ) : (
         <div className="ctx-table-wrapper">
           <table className="pt-table">
@@ -174,7 +289,7 @@ export default function ContextPage() {
                 <SortHeader k="title">Title</SortHeader>
                 <SortHeader k="scope">Scope</SortHeader>
                 <SortHeader k="category">Category</SortHeader>
-                <SortHeader k="project">Project</SortHeader>
+                <ProjectHeader />
                 <SortHeader k="updated">Updated</SortHeader>
               </tr>
             </thead>
@@ -184,15 +299,17 @@ export default function ContextPage() {
                 return (
                   <tr
                     key={item.id}
-                    className="pt-row"
+                    className={`pt-row ctx-row ctx-scope-${item.scope}`}
                     onClick={() => handleItemClick(item)}
                     data-testid="context-card"
                   >
                     <td className="pt-td ctx-title-cell">
-                      <span className="ctx-title">{item.title}</span>
-                      {item.description && (
-                        <span className="ctx-desc">{item.description}</span>
-                      )}
+                      <div className="ctx-title-inner">
+                        <span className="ctx-title">{item.title}</span>
+                        <span className={`ctx-desc${item.description ? '' : ' empty'}`}>
+                          {item.description || 'No description'}
+                        </span>
+                      </div>
                     </td>
                     <td className="pt-td">
                       <span className={`ctx-scope-badge ${item.scope}`}>
