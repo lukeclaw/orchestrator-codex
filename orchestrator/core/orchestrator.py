@@ -69,7 +69,8 @@ class Orchestrator:
 
         logger.info(
             "Orchestrator started (monitor interval=%.1fs, tunnel check interval=%.0fs)",
-            poll_interval, tunnel_interval,
+            poll_interval,
+            tunnel_interval,
         )
 
     async def stop(self):

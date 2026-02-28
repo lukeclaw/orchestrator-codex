@@ -9,9 +9,7 @@ MIGRATIONS_DIR = Path(__file__).parent / "versions"
 def get_current_version(conn: sqlite3.Connection) -> int:
     """Get the current schema version. Returns 0 if no schema exists."""
     try:
-        row = conn.execute(
-            "SELECT MAX(version) as v FROM schema_version"
-        ).fetchone()
+        row = conn.execute("SELECT MAX(version) as v FROM schema_version").fetchone()
         return row["v"] or 0 if row else 0
     except sqlite3.OperationalError:
         return 0
@@ -69,10 +67,7 @@ def apply_migrations(conn: sqlite3.Connection) -> list[int]:
             "SELECT version FROM schema_version WHERE version = ?", (version,)
         ).fetchone()
         if not existing:
-            conn.execute(
-                "INSERT INTO schema_version (version) VALUES (?)",
-                (version,)
-            )
+            conn.execute("INSERT INTO schema_version (version) VALUES (?)", (version,))
         conn.commit()
         applied.append(version)
 

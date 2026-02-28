@@ -32,6 +32,11 @@ async def lifespan(app: FastAPI):
 
     logger.info("Orchestrator API starting up")
 
+    # Store event loop reference so sync handlers can broadcast WS events
+    from orchestrator.api.websocket import init_event_loop
+
+    init_event_loop()
+
     conn = app.state.conn
     db_path = app.state.db_path
 
@@ -99,6 +104,14 @@ async def lifespan(app: FastAPI):
         cleanup_old_events(conn, retention_days=180)
     except Exception:
         logger.exception("Status events cleanup failed (non-fatal)")
+
+    # Clean up orphaned interactive CLI windows from previous server run
+    try:
+        from orchestrator.terminal.interactive import cleanup_orphaned_icli_windows
+
+        cleanup_orphaned_icli_windows()
+    except Exception:
+        logger.exception("Interactive CLI cleanup failed (non-fatal)")
 
     # Start rdev background refresh task (skip in test mode — no db_path means in-memory DB)
     from orchestrator.api.routes.rdevs import start_background_refresh, stop_background_refresh
@@ -213,6 +226,7 @@ def create_app(
         brain,
         context,
         files,
+        interactive_cli,
         notifications,
         paste,
         projects,
@@ -239,6 +253,7 @@ def create_app(
     app.include_router(paste.router, prefix="/api", tags=["paste"])
     app.include_router(trends.router, prefix="/api", tags=["trends"])
     app.include_router(updates.router, prefix="/api", tags=["updates"])
+    app.include_router(interactive_cli.router, prefix="/api", tags=["interactive_cli"])
 
     # Health check (used by Tauri shell to know when the sidecar is ready)
     @app.get("/api/health", tags=["health"])
@@ -279,6 +294,11 @@ def create_app(
     from orchestrator.api.ws_terminal import terminal_websocket
 
     app.add_api_websocket_route("/ws/terminal/{session_id}", terminal_websocket)
+
+    # Interactive CLI WebSocket
+    from orchestrator.api.ws_terminal import ws_interactive_cli
+
+    app.add_api_websocket_route("/ws/terminal/{session_id}/interactive", ws_interactive_cli)
 
     # Static mount for saved images
     try:

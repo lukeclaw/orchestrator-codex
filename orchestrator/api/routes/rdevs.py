@@ -46,7 +46,7 @@ def refresh_rdev_cache() -> None:
 
 async def _background_refresh_loop() -> None:
     """Background loop that refreshes rdev cache every 30 minutes.
-    
+
     Does an initial refresh on startup, then refreshes every 30 minutes.
     """
     # Initial refresh on startup
@@ -75,7 +75,9 @@ def start_background_refresh() -> None:
     global _background_task
     if _background_task is None or _background_task.done():
         _background_task = asyncio.create_task(_background_refresh_loop())
-        logger.info("Started rdev background refresh task (interval: %ds)", RDEV_BACKGROUND_REFRESH_INTERVAL)
+        logger.info(
+            "Started rdev background refresh task (interval: %ds)", RDEV_BACKGROUND_REFRESH_INTERVAL
+        )
 
 
 async def stop_background_refresh() -> None:
@@ -111,28 +113,30 @@ def _fetch_rdev_list() -> list[dict]:
 
         # Parse the table output
         # Format: Name | State | Cluster Name | Created | Last Accessed | Server URL
-        lines = output.strip().split('\n')
+        lines = output.strip().split("\n")
         for line in lines:
             # Skip header, separator lines, and info messages
-            if '|' not in line or line.startswith('-') or 'Name' in line and 'State' in line:
+            if "|" not in line or line.startswith("-") or "Name" in line and "State" in line:
                 continue
 
-            parts = [p.strip() for p in line.split('|')]
+            parts = [p.strip() for p in line.split("|")]
             if len(parts) >= 2:
                 name = parts[0].strip()
-                state = parts[1].strip() if len(parts) > 1 else ''
+                state = parts[1].strip() if len(parts) > 1 else ""
 
                 # Skip empty or invalid entries
-                if not name or '/' not in name:
+                if not name or "/" not in name:
                     continue
 
-                rdevs.append({
-                    "name": name,
-                    "state": state,
-                    "cluster": parts[2].strip() if len(parts) > 2 else '',
-                    "created": parts[3].strip() if len(parts) > 3 else '',
-                    "last_accessed": parts[4].strip() if len(parts) > 4 else '',
-                })
+                rdevs.append(
+                    {
+                        "name": name,
+                        "state": state,
+                        "cluster": parts[2].strip() if len(parts) > 2 else "",
+                        "created": parts[3].strip() if len(parts) > 3 else "",
+                        "last_accessed": parts[4].strip() if len(parts) > 4 else "",
+                    }
+                )
     except subprocess.TimeoutExpired:
         logger.warning("rdev list command timed out")
     except FileNotFoundError:
@@ -146,7 +150,7 @@ def _fetch_rdev_list() -> list[dict]:
 @router.get("/rdevs")
 def list_rdevs(refresh: bool = False, db=Depends(get_db)):
     """List available rdev instances and show which ones have workers assigned.
-    
+
     Uses server-side cache with 1 hour TTL. Pass refresh=true to force refresh.
     """
     global _rdev_cache
@@ -189,7 +193,9 @@ def list_rdevs(refresh: bool = False, db=Depends(get_db)):
 def _purge_old_jobs() -> None:
     """Remove create-job entries older than _CREATE_JOB_TTL."""
     now = time.time()
-    expired = [jid for jid, j in _create_jobs.items() if now - j.get("updated", 0) > _CREATE_JOB_TTL]
+    expired = [
+        jid for jid, j in _create_jobs.items() if now - j.get("updated", 0) > _CREATE_JOB_TTL
+    ]
     for jid in expired:
         _create_jobs.pop(jid, None)
 
@@ -208,7 +214,12 @@ def _run_create_rdev(cmd: list[str], rdev_full_name: str, job_id: str) -> None:
         if result.returncode != 0:
             error_msg = result.stderr.strip() or result.stdout.strip() or "Unknown error"
             logger.error("rdev create failed: %s", error_msg)
-            _create_jobs[job_id] = {"status": "failed", "error": error_msg, "name": rdev_full_name, "updated": time.time()}
+            _create_jobs[job_id] = {
+                "status": "failed",
+                "error": error_msg,
+                "name": rdev_full_name,
+                "updated": time.time(),
+            }
         else:
             created_name = result.stdout.strip() or rdev_full_name
             logger.info("Created rdev: %s", created_name)
@@ -216,10 +227,20 @@ def _run_create_rdev(cmd: list[str], rdev_full_name: str, job_id: str) -> None:
 
     except subprocess.TimeoutExpired:
         logger.error("rdev create timed out for %s", rdev_full_name)
-        _create_jobs[job_id] = {"status": "failed", "error": "rdev create timed out (>120s)", "name": rdev_full_name, "updated": time.time()}
+        _create_jobs[job_id] = {
+            "status": "failed",
+            "error": "rdev create timed out (>120s)",
+            "name": rdev_full_name,
+            "updated": time.time(),
+        }
     except Exception as exc:
         logger.exception("rdev create failed for %s", rdev_full_name)
-        _create_jobs[job_id] = {"status": "failed", "error": str(exc), "name": rdev_full_name, "updated": time.time()}
+        _create_jobs[job_id] = {
+            "status": "failed",
+            "error": str(exc),
+            "name": rdev_full_name,
+            "updated": time.time(),
+        }
     finally:
         # Invalidate cache so next list refresh picks up the new rdev
         _rdev_cache["timestamp"] = 0
@@ -228,7 +249,7 @@ def _run_create_rdev(cmd: list[str], rdev_full_name: str, job_id: str) -> None:
 @router.post("/rdevs", status_code=202)
 async def create_rdev(body: RdevCreate):
     """Create a new rdev instance.
-    
+
     Kicks off `rdev create` in the background and returns immediately.
     The rdev will appear in the list once creation completes (~30-120s).
     Returns a job_id that can be polled via GET /rdevs/jobs/{job_id}.
@@ -260,7 +281,7 @@ async def create_rdev(body: RdevCreate):
 @router.get("/rdevs/jobs/{job_id}")
 def get_create_job(job_id: str):
     """Poll the status of a background rdev-create job.
-    
+
     Returns {status: "running"}, {status: "done", name: ...},
     or {status: "failed", error: ...}.
     """
@@ -273,7 +294,7 @@ def get_create_job(job_id: str):
 @router.delete("/rdevs/{rdev_name:path}")
 def delete_rdev(rdev_name: str, db=Depends(get_db)):
     """Delete an rdev instance.
-    
+
     Uses -f flag for non-interactive deletion.
     Fails if the rdev has active workers assigned.
     """
@@ -284,7 +305,7 @@ def delete_rdev(rdev_name: str, db=Depends(get_db)):
             raise HTTPException(
                 409,
                 f"Cannot delete rdev '{rdev_name}': worker '{s.name}' is still assigned. "
-                "Remove the worker first."
+                "Remove the worker first.",
             )
 
     try:

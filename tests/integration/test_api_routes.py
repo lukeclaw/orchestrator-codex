@@ -22,6 +22,7 @@ def client():
 
 # --- Sessions ---
 
+
 class TestSessions:
     def test_list_empty(self, client):
         resp = client.get("/api/sessions")
@@ -29,10 +30,12 @@ class TestSessions:
         assert resp.json() == []
 
     def test_create_session(self, client):
-        with patch("orchestrator.api.routes.sessions.ensure_window", return_value="orchestrator:worker-1"):
-            resp = client.post("/api/sessions", json={
-                "name": "worker-1", "host": "rdev1.example.com"
-            })
+        with patch(
+            "orchestrator.api.routes.sessions.ensure_window", return_value="orchestrator:worker-1"
+        ):
+            resp = client.post(
+                "/api/sessions", json={"name": "worker-1", "host": "rdev1.example.com"}
+            )
         assert resp.status_code == 201
         data = resp.json()
         assert data["name"] == "worker-1"
@@ -40,7 +43,9 @@ class TestSessions:
         assert data["status"] == "connecting"
 
     def test_get_session(self, client):
-        with patch("orchestrator.api.routes.sessions.ensure_window", return_value="orchestrator:w1"):
+        with patch(
+            "orchestrator.api.routes.sessions.ensure_window", return_value="orchestrator:w1"
+        ):
             create = client.post("/api/sessions", json={"name": "w1", "host": "h1"})
         sid = create.json()["id"]
         resp = client.get(f"/api/sessions/{sid}")
@@ -52,7 +57,9 @@ class TestSessions:
         assert resp.status_code == 404
 
     def test_update_session(self, client):
-        with patch("orchestrator.api.routes.sessions.ensure_window", return_value="orchestrator:w2"):
+        with patch(
+            "orchestrator.api.routes.sessions.ensure_window", return_value="orchestrator:w2"
+        ):
             create = client.post("/api/sessions", json={"name": "w2", "host": "h2"})
         sid = create.json()["id"]
         resp = client.patch(f"/api/sessions/{sid}", json={"status": "working"})
@@ -60,7 +67,9 @@ class TestSessions:
         assert resp.json()["status"] == "working"
 
     def test_delete_session(self, client):
-        with patch("orchestrator.api.routes.sessions.ensure_window", return_value="orchestrator:del"):
+        with patch(
+            "orchestrator.api.routes.sessions.ensure_window", return_value="orchestrator:del"
+        ):
             create = client.post("/api/sessions", json={"name": "del", "host": "h"})
         sid = create.json()["id"]
         resp = client.delete(f"/api/sessions/{sid}")
@@ -69,11 +78,13 @@ class TestSessions:
 
     def test_create_rdev_session(self, client):
         """Creating a session with rdev host returns 'connecting' and starts background setup."""
-        with patch("orchestrator.api.routes.sessions.ensure_window", return_value="orchestrator:rdev-w1"):
+        with patch(
+            "orchestrator.api.routes.sessions.ensure_window", return_value="orchestrator:rdev-w1"
+        ):
             with patch("orchestrator.api.routes.sessions.threading") as mock_thread:
-                resp = client.post("/api/sessions", json={
-                    "name": "rdev-w1", "host": "subs-mt/sleepy-franklin"
-                })
+                resp = client.post(
+                    "/api/sessions", json={"name": "rdev-w1", "host": "subs-mt/sleepy-franklin"}
+                )
         assert resp.status_code == 201
         data = resp.json()
         assert data["name"] == "rdev-w1"
@@ -83,16 +94,18 @@ class TestSessions:
 
     def test_create_local_session_unchanged(self, client):
         """Creating a session with a non-rdev host still uses the old path."""
-        with patch("orchestrator.api.routes.sessions.ensure_window", return_value="orchestrator:local-w1"):
-            resp = client.post("/api/sessions", json={
-                "name": "local-w1", "host": "localhost"
-            })
+        with patch(
+            "orchestrator.api.routes.sessions.ensure_window", return_value="orchestrator:local-w1"
+        ):
+            resp = client.post("/api/sessions", json={"name": "local-w1", "host": "localhost"})
         assert resp.status_code == 201
         assert resp.json()["status"] == "idle"
 
     def test_session_serialization_includes_tunnel_pid(self, client):
         """GET /sessions should include tunnel_pid field."""
-        with patch("orchestrator.api.routes.sessions.ensure_window", return_value="orchestrator:tp1"):
+        with patch(
+            "orchestrator.api.routes.sessions.ensure_window", return_value="orchestrator:tp1"
+        ):
             create = client.post("/api/sessions", json={"name": "tp1", "host": "localhost"})
         sid = create.json()["id"]
         resp = client.get(f"/api/sessions/{sid}")
@@ -101,11 +114,13 @@ class TestSessions:
 
     def test_delete_rdev_session_stops_tunnel(self, client):
         """Deleting an rdev session stops the tunnel subprocess."""
-        with patch("orchestrator.api.routes.sessions.ensure_window", return_value="orchestrator:rdev-del"):
+        with patch(
+            "orchestrator.api.routes.sessions.ensure_window", return_value="orchestrator:rdev-del"
+        ):
             with patch("orchestrator.api.routes.sessions.threading"):
-                resp = client.post("/api/sessions", json={
-                    "name": "rdev-del", "host": "subs-mt/test"
-                })
+                resp = client.post(
+                    "/api/sessions", json={"name": "rdev-del", "host": "subs-mt/test"}
+                )
         sid = resp.json()["id"]
 
         mock_tm = MagicMock()
@@ -119,11 +134,15 @@ class TestSessions:
 
     def test_type_text_no_enter(self, client):
         """POST /sessions/{id}/type injects text via send_keys_literal without Enter."""
-        with patch("orchestrator.api.routes.sessions.ensure_window", return_value="orchestrator:tw"):
+        with patch(
+            "orchestrator.api.routes.sessions.ensure_window", return_value="orchestrator:tw"
+        ):
             create = client.post("/api/sessions", json={"name": "tw", "host": "localhost"})
         sid = create.json()["id"]
 
-        with patch("orchestrator.terminal.manager.send_keys_literal", return_value=True) as mock_lit:
+        with patch(
+            "orchestrator.terminal.manager.send_keys_literal", return_value=True
+        ) as mock_lit:
             resp = client.post(f"/api/sessions/{sid}/type", json={"text": "/tmp/img.png"})
 
         assert resp.status_code == 200
@@ -136,12 +155,11 @@ class TestSessions:
 
 # --- Projects ---
 
+
 class TestProjects:
     def test_crud(self, client):
         # Create
-        resp = client.post("/api/projects", json={
-            "name": "Test Project", "description": "Test"
-        })
+        resp = client.post("/api/projects", json={"name": "Test Project", "description": "Test"})
         assert resp.status_code == 201
         pid = resp.json()["id"]
 
@@ -164,15 +182,14 @@ class TestProjects:
 
 # --- Tasks ---
 
+
 class TestTasks:
     def test_crud(self, client):
         # Need a project first
         proj = client.post("/api/projects", json={"name": "P"}).json()
 
         # Create
-        resp = client.post("/api/tasks", json={
-            "project_id": proj["id"], "title": "Do something"
-        })
+        resp = client.post("/api/tasks", json={"project_id": proj["id"], "title": "Do something"})
         assert resp.status_code == 201
         tid = resp.json()["id"]
 
@@ -194,6 +211,7 @@ class TestTasks:
 
 
 # --- Brain ---
+
 
 class TestBrain:
     def test_brain_status_not_running(self, client):
@@ -310,6 +328,7 @@ class TestBrain:
 
 # --- Dashboard ---
 
+
 class TestDashboard:
     def test_dashboard_loads(self, client):
         resp = client.get("/")
@@ -318,8 +337,14 @@ class TestDashboard:
 
     def test_frontend_routes_return_html(self, client):
         """All frontend routes should return 200 and serve the SPA."""
-        for path in ["/workers", "/workers/abc-123", "/projects", "/projects/xyz",
-                     "/context", "/settings"]:
+        for path in [
+            "/workers",
+            "/workers/abc-123",
+            "/projects",
+            "/projects/xyz",
+            "/context",
+            "/settings",
+        ]:
             resp = client.get(path)
             assert resp.status_code == 200, f"GET {path} returned {resp.status_code}"
 
@@ -341,15 +366,19 @@ _TINY_PNG = (
     b"\x05\x18\xd8N\x00\x00\x00\x00IEND\xaeB`\x82"
 )
 
+
 class TestPaste:
     def test_paste_image_raw_base64(self, client, tmp_path):
         """POST /api/paste-image with raw base64 saves file and returns URL."""
         images_dir = tmp_path / "images"
         images_dir.mkdir()
         with patch("orchestrator.api.routes.paste.get_images_dir", return_value=images_dir):
-            resp = client.post("/api/paste-image", json={
-                "image_data": base64.b64encode(_TINY_PNG).decode(),
-            })
+            resp = client.post(
+                "/api/paste-image",
+                json={
+                    "image_data": base64.b64encode(_TINY_PNG).decode(),
+                },
+            )
         assert resp.status_code == 200
         data = resp.json()
         assert data["ok"] is True
@@ -364,9 +393,12 @@ class TestPaste:
         images_dir.mkdir()
         b64 = base64.b64encode(_TINY_PNG).decode()
         with patch("orchestrator.api.routes.paste.get_images_dir", return_value=images_dir):
-            resp = client.post("/api/paste-image", json={
-                "image_data": f"data:image/jpeg;base64,{b64}",
-            })
+            resp = client.post(
+                "/api/paste-image",
+                json={
+                    "image_data": f"data:image/jpeg;base64,{b64}",
+                },
+            )
         assert resp.status_code == 200
         assert resp.json()["filename"].endswith(".jpg")
 
@@ -375,10 +407,13 @@ class TestPaste:
         images_dir = tmp_path / "images"
         images_dir.mkdir()
         with patch("orchestrator.api.routes.paste.get_images_dir", return_value=images_dir):
-            resp = client.post("/api/paste-image", json={
-                "image_data": base64.b64encode(_TINY_PNG).decode(),
-                "filename": "my-shot",
-            })
+            resp = client.post(
+                "/api/paste-image",
+                json={
+                    "image_data": base64.b64encode(_TINY_PNG).decode(),
+                    "filename": "my-shot",
+                },
+            )
         assert resp.status_code == 200
         assert resp.json()["filename"] == "my-shot.png"
 
@@ -387,9 +422,12 @@ class TestPaste:
         images_dir = tmp_path / "images"
         images_dir.mkdir()
         with patch("orchestrator.api.routes.paste.get_images_dir", return_value=images_dir):
-            resp = client.post("/api/paste-image", json={
-                "image_data": "not-valid-base64!!!",
-            })
+            resp = client.post(
+                "/api/paste-image",
+                json={
+                    "image_data": "not-valid-base64!!!",
+                },
+            )
         assert resp.status_code == 400
 
     def test_paste_image_missing_body(self, client):
@@ -402,9 +440,12 @@ class TestPaste:
         images_dir = tmp_path / "images"
         images_dir.mkdir()
         with patch("orchestrator.api.routes.paste.get_images_dir", return_value=images_dir):
-            save_resp = client.post("/api/paste-image", json={
-                "image_data": base64.b64encode(_TINY_PNG).decode(),
-            })
+            save_resp = client.post(
+                "/api/paste-image",
+                json={
+                    "image_data": base64.b64encode(_TINY_PNG).decode(),
+                },
+            )
         # The static mount in the test client may not use our tmp_path,
         # so verify the file was written correctly at least
         fname = save_resp.json()["filename"]
@@ -413,11 +454,14 @@ class TestPaste:
 
 # --- Session paste-image ---
 
+
 class TestSessionPasteImage:
     """Tests for POST /api/sessions/{session_id}/paste-image."""
 
     def _create_session(self, client, name="img-w1", host="localhost"):
-        with patch("orchestrator.api.routes.sessions.ensure_window", return_value=f"orchestrator:{name}"):
+        with patch(
+            "orchestrator.api.routes.sessions.ensure_window", return_value=f"orchestrator:{name}"
+        ):
             resp = client.post("/api/sessions", json={"name": name, "host": host})
         return resp.json()["id"]
 
@@ -426,11 +470,15 @@ class TestSessionPasteImage:
         sid = self._create_session(client)
         b64 = base64.b64encode(_TINY_PNG).decode()
 
-        with patch("orchestrator.terminal.file_sync.get_worker_tmp_dir",
-                    return_value=str(tmp_path)):
-            resp = client.post(f"/api/sessions/{sid}/paste-image", json={
-                "image_data": b64,
-            })
+        with patch(
+            "orchestrator.terminal.file_sync.get_worker_tmp_dir", return_value=str(tmp_path)
+        ):
+            resp = client.post(
+                f"/api/sessions/{sid}/paste-image",
+                json={
+                    "image_data": b64,
+                },
+            )
 
         assert resp.status_code == 200
         data = resp.json()
@@ -440,6 +488,7 @@ class TestSessionPasteImage:
         assert data["size"] == len(_TINY_PNG)
         # File actually written
         from pathlib import Path
+
         assert Path(data["file_path"]).exists()
         assert Path(data["file_path"]).read_bytes() == _TINY_PNG
 
@@ -449,13 +498,18 @@ class TestSessionPasteImage:
 
         b64 = base64.b64encode(_TINY_PNG).decode()
 
-        with patch("orchestrator.terminal.file_sync.get_worker_tmp_dir",
-                    return_value=str(tmp_path)):
-            with patch("orchestrator.terminal.file_sync.sync_file_to_remote",
-                        return_value=True) as mock_sync:
-                resp = client.post(f"/api/sessions/{sid}/paste-image", json={
-                    "image_data": b64,
-                })
+        with patch(
+            "orchestrator.terminal.file_sync.get_worker_tmp_dir", return_value=str(tmp_path)
+        ):
+            with patch(
+                "orchestrator.terminal.file_sync.sync_file_to_remote", return_value=True
+            ) as mock_sync:
+                resp = client.post(
+                    f"/api/sessions/{sid}/paste-image",
+                    json={
+                        "image_data": b64,
+                    },
+                )
 
         assert resp.status_code == 200
         data = resp.json()
@@ -465,7 +519,7 @@ class TestSessionPasteImage:
         mock_sync.assert_called_once()
         call_args = mock_sync.call_args
         assert call_args[0][0] == data["file_path"]  # local_path
-        assert call_args[0][1] == "user/rdev-vm"       # host
+        assert call_args[0][1] == "user/rdev-vm"  # host
         assert call_args[0][2] == data["file_path"]  # remote_path == local_path
 
     def test_paste_image_rdev_sync_failure(self, client, tmp_path):
@@ -474,13 +528,16 @@ class TestSessionPasteImage:
 
         b64 = base64.b64encode(_TINY_PNG).decode()
 
-        with patch("orchestrator.terminal.file_sync.get_worker_tmp_dir",
-                    return_value=str(tmp_path)):
-            with patch("orchestrator.terminal.file_sync.sync_file_to_remote",
-                        return_value=False):
-                resp = client.post(f"/api/sessions/{sid}/paste-image", json={
-                    "image_data": b64,
-                })
+        with patch(
+            "orchestrator.terminal.file_sync.get_worker_tmp_dir", return_value=str(tmp_path)
+        ):
+            with patch("orchestrator.terminal.file_sync.sync_file_to_remote", return_value=False):
+                resp = client.post(
+                    f"/api/sessions/{sid}/paste-image",
+                    json={
+                        "image_data": b64,
+                    },
+                )
 
         assert resp.status_code == 502
 
@@ -489,11 +546,15 @@ class TestSessionPasteImage:
         sid = self._create_session(client, name="img-du")
         b64 = base64.b64encode(_TINY_PNG).decode()
 
-        with patch("orchestrator.terminal.file_sync.get_worker_tmp_dir",
-                    return_value=str(tmp_path)):
-            resp = client.post(f"/api/sessions/{sid}/paste-image", json={
-                "image_data": f"data:image/jpeg;base64,{b64}",
-            })
+        with patch(
+            "orchestrator.terminal.file_sync.get_worker_tmp_dir", return_value=str(tmp_path)
+        ):
+            resp = client.post(
+                f"/api/sessions/{sid}/paste-image",
+                json={
+                    "image_data": f"data:image/jpeg;base64,{b64}",
+                },
+            )
 
         assert resp.status_code == 200
         assert resp.json()["filename"].endswith(".jpg")
@@ -501,14 +562,20 @@ class TestSessionPasteImage:
     def test_paste_image_invalid_base64(self, client):
         """Invalid base64 returns 400."""
         sid = self._create_session(client, name="img-bad")
-        resp = client.post(f"/api/sessions/{sid}/paste-image", json={
-            "image_data": "not-valid!!!",
-        })
+        resp = client.post(
+            f"/api/sessions/{sid}/paste-image",
+            json={
+                "image_data": "not-valid!!!",
+            },
+        )
         assert resp.status_code == 400
 
     def test_paste_image_session_not_found(self, client):
         """Unknown session returns 404."""
-        resp = client.post("/api/sessions/nonexistent/paste-image", json={
-            "image_data": base64.b64encode(_TINY_PNG).decode(),
-        })
+        resp = client.post(
+            "/api/sessions/nonexistent/paste-image",
+            json={
+                "image_data": base64.b64encode(_TINY_PNG).decode(),
+            },
+        )
         assert resp.status_code == 404

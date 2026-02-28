@@ -116,9 +116,7 @@ class TestSyncFileFromRemote:
         dest = tmp_path / "subdir2" / "img.png"
         mock_run.return_value = MagicMock(returncode=0, stderr=b"")
 
-        sync_file_from_remote(
-            "user/rdev-vm", "/tmp/orchestrator/workers/w1/tmp/img.png", str(dest)
-        )
+        sync_file_from_remote("user/rdev-vm", "/tmp/orchestrator/workers/w1/tmp/img.png", str(dest))
 
         for call in mock_run.call_args_list:
             cmd = call[0][0]

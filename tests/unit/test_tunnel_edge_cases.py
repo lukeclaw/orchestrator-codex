@@ -25,7 +25,7 @@ class TestRegexPatternEdgeCases:
     """Tests for the SSH command regex pattern edge cases."""
 
     # The pattern from tunnel.py
-    pattern = re.compile(r'ssh\s+.*-N\s+.*-L\s+(\d+):localhost:(\d+)\s+.*?(\S+)\s*$')
+    pattern = re.compile(r"ssh\s+.*-N\s+.*-L\s+(\d+):localhost:(\d+)\s+.*?(\S+)\s*$")
 
     def test_standard_tunnel_command(self):
         """Should match standard tunnel command."""
@@ -105,6 +105,7 @@ class TestPortConflictDetection:
         ps_output = """USER       PID  %CPU %MEM      VSZ    RSS   TT  STAT STARTED      TIME COMMAND
 yuqiu    12345   0.0  0.0 408628368   1234 s000  S+   10:00AM   0:00.01 ssh -N -L 4200:localhost:4200 user/rdev-vm
 """
+
         def run_side_effect(cmd, **kwargs):
             # ps aux → return tunnel process list
             if cmd[0] == "ps":
@@ -114,10 +115,12 @@ yuqiu    12345   0.0  0.0 408628368   1234 s000  S+   10:00AM   0:00.01 ssh -N -
                 return MagicMock(stdout="", returncode=1)
             return MagicMock(stdout="", returncode=0)
 
-        with patch("subprocess.run", side_effect=run_side_effect), \
-             patch("os.kill") as mock_kill, \
-             patch("subprocess.Popen") as mock_popen, \
-             patch("time.sleep"):
+        with (
+            patch("subprocess.run", side_effect=run_side_effect),
+            patch("os.kill") as mock_kill,
+            patch("subprocess.Popen") as mock_popen,
+            patch("time.sleep"),
+        ):
             # Process is dead
             mock_kill.side_effect = ProcessLookupError()
 
@@ -142,8 +145,7 @@ class TestCleanupEdgeCases:
 yuqiu    12345   0.0  0.0 408628368   1234 s000  S+   10:00AM   0:00.01 ssh -N -L 4200:localhost:4200 user/rdev-vm
 yuqiu    12346   0.0  0.0 408628368   1234 s000  S+   10:00AM   0:00.01 ssh -N -L 3000:localhost:3000 user/rdev-vm
 """
-        with patch("subprocess.run") as mock_run, \
-             patch("os.kill") as mock_kill:
+        with patch("subprocess.run") as mock_run, patch("os.kill") as mock_kill:
             mock_run.return_value = MagicMock(stdout=ps_output, returncode=0)
 
             # First kill succeeds, second fails with permission error
@@ -199,10 +201,7 @@ class TestAPIErrorHandling:
 
         app = create_app(db=conn)
         with TestClient(app) as client:
-            response = client.post(
-                f"/api/sessions/{session.id}/tunnel",
-                json={"port": 8093}
-            )
+            response = client.post(f"/api/sessions/{session.id}/tunnel", json={"port": 8093})
 
             assert response.status_code == 500
             assert "reserved" in response.json()["detail"].lower()

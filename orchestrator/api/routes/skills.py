@@ -18,6 +18,7 @@ router = APIRouter()
 # Pydantic models
 # ---------------------------------------------------------------------------
 
+
 class SkillCreate(BaseModel):
     name: str
     target: str = "worker"
@@ -37,12 +38,13 @@ class SkillUpdate(BaseModel):
 # Built-in skill helpers
 # ---------------------------------------------------------------------------
 
+
 def _parse_skill_file(path: str) -> dict:
     """Parse a skill markdown file, extracting YAML frontmatter."""
     with open(path) as f:
         text = f.read()
-    if text.startswith('---'):
-        parts = text.split('---\n', 2)
+    if text.startswith("---"):
+        parts = text.split("---\n", 2)
         if len(parts) >= 3:
             meta = yaml.safe_load(parts[1]) or {}
             body = parts[2]
@@ -67,7 +69,7 @@ def _strip_content_header(content: str) -> str:
     Since name and description are shown separately in the UI, strip this
     redundant leading block for display.
     """
-    lines = content.split('\n')
+    lines = content.split("\n")
     i = 0
 
     # Skip leading blank lines
@@ -75,7 +77,7 @@ def _strip_content_header(content: str) -> str:
         i += 1
 
     # Only strip if the first non-blank line is a top-level heading (# ...)
-    if i >= len(lines) or not lines[i].startswith('# ') or lines[i].startswith('## '):
+    if i >= len(lines) or not lines[i].startswith("# ") or lines[i].startswith("## "):
         return content
 
     i += 1  # skip the heading line
@@ -86,13 +88,16 @@ def _strip_content_header(content: str) -> str:
 
     # Skip first paragraph (description) — consecutive non-empty lines
     # that aren't sub-headings, horizontal rules, or code blocks
-    while (i < len(lines) and lines[i].strip()
-           and not lines[i].startswith('#')
-           and not lines[i].startswith('---')
-           and not lines[i].startswith('```')):
+    while (
+        i < len(lines)
+        and lines[i].strip()
+        and not lines[i].startswith("#")
+        and not lines[i].startswith("---")
+        and not lines[i].startswith("```")
+    ):
         i += 1
 
-    return '\n'.join(lines[i:]).lstrip('\n')
+    return "\n".join(lines[i:]).lstrip("\n")
 
 
 def _list_builtin_skills(target: str | None = None, conn=None) -> list[dict]:
@@ -121,23 +126,26 @@ def _list_builtin_skills(target: str | None = None, conn=None) -> list[dict]:
             parsed = _parse_skill_file(filepath)
             stat = os.stat(filepath)
             content = parsed["content"]
-            line_count = content.count('\n') + (1 if content and not content.endswith('\n') else 0)
+            line_count = content.count("\n") + (1 if content and not content.endswith("\n") else 0)
 
             from datetime import datetime
+
             mtime = datetime.fromtimestamp(stat.st_mtime).isoformat()
 
-            results.append({
-                "id": f"builtin:{t}:{parsed['name']}",
-                "name": parsed["name"],
-                "target": t,
-                "type": "built_in",
-                "description": parsed["description"],
-                "content": None,  # Not included in list view
-                "line_count": line_count,
-                "enabled": (parsed["name"], t) not in disabled,
-                "created_at": mtime,
-                "updated_at": mtime,
-            })
+            results.append(
+                {
+                    "id": f"builtin:{t}:{parsed['name']}",
+                    "name": parsed["name"],
+                    "target": t,
+                    "type": "built_in",
+                    "description": parsed["description"],
+                    "content": None,  # Not included in list view
+                    "line_count": line_count,
+                    "enabled": (parsed["name"], t) not in disabled,
+                    "created_at": mtime,
+                    "updated_at": mtime,
+                }
+            )
 
     return results
 
@@ -145,7 +153,9 @@ def _list_builtin_skills(target: str | None = None, conn=None) -> list[dict]:
 def _serialize(skill, include_content: bool = True) -> dict:
     """Serialize a custom skill from DB."""
     content = skill.content if include_content else None
-    line_count = skill.content.count('\n') + (1 if skill.content and not skill.content.endswith('\n') else 0)
+    line_count = skill.content.count("\n") + (
+        1 if skill.content and not skill.content.endswith("\n") else 0
+    )
     return {
         "id": skill.id,
         "name": skill.name,
@@ -164,6 +174,7 @@ def _serialize(skill, include_content: bool = True) -> dict:
 # Endpoints
 # ---------------------------------------------------------------------------
 
+
 @router.get("/skills")
 def list_skills(
     target: str | None = None,
@@ -178,7 +189,8 @@ def list_skills(
     if search:
         search_lower = search.lower()
         builtin = [
-            s for s in builtin
+            s
+            for s in builtin
             if search_lower in s["name"].lower()
             or (s["description"] and search_lower in s["description"].lower())
         ]
@@ -211,9 +223,10 @@ def get_builtin_skill(target: str, name: str, db=Depends(get_db)):
     parsed = _parse_skill_file(filepath)
     stat = os.stat(filepath)
     content = parsed["content"]
-    line_count = content.count('\n') + (1 if content and not content.endswith('\n') else 0)
+    line_count = content.count("\n") + (1 if content and not content.endswith("\n") else 0)
 
     from datetime import datetime
+
     mtime = datetime.fromtimestamp(stat.st_mtime).isoformat()
 
     return {
@@ -255,7 +268,13 @@ def create_skill(body: SkillCreate, db=Depends(get_db)):
 
     # Publish event
     from orchestrator.core.events import Event, publish
-    publish(Event(type="skill.changed", data={"action": "created", "name": body.name, "target": body.target}))
+
+    publish(
+        Event(
+            type="skill.changed",
+            data={"action": "created", "name": body.name, "target": body.target},
+        )
+    )
 
     return _serialize(skill)
 
@@ -280,7 +299,13 @@ def update_skill(skill_id: str, body: SkillUpdate, db=Depends(get_db)):
 
     # Publish event
     from orchestrator.core.events import Event, publish
-    publish(Event(type="skill.changed", data={"action": "updated", "name": updated.name, "target": updated.target}))
+
+    publish(
+        Event(
+            type="skill.changed",
+            data={"action": "updated", "name": updated.name, "target": updated.target},
+        )
+    )
 
     return _serialize(updated)
 
@@ -308,11 +333,17 @@ def toggle_builtin_skill(target: str, name: str, body: BuiltinSkillToggle, db=De
 
     # Publish event
     from orchestrator.core.events import Event, publish
-    publish(Event(type="skill.changed", data={
-        "action": "enabled" if body.enabled else "disabled",
-        "name": name,
-        "target": target,
-    }))
+
+    publish(
+        Event(
+            type="skill.changed",
+            data={
+                "action": "enabled" if body.enabled else "disabled",
+                "name": name,
+                "target": target,
+            },
+        )
+    )
 
     return {"ok": True, "name": name, "target": target, "enabled": body.enabled}
 
@@ -329,6 +360,12 @@ def delete_skill(skill_id: str, db=Depends(get_db)):
 
     # Publish event
     from orchestrator.core.events import Event, publish
-    publish(Event(type="skill.changed", data={"action": "deleted", "name": existing.name, "target": existing.target}))
+
+    publish(
+        Event(
+            type="skill.changed",
+            data={"action": "deleted", "name": existing.name, "target": existing.target},
+        )
+    )
 
     return {"ok": True}

@@ -109,9 +109,7 @@ def update_context_item(
 
     sets.append("updated_at = CURRENT_TIMESTAMP")
     params.append(id)
-    conn.execute(
-        f"UPDATE context_items SET {', '.join(sets)} WHERE id = ?", params
-    )
+    conn.execute(f"UPDATE context_items SET {', '.join(sets)} WHERE id = ?", params)
     conn.commit()
     return get_context_item(conn, id)
 

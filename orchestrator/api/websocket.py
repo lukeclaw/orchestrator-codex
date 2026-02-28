@@ -16,9 +16,23 @@ logger = logging.getLogger(__name__)
 # Connected WebSocket clients
 _clients: set[WebSocket] = set()
 
+# Reference to the main asyncio event loop (set during app startup).
+# Needed so sync handlers running in threadpool threads can schedule
+# broadcasts via call_soon_threadsafe.
+_event_loop: asyncio.AbstractEventLoop | None = None
+
 # Latest focus URL received from frontend (updated via WebSocket)
 _current_focus_url: str | None = None
 _focus_event: asyncio.Event | None = None
+
+
+def init_event_loop() -> None:
+    """Store a reference to the running event loop.
+
+    Must be called from an async context during app startup (e.g., lifespan).
+    """
+    global _event_loop
+    _event_loop = asyncio.get_running_loop()
 
 
 def get_current_focus() -> str | None:
@@ -107,17 +121,30 @@ async def broadcast(message: dict[str, Any]):
 
 
 def _on_event(event: Event):
-    """Bridge between sync event bus and async WebSocket broadcast."""
+    """Bridge between sync event bus and async WebSocket broadcast.
+
+    Works from both async contexts (same thread as the event loop) and
+    sync contexts (threadpool threads used by FastAPI for sync handlers).
+    """
+    message = {
+        "type": event.type,
+        "data": event.data,
+        "timestamp": event.timestamp,
+    }
+
+    # Fast path: called from within the event loop thread
     try:
         loop = asyncio.get_running_loop()
-        loop.create_task(broadcast({
-            "type": event.type,
-            "data": event.data,
-            "timestamp": event.timestamp,
-        }))
+        loop.create_task(broadcast(message))
+        return
     except RuntimeError:
-        # No running event loop (e.g., in CLI mode)
         pass
+
+    # Slow path: called from a threadpool thread (sync route handler).
+    # Use call_soon_threadsafe to schedule the coroutine on the main loop.
+    loop = _event_loop
+    if loop is not None and loop.is_running():
+        loop.call_soon_threadsafe(loop.create_task, broadcast(message))
 
 
 # Subscribe to all events for WebSocket broadcasting

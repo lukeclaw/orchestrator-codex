@@ -770,9 +770,7 @@ class TestReverseTunnelStartupVerification:
         # Simulate SSH writing to the log during the sleep period.
         def write_log_during_sleep(_seconds):
             with open(log_path, "a") as f:
-                f.write(
-                    "Warning: remote port forwarding failed for listen port 8093\n"
-                )
+                f.write("Warning: remote port forwarding failed for listen port 8093\n")
 
         mock_sleep.side_effect = write_log_during_sleep
 
@@ -809,7 +807,5 @@ class TestReverseTunnelStartupVerification:
 
     def test_read_log_since_missing_file(self, tmp_path):
         """_read_log_since should return None for missing files."""
-        result = tunnel.ReverseTunnelManager._read_log_since(
-            str(tmp_path / "nope.log"), 0
-        )
+        result = tunnel.ReverseTunnelManager._read_log_since(str(tmp_path / "nope.log"), 0)
         assert result is None

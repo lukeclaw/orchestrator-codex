@@ -900,9 +900,7 @@ class TestDeleteRemote:
         assert exc_info.value.status_code == 504
 
     @patch("orchestrator.api.routes.files._run_ssh")
-    def test_delete_falls_back_when_persistent_server_returns_unknown_action(
-        self, mock_ssh
-    ):
+    def test_delete_falls_back_when_persistent_server_returns_unknown_action(self, mock_ssh):
         """If the persistent server is running an old script that doesn't know
         'delete', the error should trigger fallback to one-shot SSH."""
         mock_server = MagicMock()
@@ -1024,9 +1022,7 @@ class TestMoveRemote:
         assert exc_info.value.status_code == 504
 
     @patch("orchestrator.api.routes.files._run_ssh")
-    def test_move_falls_back_when_persistent_server_returns_unknown_action(
-        self, mock_ssh
-    ):
+    def test_move_falls_back_when_persistent_server_returns_unknown_action(self, mock_ssh):
         """If the persistent server is running an old script that doesn't know
         'move', the error should trigger fallback to one-shot SSH."""
         mock_server = MagicMock()
@@ -1097,9 +1093,7 @@ class TestMkdirRemote:
         assert exc_info.value.status_code == 504
 
     @patch("orchestrator.api.routes.files._run_ssh")
-    def test_mkdir_falls_back_when_persistent_server_returns_unknown_action(
-        self, mock_ssh
-    ):
+    def test_mkdir_falls_back_when_persistent_server_returns_unknown_action(self, mock_ssh):
         mock_server = MagicMock()
         mock_server.execute.return_value = {"error": "Unknown action: mkdir"}
 

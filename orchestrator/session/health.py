@@ -719,6 +719,7 @@ def check_and_update_worker_health(db, session, tunnel_manager=None) -> dict:
             # Safety net: detect work_dir if still missing
             if not session.work_dir:
                 from orchestrator.api.routes.files import _detect_remote_work_dir
+
                 detected = _detect_remote_work_dir(session.host, session.id)
                 if detected:
                     repo.update_session(db, session.id, work_dir=detected)

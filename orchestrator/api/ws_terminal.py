@@ -95,45 +95,23 @@ def _get_conn(websocket: WebSocket):
     return websocket.app.state.conn
 
 
-async def terminal_websocket(websocket: WebSocket, session_id: str):
-    """Stream terminal output and relay input for a session."""
-    await websocket.accept()
+async def stream_pane(
+    websocket: WebSocket,
+    tmux_sess: str,
+    tmux_win: str,
+    session_id: str | None = None,
+) -> None:
+    """Core terminal streaming loop — reusable for any tmux pane.
 
-    # Look up the session name from DB to derive the tmux target
-    db_conn = _get_conn(websocket)
-    owns_conn = getattr(websocket.app.state, "conn_factory", None) is not None
-    try:
-        row = db_conn.execute(
-            "SELECT name FROM sessions WHERE id = ?", (session_id,)
-        ).fetchone()
+    Handles: PTY subscription, stream batching, input relay, resize,
+    sync/history, drift correction.
 
-        if not row:
-            await websocket.send_json({
-                "type": "error",
-                "message": f"Session {session_id} not found",
-            })
-            await websocket.close()
-            return
-
-        tmux_sess, tmux_win = tmux_target(row["name"])
-
-        # Auto-create tmux session and window if they don't exist
-        try:
-            worker_tmp_dir = os.path.join("/tmp/orchestrator/workers", row["name"])
-            target = ensure_window(tmux_sess, tmux_win, cwd=worker_tmp_dir)
-            logger.info("Terminal ready: %s", target)
-        except Exception as e:
-            logger.exception("Failed to create tmux session/window")
-            await websocket.send_json({
-                "type": "error",
-                "message": f"Failed to create terminal: {e}",
-            })
-            await websocket.close()
-            return
-    finally:
-        if owns_conn:
-            db_conn.close()
-
+    Args:
+        websocket: Accepted WebSocket connection.
+        tmux_sess: tmux session name.
+        tmux_win: tmux window name.
+        session_id: Optional session ID for user activity tracking.
+    """
     # Wait for the client to send a resize before capturing initial content.
     # This ensures the tmux pane matches xterm's dimensions.
     initial_sent = False
@@ -146,11 +124,11 @@ async def terminal_websocket(websocket: WebSocket, session_id: str):
     drift_task: asyncio.Task | None = None
 
     # --- Stream batching & flow control state ---------------------------------
-    stream_buffer = bytearray()          # accumulates stream bytes
-    flush_event = asyncio.Event()        # signals that stream_buffer has data
-    last_flush_time: float = 0.0         # monotonic time of last successful flush
-    sync_requested = False               # set True to trigger an immediate sync
-    sync_in_progress = False             # prevents flusher from sending during sync
+    stream_buffer = bytearray()  # accumulates stream bytes
+    flush_event = asyncio.Event()  # signals that stream_buffer has data
+    last_flush_time: float = 0.0  # monotonic time of last successful flush
+    sync_requested = False  # set True to trigger an immediate sync
+    sync_in_progress = False  # prevents flusher from sending during sync
 
     # --- Callback for stream data (used by both pipe-pane and %output) --------
     # NEVER drops bytes.  If the buffer grows too large (client can't keep
@@ -173,8 +151,8 @@ async def terminal_websocket(websocket: WebSocket, session_id: str):
         """Batch stream bytes and send as binary WebSocket frames (~60 fps)."""
         nonlocal last_flush_time
         while True:
-            await flush_event.wait()   # zero-cost when idle
-            await asyncio.sleep(0.016) # ~16ms batch window (one frame)
+            await flush_event.wait()  # zero-cost when idle
+            await asyncio.sleep(0.016)  # ~16ms batch window (one frame)
             flush_event.clear()
             if stream_buffer and not sync_in_progress:
                 data = bytes(stream_buffer)
@@ -195,23 +173,23 @@ async def terminal_websocket(websocket: WebSocket, session_id: str):
             stream_buffer.clear()
             flush_event.clear()
 
-            content, cx, cy = await capture_pane_with_cursor_atomic_async(
-                tmux_sess, tmux_win
-            )
+            content, cx, cy = await capture_pane_with_cursor_atomic_async(tmux_sess, tmux_win)
 
             stream_buffer.clear()
             flush_event.clear()
 
-            if content.endswith('\n'):
+            if content.endswith("\n"):
                 content = content[:-1]
             content_hash = zlib.crc32(content.encode("utf-8")) & 0xFFFFFFFF
-            await websocket.send_json({
-                "type": "sync",
-                "data": content,
-                "cursorX": cx,
-                "cursorY": cy,
-                "hash": content_hash,
-            })
+            await websocket.send_json(
+                {
+                    "type": "sync",
+                    "data": content,
+                    "cursorX": cx,
+                    "cursorY": cy,
+                    "hash": content_hash,
+                }
+            )
         finally:
             sync_in_progress = False
 
@@ -229,9 +207,7 @@ async def terminal_websocket(websocket: WebSocket, session_id: str):
         # Try pipe-pane mode first
         if TERMINAL_STREAM_MODE == "pipe-pane":
             pty_pool = PtyStreamPool.get_instance()
-            success = await pty_pool.subscribe(
-                pane_id, tmux_sess, tmux_win, on_stream_data
-            )
+            success = await pty_pool.subscribe(pane_id, tmux_sess, tmux_win, on_stream_data)
             if success:
                 stream_active = True
                 using_pipe_pane = True
@@ -239,7 +215,8 @@ async def terminal_websocket(websocket: WebSocket, session_id: str):
                 await suppress_control_mode_output(tmux_sess)
                 logger.info(
                     "Streaming via pipe-pane for pane %s (session %s)",
-                    pane_id, tmux_sess,
+                    pane_id,
+                    tmux_sess,
                 )
                 return
             else:
@@ -256,7 +233,8 @@ async def terminal_websocket(websocket: WebSocket, session_id: str):
         using_pipe_pane = False
         logger.info(
             "Streaming via %%output for pane %s (session %s)",
-            pane_id, tmux_sess,
+            pane_id,
+            tmux_sess,
         )
 
     async def _stop_streaming() -> None:
@@ -307,7 +285,10 @@ async def terminal_websocket(websocket: WebSocket, session_id: str):
                 if new_pane_id and new_pane_id != pane_id:
                     logger.info(
                         "Pane ID changed for %s:%s: %s -> %s, re-subscribing",
-                        tmux_sess, tmux_win, pane_id, new_pane_id,
+                        tmux_sess,
+                        tmux_win,
+                        pane_id,
+                        new_pane_id,
                     )
                     await _stop_streaming()
                     pane_id = new_pane_id
@@ -341,7 +322,8 @@ async def terminal_websocket(websocket: WebSocket, session_id: str):
     if not pane_id:
         logger.warning(
             "Could not resolve pane ID for %s:%s — drift correction only",
-            tmux_sess, tmux_win,
+            tmux_sess,
+            tmux_win,
         )
 
     # Always start drift correction — it provides ground-truth sync even if
@@ -366,20 +348,25 @@ async def terminal_websocket(websocket: WebSocket, session_id: str):
                 continue
 
             if msg.get("type") == "input":
-                record_user_input(session_id)
+                if session_id:
+                    record_user_input(session_id)
 
                 async def _send_input(data: str):
                     ok = await send_keys_async(tmux_sess, tmux_win, data)
                     if not ok:
                         logger.error(
                             "send_keys failed for %s:%s (data_len=%d)",
-                            tmux_sess, tmux_win, len(data),
+                            tmux_sess,
+                            tmux_win,
+                            len(data),
                         )
                         try:
-                            await websocket.send_json({
-                                "type": "error",
-                                "message": "Failed to send input to terminal",
-                            })
+                            await websocket.send_json(
+                                {
+                                    "type": "error",
+                                    "message": "Failed to send input to terminal",
+                                }
+                            )
                         except Exception:
                             pass
 
@@ -389,19 +376,19 @@ async def terminal_websocket(websocket: WebSocket, session_id: str):
             elif msg.get("type") == "request_history":
                 scrollback = msg.get("lines", 1000)
                 try:
-                    result = await capture_pane_with_history_async(
-                        tmux_sess, tmux_win, scrollback
-                    )
+                    result = await capture_pane_with_history_async(tmux_sess, tmux_win, scrollback)
                     content, cursor_x, cursor_y, total_lines = result
-                    if content.endswith('\n'):
+                    if content.endswith("\n"):
                         content = content[:-1]
-                    await websocket.send_json({
-                        "type": "history",
-                        "data": content,
-                        "cursorX": cursor_x,
-                        "cursorY": cursor_y,
-                        "totalLines": total_lines,
-                    })
+                    await websocket.send_json(
+                        {
+                            "type": "history",
+                            "data": content,
+                            "cursorX": cursor_x,
+                            "cursorY": cursor_y,
+                            "totalLines": total_lines,
+                        }
+                    )
                 except Exception as e:
                     logger.error("Failed to capture history: %s", e)
             elif msg.get("type") == "resize":
@@ -418,16 +405,18 @@ async def terminal_websocket(websocket: WebSocket, session_id: str):
                         tmux_sess, tmux_win, scrollback_lines=1000
                     )
                     content, cursor_x, cursor_y, total_lines = result
-                    if content.endswith('\n'):
+                    if content.endswith("\n"):
                         content = content[:-1]
-                    await websocket.send_json({
-                        "type": "history",
-                        "data": content,
-                        "cursorX": cursor_x,
-                        "cursorY": cursor_y,
-                        "totalLines": total_lines,
-                        "alternateScreen": alternate_on,
-                    })
+                    await websocket.send_json(
+                        {
+                            "type": "history",
+                            "data": content,
+                            "cursorX": cursor_x,
+                            "cursorY": cursor_y,
+                            "totalLines": total_lines,
+                            "alternateScreen": alternate_on,
+                        }
+                    )
                     initial_sent = True
 
                     # Start streaming NOW — after history is sent.
@@ -447,4 +436,70 @@ async def terminal_websocket(websocket: WebSocket, session_id: str):
                     await task
                 except asyncio.CancelledError:
                     pass
-        clear_user_activity(session_id)
+        if session_id:
+            clear_user_activity(session_id)
+
+
+async def terminal_websocket(websocket: WebSocket, session_id: str):
+    """Stream terminal output and relay input for a session."""
+    await websocket.accept()
+
+    # Look up the session name from DB to derive the tmux target
+    db_conn = _get_conn(websocket)
+    owns_conn = getattr(websocket.app.state, "conn_factory", None) is not None
+    try:
+        row = db_conn.execute("SELECT name FROM sessions WHERE id = ?", (session_id,)).fetchone()
+
+        if not row:
+            await websocket.send_json(
+                {
+                    "type": "error",
+                    "message": f"Session {session_id} not found",
+                }
+            )
+            await websocket.close()
+            return
+
+        tmux_sess, tmux_win = tmux_target(row["name"])
+
+        # Auto-create tmux session and window if they don't exist
+        try:
+            worker_tmp_dir = os.path.join("/tmp/orchestrator/workers", row["name"])
+            target = ensure_window(tmux_sess, tmux_win, cwd=worker_tmp_dir)
+            logger.info("Terminal ready: %s", target)
+        except Exception as e:
+            logger.exception("Failed to create tmux session/window")
+            await websocket.send_json(
+                {
+                    "type": "error",
+                    "message": f"Failed to create terminal: {e}",
+                }
+            )
+            await websocket.close()
+            return
+    finally:
+        if owns_conn:
+            db_conn.close()
+
+    await stream_pane(websocket, tmux_sess, tmux_win, session_id=session_id)
+
+
+async def ws_interactive_cli(websocket: WebSocket, session_id: str):
+    """Stream the interactive CLI terminal for a session."""
+    from orchestrator.terminal.interactive import get_active_cli
+
+    await websocket.accept()
+
+    cli = get_active_cli(session_id)
+    if not cli:
+        await websocket.send_json(
+            {
+                "type": "error",
+                "message": "No active interactive CLI",
+            }
+        )
+        await websocket.close(code=4004)
+        return
+
+    tmux_sess = "orchestrator"
+    await stream_pane(websocket, tmux_sess, cli.window_name)

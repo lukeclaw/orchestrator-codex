@@ -30,11 +30,13 @@ def setup_path():
             extra_paths.append(bundled_tmux)
 
     # Common Homebrew paths (ARM and Intel Macs) + LinkedIn CLI tools
-    extra_paths.extend([
-        "/opt/homebrew/bin",
-        "/usr/local/bin",
-        "/usr/local/linkedin/bin",
-    ])
+    extra_paths.extend(
+        [
+            "/opt/homebrew/bin",
+            "/usr/local/bin",
+            "/usr/local/linkedin/bin",
+        ]
+    )
 
     current_path = os.environ.get("PATH", "")
     os.environ["PATH"] = os.pathsep.join(extra_paths) + os.pathsep + current_path
@@ -44,8 +46,7 @@ def check_prerequisites():
     """Verify that required external tools are available."""
     if not shutil.which("tmux"):
         print(
-            "ERROR: tmux is not installed or not on PATH.\n"
-            "Install it with: brew install tmux",
+            "ERROR: tmux is not installed or not on PATH.\nInstall it with: brew install tmux",
             file=sys.stderr,
         )
         sys.exit(1)

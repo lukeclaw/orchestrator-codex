@@ -98,6 +98,7 @@ def shell(ctx):
     config = ctx.obj["config"]
 
     from orchestrator import __version__
+
     console.print(f"[bold cyan]Orchestrator[/bold cyan] v{__version__}")
     console.print("Type [bold]/help[/bold] for available commands, [bold]/quit[/bold] to exit.\n")
 
@@ -204,6 +205,7 @@ def _show_status(conn):
             }.get(s.status, "white")
             # Look up task assigned to this session
             from orchestrator.state.repositories import tasks as tasks_repo
+
             assigned = tasks_repo.list_tasks(conn, assigned_session_id=s.id)
             task_id = assigned[0].id if assigned else "-"
             table.add_row(

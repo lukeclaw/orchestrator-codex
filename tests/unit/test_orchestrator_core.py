@@ -8,7 +8,6 @@ from orchestrator.state.repositories import sessions
 
 
 class TestOrchestrator:
-
     def setup_method(self):
         clear()
 
@@ -18,9 +17,11 @@ class TestOrchestrator:
         # Verify it subscribed by publishing an event
         events_received = []
         original_handle = orch._handle_event
+
         def tracking_handle(event):
             events_received.append(event)
             original_handle(event)
+
         orch._handle_event = tracking_handle
         # Re-subscribe with new handler
         clear()
@@ -33,12 +34,13 @@ class TestOrchestrator:
         config = {}
         orch = Orchestrator(db, config)
         # Normal event should not raise
-        event = Event(type="session.state_changed", data={"old_state": "idle", "new_state": "working"})
+        event = Event(
+            type="session.state_changed", data={"old_state": "idle", "new_state": "working"}
+        )
         orch._handle_event(event)  # Should not raise
 
 
 class TestLifecycle:
-
     @patch("orchestrator.core.lifecycle.tmux")
     def test_startup_check_creates_session(self, mock_tmux, db):
         mock_tmux.session_exists.return_value = False
@@ -46,6 +48,7 @@ class TestLifecycle:
         mock_tmux.list_windows.return_value = []
 
         from orchestrator.core.lifecycle import startup_check
+
         startup_check(db, tmux_session="test-session")
 
         mock_tmux.session_exists.assert_called_once_with("test-session")
@@ -57,6 +60,7 @@ class TestLifecycle:
         mock_tmux.list_windows.return_value = []
 
         from orchestrator.core.lifecycle import startup_check
+
         startup_check(db, tmux_session="existing")
 
         mock_tmux.create_session.assert_not_called()
@@ -71,6 +75,7 @@ class TestLifecycle:
         mock_tmux.list_windows.return_value = []  # No tmux windows
 
         from orchestrator.core.lifecycle import startup_check
+
         startup_check(db)
 
         # Session should be marked disconnected
@@ -89,6 +94,7 @@ class TestLifecycle:
         mock_tmux.list_windows.return_value = [window]
 
         from orchestrator.core.lifecycle import startup_check
+
         startup_check(db)
 
         # Session should still be working
@@ -98,4 +104,5 @@ class TestLifecycle:
     def test_shutdown_logs_and_returns(self, db):
         # Shutdown should just log and return (no more snapshot creation)
         from orchestrator.core.lifecycle import shutdown
+
         shutdown(db)  # Should not raise

@@ -20,8 +20,12 @@ class TestSetupRemoteWorker:
         mock_tunnel_manager.start_tunnel.return_value = 99999
 
         result = setup_remote_worker(
-            db, "session-id-456", "w2", "jobs-mt/epic-turing",
-            "orchestrator", 8093,
+            db,
+            "session-id-456",
+            "w2",
+            "jobs-mt/epic-turing",
+            "orchestrator",
+            8093,
             tunnel_manager=mock_tunnel_manager,
         )
 
@@ -42,8 +46,12 @@ class TestSetupRemoteWorker:
         mock_tunnel_manager.start_tunnel.return_value = None  # Tunnel start fails
 
         result = setup_remote_worker(
-            db, "session-id-789", "w3", "subs-mt/test",
-            "orchestrator", 8093,
+            db,
+            "session-id-789",
+            "w3",
+            "subs-mt/test",
+            "orchestrator",
+            8093,
             tunnel_manager=mock_tunnel_manager,
         )
 
@@ -61,8 +69,12 @@ class TestSetupRemoteWorker:
         mock_ssh.wait_for_prompt.return_value = False  # Let it fail early
 
         result = setup_remote_worker(
-            db, "session-id-000", "w4", "subs-mt/test",
-            "orchestrator", 8093,
+            db,
+            "session-id-000",
+            "w4",
+            "subs-mt/test",
+            "orchestrator",
+            8093,
             # No tunnel_manager provided
         )
 

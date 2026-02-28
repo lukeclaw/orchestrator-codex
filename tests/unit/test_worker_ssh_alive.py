@@ -31,6 +31,7 @@ class TestGetPanePid(unittest.TestCase):
     @patch("orchestrator.session.health.subprocess.run")
     def test_returns_none_on_timeout(self, mock_run):
         import subprocess
+
         mock_run.side_effect = subprocess.TimeoutExpired(cmd="tmux", timeout=5)
         assert _get_pane_pid("orchestrator", "worker-a") is None
 
@@ -48,11 +49,7 @@ class TestHasSshInProcessTree(unittest.TestCase):
     @patch("orchestrator.session.health.subprocess.run")
     def test_connected_worker_has_ssh(self, mock_run):
         """shell(100) → rdev/python(200) → ssh(300) — should find ssh."""
-        ps_output = (
-            "  100     1 -zsh\n"
-            "  200   100 python3.12\n"
-            "  300   200 ssh\n"
-        )
+        ps_output = "  100     1 -zsh\n  200   100 python3.12\n  300   200 ssh\n"
         mock_run.return_value = self._mock_ps(ps_output)
         assert _has_ssh_in_process_tree(100) is True
 
@@ -66,40 +63,28 @@ class TestHasSshInProcessTree(unittest.TestCase):
     @patch("orchestrator.session.health.subprocess.run")
     def test_rdev_alive_but_ssh_exited(self, mock_run):
         """shell(100) → rdev/python(200) — ssh child gone (lingering rdev)."""
-        ps_output = (
-            "  100     1 -zsh\n"
-            "  200   100 python3.12\n"
-        )
+        ps_output = "  100     1 -zsh\n  200   100 python3.12\n"
         mock_run.return_value = self._mock_ps(ps_output)
         assert _has_ssh_in_process_tree(100) is False
 
     @patch("orchestrator.session.health.subprocess.run")
     def test_other_panes_ssh_not_matched(self, mock_run):
         """Another pane (PID 500) has ssh — should NOT match for pane 100."""
-        ps_output = (
-            "  100     1 -zsh\n"
-            "  500     1 -zsh\n"
-            "  600   500 python3.12\n"
-            "  700   600 ssh\n"
-        )
+        ps_output = "  100     1 -zsh\n  500     1 -zsh\n  600   500 python3.12\n  700   600 ssh\n"
         mock_run.return_value = self._mock_ps(ps_output)
         assert _has_ssh_in_process_tree(100) is False
 
     @patch("orchestrator.session.health.subprocess.run")
     def test_deep_nesting(self, mock_run):
         """shell → rdev → wrapper → ssh — should still find ssh."""
-        ps_output = (
-            "  100     1 -zsh\n"
-            "  200   100 python3.12\n"
-            "  300   200 bash\n"
-            "  400   300 ssh\n"
-        )
+        ps_output = "  100     1 -zsh\n  200   100 python3.12\n  300   200 bash\n  400   300 ssh\n"
         mock_run.return_value = self._mock_ps(ps_output)
         assert _has_ssh_in_process_tree(100) is True
 
     @patch("orchestrator.session.health.subprocess.run")
     def test_returns_false_on_timeout(self, mock_run):
         import subprocess
+
         mock_run.side_effect = subprocess.TimeoutExpired(cmd="ps", timeout=5)
         assert _has_ssh_in_process_tree(100) is False
 

@@ -57,7 +57,7 @@ def get_memory_connection() -> sqlite3.Connection:
 
 class ConnectionFactory:
     """Factory for creating database connections.
-    
+
     Provides connection-per-request pattern for better concurrency.
     """
 
@@ -87,15 +87,16 @@ class ConnectionFactory:
 
 def with_retry(func: Callable[..., T]) -> Callable[..., T]:
     """Decorator to retry database operations on lock errors.
-    
+
     Usage:
         @with_retry
         def update_something(conn, ...):
             conn.execute(...)
             conn.commit()
-    
+
     Note: Properly handles KeyboardInterrupt to allow Ctrl-C to work.
     """
+
     @wraps(func)
     def wrapper(*args, **kwargs) -> T:
         last_error = None
@@ -105,10 +106,13 @@ def with_retry(func: Callable[..., T]) -> Callable[..., T]:
             except sqlite3.OperationalError as e:
                 if "database is locked" in str(e):
                     last_error = e
-                    delay = RETRY_DELAY_BASE * (2 ** attempt)
+                    delay = RETRY_DELAY_BASE * (2**attempt)
                     logger.warning(
                         "Database locked in %s (attempt %d/%d), retrying in %.2fs",
-                        func.__name__, attempt + 1, MAX_RETRIES, delay
+                        func.__name__,
+                        attempt + 1,
+                        MAX_RETRIES,
+                        delay,
                     )
                     try:
                         time.sleep(delay)
@@ -118,13 +122,14 @@ def with_retry(func: Callable[..., T]) -> Callable[..., T]:
                 else:
                     raise
         raise last_error
+
     return wrapper
 
 
 @contextmanager
 def transaction(conn: sqlite3.Connection):
     """Context manager for explicit transaction with automatic rollback on error.
-    
+
     Usage:
         with transaction(conn):
             conn.execute(...)

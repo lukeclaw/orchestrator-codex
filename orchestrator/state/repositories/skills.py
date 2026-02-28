@@ -20,11 +20,7 @@ def _builtin_skill_names(target: str) -> set[str]:
     if not skills_dir or not os.path.isdir(skills_dir):
         return set()
 
-    return {
-        os.path.splitext(f)[0]
-        for f in os.listdir(skills_dir)
-        if f.endswith(".md")
-    }
+    return {os.path.splitext(f)[0] for f in os.listdir(skills_dir) if f.endswith(".md")}
 
 
 def get_skill(conn: sqlite3.Connection, id: str) -> Skill | None:
@@ -53,9 +49,7 @@ def list_skills(
         clauses.append("enabled = 1")
 
     where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
-    rows = conn.execute(
-        f"SELECT * FROM skills {where} ORDER BY updated_at DESC", params
-    ).fetchall()
+    rows = conn.execute(f"SELECT * FROM skills {where} ORDER BY updated_at DESC", params).fetchall()
     return [Skill(**dict(r)) for r in rows]
 
 
@@ -67,8 +61,10 @@ def create_skill(
     description: str | None = None,
 ) -> Skill:
     # Validate name format
-    if not re.match(r'^[a-z][a-z0-9-]*$', name):
-        raise ValueError("Name must start with a lowercase letter and contain only lowercase letters, digits, and hyphens")
+    if not re.match(r"^[a-z][a-z0-9-]*$", name):
+        raise ValueError(
+            "Name must start with a lowercase letter and contain only lowercase letters, digits, and hyphens"
+        )
     if len(name) > 50:
         raise ValueError("Name must be 50 characters or less")
 
@@ -104,8 +100,10 @@ def update_skill(
     params: list = []
 
     if name is not None:
-        if not re.match(r'^[a-z][a-z0-9-]*$', name):
-            raise ValueError("Name must start with a lowercase letter and contain only lowercase letters, digits, and hyphens")
+        if not re.match(r"^[a-z][a-z0-9-]*$", name):
+            raise ValueError(
+                "Name must start with a lowercase letter and contain only lowercase letters, digits, and hyphens"
+            )
         if len(name) > 50:
             raise ValueError("Name must be 50 characters or less")
         sets.append("name = ?")
@@ -143,9 +141,7 @@ def update_skill(
 
     sets.append("updated_at = CURRENT_TIMESTAMP")
     params.append(id)
-    conn.execute(
-        f"UPDATE skills SET {', '.join(sets)} WHERE id = ?", params
-    )
+    conn.execute(f"UPDATE skills SET {', '.join(sets)} WHERE id = ?", params)
     conn.commit()
     return get_skill(conn, id)
 
@@ -159,6 +155,7 @@ def delete_skill(conn: sqlite3.Connection, id: str) -> bool:
 # ---------------------------------------------------------------------------
 # Built-in skill overrides
 # ---------------------------------------------------------------------------
+
 
 def is_builtin_skill_disabled(conn: sqlite3.Connection, name: str, target: str) -> bool:
     """Check if a built-in skill has been disabled via overrides table."""

@@ -543,6 +543,7 @@ def _launch_claude_in_screen(
     # Detect work_dir if not set (e.g., created without specifying a path)
     if not session.work_dir:
         from orchestrator.api.routes.files import _detect_remote_work_dir
+
         time.sleep(3)  # Give Claude a moment to start
         detected = _detect_remote_work_dir(session.host, session.id)
         if detected:
@@ -912,6 +913,7 @@ def reconnect_remote_worker(
                 # Detect work_dir if not set
                 if not session.work_dir:
                     from orchestrator.api.routes.files import _detect_remote_work_dir
+
                     detected = _detect_remote_work_dir(session.host, session.id)
                     if detected:
                         repo.update_session(conn, session.id, work_dir=detected)

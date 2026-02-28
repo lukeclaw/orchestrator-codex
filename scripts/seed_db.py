@@ -18,34 +18,75 @@ def seed_config(conn):
     """Seed default configuration values."""
     defaults = [
         # Approval policies
-        ("approval_policy.send_message", True, "Require approval before sending messages to sessions", "approval"),
-        ("approval_policy.assign_task", True, "Require approval before assigning tasks", "approval"),
-        ("approval_policy.create_task", False, "Require approval before creating tasks", "approval"),
+        (
+            "approval_policy.send_message",
+            True,
+            "Require approval before sending messages to sessions",
+            "approval",
+        ),
+        (
+            "approval_policy.assign_task",
+            True,
+            "Require approval before assigning tasks",
+            "approval",
+        ),
+        (
+            "approval_policy.create_task",
+            False,
+            "Require approval before creating tasks",
+            "approval",
+        ),
         ("approval_policy.alert_user", False, "Require approval before alerting user", "approval"),
-
         # Context selection weights
-        ("context.weight.query_relevance", 0.35, "Weight for query relevance in context scoring", "context"),
+        (
+            "context.weight.query_relevance",
+            0.35,
+            "Weight for query relevance in context scoring",
+            "context",
+        ),
         ("context.weight.recency", 0.25, "Weight for recency in context scoring", "context"),
         ("context.weight.status", 0.20, "Weight for status in context scoring", "context"),
         ("context.weight.urgency", 0.10, "Weight for urgency in context scoring", "context"),
-        ("context.weight.connection_depth", 0.10, "Weight for connection depth in context scoring", "context"),
+        (
+            "context.weight.connection_depth",
+            0.10,
+            "Weight for connection depth in context scoring",
+            "context",
+        ),
         ("context.token_budget", 8000, "Max tokens for assembled context", "context"),
-
         # Autonomy settings
         ("autonomy.mode", "advisory", "Current autonomy mode: advisory or autonomous", "autonomy"),
-        ("autonomy.auto_actions", [], "Actions that can be auto-executed in autonomous mode", "autonomy"),
-
+        (
+            "autonomy.auto_actions",
+            [],
+            "Actions that can be auto-executed in autonomous mode",
+            "autonomy",
+        ),
         # Monitoring settings
-        ("monitoring.poll_interval_seconds", 5, "Default poll interval for passive monitor", "monitoring"),
-        ("monitoring.heartbeat_timeout_seconds", 120, "Mark session stale after this many seconds", "monitoring"),
-        ("monitoring.reconciliation_interval_seconds", 300, "Full state reconciliation interval", "monitoring"),
+        (
+            "monitoring.poll_interval_seconds",
+            5,
+            "Default poll interval for passive monitor",
+            "monitoring",
+        ),
+        (
+            "monitoring.heartbeat_timeout_seconds",
+            120,
+            "Mark session stale after this many seconds",
+            "monitoring",
+        ),
+        (
+            "monitoring.reconciliation_interval_seconds",
+            300,
+            "Full state reconciliation interval",
+            "monitoring",
+        ),
     ]
 
     for key, value, description, category in defaults:
         existing = config_repo.get_config(conn, key)
         if existing is None:
             config_repo.set_config(conn, key, value, description, category)
-
 
 
 def seed_context(conn):

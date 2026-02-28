@@ -23,9 +23,8 @@ from orchestrator.api.ws_terminal import (
 )
 
 # Force control-mode for all tests in this file
-_CONTROL_MODE_PATCH = patch(
-    "orchestrator.api.ws_terminal.TERMINAL_STREAM_MODE", "control-mode"
-)
+_CONTROL_MODE_PATCH = patch("orchestrator.api.ws_terminal.TERMINAL_STREAM_MODE", "control-mode")
+
 
 @pytest.fixture(autouse=True)
 def _force_control_mode():
@@ -37,6 +36,7 @@ def _force_control_mode():
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 class FakeWebSocket:
     """Minimal WebSocket mock that records sent frames."""
@@ -65,6 +65,7 @@ class FakeWebSocket:
         msg = await self._incoming.get()
         if msg is None:
             from fastapi import WebSocketDisconnect
+
             raise WebSocketDisconnect()
         return msg
 
@@ -86,6 +87,7 @@ def _make_db_row(name="test"):
 # ---------------------------------------------------------------------------
 # Tests
 # ---------------------------------------------------------------------------
+
 
 class TestBinaryWebSocketProtocol:
     """Verify that stream data is sent as binary WebSocket frames."""
@@ -242,9 +244,7 @@ class TestStreamBatching:
 
             # All 5 outputs should be batched into <=2 binary frames
             # (ideally 1, but timing might split across 2 batch windows)
-            assert len(ws.sent_bytes) <= 2, (
-                f"Expected batching, got {len(ws.sent_bytes)} frames"
-            )
+            assert len(ws.sent_bytes) <= 2, f"Expected batching, got {len(ws.sent_bytes)} frames"
             combined = b"".join(ws.sent_bytes)
             for i in range(5):
                 assert f"line{i}\r\n".encode() in combined
@@ -310,9 +310,7 @@ class TestConditionalSync:
             await asyncio.sleep(0.5)
 
             # Record how many sync messages we have so far (early sync)
-            initial_syncs = len([
-                m for m in ws.sent_json if m.get("type") == "sync"
-            ])
+            initial_syncs = len([m for m in ws.sent_json if m.get("type") == "sync"])
 
             # Keep stream active by sending %output every 1s for 6s
             # (drift correction fires at 5s intervals)
@@ -331,9 +329,7 @@ class TestConditionalSync:
 
             # The early 150ms sync is expected.  The periodic 5s syncs
             # should all have been skipped because the stream was active.
-            final_syncs = len([
-                m for m in ws.sent_json if m.get("type") == "sync"
-            ])
+            final_syncs = len([m for m in ws.sent_json if m.get("type") == "sync"])
             periodic_syncs = final_syncs - initial_syncs
             assert periodic_syncs == 0, (
                 f"Expected 0 periodic syncs while stream active, "

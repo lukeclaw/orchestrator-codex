@@ -16,12 +16,16 @@ from mcp.server.fastmcp import FastMCP
 _DB_PATH = os.environ.get("ORCHESTRATOR_DB")
 if not _DB_PATH:
     from orchestrator import paths
+
     _DB_PATH = str(paths.db_path())
 
-mcp = FastMCP("orchestrator", instructions=(
-    "Project management tools for the Orchestrator. "
-    "Use these to manage projects, tasks, worker sessions, and monitor activity."
-))
+mcp = FastMCP(
+    "orchestrator",
+    instructions=(
+        "Project management tools for the Orchestrator. "
+        "Use these to manage projects, tasks, worker sessions, and monitor activity."
+    ),
+)
 
 
 def _get_conn() -> sqlite3.Connection:
@@ -41,6 +45,7 @@ def _rows_to_dicts(rows: list[sqlite3.Row]) -> list[dict]:
 # ---------------------------------------------------------------------------
 # Projects
 # ---------------------------------------------------------------------------
+
 
 @mcp.tool()
 def list_projects(status: str | None = None) -> str:
@@ -92,6 +97,7 @@ def create_project(name: str, description: str | None = None) -> str:
 # ---------------------------------------------------------------------------
 # Tasks
 # ---------------------------------------------------------------------------
+
 
 @mcp.tool()
 def list_tasks(
@@ -206,6 +212,7 @@ def update_task(
 # Sessions (workers)
 # ---------------------------------------------------------------------------
 
+
 @mcp.tool()
 def list_sessions(status: str | None = None) -> str:
     """List all worker sessions with their current status and assigned tasks.
@@ -245,19 +252,23 @@ def create_session(name: str, host: str = "localhost", working_directory: str | 
         tmux_session = "orchestrator"
         subprocess.run(
             ["tmux", "has-session", "-t", tmux_session],
-            capture_output=True, check=False,
+            capture_output=True,
+            check=False,
         )
         # Create window
         result = subprocess.run(
             ["tmux", "new-window", "-t", tmux_session, "-n", name],
-            capture_output=True, text=True, check=False,
+            capture_output=True,
+            text=True,
+            check=False,
         )
         target = f"{tmux_session}:{name}"
 
         if working_directory:
             subprocess.run(
                 ["tmux", "send-keys", "-t", target, f"cd {working_directory}", "Enter"],
-                capture_output=True, check=False,
+                capture_output=True,
+                check=False,
             )
 
         session_id = str(uuid.uuid4())
@@ -282,7 +293,9 @@ def send_message_to_worker(session_name: str, message: str) -> str:
     target = f"{tmux_session}:{session_name}"
     result = subprocess.run(
         ["tmux", "send-keys", "-t", target, message, "Enter"],
-        capture_output=True, text=True, check=False,
+        capture_output=True,
+        text=True,
+        check=False,
     )
     if result.returncode == 0:
         return json.dumps({"ok": True, "session": session_name, "message_sent": message[:200]})
@@ -299,7 +312,9 @@ def get_worker_output(session_name: str, lines: int = 50) -> str:
     target = f"{tmux_session}:{session_name}"
     result = subprocess.run(
         ["tmux", "capture-pane", "-p", "-t", target, "-S", f"-{lines}"],
-        capture_output=True, text=True, check=False,
+        capture_output=True,
+        text=True,
+        check=False,
     )
     if result.returncode == 0:
         return result.stdout
@@ -316,7 +331,9 @@ def start_claude_in_session(session_name: str) -> str:
     target = f"{tmux_session}:{session_name}"
     result = subprocess.run(
         ["tmux", "send-keys", "-t", target, "claude", "Enter"],
-        capture_output=True, text=True, check=False,
+        capture_output=True,
+        text=True,
+        check=False,
     )
     if result.returncode == 0:
         # Update status in DB
@@ -337,6 +354,7 @@ def start_claude_in_session(session_name: str) -> str:
 # Orchestrator status (overview)
 # ---------------------------------------------------------------------------
 
+
 @mcp.tool()
 def get_orchestrator_status() -> str:
     """Get a high-level overview of the orchestrator state.
@@ -351,11 +369,14 @@ def get_orchestrator_status() -> str:
             "SELECT status, COUNT(*) as cnt FROM sessions GROUP BY status"
         ).fetchall()
 
-        return json.dumps({
-            "projects": projects,
-            "tasks": {r["status"]: r["cnt"] for r in tasks_by_status},
-            "sessions": {r["status"]: r["cnt"] for r in sessions_by_status},
-        }, indent=2)
+        return json.dumps(
+            {
+                "projects": projects,
+                "tasks": {r["status"]: r["cnt"] for r in tasks_by_status},
+                "sessions": {r["status"]: r["cnt"] for r in sessions_by_status},
+            },
+            indent=2,
+        )
     finally:
         conn.close()
 

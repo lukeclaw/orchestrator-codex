@@ -211,6 +211,7 @@
   flex: 1;
   min-width: 0;
   min-height: 0;
+  position: relative;
 }
 
 /* Viewer area */
@@ -454,6 +455,38 @@
   transform: translateX(12px);
 }
 
+/* Interactive CLI footer button */
+.sd-icli-btn {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  background: none;
+  border: 1px solid var(--border-subtle);
+  color: var(--text-secondary);
+  font-size: 11px;
+  padding: 3px 10px;
+  border-radius: var(--radius);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+
+.sd-icli-btn:hover {
+  background: var(--surface-hover, var(--bg));
+  color: var(--text);
+  border-color: var(--border);
+}
+
+.sd-icli-btn.active {
+  color: var(--green, #3fb950);
+  border-color: rgba(63, 185, 80, 0.4);
+  background: rgba(63, 185, 80, 0.08);
+}
+
+.sd-icli-btn.active:hover {
+  background: rgba(63, 185, 80, 0.15);
+  border-color: rgba(63, 185, 80, 0.6);
+}
+
 .sd-paste-btn {
   display: flex;
   align-items: center;
@@ -482,6 +515,7 @@
   opacity: 0.4;
   cursor: not-allowed;
 }
+
 
 
 .error-page {

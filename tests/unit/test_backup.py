@@ -215,13 +215,16 @@ class TestListBackups:
 
 
 class TestBackupPattern:
-    @pytest.mark.parametrize("name,expected", [
-        ("orchestrator-backup-2026-02-19T17-00-00Z.zip", True),
-        ("orchestrator-backup-2026-01-01T00-00-00Z.zip", True),
-        ("random-file.zip", False),
-        ("orchestrator-backup-2026-02-19T17:00:00Z.zip", False),  # colons
-        ("orchestrator-backup-.zip", False),
-    ])
+    @pytest.mark.parametrize(
+        "name,expected",
+        [
+            ("orchestrator-backup-2026-02-19T17-00-00Z.zip", True),
+            ("orchestrator-backup-2026-01-01T00-00-00Z.zip", True),
+            ("random-file.zip", False),
+            ("orchestrator-backup-2026-02-19T17:00:00Z.zip", False),  # colons
+            ("orchestrator-backup-.zip", False),
+        ],
+    )
     def test_pattern_matching(self, name: str, expected: bool):
         assert bool(_BACKUP_PATTERN.match(name)) is expected
 

@@ -37,6 +37,7 @@ class TaskUpdate(BaseModel):
 
 class TaskLinkAction(BaseModel):
     """For agent-driven link management."""
+
     action: str  # add, update, delete
     url: str
     tag: str | None = None  # optional free-form tag like "PR", "PRD", etc.
@@ -62,10 +63,15 @@ def _get_task_key(t, db) -> str | None:
 
 def _serialize_task(t, include_subtask_stats: bool = False, db=None) -> dict:
     result = {
-        "id": t.id, "project_id": t.project_id, "title": t.title,
-        "description": t.description, "status": t.status,
-        "priority": t.priority, "assigned_session_id": t.assigned_session_id,
-        "parent_task_id": t.parent_task_id, "notes": t.notes,
+        "id": t.id,
+        "project_id": t.project_id,
+        "title": t.title,
+        "description": t.description,
+        "status": t.status,
+        "priority": t.priority,
+        "assigned_session_id": t.assigned_session_id,
+        "parent_task_id": t.parent_task_id,
+        "notes": t.notes,
         "links": t.links_list,
         "task_index": t.task_index,
         "task_key": _get_task_key(t, db) if db else None,
@@ -138,7 +144,11 @@ def create_task(body: TaskCreate, db=Depends(get_db)):
         if not project_id:
             project_id = parent.project_id
     t = repo.create_task(
-        db, project_id, body.title, body.description, body.priority,
+        db,
+        project_id,
+        body.title,
+        body.description,
+        body.priority,
         parent_task_id=body.parent_task_id,
     )
     return _serialize_task(t)
@@ -175,7 +185,8 @@ def update_task(task_id: str, body: TaskUpdate, request: Request, db=Depends(get
             links_json = None
 
     updated = repo.update_task(
-        db, task_id,
+        db,
+        task_id,
         status=effective_status,
         assigned_session_id=new_assigned if assigned_session_explicitly_set else ...,
         priority=body.priority,
@@ -208,7 +219,9 @@ def _notify_worker_of_assignment(db, task, request):
 
         # Keep the notification concise — the worker's system prompt
         # instructs it to gather full context via CLI commands.
-        message = f"Task assigned: {task.title}. Follow your workflow to review the task and get started."
+        message = (
+            f"Task assigned: {task.title}. Follow your workflow to review the task and get started."
+        )
         send_to_session(session.name, message, tmux_session)
         logger.info("Notified worker %s of task assignment: %s", session.name, task.title)
     except Exception:
@@ -239,10 +252,13 @@ def delete_task(task_id: str, db=Depends(get_db)):
     for session_id in sessions_to_unassign:
         try:
             sessions_repo.update_session(
-                db, session_id,
+                db,
+                session_id,
                 status="idle",
             )
-            logger.info("Unassigned worker session %s (now idle) for deleted task %s", session_id, task_id)
+            logger.info(
+                "Unassigned worker session %s (now idle) for deleted task %s", session_id, task_id
+            )
         except Exception:
             logger.warning("Could not unassign worker session %s", session_id, exc_info=True)
 

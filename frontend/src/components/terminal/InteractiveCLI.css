@@ -1,0 +1,122 @@
+.icli-overlay {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  width: 560px;
+  height: 360px;
+  z-index: 100;
+  border-radius: 8px;
+  border: 1px solid var(--border-subtle);
+  background: var(--bg);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  animation: icli-slide-in 0.2s ease-out;
+  opacity: 0.8;
+  transition: opacity 0.2s ease;
+}
+
+.icli-overlay.icli-expanded {
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 50%;
+  height: auto;
+  border-radius: 0;
+}
+
+.icli-overlay.icli-minimized {
+  height: auto;
+  width: 220px;
+  opacity: 0.85;
+  animation: icli-minimize 0.15s ease-out;
+}
+
+.icli-overlay.icli-minimized:hover {
+  opacity: 1;
+}
+
+.icli-overlay.icli-focused {
+  opacity: 1;
+}
+
+.icli-overlay.icli-focused:not(.icli-minimized) {
+  border-color: var(--accent, #58a6ff);
+  box-shadow: 0 0 0 1px var(--accent, #58a6ff), 0 8px 32px rgba(0, 0, 0, 0.4);
+}
+
+.icli-titlebar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 8px;
+  background: var(--surface, #161b22);
+  border-bottom: 1px solid var(--border-subtle);
+  user-select: none;
+  flex-shrink: 0;
+}
+
+.icli-minimized .icli-titlebar {
+  border-bottom: none;
+}
+
+.icli-title {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.icli-controls {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.icli-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  border-radius: var(--radius, 4px);
+  cursor: pointer;
+  transition: color 0.15s, background 0.15s;
+}
+
+.icli-btn:hover {
+  color: var(--text-primary);
+  background: var(--surface-hover);
+}
+
+.icli-close-btn:hover {
+  color: var(--red, #ff7b72);
+  background: rgba(255, 123, 114, 0.15);
+}
+
+.icli-terminal {
+  flex: 1;
+  min-height: 0;
+}
+
+/* Suppress inner terminal's own focus border — the ICLI overlay border is enough */
+.icli-terminal .terminal-container {
+  border-color: transparent !important;
+  box-shadow: none !important;
+  border-radius: 0;
+}
+
+@keyframes icli-slide-in {
+  from { opacity: 0; transform: translateY(-12px) scale(0.95); }
+  to   { transform: translateY(0) scale(1); }
+}
+
+@keyframes icli-minimize {
+  from { opacity: 0.8; }
+  to   { opacity: 1; }
+}

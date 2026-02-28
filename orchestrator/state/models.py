@@ -8,7 +8,7 @@ from dataclasses import dataclass
 
 def generate_task_prefix(name: str) -> str:
     """Generate a 3-letter uppercase prefix from project name.
-    
+
     Examples:
         "Unit Test Improve" -> "UTI"
         "API Gateway" -> "AG"
@@ -16,7 +16,8 @@ def generate_task_prefix(name: str) -> str:
     """
     # Split by spaces, hyphens, underscores
     import re
-    words = re.split(r'[\s\-_]+', name.strip())
+
+    words = re.split(r"[\s\-_]+", name.strip())
     words = [w for w in words if w]  # Remove empty strings
 
     if not words:
@@ -24,10 +25,10 @@ def generate_task_prefix(name: str) -> str:
 
     if len(words) >= 3:
         # Take first letter of first 3 words
-        prefix = ''.join(w[0] for w in words[:3])
+        prefix = "".join(w[0] for w in words[:3])
     elif len(words) == 2:
         # Take first letter of each word
-        prefix = ''.join(w[0] for w in words)
+        prefix = "".join(w[0] for w in words)
     else:
         # Single word: take first 3 letters
         prefix = words[0][:3]
@@ -144,6 +145,15 @@ class Notification:
 
     def __post_init__(self):
         self.dismissed = bool(self.dismissed)
+
+
+@dataclass
+class InteractiveCLI:
+    session_id: str
+    window_name: str
+    status: str  # "active" | "closed"
+    created_at: str
+    initial_command: str | None = None
 
 
 @dataclass

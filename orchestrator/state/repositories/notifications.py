@@ -44,9 +44,7 @@ def list_notifications(
 
 def count_active_notifications(conn: sqlite3.Connection) -> int:
     """Count non-dismissed notifications."""
-    row = conn.execute(
-        "SELECT COUNT(*) as cnt FROM notifications WHERE dismissed = 0"
-    ).fetchone()
+    row = conn.execute("SELECT COUNT(*) as cnt FROM notifications WHERE dismissed = 0").fetchone()
     return row["cnt"] if row else 0
 
 
@@ -93,7 +91,7 @@ def dismiss_all_notifications(
     session_id: str | None = None,
 ) -> int:
     """Dismiss all notifications, optionally filtered by task_id or session_id.
-    
+
     Returns the number of notifications dismissed.
     """
     clauses = ["dismissed = 0"]

@@ -11,6 +11,7 @@ from orchestrator.terminal.output_parser import (
 
 # --- Event Detection ---
 
+
 class TestParseOutput:
     def test_detect_pr_created_with_url(self):
         output = "Created PR at https://github.com/org/repo/pull/42"

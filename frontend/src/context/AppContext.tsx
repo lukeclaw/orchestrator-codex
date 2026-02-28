@@ -20,6 +20,8 @@ interface AppState {
   connected: boolean
   loading: boolean
   smartPastePayload: SmartPastePayload | null
+  interactiveCliSessions: Set<string>
+  interactiveCliMinimized: Set<string>
   setSmartPastePayload: (payload: SmartPastePayload | null) => void
   refresh: () => void
   refreshRdevs: (forceRefresh?: boolean) => Promise<void>
@@ -37,6 +39,8 @@ const AppContext = createContext<AppState>({
   connected: false,
   loading: true,
   smartPastePayload: null,
+  interactiveCliSessions: new Set(),
+  interactiveCliMinimized: new Set(),
   setSmartPastePayload: () => {},
   refresh: () => {},
   refreshRdevs: async () => {},
@@ -57,6 +61,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [connected, setConnected] = useState(false)
   const [loading, setLoading] = useState(true)
   const [smartPastePayload, setSmartPastePayload] = useState<SmartPastePayload | null>(null)
+  const [interactiveCliSessions, setInteractiveCliSessions] = useState<Set<string>>(new Set())
+  const [interactiveCliMinimized, setInteractiveCliMinimized] = useState<Set<string>>(new Set())
 
   const fetchAll = useCallback(async () => {
     try {
@@ -126,6 +132,29 @@ export function AppProvider({ children }: { children: ReactNode }) {
           if (msg.type === 'request_focus') {
             // Backend requesting current URL - respond immediately
             ws?.send(JSON.stringify({ type: 'focus_response', url: location.pathname }))
+          } else if (msg.type === 'interactive_cli_opened' && msg.data?.session_id) {
+            setInteractiveCliSessions(prev => new Set([...prev, msg.data.session_id]))
+            fetchAll()
+          } else if (msg.type === 'interactive_cli_closed' && msg.data?.session_id) {
+            setInteractiveCliSessions(prev => {
+              const next = new Set(prev)
+              next.delete(msg.data.session_id)
+              return next
+            })
+            setInteractiveCliMinimized(prev => {
+              const next = new Set(prev)
+              next.delete(msg.data.session_id)
+              return next
+            })
+            fetchAll()
+          } else if (msg.type === 'interactive_cli_minimized' && msg.data?.session_id) {
+            setInteractiveCliMinimized(prev => new Set([...prev, msg.data.session_id]))
+          } else if (msg.type === 'interactive_cli_restored' && msg.data?.session_id) {
+            setInteractiveCliMinimized(prev => {
+              const next = new Set(prev)
+              next.delete(msg.data.session_id)
+              return next
+            })
           } else {
             // Other messages trigger data refresh
             fetchAll()
@@ -188,7 +217,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   // Focus tracking now handled via WebSocket (see above)
 
   return (
-    <AppContext.Provider value={{ sessions, workers, projects, tasks, rdevs, notificationCount, connected, loading, smartPastePayload, setSmartPastePayload, refresh: fetchAll, refreshRdevs, refreshNotificationCount, removeSession }}>
+    <AppContext.Provider value={{ sessions, workers, projects, tasks, rdevs, notificationCount, connected, loading, smartPastePayload, interactiveCliSessions, interactiveCliMinimized, setSmartPastePayload, refresh: fetchAll, refreshRdevs, refreshNotificationCount, removeSession }}>
       {children}
     </AppContext.Provider>
   )

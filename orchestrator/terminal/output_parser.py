@@ -74,25 +74,24 @@ ERROR_PATTERNS = [
 ]
 
 
-
-
 # --- Marker-based parsing utilities ---
+
 
 def parse_between_markers(output: str, start_marker: str, end_marker: str) -> list[str]:
     """Extract lines between start and end markers.
-    
+
     Used to parse terminal output where command echo may contain similar strings.
     Only lines between markers (at start of line) are returned.
-    
+
     Args:
         output: Raw terminal output
         start_marker: Unique start marker string
         end_marker: Unique end marker string
-        
+
     Returns:
         List of lines between markers (stripped), empty list if markers not found
     """
-    lines = output.split('\n')
+    lines = output.split("\n")
     result_lines = []
     in_section = False
 
@@ -111,14 +110,14 @@ def parse_between_markers(output: str, start_marker: str, end_marker: str) -> li
 
 def parse_hostname_from_markers(output: str, start_marker: str, end_marker: str) -> str | None:
     """Extract hostname from captured terminal output between markers.
-    
+
     The output includes the command line itself, so we need to find markers
     that appear at the START of a line (the actual echo output), not within
     the command line.
-    
+
     Returns the hostname string or None if parsing failed.
     """
-    lines = output.split('\n')
+    lines = output.split("\n")
     start_line_idx = None
     end_line_idx = None
 
@@ -133,31 +132,29 @@ def parse_hostname_from_markers(output: str, start_marker: str, end_marker: str)
     if start_line_idx is None or end_line_idx is None:
         return None
 
-    hostname_lines = [l.strip() for l in lines[start_line_idx + 1:end_line_idx] if l.strip()]
+    hostname_lines = [l.strip() for l in lines[start_line_idx + 1 : end_line_idx] if l.strip()]
     if hostname_lines:
         return hostname_lines[0]
     return None
 
 
 def check_screen_status_from_output(
-    output: str,
-    start_marker: str,
-    end_marker: str
+    output: str, start_marker: str, end_marker: str
 ) -> tuple[bool, bool]:
     """Parse screen check output using markers.
-    
+
     Args:
         output: Raw terminal output
         start_marker: Unique start marker (e.g., __SCRCHK_START_12345__)
         end_marker: Unique end marker (e.g., __SCRCHK_END_12345__)
-        
+
     Returns:
         (screen_exists: bool, claude_running: bool)
     """
     screen_exists = False
     claude_running = False
 
-    lines = output.split('\n')
+    lines = output.split("\n")
     in_result_section = False
 
     for line in lines:
@@ -184,52 +181,62 @@ def parse_output(output: str) -> list[OutputEvent]:
     for pattern in PR_PATTERNS:
         match = pattern.search(output)
         if match:
-            events.append(OutputEvent(
-                event_type=EventType.PR_CREATED,
-                data={"match": match.group(0), "groups": match.groups()},
-                raw_match=match.group(0),
-            ))
+            events.append(
+                OutputEvent(
+                    event_type=EventType.PR_CREATED,
+                    data={"match": match.group(0), "groups": match.groups()},
+                    raw_match=match.group(0),
+                )
+            )
 
     # Check for test results
     for pattern in TEST_PASS_PATTERNS:
         match = pattern.search(output)
         if match:
-            events.append(OutputEvent(
-                event_type=EventType.TEST_PASS,
-                data={"match": match.group(0)},
-                raw_match=match.group(0),
-            ))
+            events.append(
+                OutputEvent(
+                    event_type=EventType.TEST_PASS,
+                    data={"match": match.group(0)},
+                    raw_match=match.group(0),
+                )
+            )
             break
 
     for pattern in TEST_FAIL_PATTERNS:
         match = pattern.search(output)
         if match:
-            events.append(OutputEvent(
-                event_type=EventType.TEST_FAIL,
-                data={"match": match.group(0)},
-                raw_match=match.group(0),
-            ))
+            events.append(
+                OutputEvent(
+                    event_type=EventType.TEST_FAIL,
+                    data={"match": match.group(0)},
+                    raw_match=match.group(0),
+                )
+            )
             break
 
     # Check for build results
     for pattern in BUILD_SUCCESS_PATTERNS:
         match = pattern.search(output)
         if match:
-            events.append(OutputEvent(
-                event_type=EventType.BUILD_SUCCESS,
-                data={"match": match.group(0)},
-                raw_match=match.group(0),
-            ))
+            events.append(
+                OutputEvent(
+                    event_type=EventType.BUILD_SUCCESS,
+                    data={"match": match.group(0)},
+                    raw_match=match.group(0),
+                )
+            )
             break
 
     for pattern in BUILD_FAILURE_PATTERNS:
         match = pattern.search(output)
         if match:
-            events.append(OutputEvent(
-                event_type=EventType.BUILD_FAILURE,
-                data={"match": match.group(0)},
-                raw_match=match.group(0),
-            ))
+            events.append(
+                OutputEvent(
+                    event_type=EventType.BUILD_FAILURE,
+                    data={"match": match.group(0)},
+                    raw_match=match.group(0),
+                )
+            )
             break
 
     # Check for errors (only if no other specific events found)
@@ -237,11 +244,13 @@ def parse_output(output: str) -> list[OutputEvent]:
         for pattern in ERROR_PATTERNS:
             match = pattern.search(output)
             if match:
-                events.append(OutputEvent(
-                    event_type=EventType.ERROR,
-                    data={"match": match.group(0)},
-                    raw_match=match.group(0),
-                ))
+                events.append(
+                    OutputEvent(
+                        event_type=EventType.ERROR,
+                        data={"match": match.group(0)},
+                        raw_match=match.group(0),
+                    )
+                )
                 break
 
     return events

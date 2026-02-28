@@ -85,6 +85,23 @@ orch-tunnel --list        # List active tunnels
 
 **Check the output** — if the port is occupied locally, a different port will be assigned. Use the port shown in output.
 
+### Interactive CLI (`orch-interactive`)
+
+Open an interactive terminal for the user when you need them to enter passwords, MFA codes, or interact with CLI prompts. The terminal appears as a floating overlay in the user's dashboard.
+
+**Important**: Avoid sending input while the user is actively typing to prevent keystroke interleaving.
+
+```bash
+orch-interactive "sudo yum install screen"  # Open and run command
+orch-interactive                             # Open empty shell
+orch-interactive --capture                   # Read current output
+orch-interactive --send "y"                  # Send non-sensitive input
+orch-interactive --minimize                  # Minimize overlay (keep running)
+orch-interactive --restore                   # Restore overlay from minimized
+orch-interactive --close                     # Close when done
+orch-interactive --status                    # Check if active
+```
+
 ### Project Context (`orch-context`)
 
 Use a **2-step lookup** to save context window:

@@ -38,6 +38,7 @@ class TestLocalFileDeployment:
 
             # Verify it's valid JSON
             import json
+
             with open(settings_path) as f:
                 settings = json.load(f)
 
@@ -98,7 +99,9 @@ class TestRemoteVerification:
         source = inspect.getsource(setup_remote_worker)
 
         # Check that direct SSH copy is used
-        assert "_copy_dir_to_remote_ssh" in source, "setup_remote_worker should use _copy_dir_to_remote_ssh"
+        assert "_copy_dir_to_remote_ssh" in source, (
+            "setup_remote_worker should use _copy_dir_to_remote_ssh"
+        )
         assert "RuntimeError" in source, "Should raise RuntimeError on copy failure"
 
     def test_direct_ssh_copy_raises_on_failure(self):
@@ -110,7 +113,9 @@ class TestRemoteVerification:
         source = inspect.getsource(setup_remote_worker)
 
         # Verify the error handling is present
-        assert "Failed to copy files to remote via SSH" in source, "Should have error for SSH copy failure"
+        assert "Failed to copy files to remote via SSH" in source, (
+            "Should have error for SSH copy failure"
+        )
 
 
 class TestReconnectFileDeployment:

@@ -62,7 +62,9 @@ def list_context(
     """List context items. By default returns only title/description (no content).
     Set include_content=true to get full content (for backward compatibility or specific needs).
     """
-    items = repo.list_context(db, scope=scope, project_id=project_id, category=category, search=search)
+    items = repo.list_context(
+        db, scope=scope, project_id=project_id, category=category, search=search
+    )
     return [_serialize(c, include_content=include_content) for c in items]
 
 
@@ -98,7 +100,16 @@ def update_context_item(item_id: str, body: ContextUpdate, db=Depends(get_db)):
 
     kwargs = {}
     data = body.model_dump(exclude_unset=True)
-    for field in ("title", "content", "description", "scope", "project_id", "category", "source", "metadata"):
+    for field in (
+        "title",
+        "content",
+        "description",
+        "scope",
+        "project_id",
+        "category",
+        "source",
+        "metadata",
+    ):
         if field in data:
             kwargs[field] = data[field]
 

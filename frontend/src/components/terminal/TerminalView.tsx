@@ -8,6 +8,7 @@ import './TerminalView.css'
 
 interface Props {
   sessionId: string
+  wsPath?: string  // Custom WebSocket path (default: /ws/terminal/{sessionId})
   sessionStatus?: string  // Session status from parent (e.g., 'connecting', 'working')
   disableScrollback?: boolean  // Disable scrollback history (for rdev sessions with screen)
   onInputRef?: (fn: (text: string) => void) => void  // Expose function to inject text into terminal
@@ -22,7 +23,7 @@ type ConnectionState = 'connected' | 'disconnected' | 'reconnecting'
 const RECONNECT_DELAYS = [1000, 2000, 5000, 10000, 10000]
 const MAX_RECONNECT_ATTEMPTS = 5
 
-export default function TerminalView({ sessionId, sessionStatus, disableScrollback, onInputRef, onFocusRef, onImagePaste, onTextPaste }: Props) {
+export default function TerminalView({ sessionId, wsPath, sessionStatus, disableScrollback, onInputRef, onFocusRef, onImagePaste, onTextPaste }: Props) {
   const termRef = useRef<HTMLDivElement>(null)
   const terminalRef = useRef<Terminal | null>(null)
   const wsRef = useRef<WebSocket | null>(null)
@@ -45,7 +46,8 @@ export default function TerminalView({ sessionId, sessionStatus, disableScrollba
   // Create WebSocket connection with reconnection support
   const connectWebSocket = useCallback((terminal: Terminal) => {
     const proto = location.protocol === 'https:' ? 'wss:' : 'ws:'
-    const ws = new WebSocket(`${proto}//${location.host}/ws/terminal/${sessionId}`)
+    const path = wsPath || `/ws/terminal/${sessionId}`
+    const ws = new WebSocket(`${proto}//${location.host}${path}`)
     ws.binaryType = 'arraybuffer'  // receive binary frames as ArrayBuffer, not Blob
     wsRef.current = ws
 
@@ -164,7 +166,7 @@ export default function TerminalView({ sessionId, sessionStatus, disableScrollba
     }
 
     return ws
-  }, [sessionId])
+  }, [sessionId, wsPath])
 
   useEffect(() => {
     if (!termRef.current) return

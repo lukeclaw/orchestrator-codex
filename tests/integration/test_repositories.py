@@ -8,6 +8,7 @@ from orchestrator.state.repositories import (
 
 # --- Sessions ---
 
+
 class TestSessionsRepo:
     def test_create_and_get(self, db):
         s = sessions.create_session(db, "worker-1", "rdev1.example.com", work_dir="/path/to/repo")
@@ -53,6 +54,7 @@ class TestSessionsRepo:
 
 # --- Projects ---
 
+
 class TestProjectsRepo:
     def test_create_and_get(self, db):
         p = projects.create_project(db, "Test Project", "A test project")
@@ -78,6 +80,7 @@ class TestProjectsRepo:
 
 
 # --- Tasks ---
+
 
 class TestTasksRepo:
     def test_create_and_get(self, db):
@@ -110,4 +113,3 @@ class TestTasksRepo:
         child = tasks.create_task(db, p.id, "Child", parent_task_id=parent.id)
         assert tasks.delete_task(db, parent.id) is True
         assert tasks.get_task(db, child.id) is None
-

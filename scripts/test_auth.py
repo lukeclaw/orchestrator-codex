@@ -14,7 +14,7 @@ def get_claude_code_token() -> str | None:
             ["security", "find-generic-password", "-s", "Claude Code", "-w"],
             capture_output=True,
             text=True,
-            check=True
+            check=True,
         )
         token = result.stdout.strip()
         if token.startswith("sk-ant-"):
@@ -30,26 +30,30 @@ def test_token(token: str) -> bool:
 
     print("📡 Making test API call with curl...")
 
-    payload = json.dumps({
-        "model": "claude-haiku-4-5-20251001",
-        "max_tokens": 50,
-        "messages": [{
-            "role": "user",
-            "content": "Say 'Token works!' in exactly 2 words."
-        }]
-    })
+    payload = json.dumps(
+        {
+            "model": "claude-haiku-4-5-20251001",
+            "max_tokens": 50,
+            "messages": [{"role": "user", "content": "Say 'Token works!' in exactly 2 words."}],
+        }
+    )
 
     result = subprocess.run(
         [
-            "curl", "-s",
+            "curl",
+            "-s",
             "https://api.anthropic.com/v1/messages",
-            "-H", f"x-api-key: {token}",
-            "-H", "anthropic-version: 2023-06-01",
-            "-H", "content-type: application/json",
-            "-d", payload
+            "-H",
+            f"x-api-key: {token}",
+            "-H",
+            "anthropic-version: 2023-06-01",
+            "-H",
+            "content-type: application/json",
+            "-d",
+            payload,
         ],
         capture_output=True,
-        text=True
+        text=True,
     )
 
     try:

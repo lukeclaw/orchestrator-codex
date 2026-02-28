@@ -54,7 +54,7 @@ class SendMessage(BaseModel):
 
 def _time_ago(iso_timestamp: str | None) -> str | None:
     """Convert ISO timestamp to human-readable duration like '5m ago' or '2h ago'.
-    
+
     All timestamps should be UTC (from utc_now_iso()). Legacy timestamps without
     timezone are assumed to be local time and converted.
     """
@@ -92,10 +92,13 @@ def _time_ago(iso_timestamp: str | None) -> str | None:
 def _serialize_session(s):
     status_age = _time_ago(s.last_status_changed_at)
     return {
-        "id": s.id, "name": s.name, "host": s.host,
+        "id": s.id,
+        "name": s.name,
+        "host": s.host,
         "work_dir": s.work_dir,
         "tunnel_pid": s.tunnel_pid,
-        "status": s.status, "takeover_mode": s.takeover_mode,
+        "status": s.status,
+        "takeover_mode": s.takeover_mode,
         "created_at": s.created_at,
         "last_status_changed_at": s.last_status_changed_at,
         "status_age": status_age,  # Human-readable: "5m ago", "2h ago"
@@ -110,7 +113,7 @@ def _capture_preview(s) -> str:
     tmux_sess, tmux_win = tmux_target(s.name)
     try:
         content = capture_pane_with_escapes(tmux_sess, tmux_win, lines=0)
-        return re.sub(r'\x1b\[[0-9;]*[a-zA-Z]', '', content)
+        return re.sub(r"\x1b\[[0-9;]*[a-zA-Z]", "", content)
     except Exception:
         return ""
 
@@ -149,6 +152,7 @@ def get_session(session_id: str, db=Depends(get_db)):
 def record_session_viewed(session_id: str, db=Depends(get_db)):
     """Record that the user viewed this session's detail page."""
     from datetime import datetime
+
     s = repo.get_session(db, session_id)
     if s is None:
         raise HTTPException(404, "Session not found")
@@ -177,7 +181,10 @@ def toggle_auto_reconnect(session_id: str, request: Request, db=Depends(get_db))
         tunnel_manager = getattr(request.app.state, "tunnel_manager", None)
 
         trigger_reconnect(
-            s, db, db_path=db_path, api_port=api_port,
+            s,
+            db,
+            db_path=db_path,
+            api_port=api_port,
             tunnel_manager=tunnel_manager,
         )
 
@@ -186,10 +193,10 @@ def toggle_auto_reconnect(session_id: str, request: Request, db=Depends(get_db))
 
 def _sanitize_worker_name(name: str) -> str:
     r"""Sanitize worker name to avoid folder structure issues.
-    
+
     Replaces / and \ with _ since these affect directory paths.
     """
-    return re.sub(r'[/\\]', '_', name.strip())
+    return re.sub(r"[/\\]", "_", name.strip())
 
 
 @router.post("/sessions", status_code=201)
@@ -226,10 +233,16 @@ def create_session(body: SessionCreate, request: Request, db=Depends(get_db)):
 
         # Read custom skills before spawning background thread (DB access from main thread)
         from orchestrator.state.repositories import skills as skills_repo
+
         remote_custom_skills = skills_repo.list_skills(db, target="worker", enabled_only=True)
-        remote_custom_skills_dicts = [{"name": sk.name, "description": sk.description, "content": sk.content} for sk in remote_custom_skills]
+        remote_custom_skills_dicts = [
+            {"name": sk.name, "description": sk.description, "content": sk.content}
+            for sk in remote_custom_skills
+        ]
         # Get disabled built-in skill names for filtering during remote setup
-        remote_disabled_builtins = {name for name, _ in skills_repo.list_disabled_builtin_skills(db, "worker")}
+        remote_disabled_builtins = {
+            name for name, _ in skills_repo.list_disabled_builtin_skills(db, "worker")
+        }
 
         def _background_setup():
             from orchestrator.state.db import get_connection
@@ -238,8 +251,12 @@ def create_session(body: SessionCreate, request: Request, db=Depends(get_db)):
             bg_conn = get_connection(db_path) if db_path else db
             try:
                 result = setup_remote_worker(
-                    bg_conn, s.id, sanitized_name, body.host,
-                    tmux_session_name, api_port,
+                    bg_conn,
+                    s.id,
+                    sanitized_name,
+                    body.host,
+                    tmux_session_name,
+                    api_port,
                     work_dir=work_dir,
                     tmp_dir=tmp_dir,
                     tunnel_manager=tunnel_manager,
@@ -251,6 +268,7 @@ def create_session(body: SessionCreate, request: Request, db=Depends(get_db)):
                     detected_work_dir = work_dir
                     if not detected_work_dir:
                         from orchestrator.api.routes.files import _detect_remote_work_dir
+
                         time.sleep(3)  # Give Claude a moment to start
                         detected = _detect_remote_work_dir(body.host, s.id)
                         if detected:
@@ -258,18 +276,24 @@ def create_session(body: SessionCreate, request: Request, db=Depends(get_db)):
                             logger.info("Detected work_dir for %s: %s", sanitized_name, detected)
 
                     repo.update_session(
-                        bg_conn, s.id,
+                        bg_conn,
+                        s.id,
                         status="working",
                         tunnel_pid=result.get("tunnel_pid"),
                         work_dir=detected_work_dir,
                     )
                     if body.task_id:
                         from orchestrator.state.repositories import tasks
-                        tasks.update_task(bg_conn, body.task_id, assigned_session_id=s.id, status="in_progress")
+
+                        tasks.update_task(
+                            bg_conn, body.task_id, assigned_session_id=s.id, status="in_progress"
+                        )
                     logger.info("Remote worker %s setup complete", sanitized_name)
                 else:
                     repo.update_session(bg_conn, s.id, status="error")
-                    logger.error("Remote worker %s setup failed: %s", sanitized_name, result.get("error"))
+                    logger.error(
+                        "Remote worker %s setup failed: %s", sanitized_name, result.get("error")
+                    )
             except Exception:
                 logger.exception("Remote background setup failed for %s", sanitized_name)
                 try:
@@ -297,11 +321,18 @@ def create_session(body: SessionCreate, request: Request, db=Depends(get_db)):
             api_port = config.get("server", {}).get("port", 8093)
 
             custom_skills = skills_repo.list_skills(db, target="worker", enabled_only=True)
-            custom_skills_dicts = [{"name": sk.name, "description": sk.description, "content": sk.content} for sk in custom_skills]
-            disabled_builtins = {name for name, _ in skills_repo.list_disabled_builtin_skills(db, "worker")}
+            custom_skills_dicts = [
+                {"name": sk.name, "description": sk.description, "content": sk.content}
+                for sk in custom_skills
+            ]
+            disabled_builtins = {
+                name for name, _ in skills_repo.list_disabled_builtin_skills(db, "worker")
+            }
 
             setup_local_worker(
-                db, s.id, sanitized_name,
+                db,
+                s.id,
+                sanitized_name,
                 tmux_session=tmux_session_name,
                 api_port=api_port,
                 work_dir=work_dir,
@@ -323,7 +354,8 @@ def update_session(session_id: str, body: SessionUpdate, db=Depends(get_db)):
 
     old_status = s.status
     updated = repo.update_session(
-        db, session_id,
+        db,
+        session_id,
         status=body.status,
         takeover_mode=body.takeover_mode,
         claude_session_id=body.claude_session_id,
@@ -332,15 +364,18 @@ def update_session(session_id: str, body: SessionUpdate, db=Depends(get_db)):
     # Publish event for WebSocket broadcast if status changed
     if body.status and body.status != old_status:
         from orchestrator.core.events import Event, publish
-        publish(Event(
-            type="session.status_changed",
-            data={
-                "session_id": session_id,
-                "session_name": s.name,
-                "old_status": old_status,
-                "new_status": body.status,
-            },
-        ))
+
+        publish(
+            Event(
+                type="session.status_changed",
+                data={
+                    "session_id": session_id,
+                    "session_name": s.name,
+                    "old_status": old_status,
+                    "new_status": body.status,
+                },
+            )
+        )
 
     return {"id": updated.id, "status": updated.status}
 
@@ -379,10 +414,12 @@ def _delete_session_inner(s, session_id: str, request: Request, db):
     if is_remote:
         try:
             import subprocess
+
             # Send Escape to stop Claude Code if running
             subprocess.run(
                 ["tmux", "send-keys", "-t", f"{tmux_sess}:{tmux_win}", "Escape"],
-                capture_output=True, timeout=2
+                capture_output=True,
+                timeout=2,
             )
             time.sleep(0.3)
 
@@ -398,9 +435,13 @@ def _delete_session_inner(s, session_id: str, request: Request, db):
             # Remove remote worker directory
             send_keys(tmux_sess, tmux_win, f"rm -rf {worker_scripts_dir}", enter=True)
             time.sleep(0.5)
-            logger.info("Cleaned up remote worker directory %s for session %s", worker_scripts_dir, s.name)
+            logger.info(
+                "Cleaned up remote worker directory %s for session %s", worker_scripts_dir, s.name
+            )
         except Exception:
-            logger.warning("Could not clean up remote resources for session %s", s.name, exc_info=True)
+            logger.warning(
+                "Could not clean up remote resources for session %s", s.name, exc_info=True
+            )
 
     # Stop the reverse tunnel subprocess (replaces old tmux window kill)
     tunnel_manager = getattr(request.app.state, "tunnel_manager", None)
@@ -422,19 +463,32 @@ def _delete_session_inner(s, session_id: str, request: Request, db):
     if os.path.exists(worker_scripts_dir):
         try:
             shutil.rmtree(worker_scripts_dir)
-            logger.info("Removed local worker directory %s for session %s", worker_scripts_dir, s.name)
+            logger.info(
+                "Removed local worker directory %s for session %s", worker_scripts_dir, s.name
+            )
         except Exception:
-            logger.warning("Could not remove local worker directory %s", worker_scripts_dir, exc_info=True)
+            logger.warning(
+                "Could not remove local worker directory %s", worker_scripts_dir, exc_info=True
+            )
 
     # Clean up any SSH port-forward tunnels for this remote host
     if is_remote:
         from orchestrator.session.tunnel import cleanup_tunnels_for_host
+
         try:
             closed = cleanup_tunnels_for_host(s.host)
             if closed > 0:
                 logger.info("Cleaned up %d tunnel(s) for session %s", closed, s.name)
         except Exception:
             logger.warning("Could not clean up tunnels for session %s", s.name, exc_info=True)
+
+    # Close interactive CLI if active
+    try:
+        from orchestrator.terminal.interactive import close_interactive_cli
+
+        close_interactive_cli(session_id, tmux_sess)
+    except Exception:
+        logger.warning("Could not close interactive CLI for session %s", s.name, exc_info=True)
 
     # Note: work_dir is NOT cleaned up - it's the user's working directory
     # Only tmp_dir (worker_scripts_dir) is cleaned up above
@@ -450,6 +504,7 @@ def send_message(session_id: str, body: SendMessage, request: Request, db=Depend
         raise HTTPException(404, "Session not found")
 
     from orchestrator.terminal.session import send_to_session
+
     config = getattr(request.app.state, "config", {})
     tmux_session = config.get("tmux", {}).get("session_name", "orchestrator")
 
@@ -476,6 +531,7 @@ def type_text(session_id: str, body: TypeText, request: Request, db=Depends(get_
         raise HTTPException(404, "Session not found")
 
     from orchestrator.terminal.manager import send_keys_literal
+
     config = getattr(request.app.state, "config", {})
     tmux_session = config.get("tmux", {}).get("session_name", "orchestrator")
 
@@ -653,6 +709,7 @@ def continue_session(session_id: str, db=Depends(get_db)):
 
     try:
         from orchestrator.terminal.manager import send_keys_literal
+
         # Send "continue" message to claude code
         send_keys_literal(tmux_sess, tmux_win, "continue")
         send_keys(tmux_sess, tmux_win, "", enter=True)
@@ -673,12 +730,14 @@ def stop_session(session_id: str, db=Depends(get_db)):
     tmux_sess, tmux_win = tmux_target(s.name)
 
     import time
+
     try:
         # Send Escape to stop current operation
         send_keys(tmux_sess, tmux_win, "Escape", enter=False)
         time.sleep(0.5)
         # Send /clear to reset context
         from orchestrator.terminal.manager import send_keys_literal
+
         send_keys_literal(tmux_sess, tmux_win, "/clear")
         send_keys(tmux_sess, tmux_win, "", enter=True)
     except Exception:
@@ -686,11 +745,20 @@ def stop_session(session_id: str, db=Depends(get_db)):
 
     # Unassign any tasks assigned to this session
     from orchestrator.state.repositories import tasks as tasks_repo
+
     assigned_tasks = tasks_repo.list_tasks(db, assigned_session_id=session_id)
     for task in assigned_tasks:
         # Only reset status to todo if task is not already done
         new_status = None if task.status == "done" else "todo"
         tasks_repo.update_task(db, task.id, assigned_session_id=None, status=new_status)
+
+    # Close interactive CLI if active
+    try:
+        from orchestrator.terminal.interactive import close_interactive_cli
+
+        close_interactive_cli(session_id)
+    except Exception:
+        logger.warning("Could not close interactive CLI for session %s", s.name, exc_info=True)
 
     repo.update_session(db, session_id, status="idle")
     return {"ok": True, "message": f"Session {s.name} stopped and cleared"}
@@ -699,10 +767,10 @@ def stop_session(session_id: str, db=Depends(get_db)):
 @router.post("/sessions/{session_id}/prepare-for-task")
 def prepare_session_for_task(session_id: str, db=Depends(get_db)):
     """Prepare a worker session for a new task assignment.
-    
+
     Sends Escape + Ctrl-C to cancel any running terminal commands,
     then sends /clear to reset the Claude Code context.
-    
+
     This should be called before reassigning a worker to a different task.
     """
     s = repo.get_session(db, session_id)
@@ -717,6 +785,7 @@ def prepare_session_for_task(session_id: str, db=Depends(get_db)):
     tmux_sess, tmux_win = tmux_target(s.name)
 
     import time
+
     try:
         # 1. Send Escape to exit any mode/stop current action
         send_keys(tmux_sess, tmux_win, "Escape", enter=False)
@@ -724,14 +793,17 @@ def prepare_session_for_task(session_id: str, db=Depends(get_db)):
 
         # 2. Send Ctrl-C to cancel any running terminal command
         import subprocess
+
         subprocess.run(
             ["tmux", "send-keys", "-t", f"{tmux_sess}:{tmux_win}", "C-c"],
-            capture_output=True, timeout=2
+            capture_output=True,
+            timeout=2,
         )
         time.sleep(0.5)
 
         # 3. Send /clear to reset Claude Code context
         from orchestrator.terminal.manager import send_keys_literal
+
         send_keys_literal(tmux_sess, tmux_win, "/clear")
         send_keys(tmux_sess, tmux_win, "", enter=True)
 
@@ -746,16 +818,16 @@ def prepare_session_for_task(session_id: str, db=Depends(get_db)):
 @router.post("/sessions/{session_id}/reconnect")
 def reconnect_session(session_id: str, request: Request, db=Depends(get_db)):
     """Reconnect a disconnected or screen_detached worker session.
-    
+
     For rdev workers with screen_detached status:
     - Re-establish SSH/tunnel, then reattach to existing screen session
     - If screen has Claude running, just reattach (fast recovery!)
-    
+
     For rdev workers with disconnected status:
     - Re-establish SSH/tunnel, create new screen, launch Claude
-    
+
     For local workers: just relaunch Claude with -r flag.
-    
+
     Reconnect is always a manual action triggered by user clicking a button,
     so it should never be skipped due to user activity.
     """
@@ -773,7 +845,10 @@ def reconnect_session(session_id: str, request: Request, db=Depends(get_db)):
     tunnel_manager = getattr(request.app.state, "tunnel_manager", None)
 
     result = trigger_reconnect(
-        s, db, db_path=db_path, api_port=api_port,
+        s,
+        db,
+        db_path=db_path,
+        api_port=api_port,
         tunnel_manager=tunnel_manager,
     )
     if result.get("ok"):
@@ -839,8 +914,10 @@ def health_check_all_sessions(request: Request, db=Depends(get_db)):
     tunnel_manager = getattr(request.app.state, "tunnel_manager", None)
 
     return check_all_workers_health(
-        db, sessions,
-        db_path=db_path, api_port=api_port,
+        db,
+        sessions,
+        db_path=db_path,
+        api_port=api_port,
         tunnel_manager=tunnel_manager,
     )
 
@@ -848,6 +925,7 @@ def health_check_all_sessions(request: Request, db=Depends(get_db)):
 # =============================================================================
 # Tunnel Management Endpoints
 # =============================================================================
+
 
 class TunnelRequest(BaseModel):
     port: int
@@ -857,7 +935,7 @@ class TunnelRequest(BaseModel):
 @router.post("/sessions/{session_id}/tunnel")
 def create_session_tunnel(session_id: str, body: TunnelRequest, db=Depends(get_db)):
     """Create SSH port forward from local machine to rdev worker.
-    
+
     This spawns an SSH tunnel process that forwards a local port to the remote
     rdev host's port, allowing local browser/tools to access services on rdev.
     """

@@ -208,7 +208,7 @@ class TestJsonEncodeFunction:
     @pytest.fixture
     def json_encode_script(self):
         """Create a minimal script that exposes json_encode for testing."""
-        script = '''#!/bin/bash
+        script = """#!/bin/bash
 # Helper: JSON-encode a string (handles newlines, quotes, backslashes, etc.)
 json_encode() {
     if command -v jq &> /dev/null; then
@@ -220,8 +220,8 @@ json_encode() {
 
 # Test: output the JSON-encoded version of the input
 json_encode "$1"
-'''
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.sh', delete=False) as f:
+"""
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".sh", delete=False) as f:
             f.write(script)
             f.flush()
             os.chmod(f.name, 0o755)
@@ -230,27 +230,22 @@ json_encode "$1"
 
     def test_json_encode_simple_string(self, json_encode_script):
         """Test encoding a simple string without special characters."""
-        result = subprocess.run(
-            [json_encode_script, "hello world"],
-            capture_output=True, text=True
-        )
+        result = subprocess.run([json_encode_script, "hello world"], capture_output=True, text=True)
         assert result.returncode == 0
         assert result.stdout.strip() == "hello world"
 
     def test_json_encode_with_quotes(self, json_encode_script):
         """Test encoding a string with double quotes."""
         result = subprocess.run(
-            [json_encode_script, 'hello "world"'],
-            capture_output=True, text=True
+            [json_encode_script, 'hello "world"'], capture_output=True, text=True
         )
         assert result.returncode == 0
-        assert result.stdout.strip() == r'hello \"world\"'
+        assert result.stdout.strip() == r"hello \"world\""
 
     def test_json_encode_with_newlines(self, json_encode_script):
         """Test encoding a string with newlines."""
         result = subprocess.run(
-            [json_encode_script, "line1\nline2\nline3"],
-            capture_output=True, text=True
+            [json_encode_script, "line1\nline2\nline3"], capture_output=True, text=True
         )
         assert result.returncode == 0
         assert result.stdout.strip() == r"line1\nline2\nline3"
@@ -258,8 +253,7 @@ json_encode "$1"
     def test_json_encode_with_backslashes(self, json_encode_script):
         """Test encoding a string with backslashes."""
         result = subprocess.run(
-            [json_encode_script, r"path\to\file"],
-            capture_output=True, text=True
+            [json_encode_script, r"path\to\file"], capture_output=True, text=True
         )
         assert result.returncode == 0
         assert result.stdout.strip() == r"path\\to\\file"
@@ -267,25 +261,21 @@ json_encode "$1"
     def test_json_encode_with_tabs(self, json_encode_script):
         """Test encoding a string with tab characters."""
         result = subprocess.run(
-            [json_encode_script, "col1\tcol2\tcol3"],
-            capture_output=True, text=True
+            [json_encode_script, "col1\tcol2\tcol3"], capture_output=True, text=True
         )
         assert result.returncode == 0
         assert result.stdout.strip() == r"col1\tcol2\tcol3"
 
     def test_json_encode_markdown_content(self, json_encode_script):
         """Test encoding typical markdown content with special chars."""
-        markdown = '''# Heading
+        markdown = """# Heading
 
 This has:
 - `backticks`
 - "quotes"
 - backslash \\
-- newlines'''
-        result = subprocess.run(
-            [json_encode_script, markdown],
-            capture_output=True, text=True
-        )
+- newlines"""
+        result = subprocess.run([json_encode_script, markdown], capture_output=True, text=True)
         assert result.returncode == 0
         # Verify key escapes are present
         encoded = result.stdout.strip()
@@ -303,7 +293,7 @@ class TestStdinOptions:
             bin_dir = deploy_brain_scripts(tmpdir)
             content = _read_script(bin_dir, "orch-ctx")
             assert 'if [[ -n "$content_stdin" ]]; then' in content
-            assert 'content=$(cat)' in content
+            assert "content=$(cat)" in content
 
     def test_content_file_reads_from_file(self):
         """Verify --content-file reads content from specified file."""
@@ -393,7 +383,7 @@ class TestJsonEncodeEdgeCases:
     @pytest.fixture
     def json_encode_script(self):
         """Create a minimal script that exposes json_encode for testing."""
-        script = '''#!/bin/bash
+        script = """#!/bin/bash
 json_encode() {
     if command -v jq &> /dev/null; then
         printf '%s' "$1" | jq -Rs . | sed 's/^"//;s/"$//'
@@ -402,8 +392,8 @@ json_encode() {
     fi
 }
 json_encode "$1"
-'''
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.sh', delete=False) as f:
+"""
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".sh", delete=False) as f:
             f.write(script)
             f.flush()
             os.chmod(f.name, 0o755)
@@ -412,18 +402,14 @@ json_encode "$1"
 
     def test_empty_string(self, json_encode_script):
         """Test encoding an empty string."""
-        result = subprocess.run(
-            [json_encode_script, ""],
-            capture_output=True, text=True
-        )
+        result = subprocess.run([json_encode_script, ""], capture_output=True, text=True)
         assert result.returncode == 0
         assert result.stdout.strip() == ""
 
     def test_unicode_characters(self, json_encode_script):
         """Test encoding unicode characters."""
         result = subprocess.run(
-            [json_encode_script, "Hello 世界 🌍"],
-            capture_output=True, text=True
+            [json_encode_script, "Hello 世界 🌍"], capture_output=True, text=True
         )
         assert result.returncode == 0
         # Unicode should pass through (jq handles unicode correctly)
@@ -432,8 +418,7 @@ json_encode "$1"
     def test_control_characters(self, json_encode_script):
         """Test encoding control characters like carriage return."""
         result = subprocess.run(
-            [json_encode_script, "line1\r\nline2"],
-            capture_output=True, text=True
+            [json_encode_script, "line1\r\nline2"], capture_output=True, text=True
         )
         assert result.returncode == 0
         # \r should be escaped as \r
@@ -442,59 +427,47 @@ json_encode "$1"
     def test_mixed_special_characters(self, json_encode_script):
         """Test encoding a complex string with multiple special chars."""
         test_input = 'Path: C:\\Users\\test\nMessage: "Hello"\tTab here'
-        result = subprocess.run(
-            [json_encode_script, test_input],
-            capture_output=True, text=True
-        )
+        result = subprocess.run([json_encode_script, test_input], capture_output=True, text=True)
         assert result.returncode == 0
         encoded = result.stdout.strip()
         # All special chars should be escaped
-        assert r'\\' in encoded  # backslashes
-        assert r'\n' in encoded  # newline
-        assert r'\"' in encoded  # quotes
-        assert r'\t' in encoded  # tab
+        assert r"\\" in encoded  # backslashes
+        assert r"\n" in encoded  # newline
+        assert r"\"" in encoded  # quotes
+        assert r"\t" in encoded  # tab
 
     def test_json_injection_attempt(self, json_encode_script):
         """Test that JSON injection attempts are safely escaped."""
         # Attempt to break out of JSON string
         malicious = '", "injected": "value'
-        result = subprocess.run(
-            [json_encode_script, malicious],
-            capture_output=True, text=True
-        )
+        result = subprocess.run([json_encode_script, malicious], capture_output=True, text=True)
         assert result.returncode == 0
         encoded = result.stdout.strip()
         # Quotes should be escaped, preventing injection
-        assert r'\"' in encoded
+        assert r"\"" in encoded
         # The result should be a safe string that won't break JSON parsing
-        assert 'injected' in encoded  # content preserved
+        assert "injected" in encoded  # content preserved
 
     def test_multiline_code_block(self, json_encode_script):
         """Test encoding a multi-line code block with various chars."""
-        code = '''def hello():
+        code = """def hello():
     print("Hello, World!")
-    return {"key": "value"}'''
-        result = subprocess.run(
-            [json_encode_script, code],
-            capture_output=True, text=True
-        )
+    return {"key": "value"}"""
+        result = subprocess.run([json_encode_script, code], capture_output=True, text=True)
         assert result.returncode == 0
         encoded = result.stdout.strip()
-        assert r'\n' in encoded  # newlines escaped
-        assert r'\"' in encoded  # quotes escaped
+        assert r"\n" in encoded  # newlines escaped
+        assert r"\"" in encoded  # quotes escaped
 
     def test_only_special_characters(self, json_encode_script):
         """Test encoding a string of only special characters."""
-        result = subprocess.run(
-            [json_encode_script, '"\n\t\\'],
-            capture_output=True, text=True
-        )
+        result = subprocess.run([json_encode_script, '"\n\t\\'], capture_output=True, text=True)
         assert result.returncode == 0
         encoded = result.stdout.strip()
-        assert r'\"' in encoded
-        assert r'\n' in encoded
-        assert r'\t' in encoded
-        assert r'\\' in encoded
+        assert r"\"" in encoded
+        assert r"\n" in encoded
+        assert r"\t" in encoded
+        assert r"\\" in encoded
 
 
 class TestWorkerHooksGeneration:
@@ -598,6 +571,7 @@ class TestWorkerHooksGeneration:
             expected_safety_path = os.path.join(configs_dir, "hooks", "check-command.sh")
             assert expected_safety_path in content
             assert "{{SAFETY_HOOK_PATH}}" not in content, "Placeholder should be substituted"
+
 
 class TestBrainHooksGeneration:
     """Tests for brain hook deployment."""

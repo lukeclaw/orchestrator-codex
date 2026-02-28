@@ -100,7 +100,7 @@ def copy_to_tauri():
     # Compute total size
     total = sum(f.stat().st_size for f in dest_dir.rglob("*") if f.is_file())
     print(f"==> Sidecar ready: {dest_dir}")
-    print(f"    Total size: {total / (1024*1024):.1f} MB")
+    print(f"    Total size: {total / (1024 * 1024):.1f} MB")
 
 
 def main():

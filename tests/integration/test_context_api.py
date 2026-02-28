@@ -1,6 +1,5 @@
 """Integration tests for context API endpoints."""
 
-
 import pytest
 from fastapi.testclient import TestClient
 
@@ -25,12 +24,15 @@ class TestContextAPI:
         assert resp.json() == []
 
     def test_create_global(self, client):
-        resp = client.post("/api/context", json={
-            "title": "Test item",
-            "content": "Some content",
-            "category": "note",
-            "source": "user",
-        })
+        resp = client.post(
+            "/api/context",
+            json={
+                "title": "Test item",
+                "content": "Some content",
+                "category": "note",
+                "source": "user",
+            },
+        )
         assert resp.status_code == 201
         data = resp.json()
         assert data["title"] == "Test item"
@@ -43,21 +45,27 @@ class TestContextAPI:
         proj = client.post("/api/projects", json={"name": "Test Project"})
         pid = proj.json()["id"]
 
-        resp = client.post("/api/context", json={
-            "title": "Project context",
-            "content": "Details here",
-            "scope": "project",
-            "project_id": pid,
-        })
+        resp = client.post(
+            "/api/context",
+            json={
+                "title": "Project context",
+                "content": "Details here",
+                "scope": "project",
+                "project_id": pid,
+            },
+        )
         assert resp.status_code == 201
         assert resp.json()["scope"] == "project"
         assert resp.json()["project_id"] == pid
 
     def test_get_item(self, client):
-        create = client.post("/api/context", json={
-            "title": "Get me",
-            "content": "Body",
-        })
+        create = client.post(
+            "/api/context",
+            json={
+                "title": "Get me",
+                "content": "Body",
+            },
+        )
         item_id = create.json()["id"]
         resp = client.get(f"/api/context/{item_id}")
         assert resp.status_code == 200
@@ -71,7 +79,10 @@ class TestContextAPI:
         client.post("/api/context", json={"title": "G", "content": "g", "scope": "global"})
         proj = client.post("/api/projects", json={"name": "P"})
         pid = proj.json()["id"]
-        client.post("/api/context", json={"title": "P", "content": "p", "scope": "project", "project_id": pid})
+        client.post(
+            "/api/context",
+            json={"title": "P", "content": "p", "scope": "project", "project_id": pid},
+        )
 
         global_items = client.get("/api/context?scope=global").json()
         assert len(global_items) == 1
@@ -113,41 +124,64 @@ class TestContextAPI:
         assert resp.status_code == 404
 
     def test_create_defaults_to_no_category(self, client):
-        resp = client.post("/api/context", json={
-            "title": "No cat",
-            "content": "Should have null category",
-        })
+        resp = client.post(
+            "/api/context",
+            json={
+                "title": "No cat",
+                "content": "Should have null category",
+            },
+        )
         assert resp.status_code == 201
         assert resp.json()["category"] is None
 
     def test_create_with_instruction_category(self, client):
-        resp = client.post("/api/context", json={
-            "title": "Must follow",
-            "content": "Use 2-space indent",
-            "category": "instruction",
-        })
+        resp = client.post(
+            "/api/context",
+            json={
+                "title": "Must follow",
+                "content": "Use 2-space indent",
+                "category": "instruction",
+            },
+        )
         assert resp.status_code == 201
         assert resp.json()["category"] == "instruction"
 
     def test_create_with_reference_category(self, client):
-        resp = client.post("/api/context", json={
-            "title": "API docs",
-            "content": "See https://...",
-            "category": "reference",
-        })
+        resp = client.post(
+            "/api/context",
+            json={
+                "title": "API docs",
+                "content": "See https://...",
+                "category": "reference",
+            },
+        )
         assert resp.status_code == 201
         assert resp.json()["category"] == "reference"
 
     def test_filter_by_category(self, client):
-        client.post("/api/context", json={
-            "title": "Rule", "content": "mandatory", "category": "instruction",
-        })
-        client.post("/api/context", json={
-            "title": "Info", "content": "background", "category": "reference",
-        })
-        client.post("/api/context", json={
-            "title": "Note", "content": "general",
-        })
+        client.post(
+            "/api/context",
+            json={
+                "title": "Rule",
+                "content": "mandatory",
+                "category": "instruction",
+            },
+        )
+        client.post(
+            "/api/context",
+            json={
+                "title": "Info",
+                "content": "background",
+                "category": "reference",
+            },
+        )
+        client.post(
+            "/api/context",
+            json={
+                "title": "Note",
+                "content": "general",
+            },
+        )
 
         instructions = client.get("/api/context?category=instruction").json()
         assert len(instructions) == 1

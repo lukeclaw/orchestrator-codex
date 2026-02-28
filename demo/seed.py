@@ -21,6 +21,7 @@ from pathlib import Path
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _id() -> str:
     return str(uuid.uuid4())
 
@@ -39,6 +40,7 @@ def _links(*items: tuple[str, str]) -> str:
 # ---------------------------------------------------------------------------
 # Seed functions
 # ---------------------------------------------------------------------------
+
 
 def seed_projects(conn: sqlite3.Connection) -> dict[str, str]:
     """Create demo projects. Returns {short_name: project_id}."""
@@ -97,18 +99,47 @@ def seed_projects(conn: sqlite3.Connection) -> dict[str, str]:
 def seed_sessions(conn: sqlite3.Connection) -> dict[str, str]:
     """Create demo sessions. Returns {short_name: session_id}."""
     sessions = [
-        {"id": _id(), "name": "backend-1",  "host": "localhost", "status": "working", "session_type": "worker"},
-        {"id": _id(), "name": "backend-2",  "host": "localhost", "status": "waiting", "session_type": "worker"},
-        {"id": _id(), "name": "logging-1",  "host": "localhost", "status": "working", "session_type": "worker"},
-        {"id": _id(), "name": "logging-2",  "host": "localhost", "status": "waiting", "session_type": "worker"},
-        {"id": _id(), "name": "brain",      "host": "localhost", "status": "idle",    "session_type": "brain"},
+        {
+            "id": _id(),
+            "name": "backend-1",
+            "host": "localhost",
+            "status": "working",
+            "session_type": "worker",
+        },
+        {
+            "id": _id(),
+            "name": "backend-2",
+            "host": "localhost",
+            "status": "waiting",
+            "session_type": "worker",
+        },
+        {
+            "id": _id(),
+            "name": "logging-1",
+            "host": "localhost",
+            "status": "working",
+            "session_type": "worker",
+        },
+        {
+            "id": _id(),
+            "name": "logging-2",
+            "host": "localhost",
+            "status": "waiting",
+            "session_type": "worker",
+        },
+        {
+            "id": _id(),
+            "name": "brain",
+            "host": "localhost",
+            "status": "idle",
+            "session_type": "brain",
+        },
     ]
     ids = {}
     for s in sessions:
         _insert(conn, "sessions", s)
         ids[s["name"]] = s["id"]
     return ids
-
 
 
 def seed_tasks(conn: sqlite3.Connection, proj: dict, sess: dict) -> dict[str, str]:
@@ -130,163 +161,213 @@ def seed_tasks(conn: sqlite3.Connection, proj: dict, sess: dict) -> dict[str, st
 
     # --- Phase 1: done ---
 
-    task("nse1", project_id=nse,
-         title="Define gRPC API contract and proto definitions",
-         description=(
-             "Design the service API as protobuf definitions. Must cover:\n"
-             "- `NotificationPreferences` CRUD (get, update, bulk get)\n"
-             "- `SendNotification` for single and batch sends\n"
-             "- `DeliveryStatus` streaming endpoint for real-time status\n"
-             "- Standard error codes and pagination patterns\n\n"
-             "Follow the team proto style guide. Field numbering must leave room "
-             "for future expansion (skip to 10 for each logical group)."
-         ),
-         notes=(
-             "Initial version used a unary RPC for batch sends with a repeated field. "
-             "Changed to client-streaming after review — batch sizes vary from 10 to 50k "
-             "during campaigns, and unary would hit the 4MB gRPC message limit. "
-             "Streaming also lets the server start processing before the full batch arrives."
-         ),
-         links=_links(
-             ("https://github.com/acme-corp/notification-service/pull/1", "PR"),
-             ("https://github.com/acme-corp/notification-service/pull/3", "Fix: batch streaming"),
-         ),
-         status="done", priority="H", task_index=1)
+    task(
+        "nse1",
+        project_id=nse,
+        title="Define gRPC API contract and proto definitions",
+        description=(
+            "Design the service API as protobuf definitions. Must cover:\n"
+            "- `NotificationPreferences` CRUD (get, update, bulk get)\n"
+            "- `SendNotification` for single and batch sends\n"
+            "- `DeliveryStatus` streaming endpoint for real-time status\n"
+            "- Standard error codes and pagination patterns\n\n"
+            "Follow the team proto style guide. Field numbering must leave room "
+            "for future expansion (skip to 10 for each logical group)."
+        ),
+        notes=(
+            "Initial version used a unary RPC for batch sends with a repeated field. "
+            "Changed to client-streaming after review — batch sizes vary from 10 to 50k "
+            "during campaigns, and unary would hit the 4MB gRPC message limit. "
+            "Streaming also lets the server start processing before the full batch arrives."
+        ),
+        links=_links(
+            ("https://github.com/acme-corp/notification-service/pull/1", "PR"),
+            ("https://github.com/acme-corp/notification-service/pull/3", "Fix: batch streaming"),
+        ),
+        status="done",
+        priority="H",
+        task_index=1,
+    )
 
-    task("nse2", project_id=nse,
-         title="Set up database schema and preferences CRUD",
-         description=(
-             "Create the notification service's own database schema. Migrate the preferences "
-             "data model from the monolith's shared tables into standalone tables.\n\n"
-             "Tables needed:\n"
-             "- `notification_preferences` (user_id, channel, enabled, frequency, updated_at)\n"
-             "- `notification_templates` (id, type, channel, template, variables)\n"
-             "- `delivery_log` (id, user_id, type, channel, status, sent_at, delivered_at)\n\n"
-             "Implement the preferences CRUD gRPC endpoints with full test coverage."
-         ),
-         notes=(
-             "Used the same ULID generation for IDs as the monolith for consistency. "
-             "Added a composite index on (user_id, channel) for the preferences lookup — "
-             "that's the hot path. Delivery log uses a time-partitioned table for retention."
-         ),
-         links=_links(
-             ("https://github.com/acme-corp/notification-service/pull/5", "PR"),
-         ),
-         status="done", priority="H", task_index=2)
+    task(
+        "nse2",
+        project_id=nse,
+        title="Set up database schema and preferences CRUD",
+        description=(
+            "Create the notification service's own database schema. Migrate the preferences "
+            "data model from the monolith's shared tables into standalone tables.\n\n"
+            "Tables needed:\n"
+            "- `notification_preferences` (user_id, channel, enabled, frequency, updated_at)\n"
+            "- `notification_templates` (id, type, channel, template, variables)\n"
+            "- `delivery_log` (id, user_id, type, channel, status, sent_at, delivered_at)\n\n"
+            "Implement the preferences CRUD gRPC endpoints with full test coverage."
+        ),
+        notes=(
+            "Used the same ULID generation for IDs as the monolith for consistency. "
+            "Added a composite index on (user_id, channel) for the preferences lookup — "
+            "that's the hot path. Delivery log uses a time-partitioned table for retention."
+        ),
+        links=_links(
+            ("https://github.com/acme-corp/notification-service/pull/5", "PR"),
+        ),
+        status="done",
+        priority="H",
+        task_index=2,
+    )
 
     # --- Phase 2: in progress ---
 
-    task("nse3", project_id=nse,
-         title="Implement delivery pipeline integration",
-         description=(
-             "The new service needs to actually deliver notifications. Integrate with:\n"
-             "- SendGrid API for email delivery\n"
-             "- Firebase Cloud Messaging for push notifications\n"
-             "- Internal webhook system for in-app notifications\n\n"
-             "Extract the retry/backoff logic from the monolith's `NotificationSender` class "
-             "into a reusable package. The monolith uses exponential backoff with jitter — "
-             "keep the same behavior but make it configurable per channel.\n\n"
-             "Must handle partial failures in batch sends (some succeed, some fail)."
-         ),
-         status="in_progress", assigned_session_id=be1, priority="H", task_index=3)
+    task(
+        "nse3",
+        project_id=nse,
+        title="Implement delivery pipeline integration",
+        description=(
+            "The new service needs to actually deliver notifications. Integrate with:\n"
+            "- SendGrid API for email delivery\n"
+            "- Firebase Cloud Messaging for push notifications\n"
+            "- Internal webhook system for in-app notifications\n\n"
+            "Extract the retry/backoff logic from the monolith's `NotificationSender` class "
+            "into a reusable package. The monolith uses exponential backoff with jitter — "
+            "keep the same behavior but make it configurable per channel.\n\n"
+            "Must handle partial failures in batch sends (some succeed, some fail)."
+        ),
+        status="in_progress",
+        assigned_session_id=be1,
+        priority="H",
+        task_index=3,
+    )
 
     # NSE-3 subtasks
-    task("nse3a", project_id=nse,
-         title="Extract retry/backoff logic into reusable package",
-         description=(
-             "Pull the exponential backoff with jitter logic from "
-             "`monolith/notifications/sender.py` into a standalone Go package. "
-             "Make max retries, base delay, and max delay configurable per channel."
-         ),
-         notes=(
-             "Extracted to `pkg/retry`. Configurable per-channel: email gets 5 retries "
-             "with 30s base, push gets 3 retries with 5s base. Added circuit breaker "
-             "on top — if a provider fails 10 times in a row, stop sending for 60s."
-         ),
-         links=_links(
-             ("https://github.com/acme-corp/notification-service/pull/8", "PR"),
-         ),
-         status="done", parent_task_id=None, priority="H", task_index=1)
+    task(
+        "nse3a",
+        project_id=nse,
+        title="Extract retry/backoff logic into reusable package",
+        description=(
+            "Pull the exponential backoff with jitter logic from "
+            "`monolith/notifications/sender.py` into a standalone Go package. "
+            "Make max retries, base delay, and max delay configurable per channel."
+        ),
+        notes=(
+            "Extracted to `pkg/retry`. Configurable per-channel: email gets 5 retries "
+            "with 30s base, push gets 3 retries with 5s base. Added circuit breaker "
+            "on top — if a provider fails 10 times in a row, stop sending for 60s."
+        ),
+        links=_links(
+            ("https://github.com/acme-corp/notification-service/pull/8", "PR"),
+        ),
+        status="done",
+        parent_task_id=None,
+        priority="H",
+        task_index=1,
+    )
 
-    task("nse3b", project_id=nse,
-         title="Integrate email and push notification providers",
-         description=(
-             "Wire up the SendGrid and FCM clients using the retry package. "
-             "Implement the `SendNotification` gRPC handler:\n"
-             "- Look up user preferences to determine channels\n"
-             "- Fan out to enabled channels in parallel\n"
-             "- Record delivery status in the delivery log\n"
-             "- Return per-recipient results for batch sends"
-         ),
-         notes="SendGrid integration done. Working on FCM — their v1 API requires OAuth2 service account auth instead of the old server key. Updating the auth flow.",
-         status="in_progress", parent_task_id=None, priority="H", task_index=2)
+    task(
+        "nse3b",
+        project_id=nse,
+        title="Integrate email and push notification providers",
+        description=(
+            "Wire up the SendGrid and FCM clients using the retry package. "
+            "Implement the `SendNotification` gRPC handler:\n"
+            "- Look up user preferences to determine channels\n"
+            "- Fan out to enabled channels in parallel\n"
+            "- Record delivery status in the delivery log\n"
+            "- Return per-recipient results for batch sends"
+        ),
+        notes="SendGrid integration done. Working on FCM — their v1 API requires OAuth2 service account auth instead of the old server key. Updating the auth flow.",
+        status="in_progress",
+        parent_task_id=None,
+        priority="H",
+        task_index=2,
+    )
 
-    task("nse3c", project_id=nse,
-         title="Add delivery status streaming endpoint",
-         description=(
-             "Implement the `DeliveryStatus` server-streaming RPC. Clients subscribe "
-             "with a notification ID and receive status updates as delivery progresses "
-             "(queued -> sending -> delivered/failed per channel).\n\n"
-             "Use a Redis pub/sub channel per notification ID. Clean up subscriptions "
-             "after 5 minutes of inactivity."
-         ),
-         status="todo", parent_task_id=None, priority="M", task_index=3)
+    task(
+        "nse3c",
+        project_id=nse,
+        title="Add delivery status streaming endpoint",
+        description=(
+            "Implement the `DeliveryStatus` server-streaming RPC. Clients subscribe "
+            "with a notification ID and receive status updates as delivery progresses "
+            "(queued -> sending -> delivered/failed per channel).\n\n"
+            "Use a Redis pub/sub channel per notification ID. Clean up subscriptions "
+            "after 5 minutes of inactivity."
+        ),
+        status="todo",
+        parent_task_id=None,
+        priority="M",
+        task_index=3,
+    )
 
     for label in ("nse3a", "nse3b", "nse3c"):
         conn.execute("UPDATE tasks SET parent_task_id = ? WHERE id = ?", [ids["nse3"], ids[label]])
 
-    task("nse4", project_id=nse,
-         title="Write data migration script and consistency checker",
-         description=(
-             "Build the dual-write migration for moving notification data from the "
-             "monolith's shared database to the new service's database.\n\n"
-             "**Migration script:**\n"
-             "- Backfill existing preferences and templates from shared DB\n"
-             "- Set up CDC (change data capture) for ongoing sync during transition\n"
-             "- Use the existing CDC framework, don't build a custom sync\n\n"
-             "**Consistency checker:**\n"
-             "- Nightly job that compares records between old and new DB\n"
-             "- Alert on discrepancies but don't block writes\n"
-             "- Dashboard showing sync status and lag"
-         ),
-         notes=(
-             "Backfill complete — 2.3M preference records migrated in 12 minutes using "
-             "batch inserts. CDC stream set up via Debezium, lag is under 500ms. "
-             "Consistency checker runs nightly at 3am UTC. Found 0 discrepancies in "
-             "the first run against staging."
-         ),
-         links=_links(
-             ("https://github.com/acme-corp/notification-service/pull/12", "PR"),
-         ),
-         status="in_progress", assigned_session_id=be2, priority="H", task_index=4)
+    task(
+        "nse4",
+        project_id=nse,
+        title="Write data migration script and consistency checker",
+        description=(
+            "Build the dual-write migration for moving notification data from the "
+            "monolith's shared database to the new service's database.\n\n"
+            "**Migration script:**\n"
+            "- Backfill existing preferences and templates from shared DB\n"
+            "- Set up CDC (change data capture) for ongoing sync during transition\n"
+            "- Use the existing CDC framework, don't build a custom sync\n\n"
+            "**Consistency checker:**\n"
+            "- Nightly job that compares records between old and new DB\n"
+            "- Alert on discrepancies but don't block writes\n"
+            "- Dashboard showing sync status and lag"
+        ),
+        notes=(
+            "Backfill complete — 2.3M preference records migrated in 12 minutes using "
+            "batch inserts. CDC stream set up via Debezium, lag is under 500ms. "
+            "Consistency checker runs nightly at 3am UTC. Found 0 discrepancies in "
+            "the first run against staging."
+        ),
+        links=_links(
+            ("https://github.com/acme-corp/notification-service/pull/12", "PR"),
+        ),
+        status="in_progress",
+        assigned_session_id=be2,
+        priority="H",
+        task_index=4,
+    )
 
     # --- Phase 3 & 4: future ---
 
-    task("nse5", project_id=nse,
-         title="Build consumer migration SDK for Phase 3",
-         description=(
-             "Create a drop-in replacement SDK that mirrors the monolith library's API "
-             "but calls the new gRPC service underneath. This lets consumers migrate "
-             "with minimal code changes — swap the import, update the config, done.\n\n"
-             "The SDK should:\n"
-             "- Match the existing `NotificationClient` interface exactly\n"
-             "- Add gRPC connection pooling and deadline propagation\n"
-             "- Include a feature flag to toggle between old (library) and new (gRPC) paths\n"
-             "- Log any behavior differences during the transition"
-         ),
-         status="todo", priority="M", task_index=5)
+    task(
+        "nse5",
+        project_id=nse,
+        title="Build consumer migration SDK for Phase 3",
+        description=(
+            "Create a drop-in replacement SDK that mirrors the monolith library's API "
+            "but calls the new gRPC service underneath. This lets consumers migrate "
+            "with minimal code changes — swap the import, update the config, done.\n\n"
+            "The SDK should:\n"
+            "- Match the existing `NotificationClient` interface exactly\n"
+            "- Add gRPC connection pooling and deadline propagation\n"
+            "- Include a feature flag to toggle between old (library) and new (gRPC) paths\n"
+            "- Log any behavior differences during the transition"
+        ),
+        status="todo",
+        priority="M",
+        task_index=5,
+    )
 
-    task("nse6", project_id=nse,
-         title="Decommission old notification code in monolith",
-         description=(
-             "Once all consumers are migrated to the new service (Phase 3 complete):\n"
-             "- Remove the `notifications` module from the monolith\n"
-             "- Drop the shared database tables (preferences, templates, delivery_log)\n"
-             "- Remove the CDC stream\n"
-             "- Update the monolith's dependency graph\n\n"
-             "This is the final cleanup. Only start after all consumers are verified on the new service."
-         ),
-         status="blocked", priority="L", task_index=6)
+    task(
+        "nse6",
+        project_id=nse,
+        title="Decommission old notification code in monolith",
+        description=(
+            "Once all consumers are migrated to the new service (Phase 3 complete):\n"
+            "- Remove the `notifications` module from the monolith\n"
+            "- Drop the shared database tables (preferences, templates, delivery_log)\n"
+            "- Remove the CDC stream\n"
+            "- Update the monolith's dependency graph\n\n"
+            "This is the final cleanup. Only start after all consumers are verified on the new service."
+        ),
+        status="blocked",
+        priority="L",
+        task_index=6,
+    )
 
     # ===================================================================
     # Structured Logging Migration (LOG)
@@ -295,173 +376,233 @@ def seed_tasks(conn: sqlite3.Connection, proj: dict, sess: dict) -> dict[str, st
     lg1 = sess["logging-1"]
     lg2 = sess["logging-2"]
 
-    task("log1", project_id=log,
-         title="Update shared logging config library",
-         description=(
-             "The shared `logging-config` library is imported by all services for log setup. "
-             "Update it to:\n"
-             "- Default to structured JSON output on stdout\n"
-             "- Support a `LOG_FORMAT` env var to switch between JSON and human-readable\n"
-             "- Keep backward compatibility so services can migrate incrementally\n"
-             "- Update the README with migration instructions"
-         ),
-         notes=(
-             "Published v2.0.0 with structured JSON as default. Added `LOG_FORMAT=pretty` "
-             "for local development. All existing tests pass — backward compat maintained "
-             "through the env var toggle. Updated the migration guide with examples."
-         ),
-         links=_links(
-             ("https://github.com/acme-corp/logging-config/pull/28", "PR"),
-             ("https://github.com/acme-corp/logging-config/blob/main/MIGRATION.md", "Migration guide"),
-         ),
-         status="done", priority="H", task_index=1)
+    task(
+        "log1",
+        project_id=log,
+        title="Update shared logging config library",
+        description=(
+            "The shared `logging-config` library is imported by all services for log setup. "
+            "Update it to:\n"
+            "- Default to structured JSON output on stdout\n"
+            "- Support a `LOG_FORMAT` env var to switch between JSON and human-readable\n"
+            "- Keep backward compatibility so services can migrate incrementally\n"
+            "- Update the README with migration instructions"
+        ),
+        notes=(
+            "Published v2.0.0 with structured JSON as default. Added `LOG_FORMAT=pretty` "
+            "for local development. All existing tests pass — backward compat maintained "
+            "through the env var toggle. Updated the migration guide with examples."
+        ),
+        links=_links(
+            ("https://github.com/acme-corp/logging-config/pull/28", "PR"),
+            (
+                "https://github.com/acme-corp/logging-config/blob/main/MIGRATION.md",
+                "Migration guide",
+            ),
+        ),
+        status="done",
+        priority="H",
+        task_index=1,
+    )
 
-    task("log2", project_id=log,
-         title="Migrate user-service to structured logging",
-         description=(
-             "Replace log4j usage in the user-service with the updated logging-config library. "
-             "This repo is a straightforward migration — no custom appenders or sinks.\n\n"
-             "- Swap log4j imports for logging-config v2\n"
-             "- Remove log4j.xml config file\n"
-             "- Update any tests that assert on log output format\n"
-             "- Run full test suite, verify structured output in staging"
-         ),
-         notes="Clean migration. 14 files changed, all test assertions updated. No surprises.",
-         links=_links(
-             ("https://github.com/acme-corp/user-service/pull/91", "PR"),
-         ),
-         status="done", priority="M", task_index=2)
+    task(
+        "log2",
+        project_id=log,
+        title="Migrate user-service to structured logging",
+        description=(
+            "Replace log4j usage in the user-service with the updated logging-config library. "
+            "This repo is a straightforward migration — no custom appenders or sinks.\n\n"
+            "- Swap log4j imports for logging-config v2\n"
+            "- Remove log4j.xml config file\n"
+            "- Update any tests that assert on log output format\n"
+            "- Run full test suite, verify structured output in staging"
+        ),
+        notes="Clean migration. 14 files changed, all test assertions updated. No surprises.",
+        links=_links(
+            ("https://github.com/acme-corp/user-service/pull/91", "PR"),
+        ),
+        status="done",
+        priority="M",
+        task_index=2,
+    )
 
-    task("log3", project_id=log,
-         title="Migrate delivery-pipeline to structured logging",
-         description=(
-             "Replace logging in the delivery-pipeline service. **Watch out:** this repo has "
-             "a custom log appender that writes to a shared NFS volume at `/var/log/compliance/`. "
-             "The compliance team reads from that path for audit trail.\n\n"
-             "Keep the NFS appender as a secondary sink alongside structured stdout. "
-             "File a follow-up ticket to move compliance to the centralized log store."
-         ),
-         notes=(
-             "Kept the NFS compliance appender as a secondary sink — writes both structured "
-             "JSON to stdout and the existing format to /var/log/compliance/. Filed JIRA-5102 "
-             "to migrate compliance team to the centralized log store. They acknowledged and "
-             "added it to their Q2 roadmap."
-         ),
-         links=_links(
-             ("https://github.com/acme-corp/delivery-pipeline/pull/67", "PR"),
-         ),
-         status="done", priority="M", task_index=3)
+    task(
+        "log3",
+        project_id=log,
+        title="Migrate delivery-pipeline to structured logging",
+        description=(
+            "Replace logging in the delivery-pipeline service. **Watch out:** this repo has "
+            "a custom log appender that writes to a shared NFS volume at `/var/log/compliance/`. "
+            "The compliance team reads from that path for audit trail.\n\n"
+            "Keep the NFS appender as a secondary sink alongside structured stdout. "
+            "File a follow-up ticket to move compliance to the centralized log store."
+        ),
+        notes=(
+            "Kept the NFS compliance appender as a secondary sink — writes both structured "
+            "JSON to stdout and the existing format to /var/log/compliance/. Filed JIRA-5102 "
+            "to migrate compliance team to the centralized log store. They acknowledged and "
+            "added it to their Q2 roadmap."
+        ),
+        links=_links(
+            ("https://github.com/acme-corp/delivery-pipeline/pull/67", "PR"),
+        ),
+        status="done",
+        priority="M",
+        task_index=3,
+    )
 
-    task("log4", project_id=log,
-         title="Migrate payments-service to structured logging",
-         description=(
-             "Replace commons-logging in the payments-service. This repo uses the older "
-             "`commons-logging` framework instead of log4j. Same migration pattern:\n"
-             "- Swap to logging-config v2\n"
-             "- Remove commons-logging config\n"
-             "- Update test assertions\n"
-             "- Verify in staging"
-         ),
-         status="in_progress", assigned_session_id=lg1, priority="M", task_index=4)
+    task(
+        "log4",
+        project_id=log,
+        title="Migrate payments-service to structured logging",
+        description=(
+            "Replace commons-logging in the payments-service. This repo uses the older "
+            "`commons-logging` framework instead of log4j. Same migration pattern:\n"
+            "- Swap to logging-config v2\n"
+            "- Remove commons-logging config\n"
+            "- Update test assertions\n"
+            "- Verify in staging"
+        ),
+        status="in_progress",
+        assigned_session_id=lg1,
+        priority="M",
+        task_index=4,
+    )
 
-    task("log5", project_id=log,
-         title="Migrate search-service to structured logging",
-         description=(
-             "Replace log4j in the search-service. **Note:** this repo has a custom metrics "
-             "appender that parses latency percentiles (p50/p95/p99) from log lines and "
-             "exposes them as Prometheus metrics.\n\n"
-             "If changing the log format will break this, migrate to proper metrics "
-             "instrumentation instead of parsing logs. The `micrometer` library is already "
-             "a dependency in this repo."
-         ),
-         notes=(
-             "Found the custom `LatencyMetricsAppender` that regex-parses log lines for "
-             "timing data. Changing to structured JSON will break the regex patterns. "
-             "Flagged for decision: migrate to proper micrometer histograms, or preserve "
-             "the old log format for this service?"
-         ),
-         status="in_progress", assigned_session_id=lg2, priority="M", task_index=5)
+    task(
+        "log5",
+        project_id=log,
+        title="Migrate search-service to structured logging",
+        description=(
+            "Replace log4j in the search-service. **Note:** this repo has a custom metrics "
+            "appender that parses latency percentiles (p50/p95/p99) from log lines and "
+            "exposes them as Prometheus metrics.\n\n"
+            "If changing the log format will break this, migrate to proper metrics "
+            "instrumentation instead of parsing logs. The `micrometer` library is already "
+            "a dependency in this repo."
+        ),
+        notes=(
+            "Found the custom `LatencyMetricsAppender` that regex-parses log lines for "
+            "timing data. Changing to structured JSON will break the regex patterns. "
+            "Flagged for decision: migrate to proper micrometer histograms, or preserve "
+            "the old log format for this service?"
+        ),
+        status="in_progress",
+        assigned_session_id=lg2,
+        priority="M",
+        task_index=5,
+    )
 
-    task("log6", project_id=log,
-         title="Migrate analytics-service to structured logging",
-         description=(
-             "Replace the homegrown logging wrapper in analytics-service. This repo uses a "
-             "custom `AnalyticsLogger` class that wraps log4j. Swap the underlying implementation "
-             "to logging-config v2 while keeping the `AnalyticsLogger` interface for now.\n\n"
-             "Was blocked on the shared logging-config library update (LOG-1). Now unblocked."
-         ),
-         status="todo", priority="M", task_index=6)
+    task(
+        "log6",
+        project_id=log,
+        title="Migrate analytics-service to structured logging",
+        description=(
+            "Replace the homegrown logging wrapper in analytics-service. This repo uses a "
+            "custom `AnalyticsLogger` class that wraps log4j. Swap the underlying implementation "
+            "to logging-config v2 while keeping the `AnalyticsLogger` interface for now.\n\n"
+            "Was blocked on the shared logging-config library update (LOG-1). Now unblocked."
+        ),
+        status="todo",
+        priority="M",
+        task_index=6,
+    )
 
-    task("log7", project_id=log,
-         title="Migrate recommendations-service to structured logging",
-         description=(
-             "Replace log4j in the recommendations-service. Straightforward migration, no "
-             "custom appenders. Was blocked on the shared logging-config library update (LOG-1)."
-         ),
-         status="todo", priority="M", task_index=7)
+    task(
+        "log7",
+        project_id=log,
+        title="Migrate recommendations-service to structured logging",
+        description=(
+            "Replace log4j in the recommendations-service. Straightforward migration, no "
+            "custom appenders. Was blocked on the shared logging-config library update (LOG-1)."
+        ),
+        status="todo",
+        priority="M",
+        task_index=7,
+    )
 
-    task("log8", project_id=log,
-         title="Migrate gateway-service to structured logging",
-         description=(
-             "Replace log4j in the API gateway service. This is a high-traffic service — "
-             "verify that structured JSON serialization doesn't add measurable latency. "
-             "Benchmark before and after with a load test.\n\n"
-             "The gateway also has access logs in a specific format that the WAF team parses. "
-             "Check with them before changing the access log format."
-         ),
-         status="todo", priority="M", task_index=8)
+    task(
+        "log8",
+        project_id=log,
+        title="Migrate gateway-service to structured logging",
+        description=(
+            "Replace log4j in the API gateway service. This is a high-traffic service — "
+            "verify that structured JSON serialization doesn't add measurable latency. "
+            "Benchmark before and after with a load test.\n\n"
+            "The gateway also has access logs in a specific format that the WAF team parses. "
+            "Check with them before changing the access log format."
+        ),
+        status="todo",
+        priority="M",
+        task_index=8,
+    )
 
     # ===================================================================
     # Maintenance & Operations (OPS)
     # ===================================================================
     ops = proj["ops"]
 
-    task("ops1", project_id=ops,
-         title="Fix connection pool exhaustion on shared notifications DB",
-         description=(
-             "P1: Notification preferences API returning 500s. Users can't update email "
-             "settings. Root cause appears to be connection pool exhaustion on the shared "
-             "database — likely a long-running analytics query hogging connections.\n\n"
-             "**Immediate fix:** identify and kill the blocking query, add statement timeout.\n"
-             "**Follow-up:** write a one-pager on read replica setup for analytics workload."
-         ),
-         notes=(
-             "Found the culprit: an unindexed JOIN from the analytics dashboard running "
-             "for 45+ minutes, holding 8 of 10 pool connections. Killed the query, added "
-             "a 30-second `statement_timeout` for the analytics role, and added the missing "
-             "index on `delivery_log(created_at, status)` so the query runs in 2 seconds.\n\n"
-             "Read replica one-pager written and shared in #notifications-eng. The connection "
-             "pool issue is a symptom of the shared DB problem — this accelerates the case "
-             "for the service extraction."
-         ),
-         links=_links(
-             ("https://github.com/acme-corp/monolith/pull/482", "PR: statement timeout + index"),
-             ("https://docs.google.com/document/d/1x2y3z/edit", "Read replica one-pager"),
-         ),
-         status="done", priority="H", task_index=1)
+    task(
+        "ops1",
+        project_id=ops,
+        title="Fix connection pool exhaustion on shared notifications DB",
+        description=(
+            "P1: Notification preferences API returning 500s. Users can't update email "
+            "settings. Root cause appears to be connection pool exhaustion on the shared "
+            "database — likely a long-running analytics query hogging connections.\n\n"
+            "**Immediate fix:** identify and kill the blocking query, add statement timeout.\n"
+            "**Follow-up:** write a one-pager on read replica setup for analytics workload."
+        ),
+        notes=(
+            "Found the culprit: an unindexed JOIN from the analytics dashboard running "
+            "for 45+ minutes, holding 8 of 10 pool connections. Killed the query, added "
+            "a 30-second `statement_timeout` for the analytics role, and added the missing "
+            "index on `delivery_log(created_at, status)` so the query runs in 2 seconds.\n\n"
+            "Read replica one-pager written and shared in #notifications-eng. The connection "
+            "pool issue is a symptom of the shared DB problem — this accelerates the case "
+            "for the service extraction."
+        ),
+        links=_links(
+            ("https://github.com/acme-corp/monolith/pull/482", "PR: statement timeout + index"),
+            ("https://docs.google.com/document/d/1x2y3z/edit", "Read replica one-pager"),
+        ),
+        status="done",
+        priority="H",
+        task_index=1,
+    )
 
-    task("ops2", project_id=ops,
-         title="Fix flaky test suite in notifications module",
-         description=(
-             "The notifications module test suite has been failing intermittently for three "
-             "months. The team re-runs and hopes. Root cause is test isolation — tests share "
-             "a database and don't clean up after themselves.\n\n"
-             "**Fix:** Each test should get its own database transaction that rolls back after "
-             "the test. Look at how the users-service tests handle this — they have a good "
-             "pattern with transaction-scoped fixtures.\n\n"
-             "**Target:** Zero flaky failures in 50 consecutive CI runs."
-         ),
-         status="todo", priority="M", task_index=2)
+    task(
+        "ops2",
+        project_id=ops,
+        title="Fix flaky test suite in notifications module",
+        description=(
+            "The notifications module test suite has been failing intermittently for three "
+            "months. The team re-runs and hopes. Root cause is test isolation — tests share "
+            "a database and don't clean up after themselves.\n\n"
+            "**Fix:** Each test should get its own database transaction that rolls back after "
+            "the test. Look at how the users-service tests handle this — they have a good "
+            "pattern with transaction-scoped fixtures.\n\n"
+            "**Target:** Zero flaky failures in 50 consecutive CI runs."
+        ),
+        status="todo",
+        priority="M",
+        task_index=2,
+    )
 
-    task("ops3", project_id=ops,
-         title="Deprecate v1 notification preferences endpoint",
-         description=(
-             "Three external teams still hit the deprecated `/v1/preferences` REST endpoint "
-             "instead of the `/v2/preferences` endpoint. Add deprecation headers, emit metrics "
-             "to track remaining traffic, and reach out to the teams with a migration timeline.\n\n"
-             "Don't remove it yet — just make it visible and set a date."
-         ),
-         status="todo", priority="L", task_index=3)
+    task(
+        "ops3",
+        project_id=ops,
+        title="Deprecate v1 notification preferences endpoint",
+        description=(
+            "Three external teams still hit the deprecated `/v1/preferences` REST endpoint "
+            "instead of the `/v2/preferences` endpoint. Add deprecation headers, emit metrics "
+            "to track remaining traffic, and reach out to the teams with a migration timeline.\n\n"
+            "Don't remove it yet — just make it visible and set a date."
+        ),
+        status="todo",
+        priority="L",
+        task_index=3,
+    )
 
     return ids
 
@@ -638,34 +779,84 @@ def seed_notifications(conn: sqlite3.Connection, tasks: dict, sess: dict):
 def seed_config(conn: sqlite3.Connection):
     """Seed default runtime configuration."""
     defaults = [
-        ("approval_policy.send_message", True, "Require approval before sending messages to sessions", "approval"),
-        ("approval_policy.assign_task", True, "Require approval before assigning tasks", "approval"),
-        ("approval_policy.create_task", False, "Require approval before creating tasks", "approval"),
+        (
+            "approval_policy.send_message",
+            True,
+            "Require approval before sending messages to sessions",
+            "approval",
+        ),
+        (
+            "approval_policy.assign_task",
+            True,
+            "Require approval before assigning tasks",
+            "approval",
+        ),
+        (
+            "approval_policy.create_task",
+            False,
+            "Require approval before creating tasks",
+            "approval",
+        ),
         ("approval_policy.alert_user", False, "Require approval before alerting user", "approval"),
-        ("context.weight.query_relevance", 0.35, "Weight for query relevance in context scoring", "context"),
+        (
+            "context.weight.query_relevance",
+            0.35,
+            "Weight for query relevance in context scoring",
+            "context",
+        ),
         ("context.weight.recency", 0.25, "Weight for recency in context scoring", "context"),
         ("context.weight.status", 0.20, "Weight for status in context scoring", "context"),
         ("context.weight.urgency", 0.10, "Weight for urgency in context scoring", "context"),
-        ("context.weight.connection_depth", 0.10, "Weight for connection depth in context scoring", "context"),
+        (
+            "context.weight.connection_depth",
+            0.10,
+            "Weight for connection depth in context scoring",
+            "context",
+        ),
         ("context.token_budget", 8000, "Max tokens for assembled context", "context"),
         ("autonomy.mode", "advisory", "Current autonomy mode: advisory or autonomous", "autonomy"),
-        ("autonomy.auto_actions", [], "Actions that can be auto-executed in autonomous mode", "autonomy"),
-        ("monitoring.poll_interval_seconds", 5, "Default poll interval for passive monitor", "monitoring"),
-        ("monitoring.heartbeat_timeout_seconds", 120, "Mark session stale after this many seconds", "monitoring"),
-        ("monitoring.reconciliation_interval_seconds", 300, "Full state reconciliation interval", "monitoring"),
+        (
+            "autonomy.auto_actions",
+            [],
+            "Actions that can be auto-executed in autonomous mode",
+            "autonomy",
+        ),
+        (
+            "monitoring.poll_interval_seconds",
+            5,
+            "Default poll interval for passive monitor",
+            "monitoring",
+        ),
+        (
+            "monitoring.heartbeat_timeout_seconds",
+            120,
+            "Mark session stale after this many seconds",
+            "monitoring",
+        ),
+        (
+            "monitoring.reconciliation_interval_seconds",
+            300,
+            "Full state reconciliation interval",
+            "monitoring",
+        ),
     ]
     for key, value, description, category in defaults:
-        _insert(conn, "config", {
-            "key": key,
-            "value": json.dumps(value),
-            "description": description,
-            "category": category,
-        })
+        _insert(
+            conn,
+            "config",
+            {
+                "key": key,
+                "value": json.dumps(value),
+                "description": description,
+                "category": category,
+            },
+        )
 
 
 # ---------------------------------------------------------------------------
 # Main entry point
 # ---------------------------------------------------------------------------
+
 
 def seed_demo(db_path: str | None = None):
     """Create and populate the demo database."""

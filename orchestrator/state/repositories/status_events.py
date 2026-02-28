@@ -22,7 +22,15 @@ def insert_event(
     conn.execute(
         """INSERT INTO status_events (entity_type, entity_id, old_status, new_status, is_subtask, session_type, timestamp)
            VALUES (?, ?, ?, ?, ?, ?, ?)""",
-        (entity_type, entity_id, old_status, new_status, int(is_subtask), session_type, utc_now_iso()),
+        (
+            entity_type,
+            entity_id,
+            old_status,
+            new_status,
+            int(is_subtask),
+            session_type,
+            utc_now_iso(),
+        ),
     )
 
 
@@ -148,7 +156,9 @@ def _add_interval(hours_by_date: dict[str, float], start: datetime, end: datetim
     current = start
     while current < end:
         # End of current day (local midnight)
-        next_midnight = (current + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+        next_midnight = (current + timedelta(days=1)).replace(
+            hour=0, minute=0, second=0, microsecond=0
+        )
         interval_end = min(end, next_midnight)
         day_key = current.strftime("%Y-%m-%d")
         hours = (interval_end - current).total_seconds() / 3600
@@ -204,17 +214,19 @@ def query_throughput_detail(conn: sqlite3.Connection, date: str) -> list[dict]:
             if parent:
                 parent_title = parent.title
                 parent_task_key = _get_task_key(parent, conn)
-        items.append({
-            "entity_id": r["entity_id"],
-            "is_subtask": bool(r["is_subtask"]),
-            "timestamp": r["timestamp"],
-            "title": title,
-            "task_key": task_key,
-            "status": status,
-            "parent_task_id": parent_task_id,
-            "parent_title": parent_title,
-            "parent_task_key": parent_task_key,
-        })
+        items.append(
+            {
+                "entity_id": r["entity_id"],
+                "is_subtask": bool(r["is_subtask"]),
+                "timestamp": r["timestamp"],
+                "title": title,
+                "task_key": task_key,
+                "status": status,
+                "parent_task_id": parent_task_id,
+                "parent_title": parent_title,
+                "parent_task_key": parent_task_key,
+            }
+        )
     return items
 
 
@@ -267,10 +279,12 @@ def query_worker_hours_detail(conn: sqlite3.Connection, date: str) -> list[dict]
                 clamped_start = max(work_start, target_start)
                 clamped_end = min(ts, target_end)
                 if clamped_start < clamped_end:
-                    intervals.append({
-                        "start": clamped_start.isoformat(),
-                        "end": clamped_end.isoformat(),
-                    })
+                    intervals.append(
+                        {
+                            "start": clamped_start.isoformat(),
+                            "end": clamped_end.isoformat(),
+                        }
+                    )
                 work_start = None
 
         # Clamp open interval to now (or target_end)
@@ -278,10 +292,12 @@ def query_worker_hours_detail(conn: sqlite3.Connection, date: str) -> list[dict]
             clamped_start = max(work_start, target_start)
             clamped_end = min(now, target_end)
             if clamped_start < clamped_end:
-                intervals.append({
-                    "start": clamped_start.isoformat(),
-                    "end": clamped_end.isoformat(),
-                })
+                intervals.append(
+                    {
+                        "start": clamped_start.isoformat(),
+                        "end": clamped_end.isoformat(),
+                    }
+                )
 
         if not intervals:
             continue
@@ -302,20 +318,24 @@ def query_worker_hours_detail(conn: sqlite3.Connection, date: str) -> list[dict]
                 current_task = {"id": t.id, "title": t.title}
                 break
 
-        items.append({
-            "session_id": wid,
-            "session_name": session_name,
-            "total_hours": round(total_hours, 2),
-            "intervals": intervals,
-            "current_task": current_task,
-        })
+        items.append(
+            {
+                "session_id": wid,
+                "session_name": session_name,
+                "total_hours": round(total_hours, 2),
+                "intervals": intervals,
+                "current_task": current_task,
+            }
+        )
 
     # Sort by total hours descending
     items.sort(key=lambda x: x["total_hours"], reverse=True)
     return items
 
 
-def query_heatmap_detail(conn: sqlite3.Connection, day_of_week: int, hour: int, since_date: str) -> list[dict]:
+def query_heatmap_detail(
+    conn: sqlite3.Connection, day_of_week: int, hour: int, since_date: str
+) -> list[dict]:
     """Detail events for a specific heatmap cell (day_of_week + hour).
 
     Returns [{date, session_id, session_name, timestamp}] ordered by timestamp DESC.
@@ -338,12 +358,14 @@ def query_heatmap_detail(conn: sqlite3.Connection, day_of_week: int, hour: int, 
         session = sessions_repo.get_session(conn, r["entity_id"])
         session_name = session.name if session else r["entity_id"]
         ts = _parse_ts(r["timestamp"])
-        items.append({
-            "date": ts.astimezone().strftime("%Y-%m-%d"),  # Local date
-            "session_id": r["entity_id"],
-            "session_name": session_name,
-            "timestamp": r["timestamp"],
-        })
+        items.append(
+            {
+                "date": ts.astimezone().strftime("%Y-%m-%d"),  # Local date
+                "session_id": r["entity_id"],
+                "session_name": session_name,
+                "timestamp": r["timestamp"],
+            }
+        )
     return items
 
 

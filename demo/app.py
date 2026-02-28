@@ -16,7 +16,9 @@ def create_demo_app():
     """Create the FastAPI app pointing at the demo database."""
     if not Path(DB_PATH).exists():
         from demo.seed import seed_demo
+
         seed_demo(DB_PATH)
 
     from orchestrator.api.app import create_app
+
     return create_app(db_path=DB_PATH)

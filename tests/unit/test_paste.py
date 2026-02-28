@@ -78,6 +78,7 @@ class TestSaveImage:
 
     def test_invalid_base64_returns_400(self, images_dir):
         from fastapi import HTTPException
+
         with pytest.raises(HTTPException) as exc_info:
             save_image("not-valid-base64!!!")
         assert exc_info.value.status_code == 400
@@ -157,45 +158,53 @@ class TestReadClipboard:
     """Tests for the read_clipboard (GET /api/clipboard) endpoint logic."""
 
     def test_text_only(self):
-        with patch("orchestrator.api.routes.paste.subprocess.run",
-                    side_effect=_mock_run(pbpaste_stdout="hello world")):
+        with patch(
+            "orchestrator.api.routes.paste.subprocess.run",
+            side_effect=_mock_run(pbpaste_stdout="hello world"),
+        ):
             result = read_clipboard()
         assert result["text"] == "hello world"
         assert result["image_base64"] is None
 
     def test_image_only(self):
-        with patch("orchestrator.api.routes.paste.subprocess.run",
-                    side_effect=_mock_run(osascript_stdout=TINY_PNG_B64)):
+        with patch(
+            "orchestrator.api.routes.paste.subprocess.run",
+            side_effect=_mock_run(osascript_stdout=TINY_PNG_B64),
+        ):
             result = read_clipboard()
         assert result["text"] is None
         assert result["image_base64"] == TINY_PNG_B64
 
     def test_both_text_and_image(self):
-        with patch("orchestrator.api.routes.paste.subprocess.run",
-                    side_effect=_mock_run(
-                        pbpaste_stdout="some text",
-                        osascript_stdout=TINY_PNG_B64,
-                    )):
+        with patch(
+            "orchestrator.api.routes.paste.subprocess.run",
+            side_effect=_mock_run(
+                pbpaste_stdout="some text",
+                osascript_stdout=TINY_PNG_B64,
+            ),
+        ):
             result = read_clipboard()
         assert result["text"] == "some text"
         assert result["image_base64"] == TINY_PNG_B64
 
     def test_empty_clipboard_raises_204(self):
-        with patch("orchestrator.api.routes.paste.subprocess.run",
-                    side_effect=_mock_run()):
+        with patch("orchestrator.api.routes.paste.subprocess.run", side_effect=_mock_run()):
             with pytest.raises(HTTPException) as exc_info:
                 read_clipboard()
             assert exc_info.value.status_code == 204
 
     def test_whitespace_only_text_treated_as_empty(self):
-        with patch("orchestrator.api.routes.paste.subprocess.run",
-                    side_effect=_mock_run(pbpaste_stdout="   \n  ")):
+        with patch(
+            "orchestrator.api.routes.paste.subprocess.run",
+            side_effect=_mock_run(pbpaste_stdout="   \n  "),
+        ):
             with pytest.raises(HTTPException) as exc_info:
                 read_clipboard()
             assert exc_info.value.status_code == 204
 
     def test_pbpaste_failure_falls_through(self):
         """If pbpaste fails, image path still works."""
+
         def side_effect(cmd, **_kwargs):
             if cmd[0] == "pbpaste":
                 raise OSError("pbpaste not found")
@@ -204,14 +213,14 @@ class TestReadClipboard:
             result.stdout = TINY_PNG_B64
             return result
 
-        with patch("orchestrator.api.routes.paste.subprocess.run",
-                    side_effect=side_effect):
+        with patch("orchestrator.api.routes.paste.subprocess.run", side_effect=side_effect):
             result = read_clipboard()
         assert result["text"] is None
         assert result["image_base64"] == TINY_PNG_B64
 
     def test_osascript_failure_falls_through(self):
         """If osascript fails, text path still works."""
+
         def side_effect(cmd, **_kwargs):
             if cmd[0] == "osascript":
                 raise OSError("osascript not found")
@@ -220,15 +229,16 @@ class TestReadClipboard:
             result.stdout = "clipboard text"
             return result
 
-        with patch("orchestrator.api.routes.paste.subprocess.run",
-                    side_effect=side_effect):
+        with patch("orchestrator.api.routes.paste.subprocess.run", side_effect=side_effect):
             result = read_clipboard()
         assert result["text"] == "clipboard text"
         assert result["image_base64"] is None
 
     def test_pbpaste_nonzero_exit_ignored(self):
-        with patch("orchestrator.api.routes.paste.subprocess.run",
-                    side_effect=_mock_run(pbpaste_rc=1, osascript_stdout=TINY_PNG_B64)):
+        with patch(
+            "orchestrator.api.routes.paste.subprocess.run",
+            side_effect=_mock_run(pbpaste_rc=1, osascript_stdout=TINY_PNG_B64),
+        ):
             result = read_clipboard()
         assert result["text"] is None
         assert result["image_base64"] == TINY_PNG_B64

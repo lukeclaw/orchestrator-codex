@@ -18,6 +18,7 @@ def _local_yesterday() -> str:
     """Get yesterday's date in local timezone as YYYY-MM-DD."""
     return (datetime.now().astimezone() - timedelta(days=1)).strftime("%Y-%m-%d")
 
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -287,16 +288,18 @@ class TestTrendsDetailAPI:
         """Helper to create project, tasks, sessions, and generate status events via API."""
         proj = client.post("/api/projects", json={"name": "API Test"}).json()
 
-        task = client.post("/api/tasks", json={
-            "project_id": proj["id"], "title": "API Task"
-        }).json()
+        task = client.post(
+            "/api/tasks", json={"project_id": proj["id"], "title": "API Task"}
+        ).json()
         client.patch(f"/api/tasks/{task['id']}", json={"status": "in_progress"})
         client.patch(f"/api/tasks/{task['id']}", json={"status": "done"})
 
-        with patch("orchestrator.api.routes.sessions.ensure_window", return_value="orchestrator:w1"):
-            worker = client.post("/api/sessions", json={
-                "name": "api-worker", "host": "localhost"
-            }).json()
+        with patch(
+            "orchestrator.api.routes.sessions.ensure_window", return_value="orchestrator:w1"
+        ):
+            worker = client.post(
+                "/api/sessions", json={"name": "api-worker", "host": "localhost"}
+            ).json()
         client.patch(f"/api/sessions/{worker['id']}", json={"status": "working"})
 
         return {"project": proj, "task": task, "worker": worker}

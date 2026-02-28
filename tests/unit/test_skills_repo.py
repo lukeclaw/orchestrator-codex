@@ -44,7 +44,10 @@ def test_create_and_get(db):
 
 def test_create_with_description(db):
     skill = create_skill(
-        db, name="lint", target="brain", content="body",
+        db,
+        name="lint",
+        target="brain",
+        content="body",
         description="Run linter on code",
     )
     assert skill.description == "Run linter on code"

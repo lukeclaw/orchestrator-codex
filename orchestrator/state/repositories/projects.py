@@ -69,9 +69,7 @@ def update_project(
         return get_project(conn, id)
     sets.append("updated_at = CURRENT_TIMESTAMP")
     params.append(id)
-    conn.execute(
-        f"UPDATE projects SET {', '.join(sets)} WHERE id = ?", params
-    )
+    conn.execute(f"UPDATE projects SET {', '.join(sets)} WHERE id = ?", params)
     conn.commit()
     return get_project(conn, id)
 

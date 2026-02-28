@@ -39,7 +39,9 @@ def test_seed_idempotent(db):
 def test_seed_config_categories(db):
     seed_all(db)
     approval = list_config(db, category="approval")
-    assert len(approval) >= 3  # send_message, assign_task, create_task, alert_user (rebrief_session removed)
+    assert (
+        len(approval) >= 3
+    )  # send_message, assign_task, create_task, alert_user (rebrief_session removed)
     context = list_config(db, category="context")
     assert len(context) >= 6
     monitoring = list_config(db, category="monitoring")
@@ -48,6 +50,7 @@ def test_seed_config_categories(db):
 
 def test_seed_context_items(db):
     from orchestrator.state.repositories.context import list_context
+
     seed_all(db)
     items = list_context(db, scope="global")
     titles = {item.title for item in items}
@@ -64,6 +67,7 @@ def test_seed_context_items(db):
 
 def test_seed_context_idempotent(db):
     from orchestrator.state.repositories.context import list_context
+
     seed_all(db)
     count1 = len(list_context(db, scope="global"))
     seed_all(db)

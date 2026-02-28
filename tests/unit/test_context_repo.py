@@ -28,8 +28,13 @@ def test_create_project_scoped(db):
     db.commit()
 
     item = create_context_item(
-        db, title="Auth pattern", content="Use JWT",
-        scope="project", project_id="p1", category="convention", source="brain",
+        db,
+        title="Auth pattern",
+        content="Use JWT",
+        scope="project",
+        project_id="p1",
+        category="convention",
+        source="brain",
     )
     assert item.scope == "project"
     assert item.project_id == "p1"

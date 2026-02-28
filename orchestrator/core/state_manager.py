@@ -29,7 +29,7 @@ logger = logging.getLogger(__name__)
 
 class StateManager:
     """Manages all event-driven database state updates.
-    
+
     This centralizes writes to avoid lock contention between the monitor
     and API routes. The monitor emits events, and this manager handles
     all the corresponding DB updates.
@@ -74,9 +74,7 @@ class StateManager:
             try:
                 # Wait for an event with timeout to allow clean shutdown
                 try:
-                    event = await asyncio.wait_for(
-                        self._event_queue.get(), timeout=1.0
-                    )
+                    event = await asyncio.wait_for(self._event_queue.get(), timeout=1.0)
                 except TimeoutError:
                     continue
 
@@ -104,13 +102,11 @@ class StateManager:
             return
 
         # Run in thread pool to avoid blocking async loop
-        await asyncio.to_thread(
-            self._update_session_state, session_name, new_state
-        )
+        await asyncio.to_thread(self._update_session_state, session_name, new_state)
 
     def _update_session_state(self, session_name: str, new_state: str):
         """Update session state in database (runs in thread pool).
-        
+
         Note: No @with_retry here since update_session already has retry logic.
         """
         with self.conn_factory.connection() as conn:

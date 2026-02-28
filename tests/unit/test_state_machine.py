@@ -19,8 +19,16 @@ class TestSessionStatus:
 
     def test_all_statuses_defined(self):
         """All expected statuses should be defined."""
-        expected = {"idle", "connecting", "working", "paused", "waiting",
-                    "screen_detached", "error", "disconnected"}
+        expected = {
+            "idle",
+            "connecting",
+            "working",
+            "paused",
+            "waiting",
+            "screen_detached",
+            "error",
+            "disconnected",
+        }
         actual = {s.value for s in SessionStatus}
         assert actual == expected
 

@@ -43,9 +43,7 @@ def _run_tmux(*args: str, check: bool = True, timeout: int = 10) -> subprocess.C
 def is_tmux_available() -> bool:
     """Check if tmux is installed and runnable."""
     try:
-        result = subprocess.run(
-            ["tmux", "-V"], capture_output=True, text=True, timeout=5
-        )
+        result = subprocess.run(["tmux", "-V"], capture_output=True, text=True, timeout=5)
         return result.returncode == 0
     except (FileNotFoundError, subprocess.TimeoutExpired):
         return False
@@ -86,6 +84,7 @@ def create_window(session_name: str, window_name: str, cwd: str | None = None) -
     args = ["new-window", "-d", "-t", session_name, "-n", window_name]
     if cwd:
         import os
+
         os.makedirs(cwd, exist_ok=True)
         args += ["-c", cwd]
     _run_tmux(*args)
@@ -100,8 +99,11 @@ def list_windows(session_name: str) -> list[TmuxWindow]:
         return []
 
     result = _run_tmux(
-        "list-windows", "-t", session_name,
-        "-F", "#{window_index}:#{window_name}:#{window_active}",
+        "list-windows",
+        "-t",
+        session_name,
+        "-F",
+        "#{window_index}:#{window_name}:#{window_active}",
         check=False,
     )
     if result.returncode != 0:
@@ -113,11 +115,13 @@ def list_windows(session_name: str) -> list[TmuxWindow]:
             continue
         parts = line.split(":")
         if len(parts) >= 3:
-            windows.append(TmuxWindow(
-                index=int(parts[0]),
-                name=parts[1],
-                active=parts[2] == "1",
-            ))
+            windows.append(
+                TmuxWindow(
+                    index=int(parts[0]),
+                    name=parts[1],
+                    active=parts[2] == "1",
+                )
+            )
     return windows
 
 
@@ -168,7 +172,12 @@ def capture_output(session_name: str, window_name: str, lines: int = 50) -> str:
     """Capture visible pane content from a window."""
     target = f"{session_name}:{window_name}"
     result = _run_tmux(
-        "capture-pane", "-p", "-t", target, "-S", f"-{lines}",
+        "capture-pane",
+        "-p",
+        "-t",
+        target,
+        "-S",
+        f"-{lines}",
         check=False,
     )
     if result.returncode != 0:
@@ -223,6 +232,7 @@ def paste_to_pane(session_name: str, window_name: str, text: str) -> bool:
 
     # 1. Load text into a named paste buffer (unique name avoids races)
     import uuid
+
     buf_name = f"orch-{uuid.uuid4().hex[:8]}"
     result = _run_tmux("set-buffer", "-b", buf_name, "--", text, check=False)
     if result.returncode != 0:
@@ -233,7 +243,13 @@ def paste_to_pane(session_name: str, window_name: str, text: str) -> bool:
     #    -d  deletes the buffer after pasting (cleanup).
     #    -p  forces bracketed-paste control codes (tmux ≥ 3.3).
     result = _run_tmux(
-        "paste-buffer", "-d", "-p", "-b", buf_name, "-t", target,
+        "paste-buffer",
+        "-d",
+        "-p",
+        "-b",
+        buf_name,
+        "-t",
+        target,
         check=False,
     )
     if result.returncode != 0:
@@ -242,7 +258,12 @@ def paste_to_pane(session_name: str, window_name: str, text: str) -> bool:
         # Re-set the buffer (it may have been deleted by the failed attempt)
         _run_tmux("set-buffer", "-b", buf_name, "--", text, check=False)
         result = _run_tmux(
-            "paste-buffer", "-d", "-b", buf_name, "-t", target,
+            "paste-buffer",
+            "-d",
+            "-b",
+            buf_name,
+            "-t",
+            target,
             check=False,
         )
         if result.returncode != 0:
@@ -274,7 +295,13 @@ def resize_pane(session_name: str, window_name: str, cols: int, rows: int) -> bo
     """Resize a tmux pane."""
     target = f"{session_name}:{window_name}"
     result = _run_tmux(
-        "resize-window", "-t", target, "-x", str(cols), "-y", str(rows),
+        "resize-window",
+        "-t",
+        target,
+        "-x",
+        str(cols),
+        "-y",
+        str(rows),
         check=False,
     )
     return result.returncode == 0

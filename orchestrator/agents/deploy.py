@@ -15,8 +15,27 @@ _AGENTS_DIR = str(paths.agents_dir())
 _SHARED_HOOKS_DIR = os.path.join(_AGENTS_DIR, "shared", "hooks")
 
 # Script names for iteration
-WORKER_SCRIPT_NAMES = ["orch-task", "orch-subtask", "orch-worker", "orch-context", "orch-notify", "orch-tunnel", "orch-prs"]
-BRAIN_SCRIPT_NAMES = ["orch-workers", "orch-projects", "orch-tasks", "orch-ctx", "orch-skills", "orch-send", "orch-notifications", "orch-tunnel", "orch-prs"]
+WORKER_SCRIPT_NAMES = [
+    "orch-task",
+    "orch-subtask",
+    "orch-worker",
+    "orch-context",
+    "orch-notify",
+    "orch-tunnel",
+    "orch-prs",
+    "orch-interactive",
+]
+BRAIN_SCRIPT_NAMES = [
+    "orch-workers",
+    "orch-projects",
+    "orch-tasks",
+    "orch-ctx",
+    "orch-skills",
+    "orch-send",
+    "orch-notifications",
+    "orch-tunnel",
+    "orch-prs",
+]
 
 
 def get_path_export_command(bin_dir: str) -> str:
@@ -30,15 +49,15 @@ def deploy_worker_scripts(
     api_base: str = "http://127.0.0.1:8093",
 ) -> str:
     """Deploy worker CLI scripts to the worker's bin directory.
-    
+
     Copies static scripts from agents/worker/bin/ and creates lib.sh with
     environment variable defaults.
-    
+
     Args:
         worker_dir: Base directory for the worker (e.g., /tmp/orchestrator/workers/worker1)
         session_id: Worker's session ID
         api_base: API base URL
-        
+
     Returns:
         Path to the bin directory containing the scripts
     """
@@ -46,7 +65,7 @@ def deploy_worker_scripts(
     os.makedirs(bin_dir, exist_ok=True)
 
     # Copy lib.sh with environment variable values injected
-    lib_content = f'''#!/bin/bash
+    lib_content = f"""#!/bin/bash
 # Worker CLI library - shared functions for worker scripts
 # Auto-generated with session-specific defaults
 
@@ -98,7 +117,7 @@ json_encode() {{
         python3 -c "import json,sys; print(json.dumps(sys.stdin.read())[1:-1])" <<< "$1"
     fi
 }}
-'''
+"""
 
     lib_path = os.path.join(bin_dir, "lib.sh")
     with open(lib_path, "w") as f:
@@ -112,7 +131,9 @@ json_encode() {{
         dst_path = os.path.join(bin_dir, script_name)
         if os.path.exists(src_path):
             shutil.copy2(src_path, dst_path)
-            os.chmod(dst_path, os.stat(dst_path).st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+            os.chmod(
+                dst_path, os.stat(dst_path).st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH
+            )
 
     return bin_dir
 
@@ -122,11 +143,11 @@ def deploy_brain_scripts(
     api_base: str = "http://127.0.0.1:8093",
 ) -> str:
     """Deploy brain CLI scripts to the brain's bin directory.
-    
+
     Args:
         brain_dir: Base directory for brain scripts (e.g., /tmp/orchestrator/brain)
         api_base: API base URL
-        
+
     Returns:
         Path to the bin directory containing the scripts
     """
@@ -134,7 +155,7 @@ def deploy_brain_scripts(
     os.makedirs(bin_dir, exist_ok=True)
 
     # Create lib.sh with environment variable defaults
-    lib_content = f'''#!/bin/bash
+    lib_content = f"""#!/bin/bash
 # Brain CLI library - shared functions for brain scripts
 # Auto-generated with session-specific defaults
 
@@ -183,7 +204,7 @@ build_json() {{
     json="$json}}"
     echo "$json"
 }}
-'''
+"""
 
     lib_path = os.path.join(bin_dir, "lib.sh")
     with open(lib_path, "w") as f:
@@ -197,15 +218,16 @@ build_json() {{
         dst_path = os.path.join(bin_dir, script_name)
         if os.path.exists(src_path):
             shutil.copy2(src_path, dst_path)
-            os.chmod(dst_path, os.stat(dst_path).st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+            os.chmod(
+                dst_path, os.stat(dst_path).st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH
+            )
 
     return bin_dir
 
 
-
 def get_brain_skills_dir() -> str | None:
     """Get path to brain skills directory.
-    
+
     Returns:
         Path to skills directory, or None if not found
     """
@@ -217,7 +239,7 @@ def get_brain_skills_dir() -> str | None:
 
 def get_worker_skills_dir() -> str | None:
     """Get path to worker skills directory.
-    
+
     Returns:
         Path to skills directory, or None if not found
     """
@@ -302,9 +324,9 @@ def deploy_custom_skills(skills_dest: str, custom_skills: list[dict]):
     os.makedirs(skills_dest, exist_ok=True)
     for skill in custom_skills:
         skill_path = os.path.join(skills_dest, f"{skill['name']}.md")
-        name = skill['name']
+        name = skill["name"]
         desc = skill.get("description") or ""
-        body = skill.get('content', '')
+        body = skill.get("content", "")
 
         parts = [f"---\nname: {name}\ndescription: {desc}\n---\n"]
         parts.append(f"\n# {name}\n")
@@ -314,7 +336,7 @@ def deploy_custom_skills(skills_dest: str, custom_skills: list[dict]):
             parts.append(f"\n{body}")
 
         with open(skill_path, "w") as f:
-            f.write(''.join(parts))
+            f.write("".join(parts))
 
 
 def generate_worker_hooks(
@@ -323,12 +345,12 @@ def generate_worker_hooks(
     api_base: str = "http://127.0.0.1:8093",
 ) -> str:
     """Generate Claude Code hooks settings.json for automatic status management.
-    
+
     Args:
         worker_dir: Directory to generate hooks in (e.g., tmp_dir/configs/)
         session_id: Worker's session ID
         api_base: API base URL
-        
+
     Returns:
         Path to the directory containing settings.json
     """
@@ -347,13 +369,19 @@ def generate_worker_hooks(
 
     with open(hook_script_path, "w") as f:
         f.write(hook_content)
-    os.chmod(hook_script_path, os.stat(hook_script_path).st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+    os.chmod(
+        hook_script_path,
+        os.stat(hook_script_path).st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH,
+    )
 
     # Copy safety gate hook from shared location (stateless, agent-agnostic)
     src_safety_path = os.path.join(_SHARED_HOOKS_DIR, "check-command.sh")
     safety_hook_path = os.path.join(hooks_dir, "check-command.sh")
     shutil.copy2(src_safety_path, safety_hook_path)
-    os.chmod(safety_hook_path, os.stat(safety_hook_path).st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+    os.chmod(
+        safety_hook_path,
+        os.stat(safety_hook_path).st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH,
+    )
 
     # Copy settings.json template and substitute placeholders
     src_settings_path = os.path.join(_AGENTS_DIR, "worker", "settings.json")
@@ -376,11 +404,11 @@ def generate_brain_hooks(
     api_base: str = "http://127.0.0.1:8093",
 ) -> str:
     """Deploy brain hooks and settings.
-    
+
     Args:
         brain_dir: Directory to deploy to (must be /tmp/orchestrator/brain)
         api_base: API base URL
-        
+
     Returns:
         Path to the settings.json file
     """
@@ -391,13 +419,19 @@ def generate_brain_hooks(
     src_hook_path = os.path.join(_AGENTS_DIR, "brain", "hooks", "inject-focus.sh")
     inject_hook_path = os.path.join(hooks_dir, "inject-focus.sh")
     shutil.copy2(src_hook_path, inject_hook_path)
-    os.chmod(inject_hook_path, os.stat(inject_hook_path).st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+    os.chmod(
+        inject_hook_path,
+        os.stat(inject_hook_path).st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH,
+    )
 
     # Copy safety gate hook from shared location (stateless, agent-agnostic)
     src_safety_path = os.path.join(_SHARED_HOOKS_DIR, "check-command.sh")
     safety_hook_path = os.path.join(hooks_dir, "check-command.sh")
     shutil.copy2(src_safety_path, safety_hook_path)
-    os.chmod(safety_hook_path, os.stat(safety_hook_path).st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+    os.chmod(
+        safety_hook_path,
+        os.stat(safety_hook_path).st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH,
+    )
 
     # Copy settings.json template and substitute placeholders
     claude_dir = os.path.join(brain_dir, ".claude")

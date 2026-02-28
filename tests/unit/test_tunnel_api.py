@@ -36,6 +36,7 @@ def client(db):
 def rdev_session(db):
     """Create an rdev session for testing."""
     from orchestrator.state.repositories import sessions as repo
+
     session = repo.create_session(db, "test-worker", "user/rdev-vm", "/tmp/work")
     return session
 
@@ -44,6 +45,7 @@ def rdev_session(db):
 def local_session(db):
     """Create a local session for testing."""
     from orchestrator.state.repositories import sessions as repo
+
     session = repo.create_session(db, "local-worker", "localhost", "/tmp/work")
     return session
 
@@ -54,17 +56,17 @@ class TestCreateTunnelEndpoint:
     def test_creates_tunnel_for_rdev_session(self, client, rdev_session):
         """Should create tunnel for rdev worker."""
         with patch("orchestrator.session.tunnel.create_tunnel") as mock_create:
-            mock_create.return_value = (True, {
-                "local_port": 4200,
-                "remote_port": 4200,
-                "pid": 12345,
-                "host": "user/rdev-vm",
-            })
-
-            response = client.post(
-                f"/api/sessions/{rdev_session.id}/tunnel",
-                json={"port": 4200}
+            mock_create.return_value = (
+                True,
+                {
+                    "local_port": 4200,
+                    "remote_port": 4200,
+                    "pid": 12345,
+                    "host": "user/rdev-vm",
+                },
             )
+
+            response = client.post(f"/api/sessions/{rdev_session.id}/tunnel", json={"port": 4200})
 
             assert response.status_code == 200
             data = response.json()
@@ -74,48 +76,35 @@ class TestCreateTunnelEndpoint:
 
     def test_rejects_tunnel_for_local_session(self, client, local_session):
         """Should reject tunnel request for non-rdev worker."""
-        response = client.post(
-            f"/api/sessions/{local_session.id}/tunnel",
-            json={"port": 4200}
-        )
+        response = client.post(f"/api/sessions/{local_session.id}/tunnel", json={"port": 4200})
 
         assert response.status_code == 400
         assert "only supported for remote" in response.json()["detail"].lower()
 
     def test_returns_404_for_unknown_session(self, client):
         """Should return 404 for non-existent session."""
-        response = client.post(
-            "/api/sessions/unknown-id/tunnel",
-            json={"port": 4200}
-        )
+        response = client.post("/api/sessions/unknown-id/tunnel", json={"port": 4200})
 
         assert response.status_code == 404
 
     def test_returns_409_for_port_conflict(self, client, rdev_session):
         """Should return 409 when port is already tunneled to different host."""
         with patch("orchestrator.session.tunnel.create_tunnel") as mock_create:
-            mock_create.return_value = (False, {
-                "error": "Port 4200 already tunneled to other/host"
-            })
-
-            response = client.post(
-                f"/api/sessions/{rdev_session.id}/tunnel",
-                json={"port": 4200}
+            mock_create.return_value = (
+                False,
+                {"error": "Port 4200 already tunneled to other/host"},
             )
+
+            response = client.post(f"/api/sessions/{rdev_session.id}/tunnel", json={"port": 4200})
 
             assert response.status_code == 409
 
     def test_returns_500_for_ssh_failure(self, client, rdev_session):
         """Should return 500 when SSH tunnel fails to start."""
         with patch("orchestrator.session.tunnel.create_tunnel") as mock_create:
-            mock_create.return_value = (False, {
-                "error": "SSH tunnel failed to start"
-            })
+            mock_create.return_value = (False, {"error": "SSH tunnel failed to start"})
 
-            response = client.post(
-                f"/api/sessions/{rdev_session.id}/tunnel",
-                json={"port": 4200}
-            )
+            response = client.post(f"/api/sessions/{rdev_session.id}/tunnel", json={"port": 4200})
 
             assert response.status_code == 500
 
@@ -128,9 +117,7 @@ class TestCloseTunnelEndpoint:
         with patch("orchestrator.session.tunnel.close_tunnel") as mock_close:
             mock_close.return_value = (True, "Tunnel closed")
 
-            response = client.delete(
-                f"/api/sessions/{rdev_session.id}/tunnel/4200"
-            )
+            response = client.delete(f"/api/sessions/{rdev_session.id}/tunnel/4200")
 
             assert response.status_code == 200
             data = response.json()

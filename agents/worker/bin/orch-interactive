@@ -1,0 +1,145 @@
+#!/bin/bash
+# orch-interactive: Open interactive CLI for user interaction
+#
+# Opens a floating terminal overlay in the user's dashboard where the user
+# can enter passwords, MFA codes, or interact with CLI prompts.
+#
+# Usage:
+#   orch-interactive [command]        Open interactive CLI (optionally run command)
+#   orch-interactive --close          Close the interactive CLI
+#   orch-interactive --capture [N]    Capture last N lines of output (default 30)
+#   orch-interactive --send "text"    Send input to interactive CLI
+#   orch-interactive --minimize        Minimize the overlay (keep running)
+#   orch-interactive --restore         Restore the overlay from minimized
+#   orch-interactive --status         Check if interactive CLI is active
+#   orch-interactive -h, --help       Show this help message
+
+set -e
+
+source "$(dirname "$0")/lib.sh"
+
+show_help() {
+    echo "Usage: orch-interactive [command] [options]"
+    echo ""
+    echo "Open an interactive terminal for the user when you need them to enter"
+    echo "passwords, MFA codes, or interact with CLI prompts. The terminal appears"
+    echo "as a floating overlay in the user's dashboard."
+    echo ""
+    echo "Commands:"
+    echo "  orch-interactive                     Open empty shell"
+    echo "  orch-interactive \"sudo yum install\"  Open and run command"
+    echo "  orch-interactive --close             Close the interactive CLI"
+    echo "  orch-interactive --capture [N]       Capture last N lines (default 30)"
+    echo "  orch-interactive --send \"text\"       Send input (with Enter)"
+    echo "  orch-interactive --minimize          Minimize overlay (keep running)"
+    echo "  orch-interactive --restore           Restore overlay from minimized"
+    echo "  orch-interactive --status            Check if active"
+    echo "  orch-interactive -h, --help          Show this help"
+    echo ""
+    echo "Important: Avoid sending input while the user is actively typing"
+    echo "to prevent keystroke interleaving."
+}
+
+if [ -z "$SESSION_ID" ]; then
+    echo "Error: ORCH_SESSION_ID not set" >&2
+    exit 1
+fi
+
+case "${1:-}" in
+    -h|--help)
+        show_help
+        exit 0
+        ;;
+    --close)
+        result=$(curl -sf -X DELETE "$API_BASE/api/sessions/$SESSION_ID/interactive-cli" 2>&1) || {
+            echo "Error: Failed to close interactive CLI" >&2
+            echo "$result" >&2
+            exit 1
+        }
+        echo "$result" | jq .
+        echo ""
+        echo "Interactive CLI closed."
+        ;;
+    --capture)
+        LINES="${2:-30}"
+        result=$(curl -sf -X POST "$API_BASE/api/sessions/$SESSION_ID/interactive-cli/capture?lines=$LINES" 2>&1) || {
+            echo "Error: Failed to capture output (is interactive CLI active?)" >&2
+            exit 1
+        }
+        echo "$result" | jq -r .output
+        ;;
+    --send)
+        shift
+        if [ -z "$*" ]; then
+            echo "Error: No text to send. Usage: orch-interactive --send \"text\"" >&2
+            exit 1
+        fi
+        # Use jq for proper JSON escaping to avoid injection
+        PAYLOAD=$(jq -n --arg msg "$*" '{message: $msg}')
+        result=$(curl -sf -X POST "$API_BASE/api/sessions/$SESSION_ID/interactive-cli/send" \
+            -H "Content-Type: application/json" \
+            -d "$PAYLOAD" 2>&1) || {
+            echo "Error: Failed to send input (is interactive CLI active?)" >&2
+            exit 1
+        }
+        echo "$result" | jq .
+        ;;
+    --minimize)
+        result=$(curl -sf -X POST "$API_BASE/api/sessions/$SESSION_ID/interactive-cli/minimize" 2>&1) || {
+            echo "Error: Failed to minimize interactive CLI" >&2
+            echo "$result" >&2
+            exit 1
+        }
+        echo "$result" | jq .
+        echo ""
+        echo "Interactive CLI minimized."
+        ;;
+    --restore)
+        result=$(curl -sf -X POST "$API_BASE/api/sessions/$SESSION_ID/interactive-cli/restore" 2>&1) || {
+            echo "Error: Failed to restore interactive CLI" >&2
+            echo "$result" >&2
+            exit 1
+        }
+        echo "$result" | jq .
+        echo ""
+        echo "Interactive CLI restored."
+        ;;
+    --status)
+        result=$(curl -sf "$API_BASE/api/sessions/$SESSION_ID/interactive-cli" 2>&1) || {
+            echo "Error: Failed to check status" >&2
+            exit 1
+        }
+        echo "$result" | jq .
+        ;;
+    *)
+        # Open interactive CLI with optional command
+        COMMAND="${1:-}"
+        if [ -n "$COMMAND" ]; then
+            PAYLOAD=$(jq -n --arg cmd "$COMMAND" '{command: $cmd}')
+        else
+            PAYLOAD="{}"
+        fi
+        result=$(curl -sf -X POST "$API_BASE/api/sessions/$SESSION_ID/interactive-cli" \
+            -H "Content-Type: application/json" \
+            -d "$PAYLOAD" 2>&1)
+        exit_code=$?
+
+        if [ $exit_code -ne 0 ]; then
+            # Check if it's a 409 (already active)
+            if echo "$result" | grep -q "already active" 2>/dev/null; then
+                echo "Error: Interactive CLI already active. Close it first with: orch-interactive --close" >&2
+            else
+                echo "Error: Failed to open interactive CLI" >&2
+                echo "$result" >&2
+            fi
+            exit 1
+        fi
+
+        echo "$result" | jq .
+        echo ""
+        echo "Interactive CLI opened. The user can see it in the dashboard."
+        if [ -n "$COMMAND" ]; then
+            echo "Running: $COMMAND"
+        fi
+        ;;
+esac

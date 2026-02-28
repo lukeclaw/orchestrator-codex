@@ -37,8 +37,8 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 FIFO_DIR = "/tmp/orchestrator_pty"
-STARTUP_TIMEOUT = 3.0       # seconds to wait for first byte from pipe-pane
-EAGER_RESTART_DELAY = 0.5   # seconds before attempting eager restart after EOF
+STARTUP_TIMEOUT = 3.0  # seconds to wait for first byte from pipe-pane
+EAGER_RESTART_DELAY = 0.5  # seconds before attempting eager restart after EOF
 
 # Stream mode: "pipe-pane" (default) or "control-mode" (fallback)
 TERMINAL_STREAM_MODE = os.environ.get("TERMINAL_STREAM_MODE", "pipe-pane")
@@ -62,7 +62,8 @@ async def get_tmux_version() -> tuple[int, int]:
 
     try:
         proc = await asyncio.create_subprocess_exec(
-            "tmux", "-V",
+            "tmux",
+            "-V",
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
@@ -112,6 +113,7 @@ def set_tmux_version_cache(major: int, minor: int) -> None:
 # ---------------------------------------------------------------------------
 # PtyStreamReader
 # ---------------------------------------------------------------------------
+
 
 class _FifoReadProtocol(asyncio.Protocol):
     """asyncio Protocol for reading from a FIFO file descriptor."""
@@ -180,9 +182,7 @@ class PtyStreamReader:
         # Check tmux version
         version = await get_tmux_version()
         if version < (2, 6):
-            logger.warning(
-                "tmux %d.%d < 2.6 — pipe-pane -O not supported", *version
-            )
+            logger.warning("tmux %d.%d < 2.6 — pipe-pane -O not supported", *version)
             return False
 
         self._callback = callback
@@ -214,16 +214,19 @@ class PtyStreamReader:
             logger.error("Failed to create FIFO %s: %s", self._fifo_path, e)
             return False
 
-        logger.info(
-            "Created FIFO %s for pane %s", self._fifo_path, self.pane_id
-        )
+        logger.info("Created FIFO %s for pane %s", self._fifo_path, self.pane_id)
 
         # Start pipe-pane -O
         target = f"{self.session}:{self.window}"
         cmd_str = f"exec cat > {self._fifo_path}"
         try:
             proc = await asyncio.create_subprocess_exec(
-                "tmux", "pipe-pane", "-O", "-t", target, cmd_str,
+                "tmux",
+                "pipe-pane",
+                "-O",
+                "-t",
+                target,
+                cmd_str,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )
@@ -232,7 +235,9 @@ class PtyStreamReader:
                 err_msg = stderr.decode("utf-8", errors="replace").strip()
                 logger.error(
                     "pipe-pane failed for %s (rc=%d): %s",
-                    target, proc.returncode, err_msg,
+                    target,
+                    proc.returncode,
+                    err_msg,
                 )
                 self._cleanup_fifo()
                 return False
@@ -276,9 +281,7 @@ class PtyStreamReader:
 
         # Start startup timeout — if no data within STARTUP_TIMEOUT, log warning
         loop = asyncio.get_running_loop()
-        self._startup_timer = loop.call_later(
-            STARTUP_TIMEOUT, self._on_startup_timeout
-        )
+        self._startup_timer = loop.call_later(STARTUP_TIMEOUT, self._on_startup_timeout)
 
         return True
 
@@ -372,7 +375,10 @@ class PtyStreamReader:
         target = f"{self.session}:{self.window}"
         try:
             proc = await asyncio.create_subprocess_exec(
-                "tmux", "pipe-pane", "-t", target,
+                "tmux",
+                "pipe-pane",
+                "-t",
+                target,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )
@@ -389,15 +395,14 @@ class PtyStreamReader:
             except FileNotFoundError:
                 pass
             except OSError as e:
-                logger.warning(
-                    "Failed to remove FIFO %s: %s", self._fifo_path, e
-                )
+                logger.warning("Failed to remove FIFO %s: %s", self._fifo_path, e)
             self._fifo_path = None
 
 
 # ---------------------------------------------------------------------------
 # PtyStreamPool
 # ---------------------------------------------------------------------------
+
 
 class PtyStreamPool:
     """One ``PtyStreamReader`` per pane, multiple consumers fan out.
@@ -505,9 +510,7 @@ class PtyStreamPool:
         try:
             await cb(data)
         except Exception:
-            logger.exception(
-                "Error in PtyStreamPool subscriber for pane %s", pane_id
-            )
+            logger.exception("Error in PtyStreamPool subscriber for pane %s", pane_id)
 
     async def _on_reader_eof(self, pane_id: str) -> None:
         """Called when a PtyStreamReader receives EOF.
@@ -533,9 +536,7 @@ class PtyStreamPool:
 
                 # Need session/window info from the old reader
                 if reader:
-                    new_reader = PtyStreamReader(
-                        reader.session, reader.window, pane_id
-                    )
+                    new_reader = PtyStreamReader(reader.session, reader.window, pane_id)
 
                     async def on_eof():
                         await self._on_reader_eof(pane_id)
@@ -546,13 +547,10 @@ class PtyStreamPool:
                     )
                     if started:
                         self._readers[pane_id] = new_reader
-                        logger.info(
-                            "Eager restart succeeded for pane %s", pane_id
-                        )
+                        logger.info("Eager restart succeeded for pane %s", pane_id)
                     else:
                         logger.warning(
-                            "Eager restart failed for pane %s — "
-                            "drift correction will retry",
+                            "Eager restart failed for pane %s — drift correction will retry",
                             pane_id,
                         )
 
@@ -595,6 +593,7 @@ class PtyStreamPool:
 # Helper: suppress %output on control mode connection
 # ---------------------------------------------------------------------------
 
+
 async def suppress_control_mode_output(session: str) -> bool:
     """Send ``refresh-client -f no-output`` to suppress ``%output`` lines.
 
@@ -610,15 +609,18 @@ async def suppress_control_mode_output(session: str) -> bool:
 
     try:
         proc = await asyncio.create_subprocess_exec(
-            "tmux", "refresh-client", "-f", "no-output", "-t", session,
+            "tmux",
+            "refresh-client",
+            "-f",
+            "no-output",
+            "-t",
+            session,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
         await proc.communicate()
         if proc.returncode == 0:
-            logger.info(
-                "Suppressed %%output notifications for session %s", session
-            )
+            logger.info("Suppressed %%output notifications for session %s", session)
             return True
         return False
     except Exception as e:

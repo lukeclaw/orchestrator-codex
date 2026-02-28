@@ -44,6 +44,7 @@ def _get_db_path(request: Request) -> str | None:
 # Scheduled backup loop
 # ---------------------------------------------------------------------------
 
+
 async def _scheduled_backup_loop(db_path: str) -> None:
     """Background loop that runs backups on a configurable schedule.
 
@@ -71,6 +72,7 @@ async def _scheduled_backup_loop(db_path: str) -> None:
                 last_run_str = config_repo.get_config_value(conn, _KEY_LAST_RUN)
                 if last_run_str:
                     from datetime import datetime
+
                     try:
                         last_run = datetime.fromisoformat(last_run_str)
                         now = datetime.now(UTC)
@@ -95,7 +97,12 @@ async def _scheduled_backup_loop(db_path: str) -> None:
 
             loop = asyncio.get_event_loop()
             result = await loop.run_in_executor(
-                None, run_backup, db_path, password, backup_dir, retention,
+                None,
+                run_backup,
+                db_path,
+                password,
+                backup_dir,
+                retention,
             )
 
             # Persist last-run info via fresh connection
@@ -108,10 +115,19 @@ async def _scheduled_backup_loop(db_path: str) -> None:
                 conn.close()
 
             if result["ok"]:
-                publish(Event(type="backup.completed", data={"trigger": "scheduled", "filename": result["filename"]}))
+                publish(
+                    Event(
+                        type="backup.completed",
+                        data={"trigger": "scheduled", "filename": result["filename"]},
+                    )
+                )
                 logger.info("Scheduled backup completed: %s", result["filename"])
             else:
-                publish(Event(type="backup.error", data={"trigger": "scheduled", "error": result["error"]}))
+                publish(
+                    Event(
+                        type="backup.error", data={"trigger": "scheduled", "error": result["error"]}
+                    )
+                )
                 logger.error("Scheduled backup failed: %s", result["error"])
 
         except asyncio.CancelledError:
@@ -146,6 +162,7 @@ async def stop_backup_schedule() -> None:
 # API endpoints
 # ---------------------------------------------------------------------------
 
+
 @router.post("/backup/run")
 def trigger_backup(request: Request, db=Depends(get_db)):
     """Trigger a backup now."""
@@ -155,11 +172,17 @@ def trigger_backup(request: Request, db=Depends(get_db)):
 
     backup_dir = config_repo.get_config_value(db, _KEY_DIR)
     if not backup_dir:
-        return {"ok": False, "error": "Backup directory not configured. Set it via PUT /api/backup/settings."}
+        return {
+            "ok": False,
+            "error": "Backup directory not configured. Set it via PUT /api/backup/settings.",
+        }
 
     password = config_repo.get_config_value(db, _KEY_PASSWORD)
     if not password:
-        return {"ok": False, "error": "Backup password not configured. Set it via PUT /api/backup/settings."}
+        return {
+            "ok": False,
+            "error": "Backup password not configured. Set it via PUT /api/backup/settings.",
+        }
 
     retention = config_repo.get_config_value(db, _KEY_RETENTION, _DEFAULT_RETENTION)
 
@@ -304,7 +327,12 @@ async def restore_from_backup(body: BackupRestoreRequest, request: Request):
     # 5. Replace the database file — no open handles at this point
     loop = asyncio.get_event_loop()
     result = await loop.run_in_executor(
-        None, restore_backup, body.filename, backup_dir, password, db_path,
+        None,
+        restore_backup,
+        body.filename,
+        backup_dir,
+        password,
+        db_path,
     )
 
     # 6. Re-open the lifespan connection on the restored database

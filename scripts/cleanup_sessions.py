@@ -30,10 +30,7 @@ def main():
     stale_names = ["c1", "brain", "worker-alpha"]
 
     # Delete stale sessions
-    cursor = conn.execute(
-        "DELETE FROM sessions WHERE name IN (?, ?, ?)",
-        stale_names
-    )
+    cursor = conn.execute("DELETE FROM sessions WHERE name IN (?, ?, ?)", stale_names)
     deleted = cursor.rowcount
     conn.commit()
 

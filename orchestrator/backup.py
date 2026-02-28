@@ -26,9 +26,7 @@ logger = logging.getLogger(__name__)
 # Filename pattern: orchestrator-backup-2026-02-19T17-00-00Z.zip
 _BACKUP_PREFIX = "orchestrator-backup-"
 _BACKUP_SUFFIX = ".zip"
-_BACKUP_PATTERN = re.compile(
-    r"^orchestrator-backup-(\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}Z)\.zip$"
-)
+_BACKUP_PATTERN = re.compile(r"^orchestrator-backup-(\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}Z)\.zip$")
 
 
 def _timestamp_for_filename() -> str:
@@ -62,7 +60,9 @@ def create_db_snapshot(db_path: str | Path) -> Path:
         snapshot_path.unlink(missing_ok=True)
         raise
 
-    logger.info("Created DB snapshot: %s (%.1f KB)", snapshot_path, snapshot_path.stat().st_size / 1024)
+    logger.info(
+        "Created DB snapshot: %s (%.1f KB)", snapshot_path, snapshot_path.stat().st_size / 1024
+    )
     return snapshot_path
 
 
@@ -190,11 +190,13 @@ def list_backups(backup_dir: str | Path) -> list[dict]:
             # Convert filename timestamp back to readable format
             ts = m.group(1).replace("-", ":", 3)  # partial — reconstruct below
             # Actually, just store the raw filename timestamp
-            results.append({
-                "filename": f.name,
-                "timestamp": m.group(1),
-                "size_bytes": f.stat().st_size,
-            })
+            results.append(
+                {
+                    "filename": f.name,
+                    "timestamp": m.group(1),
+                    "size_bytes": f.stat().st_size,
+                }
+            )
 
     return results
 
@@ -283,14 +285,22 @@ def restore_backup(
         return {"ok": False, "error": "Invalid backup path", "pre_restore_backup": None}
 
     if not zip_path.exists():
-        return {"ok": False, "error": f"Backup file not found: {filename}", "pre_restore_backup": None}
+        return {
+            "ok": False,
+            "error": f"Backup file not found: {filename}",
+            "pre_restore_backup": None,
+        }
 
     extracted_path = None
     try:
         # 3. Decrypt and validate
         extracted_path = decrypt_from_zip(zip_path, password)
         if not validate_sqlite_db(extracted_path):
-            return {"ok": False, "error": "Extracted database failed integrity check", "pre_restore_backup": None}
+            return {
+                "ok": False,
+                "error": "Extracted database failed integrity check",
+                "pre_restore_backup": None,
+            }
 
         # 4. Pre-restore safety copy
         pre_restore_name = f"pre-restore-{_timestamp_for_filename()}.db"
@@ -317,7 +327,11 @@ def restore_backup(
         }
 
     except RuntimeError as e:
-        return {"ok": False, "error": f"Decryption failed (wrong password?): {e}", "pre_restore_backup": None}
+        return {
+            "ok": False,
+            "error": f"Decryption failed (wrong password?): {e}",
+            "pre_restore_backup": None,
+        }
     except Exception as e:
         logger.exception("Restore failed")
         return {"ok": False, "error": str(e), "pre_restore_backup": None}

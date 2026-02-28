@@ -199,7 +199,8 @@ class TestSendMarkerCommand:
             # Find the marker from the sent command
             call_args = str(mock_send.call_args)
             import re
-            match = re.search(r'__CMD_START_(\d+)__', call_args)
+
+            match = re.search(r"__CMD_START_(\d+)__", call_args)
             if match:
                 marker_id = match.group(1)
                 return f"""__CMD_START_{marker_id}__
@@ -210,9 +211,7 @@ __CMD_END_{marker_id}__"""
         mock_capture.side_effect = capture_side_effect
 
         cmd, result = send_marker_command(
-            mock_send, mock_capture,
-            "orchestrator", "test-worker",
-            "hostname"
+            mock_send, mock_capture, "orchestrator", "test-worker", "hostname"
         )
 
         assert result == "myhost.local"
@@ -231,7 +230,8 @@ class TestWaitForCompletion:
             call_count[0] += 1
             call_args = str(mock_send.call_args)
             import re
-            match = re.search(r'__WAIT_START_(\d+)__', call_args)
+
+            match = re.search(r"__WAIT_START_(\d+)__", call_args)
             if match and call_count[0] >= 2:
                 marker_id = match.group(1)
                 return f"""__WAIT_START_{marker_id}__
@@ -242,9 +242,7 @@ __WAIT_END_{marker_id}__"""
         mock_capture = MagicMock(side_effect=capture_side_effect)
 
         result = wait_for_completion(
-            mock_send, mock_capture,
-            "orchestrator", "test-worker",
-            timeout=10, poll_interval=0.1
+            mock_send, mock_capture, "orchestrator", "test-worker", timeout=10, poll_interval=0.1
         )
 
         assert result is True
@@ -255,9 +253,7 @@ __WAIT_END_{marker_id}__"""
         mock_capture = MagicMock(return_value="")
 
         result = wait_for_completion(
-            mock_send, mock_capture,
-            "orchestrator", "test-worker",
-            timeout=0.5, poll_interval=0.1
+            mock_send, mock_capture, "orchestrator", "test-worker", timeout=0.5, poll_interval=0.1
         )
 
         assert result is False
@@ -273,7 +269,8 @@ class TestCheckYesNo:
         def capture_side_effect(sess, win, lines=15):
             call_args = str(mock_send.call_args)
             import re
-            match = re.search(r'__CHK_START_(\d+)__', call_args)
+
+            match = re.search(r"__CHK_START_(\d+)__", call_args)
             if match:
                 marker_id = match.group(1)
                 return f"""__CHK_START_{marker_id}__
@@ -285,10 +282,7 @@ __CHK_END_{marker_id}__"""
         mock_capture = MagicMock(side_effect=capture_side_effect)
 
         result = check_yes_no(
-            mock_send, mock_capture,
-            "orchestrator", "test-worker",
-            "which screen",
-            wait_time=0.01
+            mock_send, mock_capture, "orchestrator", "test-worker", "which screen", wait_time=0.01
         )
 
         assert result is True
@@ -300,7 +294,8 @@ __CHK_END_{marker_id}__"""
         def capture_side_effect(sess, win, lines=15):
             call_args = str(mock_send.call_args)
             import re
-            match = re.search(r'__CHK_START_(\d+)__', call_args)
+
+            match = re.search(r"__CHK_START_(\d+)__", call_args)
             if match:
                 marker_id = match.group(1)
                 return f"""__CHK_START_{marker_id}__
@@ -311,10 +306,12 @@ __CHK_END_{marker_id}__"""
         mock_capture = MagicMock(side_effect=capture_side_effect)
 
         result = check_yes_no(
-            mock_send, mock_capture,
-            "orchestrator", "test-worker",
+            mock_send,
+            mock_capture,
+            "orchestrator",
+            "test-worker",
             "which nonexistent",
-            wait_time=0.01
+            wait_time=0.01,
         )
 
         assert result is False
@@ -326,7 +323,8 @@ __CHK_END_{marker_id}__"""
         def capture_side_effect(sess, win, lines=15):
             call_args = str(mock_send.call_args)
             import re
-            match = re.search(r'__CHK_START_(\d+)__', call_args)
+
+            match = re.search(r"__CHK_START_(\d+)__", call_args)
             if match:
                 marker_id = match.group(1)
                 # Command echo contains YES but result is NO
@@ -339,10 +337,7 @@ __CHK_END_{marker_id}__"""
         mock_capture = MagicMock(side_effect=capture_side_effect)
 
         result = check_yes_no(
-            mock_send, mock_capture,
-            "orchestrator", "test-worker",
-            "which screen",
-            wait_time=0.01
+            mock_send, mock_capture, "orchestrator", "test-worker", "which screen", wait_time=0.01
         )
 
         # Should be False, not True (even though YES is in the full output)

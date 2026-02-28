@@ -69,19 +69,21 @@ def list_tasks(
     return [Task(**dict(r)) for r in rows]
 
 
-def _get_next_task_index(conn: sqlite3.Connection, project_id: str, parent_task_id: str | None) -> int:
+def _get_next_task_index(
+    conn: sqlite3.Connection, project_id: str, parent_task_id: str | None
+) -> int:
     """Get the next task_index for a project or parent task."""
     if parent_task_id:
         # For subtasks, count existing subtasks under the parent
         row = conn.execute(
             "SELECT COALESCE(MAX(task_index), 0) + 1 as next_idx FROM tasks WHERE parent_task_id = ?",
-            (parent_task_id,)
+            (parent_task_id,),
         ).fetchone()
     else:
         # For top-level tasks, count existing top-level tasks in the project
         row = conn.execute(
             "SELECT COALESCE(MAX(task_index), 0) + 1 as next_idx FROM tasks WHERE project_id = ? AND parent_task_id IS NULL",
-            (project_id,)
+            (project_id,),
         ).fetchone()
     return row["next_idx"] if row else 1
 
@@ -147,7 +149,9 @@ def update_task(
     old_status = None
     is_subtask = False
     if status is not None:
-        row = conn.execute("SELECT status, parent_task_id FROM tasks WHERE id = ?", (id,)).fetchone()
+        row = conn.execute(
+            "SELECT status, parent_task_id FROM tasks WHERE id = ?", (id,)
+        ).fetchone()
         if row:
             old_status = row["status"]
             is_subtask = row["parent_task_id"] is not None
@@ -161,6 +165,7 @@ def update_task(
     if status is not None and old_status is not None and old_status != status:
         try:
             from orchestrator.state.repositories.status_events import insert_event
+
             insert_event(conn, "task", id, old_status, status, is_subtask=is_subtask)
         except Exception:
             logger.debug("Failed to insert status event for task %s", id, exc_info=True)

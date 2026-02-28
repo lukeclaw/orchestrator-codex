@@ -1,6 +1,5 @@
 """Tests for database migrations — fresh creation and idempotent re-runs."""
 
-
 from orchestrator.state.db import get_memory_connection
 from orchestrator.state.migrations.runner import (
     apply_migrations,
@@ -20,7 +19,37 @@ def test_fresh_migration():
     # 22=drop_dead_tables, 24=notification_metadata, 25=auto_reconnect,
     # 26=claude_session_id, 27=status_events, 28=skills, 29=skill_overrides,
     # 30=simplify_context_categories
-    assert applied == [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 24, 25, 26, 27, 28, 29, 30]
+    assert applied == [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20,
+        21,
+        22,
+        24,
+        25,
+        26,
+        27,
+        28,
+        29,
+        30,
+    ]
 
     # Verify key tables exist
     tables = conn.execute(
@@ -29,8 +58,10 @@ def test_fresh_migration():
     table_names = {r["name"] for r in tables}
 
     expected_tables = {
-        "projects", "sessions",
-        "tasks", "notifications",
+        "projects",
+        "sessions",
+        "tasks",
+        "notifications",
         "config",
         "context_items",
         "schema_version",
@@ -41,11 +72,21 @@ def test_fresh_migration():
     assert expected_tables.issubset(table_names)
     # These tables should have been dropped by various migrations
     dropped_tables = {
-        "cost_events", "pull_requests", "pr_dependencies", "skill_templates",
-        "task_dependencies", "task_requirements", "activities",
-        "decisions", "decision_history", "worker_capabilities",
-        "session_snapshots", "comm_events", "learned_patterns",
-        "prompt_templates", "project_workers",
+        "cost_events",
+        "pull_requests",
+        "pr_dependencies",
+        "skill_templates",
+        "task_dependencies",
+        "task_requirements",
+        "activities",
+        "decisions",
+        "decision_history",
+        "worker_capabilities",
+        "session_snapshots",
+        "comm_events",
+        "learned_patterns",
+        "prompt_templates",
+        "project_workers",
     }
     for t in dropped_tables:
         assert t not in table_names, f"Legacy table {t} should have been dropped"
@@ -56,7 +97,37 @@ def test_idempotent_rerun():
     """Running migrations twice should be a no-op the second time."""
     conn = get_memory_connection()
     first = apply_migrations(conn)
-    assert first == [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 24, 25, 26, 27, 28, 29, 30]
+    assert first == [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20,
+        21,
+        22,
+        24,
+        25,
+        26,
+        27,
+        28,
+        29,
+        30,
+    ]
 
     second = apply_migrations(conn)
     assert second == []
@@ -92,7 +163,7 @@ def test_migration_030_simplify_categories():
     conn.commit()
 
     # Insert items with old categories
-    for cat in ('requirement', 'convention', 'instruction', 'reference', 'note', 'worker_note'):
+    for cat in ("requirement", "convention", "instruction", "reference", "note", "worker_note"):
         conn.execute(
             "INSERT INTO context_items (id, title, content, scope, category) VALUES (?, ?, ?, 'global', ?)",
             (f"test-{cat}", f"Test {cat}", f"Content for {cat}", cat),
@@ -110,15 +181,17 @@ def test_migration_030_simplify_categories():
     # Verify conversions
     rows = {
         r["id"]: r["category"]
-        for r in conn.execute("SELECT id, category FROM context_items WHERE id LIKE 'test-%'").fetchall()
+        for r in conn.execute(
+            "SELECT id, category FROM context_items WHERE id LIKE 'test-%'"
+        ).fetchall()
     }
     assert rows["test-requirement"] == "instruction"  # requirement → instruction
-    assert rows["test-convention"] == "instruction"    # convention → instruction
-    assert rows["test-instruction"] == "instruction"   # instruction unchanged
-    assert rows["test-reference"] == "reference"       # reference unchanged
-    assert rows["test-note"] is None                   # note → NULL
-    assert rows["test-worker_note"] is None            # worker_note → NULL
-    assert rows["test-null"] is None                   # NULL unchanged
+    assert rows["test-convention"] == "instruction"  # convention → instruction
+    assert rows["test-instruction"] == "instruction"  # instruction unchanged
+    assert rows["test-reference"] == "reference"  # reference unchanged
+    assert rows["test-note"] is None  # note → NULL
+    assert rows["test-worker_note"] is None  # worker_note → NULL
+    assert rows["test-null"] is None  # NULL unchanged
     conn.close()
 
 

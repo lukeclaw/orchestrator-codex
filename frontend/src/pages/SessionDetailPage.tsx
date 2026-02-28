@@ -7,6 +7,7 @@ import { useSmartPaste } from '../hooks/useSmartPaste'
 import { useFileExplorerState } from '../hooks/useFileExplorerState'
 import { useEditorTabs } from '../hooks/useEditorTabs'
 import TerminalView from '../components/terminal/TerminalView'
+import InteractiveCLI from '../components/terminal/InteractiveCLI'
 import FileExplorerPanel from '../components/file-explorer/FileExplorerPanel'
 import FileViewer from '../components/file-explorer/FileViewer'
 import { IconPause, IconPlay, IconStop, IconRefresh, IconTrash, IconSync, IconBrain } from '../components/common/Icons'
@@ -26,7 +27,7 @@ export default function SessionDetailPage() {
   const notify = useNotify()
   
   // Use shared state from AppContext for session
-  const { sessions, tasks: allTasks, refresh } = useApp()
+  const { sessions, tasks: allTasks, refresh, interactiveCliSessions, interactiveCliMinimized } = useApp()
   const session = sessions.find(s => s.id === id) || null
   const tasks = allTasks.filter(t => t.assigned_session_id === id)
   const isRdev = session?.host?.includes('/') ?? false
@@ -49,6 +50,56 @@ export default function SessionDetailPage() {
   const [pasting, setPasting] = useState(false)
   const [hintDismissed, setHintDismissed] = useState(false)
   const [showAssignTask, setShowAssignTask] = useState(false)
+  const [icliActiveLocal, setIcliActiveLocal] = useState(false)
+  const [icliMinimized, setIcliMinimized] = useState(false)
+
+  // icliActive combines local state (from mount check) with AppContext WS events
+  const icliFromContext = id ? interactiveCliSessions.has(id) : false
+  const icliActive = icliActiveLocal || icliFromContext
+
+  // Auto-show overlay when interactive CLI becomes active (via WS event)
+  useEffect(() => {
+    if (icliFromContext) {
+      setIcliActiveLocal(true)
+      setIcliMinimized(false) // Show full when agent opens it
+    }
+  }, [icliFromContext])
+
+  // Auto-hide when WS says closed
+  useEffect(() => {
+    if (!icliFromContext && icliActiveLocal) {
+      // WS event says closed — re-check via API to confirm
+      if (!id) return
+      api<{ active: boolean }>(`/api/sessions/${id}/interactive-cli`)
+        .then(r => {
+          if (!r.active) {
+            setIcliActiveLocal(false)
+            setIcliMinimized(false)
+          }
+        })
+        .catch(() => {})
+    }
+  }, [icliFromContext, icliActiveLocal, id])
+
+  // Sync minimize state from WS events (agent triggered minimize/restore)
+  useEffect(() => {
+    if (id) {
+      setIcliMinimized(interactiveCliMinimized.has(id))
+    }
+  }, [id, interactiveCliMinimized])
+
+  // Check interactive CLI status on mount — show as minimized bar
+  useEffect(() => {
+    if (!id) return
+    api<{ active: boolean }>(`/api/sessions/${id}/interactive-cli`)
+      .then(r => {
+        if (r.active) {
+          setIcliActiveLocal(true)
+          setIcliMinimized(true)
+        }
+      })
+      .catch(() => {})
+  }, [id])
 
   // Record that user viewed this session
   useEffect(() => {
@@ -291,6 +342,26 @@ export default function SessionDetailPage() {
       setActionPending(false)
     }
   }
+
+  // Open or toggle interactive CLI
+  const handleInteractiveCli = useCallback(async () => {
+    if (!id) return
+    if (icliActive) {
+      // Already active — toggle minimize/restore
+      setIcliMinimized(prev => !prev)
+      return
+    }
+    try {
+      await api(`/api/sessions/${id}/interactive-cli`, {
+        method: 'POST',
+        body: JSON.stringify({}),
+      })
+      setIcliActiveLocal(true)
+      setIcliMinimized(false)
+    } catch (e) {
+      notify(e instanceof Error ? e.message : 'Failed to open interactive CLI', 'error')
+    }
+  }, [id, icliActive, notify])
 
   // Handle long text paste from Cmd+V in terminal (no permission popup)
   const handleTextPaste = useCallback(async (text: string) => {
@@ -547,6 +618,23 @@ export default function SessionDetailPage() {
             )}
             <TerminalView sessionId={session.id} sessionStatus={session.status} disableScrollback={isRemote} onFocusRef={(fn) => { terminalFocusRef.current = fn }} onImagePaste={handleImagePaste} onTextPaste={handleTextPaste} />
           </div>
+
+          {/* Interactive CLI overlay — inside right pane so it follows terminal position */}
+          {icliActive && id && (
+            <InteractiveCLI
+              sessionId={id}
+              minimized={icliMinimized}
+              onMinimizedChange={(min) => {
+                setIcliMinimized(min)
+                if (min) terminalFocusRef.current?.()
+              }}
+              onClose={() => {
+                setIcliActiveLocal(false)
+                setIcliMinimized(false)
+                terminalFocusRef.current?.()
+              }}
+            />
+          )}
         </div>
       </div>
 
@@ -608,6 +696,16 @@ export default function SessionDetailPage() {
               <span className="sd-toggle-knob" />
             </button>
           </label>
+          <button
+            className={`sd-icli-btn${icliActive ? ' active' : ''}`}
+            onClick={handleInteractiveCli}
+            title={icliActive ? (icliMinimized ? 'Restore interactive CLI' : 'Minimize interactive CLI') : 'Open interactive CLI'}
+          >
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="4 17 10 11 4 5" /><line x1="12" y1="19" x2="20" y2="19" />
+            </svg>
+            <span>Terminal</span>
+          </button>
           <button
             className="sd-paste-btn"
             onClick={handlePaste}

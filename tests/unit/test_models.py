@@ -1,6 +1,5 @@
 """Tests for data model creation and properties."""
 
-
 from orchestrator.state.models import (
     Config,
     Project,
@@ -47,5 +46,3 @@ def test_config_parsed_value_string():
 def test_config_parsed_value_boolean():
     c = Config(key="test", value="true")
     assert c.parsed_value is True
-
-

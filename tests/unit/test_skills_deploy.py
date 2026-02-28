@@ -16,39 +16,49 @@ class TestFormatCustomSkillsForPrompt:
         assert format_custom_skills_for_prompt([]) == ""
 
     def test_single_skill(self):
-        result = format_custom_skills_for_prompt([
-            {"name": "deploy-check", "description": "Run deploy verification"},
-        ])
+        result = format_custom_skills_for_prompt(
+            [
+                {"name": "deploy-check", "description": "Run deploy verification"},
+            ]
+        )
         assert "### Custom Skills" in result
         assert "/deploy-check" in result
         assert "Run deploy verification" in result
 
     def test_multiple_skills(self):
-        result = format_custom_skills_for_prompt([
-            {"name": "skill-a", "description": "First"},
-            {"name": "skill-b", "description": "Second"},
-        ])
+        result = format_custom_skills_for_prompt(
+            [
+                {"name": "skill-a", "description": "First"},
+                {"name": "skill-b", "description": "Second"},
+            ]
+        )
         assert "/skill-a" in result
         assert "/skill-b" in result
         assert "First" in result
         assert "Second" in result
 
     def test_missing_description(self):
-        result = format_custom_skills_for_prompt([
-            {"name": "no-desc"},
-        ])
+        result = format_custom_skills_for_prompt(
+            [
+                {"name": "no-desc"},
+            ]
+        )
         assert "No description" in result
 
     def test_none_description(self):
-        result = format_custom_skills_for_prompt([
-            {"name": "no-desc", "description": None},
-        ])
+        result = format_custom_skills_for_prompt(
+            [
+                {"name": "no-desc", "description": None},
+            ]
+        )
         assert "No description" in result
 
     def test_output_is_markdown(self):
-        result = format_custom_skills_for_prompt([
-            {"name": "my-skill", "description": "A skill"},
-        ])
+        result = format_custom_skills_for_prompt(
+            [
+                {"name": "my-skill", "description": "A skill"},
+            ]
+        )
         # Should use bold + code for the name
         assert "**`/my-skill`**" in result
 
@@ -56,7 +66,11 @@ class TestFormatCustomSkillsForPrompt:
 class TestDeployCustomSkills:
     def test_creates_files(self):
         skills = [
-            {"name": "deploy-check", "description": "Deploy verify", "content": "# Steps\n1. Check\n2. Deploy"},
+            {
+                "name": "deploy-check",
+                "description": "Deploy verify",
+                "content": "# Steps\n1. Check\n2. Deploy",
+            },
             {"name": "lint-code", "description": "Run linter", "content": "Run eslint"},
         ]
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -272,7 +286,11 @@ class TestBrainSettingsPermissions:
 
         settings_path = os.path.join(
             os.path.dirname(__file__),
-            "..", "..", "agents", "brain", "settings.json",
+            "..",
+            "..",
+            "agents",
+            "brain",
+            "settings.json",
         )
         with open(settings_path) as f:
             settings = json.load(f)

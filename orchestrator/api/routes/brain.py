@@ -57,13 +57,14 @@ def brain_status(db=Depends(get_db)):
 
 class FocusUpdate(BaseModel):
     """Model for updating the current dashboard URL."""
+
     url: str
 
 
 @router.get("/brain/focus")
 async def get_focus(realtime: bool = True):
     """Get the current dashboard URL.
-    
+
     Args:
         realtime: If True (default), request fresh URL from frontend via WebSocket.
                   If False, return cached value immediately.
@@ -102,8 +103,11 @@ def start_brain(db=Depends(get_db)):
 
     # Fetch custom brain skills from DB (enabled only)
     from orchestrator.state.repositories import skills as skills_repo
+
     custom_skills = skills_repo.list_skills(db, target="brain", enabled_only=True)
-    custom_skills_dicts = [{"name": s.name, "description": s.description, "content": s.content} for s in custom_skills]
+    custom_skills_dicts = [
+        {"name": s.name, "description": s.description, "content": s.content} for s in custom_skills
+    ]
     custom_skills_section = format_custom_skills_for_prompt(custom_skills_dicts)
 
     # Copy brain prompt as CLAUDE.md into the working directory
@@ -159,7 +163,8 @@ def start_brain(db=Depends(get_db)):
         if session:
             # Reuse existing DB record
             sessions_repo.update_session(
-                db, session.id,
+                db,
+                session.id,
                 status="idle",
             )
             session_id = session.id
@@ -176,8 +181,13 @@ def start_brain(db=Depends(get_db)):
 
         # Launch Claude Code with hooks settings
         import time
+
         time.sleep(0.5)
-        tmux.send_keys(TMUX_SESSION, BRAIN_SESSION_NAME, f"claude --dangerously-skip-permissions --settings {settings_path}")
+        tmux.send_keys(
+            TMUX_SESSION,
+            BRAIN_SESSION_NAME,
+            f"claude --dangerously-skip-permissions --settings {settings_path}",
+        )
         sessions_repo.update_session(db, session_id, status="working")
 
         logger.info("Orchestrator brain started in %s", target)
@@ -235,10 +245,7 @@ def brain_sync(db=Depends(get_db)):
     # Gather non-brain sessions that are actively working/waiting/error
     # Get only worker sessions (excludes brain)
     worker_sessions = sessions_repo.list_sessions(db, session_type="worker")
-    active_workers = [
-        s for s in worker_sessions
-        if s.status not in ("idle", "disconnected")
-    ]
+    active_workers = [s for s in worker_sessions if s.status not in ("idle", "disconnected")]
 
     if not active_workers:
         return {"ok": True, "message": "No active workers to check", "workers_checked": 0}
@@ -263,11 +270,15 @@ def brain_sync(db=Depends(get_db)):
 
     parts.append("---")
     parts.append("Instructions:")
-    parts.append("1. Assess each worker: has it COMPLETED its task or is it still actively working?")
+    parts.append(
+        "1. Assess each worker: has it COMPLETED its task or is it still actively working?"
+    )
     parts.append("2. If a worker has finished (idle prompt, completion message, task done):")
     parts.append("   - Stop it: curl -s -X POST http://127.0.0.1:8093/api/sessions/{id}/stop")
     parts.append("   - Then delete it: curl -s -X DELETE http://127.0.0.1:8093/api/sessions/{id}")
-    parts.append("3. If a worker is waiting for input or stuck, try to unblock it by sending instructions.")
+    parts.append(
+        "3. If a worker is waiting for input or stuck, try to unblock it by sending instructions."
+    )
     parts.append("4. If a worker is actively working and making progress, skip it.")
     parts.append("5. Summarize your findings and actions taken.")
 
@@ -286,6 +297,7 @@ def brain_sync(db=Depends(get_db)):
 
 class PasteImageRequest(BaseModel):
     """Request body for pasting an image from clipboard."""
+
     image_data: str  # Base64-encoded image data (with or without data URL prefix)
     filename: str | None = None  # Optional custom filename
 
@@ -293,7 +305,7 @@ class PasteImageRequest(BaseModel):
 @router.post("/brain/paste-image")
 def paste_image(req: PasteImageRequest, db=Depends(get_db)):
     """Save a clipboard image to the brain's tmp folder and return the file path.
-    
+
     The image is saved to /tmp/orchestrator/brain/tmp/ with a timestamped filename.
     Returns the absolute path that can be used in Claude Code prompts.
     """
@@ -370,6 +382,7 @@ def paste_image(req: PasteImageRequest, db=Depends(get_db)):
 
 class PasteTextRequest(BaseModel):
     """Request body for pasting long text from clipboard."""
+
     text: str
 
 

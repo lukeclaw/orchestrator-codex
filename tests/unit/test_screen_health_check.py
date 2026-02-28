@@ -96,33 +96,25 @@ class TestSSHFailureHandling(unittest.TestCase):
 
     @patch("orchestrator.session.health.subprocess.run")
     def test_permission_denied(self, mock_run):
-        mock_run.return_value = _ssh_result(
-            "", "Permission denied (publickey).", returncode=255
-        )
+        mock_run.return_value = _ssh_result("", "Permission denied (publickey).", returncode=255)
         status, _ = check_screen_and_claude_remote(HOST, SESSION_ID)
         assert status == "screen_detached"
 
     @patch("orchestrator.session.health.subprocess.run")
     def test_connection_refused(self, mock_run):
-        mock_run.return_value = _ssh_result(
-            "", "Connection refused", returncode=255
-        )
+        mock_run.return_value = _ssh_result("", "Connection refused", returncode=255)
         status, _ = check_screen_and_claude_remote(HOST, SESSION_ID)
         assert status == "screen_detached"
 
     @patch("orchestrator.session.health.subprocess.run")
     def test_connection_timed_out(self, mock_run):
-        mock_run.return_value = _ssh_result(
-            "", "Connection timed out", returncode=255
-        )
+        mock_run.return_value = _ssh_result("", "Connection timed out", returncode=255)
         status, _ = check_screen_and_claude_remote(HOST, SESSION_ID)
         assert status == "screen_detached"
 
     @patch("orchestrator.session.health.subprocess.run")
     def test_ssh_exit_255_empty_stdout(self, mock_run):
-        mock_run.return_value = _ssh_result(
-            "", "Host key verification failed.", returncode=255
-        )
+        mock_run.return_value = _ssh_result("", "Host key verification failed.", returncode=255)
         status, _ = check_screen_and_claude_remote(HOST, SESSION_ID)
         assert status == "screen_detached"
 
@@ -208,13 +200,8 @@ class TestGrepPatternMatchesScreenFormats(unittest.TestCase):
     @patch("orchestrator.session.health.subprocess.run")
     def test_screen_ls_with_banner_stderr(self, mock_run):
         """SSH banner in stderr should not affect parsing of stdout results."""
-        banner = (
-            "UNAUTHORIZED ACCESS TO THIS DEVICE IS PROHIBITED.\n"
-            "Welcome to CBL-Mariner 2.0\n"
-        )
-        mock_run.return_value = _ssh_result(
-            _stdout(False, True, True), stderr=banner
-        )
+        banner = "UNAUTHORIZED ACCESS TO THIS DEVICE IS PROHIBITED.\nWelcome to CBL-Mariner 2.0\n"
+        mock_run.return_value = _ssh_result(_stdout(False, True, True), stderr=banner)
         status, _ = check_screen_and_claude_remote(HOST, SESSION_ID)
         assert status == "alive"
 
@@ -227,7 +214,9 @@ class TestClaudeSessionIdInGrepPattern(unittest.TestCase):
         """When claude_session_id differs from session_id, grep pattern has both."""
         mock_run.return_value = _ssh_result(_stdout(False, False, False))
         check_screen_and_claude_remote(
-            HOST, SESSION_ID, claude_session_id="new-claude-id-xyz",
+            HOST,
+            SESSION_ID,
+            claude_session_id="new-claude-id-xyz",
         )
         check_cmd = mock_run.call_args[0][0][-1]
         # grep -qE pattern should contain both IDs separated by |
@@ -240,7 +229,9 @@ class TestClaudeSessionIdInGrepPattern(unittest.TestCase):
         """When claude_session_id == session_id, no duplicate in pattern."""
         mock_run.return_value = _ssh_result(_stdout(False, False, False))
         check_screen_and_claude_remote(
-            HOST, SESSION_ID, claude_session_id=SESSION_ID,
+            HOST,
+            SESSION_ID,
+            claude_session_id=SESSION_ID,
         )
         check_cmd = mock_run.call_args[0][0][-1]
         # Should just have the single ID, no pipe
@@ -252,7 +243,9 @@ class TestClaudeSessionIdInGrepPattern(unittest.TestCase):
         """When claude_session_id is None, grep only has session_id."""
         mock_run.return_value = _ssh_result(_stdout(False, False, False))
         check_screen_and_claude_remote(
-            HOST, SESSION_ID, claude_session_id=None,
+            HOST,
+            SESSION_ID,
+            claude_session_id=None,
         )
         check_cmd = mock_run.call_args[0][0][-1]
         assert f"({SESSION_ID})" in check_cmd
@@ -261,6 +254,7 @@ class TestClaudeSessionIdInGrepPattern(unittest.TestCase):
 # ---------------------------------------------------------------------------
 # Helpers for check_and_update_worker_health tests
 # ---------------------------------------------------------------------------
+
 
 def _make_remote_session(**overrides) -> Session:
     """Create a remote Session suitable for check_and_update_worker_health."""
@@ -293,7 +287,10 @@ class TestPaneAttachmentDetection(unittest.TestCase):
     @patch(f"{_HEALTH}.check_screen_and_claude_remote", return_value=_SCREEN_ALIVE)
     @patch(f"{_HEALTH}.repo")
     def test_alive_but_pane_not_attached_returns_screen_detached(
-        self, mock_repo, mock_screen_check, mock_tui,
+        self,
+        mock_repo,
+        mock_screen_check,
+        mock_tui,
     ):
         """screen_status=alive + TUI not active → screen_detached + needs_reconnect."""
         session = _make_remote_session()
@@ -312,7 +309,10 @@ class TestPaneAttachmentDetection(unittest.TestCase):
     @patch(f"{_HEALTH}.check_screen_and_claude_remote", return_value=_SCREEN_ALIVE)
     @patch(f"{_HEALTH}.repo")
     def test_alive_and_pane_attached_returns_alive(
-        self, mock_repo, mock_screen_check, mock_tui,
+        self,
+        mock_repo,
+        mock_screen_check,
+        mock_tui,
     ):
         """screen_status=alive + TUI active → alive."""
         session = _make_remote_session()
@@ -329,7 +329,10 @@ class TestPaneAttachmentDetection(unittest.TestCase):
     @patch(f"{_HEALTH}.check_screen_and_claude_remote", return_value=_SCREEN_ALIVE)
     @patch(f"{_HEALTH}.repo")
     def test_tunnel_restart_success_still_checks_tui(
-        self, mock_repo, mock_screen_check, mock_tui,
+        self,
+        mock_repo,
+        mock_screen_check,
+        mock_tui,
     ):
         """Tunnel dead → restart succeeds → TUI not active → screen_detached.
 
@@ -354,7 +357,10 @@ class TestPaneAttachmentDetection(unittest.TestCase):
     @patch(f"{_HEALTH}.check_screen_and_claude_remote", return_value=_SCREEN_ALIVE)
     @patch(f"{_HEALTH}.repo")
     def test_tunnel_restart_success_and_tui_active_returns_alive(
-        self, mock_repo, mock_screen_check, mock_tui,
+        self,
+        mock_repo,
+        mock_screen_check,
+        mock_tui,
     ):
         """Tunnel dead → restart succeeds → TUI active → alive + tunnel_reconnected."""
         session = _make_remote_session()
@@ -378,7 +384,10 @@ class TestRdevRecoveryStatus(unittest.TestCase):
     @patch(f"{_HEALTH}.check_screen_and_claude_remote", return_value=_SCREEN_ALIVE)
     @patch(f"{_HEALTH}.repo")
     def test_recovery_from_disconnected_returns_waiting(
-        self, mock_repo, mock_screen_check, mock_tui,
+        self,
+        mock_repo,
+        mock_screen_check,
+        mock_tui,
     ):
         """Rdev worker recovering from disconnected should return status='waiting'."""
         session = _make_remote_session(status="disconnected")
@@ -395,7 +404,10 @@ class TestRdevRecoveryStatus(unittest.TestCase):
     @patch(f"{_HEALTH}.check_screen_and_claude_remote", return_value=_SCREEN_ALIVE)
     @patch(f"{_HEALTH}.repo")
     def test_recovery_from_error_returns_waiting(
-        self, mock_repo, mock_screen_check, mock_tui,
+        self,
+        mock_repo,
+        mock_screen_check,
+        mock_tui,
     ):
         """Rdev worker recovering from error should return status='waiting'."""
         session = _make_remote_session(status="error")
@@ -411,7 +423,10 @@ class TestRdevRecoveryStatus(unittest.TestCase):
     @patch(f"{_HEALTH}.check_screen_and_claude_remote", return_value=_SCREEN_ALIVE)
     @patch(f"{_HEALTH}.repo")
     def test_recovery_from_screen_detached_returns_waiting(
-        self, mock_repo, mock_screen_check, mock_tui,
+        self,
+        mock_repo,
+        mock_screen_check,
+        mock_tui,
     ):
         """Rdev worker recovering from screen_detached should return status='waiting'."""
         session = _make_remote_session(status="screen_detached")
@@ -427,7 +442,10 @@ class TestRdevRecoveryStatus(unittest.TestCase):
     @patch(f"{_HEALTH}.check_screen_and_claude_remote", return_value=_SCREEN_ALIVE)
     @patch(f"{_HEALTH}.repo")
     def test_working_status_not_changed_on_alive(
-        self, mock_repo, mock_screen_check, mock_tui,
+        self,
+        mock_repo,
+        mock_screen_check,
+        mock_tui,
     ):
         """Rdev worker already 'working' should keep that status."""
         session = _make_remote_session(status="working")
@@ -450,15 +468,24 @@ class TestDisconnectedWorkersHealthCheckedFirst(unittest.TestCase):
     @patch(f"{_HEALTH}.check_and_update_worker_health")
     @patch(f"{_HEALTH}.repo")
     def test_disconnected_auto_reconnect_alive_skips_reconnect(
-        self, mock_repo, mock_health, mock_active,
+        self,
+        mock_repo,
+        mock_health,
+        mock_active,
     ):
         """Disconnected + auto_reconnect + health alive → no reconnect needed."""
         session = Session(
-            id=SESSION_ID, name="worker-ld3", host="localhost",
-            work_dir="/tmp", status="disconnected", auto_reconnect=True,
+            id=SESSION_ID,
+            name="worker-ld3",
+            host="localhost",
+            work_dir="/tmp",
+            status="disconnected",
+            auto_reconnect=True,
         )
         mock_health.return_value = {
-            "alive": True, "status": "waiting", "reason": "Claude running in pane",
+            "alive": True,
+            "status": "waiting",
+            "reason": "Claude running in pane",
         }
         db = MagicMock()
 
@@ -473,16 +500,25 @@ class TestDisconnectedWorkersHealthCheckedFirst(unittest.TestCase):
     @patch(f"{_HEALTH}.check_and_update_worker_health")
     @patch(f"{_HEALTH}.repo")
     def test_disconnected_auto_reconnect_dead_triggers_reconnect(
-        self, mock_repo, mock_health, mock_active,
+        self,
+        mock_repo,
+        mock_health,
+        mock_active,
     ):
         """Disconnected + auto_reconnect + health dead → reconnect triggered."""
         session = Session(
-            id=SESSION_ID, name="worker-ld3", host="localhost",
-            work_dir="/tmp", status="disconnected", auto_reconnect=True,
+            id=SESSION_ID,
+            name="worker-ld3",
+            host="localhost",
+            work_dir="/tmp",
+            status="disconnected",
+            auto_reconnect=True,
         )
         mock_health.return_value = {
-            "alive": False, "status": "disconnected",
-            "reason": "No Claude process", "needs_reconnect": True,
+            "alive": False,
+            "status": "disconnected",
+            "reason": "No Claude process",
+            "needs_reconnect": True,
         }
         db = MagicMock()
 
@@ -495,15 +531,23 @@ class TestDisconnectedWorkersHealthCheckedFirst(unittest.TestCase):
     @patch(f"{_HEALTH}.check_and_update_worker_health")
     @patch(f"{_HEALTH}.repo")
     def test_disconnected_no_auto_reconnect_alive_recovers(
-        self, mock_repo, mock_health,
+        self,
+        mock_repo,
+        mock_health,
     ):
         """Disconnected + auto_reconnect=False + health alive → appears in alive list."""
         session = Session(
-            id=SESSION_ID, name="worker-ld3", host="localhost",
-            work_dir="/tmp", status="disconnected", auto_reconnect=False,
+            id=SESSION_ID,
+            name="worker-ld3",
+            host="localhost",
+            work_dir="/tmp",
+            status="disconnected",
+            auto_reconnect=False,
         )
         mock_health.return_value = {
-            "alive": True, "status": "waiting", "reason": "Claude running",
+            "alive": True,
+            "status": "waiting",
+            "reason": "Claude running",
         }
         db = MagicMock()
 
@@ -517,16 +561,24 @@ class TestDisconnectedWorkersHealthCheckedFirst(unittest.TestCase):
     @patch(f"{_HEALTH}.check_and_update_worker_health")
     @patch(f"{_HEALTH}.repo")
     def test_disconnected_no_auto_reconnect_dead_stays_disconnected(
-        self, mock_repo, mock_health,
+        self,
+        mock_repo,
+        mock_health,
     ):
         """Disconnected + auto_reconnect=False + health dead → stays in disconnected list."""
         session = Session(
-            id=SESSION_ID, name="worker-ld3", host="localhost",
-            work_dir="/tmp", status="disconnected", auto_reconnect=False,
+            id=SESSION_ID,
+            name="worker-ld3",
+            host="localhost",
+            work_dir="/tmp",
+            status="disconnected",
+            auto_reconnect=False,
         )
         mock_health.return_value = {
-            "alive": False, "status": "disconnected",
-            "reason": "No Claude process", "needs_reconnect": True,
+            "alive": False,
+            "status": "disconnected",
+            "reason": "No Claude process",
+            "needs_reconnect": True,
         }
         db = MagicMock()
 
@@ -541,12 +593,19 @@ class TestDisconnectedWorkersHealthCheckedFirst(unittest.TestCase):
     @patch(f"{_HEALTH}.check_and_update_worker_health")
     @patch(f"{_HEALTH}.repo")
     def test_disconnected_health_check_exception_falls_through_to_reconnect(
-        self, mock_repo, mock_health, mock_active,
+        self,
+        mock_repo,
+        mock_health,
+        mock_active,
     ):
         """If health pre-check raises, still falls through to reconnect."""
         session = Session(
-            id=SESSION_ID, name="worker-ld3", host="localhost",
-            work_dir="/tmp", status="disconnected", auto_reconnect=True,
+            id=SESSION_ID,
+            name="worker-ld3",
+            host="localhost",
+            work_dir="/tmp",
+            status="disconnected",
+            auto_reconnect=True,
         )
         mock_health.side_effect = Exception("tmux error")
         db = MagicMock()
@@ -577,13 +636,18 @@ class TestAutoReconnectDeferral(unittest.TestCase):
     @patch(f"{_HEALTH}.check_and_update_worker_health")
     @patch(f"{_HEALTH}.repo")
     def test_defers_reconnect_when_user_active(
-        self, mock_repo, mock_health, mock_active,
+        self,
+        mock_repo,
+        mock_health,
+        mock_active,
     ):
         """User active → reconnect skipped, session appears in deferred list."""
         session = self._make_detached_session()
         mock_health.return_value = {
-            "alive": False, "status": "screen_detached",
-            "reason": "detached", "needs_reconnect": True,
+            "alive": False,
+            "status": "screen_detached",
+            "reason": "detached",
+            "needs_reconnect": True,
         }
         db = MagicMock()
 
@@ -599,13 +663,18 @@ class TestAutoReconnectDeferral(unittest.TestCase):
     @patch(f"{_HEALTH}.check_and_update_worker_health")
     @patch(f"{_HEALTH}.repo")
     def test_proceeds_with_reconnect_when_user_inactive(
-        self, mock_repo, mock_health, mock_active,
+        self,
+        mock_repo,
+        mock_health,
+        mock_active,
     ):
         """User not active → reconnect fires normally."""
         session = self._make_detached_session()
         mock_health.return_value = {
-            "alive": False, "status": "screen_detached",
-            "reason": "detached", "needs_reconnect": True,
+            "alive": False,
+            "status": "screen_detached",
+            "reason": "detached",
+            "needs_reconnect": True,
         }
         db = MagicMock()
 

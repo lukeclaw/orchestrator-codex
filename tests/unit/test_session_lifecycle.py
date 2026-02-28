@@ -8,10 +8,10 @@ import pytest
 class TestSessionCreate:
     """Test session creation for local and rdev workers."""
 
-    @patch('orchestrator.api.routes.sessions.threading')
-    @patch('orchestrator.api.routes.sessions.ensure_window')
-    @patch('orchestrator.api.routes.sessions.repo')
-    @patch('orchestrator.api.routes.sessions.is_remote_host')
+    @patch("orchestrator.api.routes.sessions.threading")
+    @patch("orchestrator.api.routes.sessions.ensure_window")
+    @patch("orchestrator.api.routes.sessions.repo")
+    @patch("orchestrator.api.routes.sessions.is_remote_host")
     def test_create_local_session_success(
         self, mock_is_remote, mock_repo, mock_ensure_window, mock_threading, db
     ):
@@ -38,18 +38,18 @@ class TestSessionCreate:
         mock_request = MagicMock()
         mock_request.app.state.config = {"tmux_session_name": "orchestrator", "api_port": 8093}
 
-        with patch('orchestrator.api.routes.sessions.send_keys'):
+        with patch("orchestrator.api.routes.sessions.send_keys"):
             result = create_session(body, mock_request, db=db)
 
         assert result["name"] == "test-worker"
         mock_ensure_window.assert_called_once()
         mock_repo.create_session.assert_called_once()
 
-    @patch('orchestrator.terminal.session.setup_local_worker')
-    @patch('orchestrator.api.routes.sessions.threading')
-    @patch('orchestrator.api.routes.sessions.ensure_window')
-    @patch('orchestrator.api.routes.sessions.repo')
-    @patch('orchestrator.api.routes.sessions.is_remote_host')
+    @patch("orchestrator.terminal.session.setup_local_worker")
+    @patch("orchestrator.api.routes.sessions.threading")
+    @patch("orchestrator.api.routes.sessions.ensure_window")
+    @patch("orchestrator.api.routes.sessions.repo")
+    @patch("orchestrator.api.routes.sessions.is_remote_host")
     def test_create_local_session_tmux_failure_graceful(
         self, mock_is_remote, mock_repo, mock_ensure_window, mock_threading, mock_setup, db
     ):
@@ -78,10 +78,10 @@ class TestSessionCreate:
         assert result is not None
         mock_repo.create_session.assert_called_once()
 
-    @patch('orchestrator.api.routes.sessions.threading')
-    @patch('orchestrator.api.routes.sessions.ensure_window')
-    @patch('orchestrator.api.routes.sessions.repo')
-    @patch('orchestrator.api.routes.sessions.is_remote_host')
+    @patch("orchestrator.api.routes.sessions.threading")
+    @patch("orchestrator.api.routes.sessions.ensure_window")
+    @patch("orchestrator.api.routes.sessions.repo")
+    @patch("orchestrator.api.routes.sessions.is_remote_host")
     def test_create_rdev_session_returns_connecting_status(
         self, mock_is_remote, mock_repo, mock_ensure_window, mock_threading, db
     ):
@@ -108,10 +108,10 @@ class TestSessionCreate:
         # Status should be updated to connecting before background thread starts
         mock_repo.update_session.assert_called()
 
-    @patch('orchestrator.api.routes.sessions.threading')
-    @patch('orchestrator.api.routes.sessions.ensure_window')
-    @patch('orchestrator.api.routes.sessions.repo')
-    @patch('orchestrator.api.routes.sessions.is_remote_host')
+    @patch("orchestrator.api.routes.sessions.threading")
+    @patch("orchestrator.api.routes.sessions.ensure_window")
+    @patch("orchestrator.api.routes.sessions.repo")
+    @patch("orchestrator.api.routes.sessions.is_remote_host")
     def test_create_rdev_session_spawns_background_thread(
         self, mock_is_remote, mock_repo, mock_ensure_window, mock_threading, db
     ):
@@ -138,10 +138,10 @@ class TestSessionCreate:
         mock_threading.Thread.assert_called_once()
         mock_threading.Thread.return_value.start.assert_called_once()
 
-    @patch('orchestrator.api.routes.sessions.threading')
-    @patch('orchestrator.api.routes.sessions.ensure_window')
-    @patch('orchestrator.api.routes.sessions.repo')
-    @patch('orchestrator.api.routes.sessions.is_remote_host')
+    @patch("orchestrator.api.routes.sessions.threading")
+    @patch("orchestrator.api.routes.sessions.ensure_window")
+    @patch("orchestrator.api.routes.sessions.repo")
+    @patch("orchestrator.api.routes.sessions.is_remote_host")
     def test_create_session_sanitizes_worker_name(
         self, mock_is_remote, mock_repo, mock_ensure_window, mock_threading, db
     ):
@@ -173,9 +173,9 @@ class TestSessionCreate:
 class TestSessionDelete:
     """Test session deletion for local and rdev workers."""
 
-    @patch('orchestrator.api.routes.sessions.kill_window')
-    @patch('orchestrator.api.routes.sessions.repo')
-    @patch('orchestrator.api.routes.sessions.is_remote_host')
+    @patch("orchestrator.api.routes.sessions.kill_window")
+    @patch("orchestrator.api.routes.sessions.repo")
+    @patch("orchestrator.api.routes.sessions.is_remote_host")
     def test_delete_local_session_kills_tmux_window(
         self, mock_is_remote, mock_repo, mock_kill_window, db
     ):
@@ -199,11 +199,11 @@ class TestSessionDelete:
         mock_kill_window.assert_called()
         mock_repo.delete_session.assert_called_once_with(db, "test-session-id")
 
-    @patch('orchestrator.api.routes.sessions.shutil.rmtree')
-    @patch('orchestrator.api.routes.sessions.os.path.exists')
-    @patch('orchestrator.api.routes.sessions.kill_window')
-    @patch('orchestrator.api.routes.sessions.repo')
-    @patch('orchestrator.api.routes.sessions.is_remote_host')
+    @patch("orchestrator.api.routes.sessions.shutil.rmtree")
+    @patch("orchestrator.api.routes.sessions.os.path.exists")
+    @patch("orchestrator.api.routes.sessions.kill_window")
+    @patch("orchestrator.api.routes.sessions.repo")
+    @patch("orchestrator.api.routes.sessions.is_remote_host")
     def test_delete_local_session_cleans_tmp_dir(
         self, mock_is_remote, mock_repo, mock_kill_window, mock_exists, mock_rmtree, db
     ):
@@ -233,11 +233,11 @@ class TestSessionDelete:
         assert "workers" in rmtree_path and "test-worker" in rmtree_path
 
     @pytest.mark.allow_subprocess
-    @patch('orchestrator.api.routes.sessions.time.sleep')
-    @patch('orchestrator.api.routes.sessions.send_keys')
-    @patch('orchestrator.api.routes.sessions.kill_window')
-    @patch('orchestrator.api.routes.sessions.repo')
-    @patch('orchestrator.api.routes.sessions.is_remote_host')
+    @patch("orchestrator.api.routes.sessions.time.sleep")
+    @patch("orchestrator.api.routes.sessions.send_keys")
+    @patch("orchestrator.api.routes.sessions.kill_window")
+    @patch("orchestrator.api.routes.sessions.repo")
+    @patch("orchestrator.api.routes.sessions.is_remote_host")
     def test_delete_rdev_session_exits_claude_and_screen(
         self, mock_is_remote, mock_repo, mock_kill_window, mock_send_keys, mock_sleep, db
     ):
@@ -259,13 +259,13 @@ class TestSessionDelete:
         delete_session("test-session-id", mock_request, db=db)
 
         # Should have sent exit commands
-        exit_calls = [c for c in mock_send_keys.call_args_list if 'exit' in str(c)]
+        exit_calls = [c for c in mock_send_keys.call_args_list if "exit" in str(c)]
         assert len(exit_calls) >= 2, "Should send 'exit' at least twice (Claude + screen)"
 
-    @patch('orchestrator.api.routes.sessions.send_keys')
-    @patch('orchestrator.api.routes.sessions.kill_window')
-    @patch('orchestrator.api.routes.sessions.repo')
-    @patch('orchestrator.api.routes.sessions.is_remote_host')
+    @patch("orchestrator.api.routes.sessions.send_keys")
+    @patch("orchestrator.api.routes.sessions.kill_window")
+    @patch("orchestrator.api.routes.sessions.repo")
+    @patch("orchestrator.api.routes.sessions.is_remote_host")
     def test_delete_rdev_session_kills_tunnel(
         self, mock_is_remote, mock_repo, mock_kill_window, mock_send_keys, db
     ):
@@ -291,12 +291,10 @@ class TestSessionDelete:
         # Should stop tunnel via tunnel_manager
         mock_tm.stop_tunnel.assert_called_once_with("test-session-id")
 
-    @patch('orchestrator.api.routes.sessions.kill_window')
-    @patch('orchestrator.api.routes.sessions.repo')
-    @patch('orchestrator.api.routes.sessions.is_remote_host')
-    def test_delete_session_deletes_from_db(
-        self, mock_is_remote, mock_repo, mock_kill_window, db
-    ):
+    @patch("orchestrator.api.routes.sessions.kill_window")
+    @patch("orchestrator.api.routes.sessions.repo")
+    @patch("orchestrator.api.routes.sessions.is_remote_host")
+    def test_delete_session_deletes_from_db(self, mock_is_remote, mock_repo, mock_kill_window, db):
         """Deleting a session should delete it from the database."""
         from orchestrator.api.routes.sessions import delete_session
 
@@ -321,10 +319,12 @@ class TestSessionDelete:
 class TestSessionStop:
     """Test session stop functionality."""
 
-    @patch('orchestrator.state.repositories.tasks.update_task')
-    @patch('orchestrator.state.repositories.tasks.list_tasks')
-    @patch('orchestrator.api.routes.sessions.repo')
-    def test_stop_session_updates_status_to_idle(self, mock_repo, mock_list_tasks, mock_update_task, db):
+    @patch("orchestrator.state.repositories.tasks.update_task")
+    @patch("orchestrator.state.repositories.tasks.list_tasks")
+    @patch("orchestrator.api.routes.sessions.repo")
+    def test_stop_session_updates_status_to_idle(
+        self, mock_repo, mock_list_tasks, mock_update_task, db
+    ):
         """Stopping a session should update status to 'idle'."""
         from orchestrator.api.routes.sessions import stop_session
 
@@ -337,18 +337,20 @@ class TestSessionStop:
         mock_repo.get_session.return_value = mock_session
         mock_list_tasks.return_value = []
 
-        with patch('orchestrator.api.routes.sessions.send_keys'):
-            with patch('orchestrator.terminal.manager.send_keys_literal'):
+        with patch("orchestrator.api.routes.sessions.send_keys"):
+            with patch("orchestrator.terminal.manager.send_keys_literal"):
                 stop_session("test-session-id", db=db)
 
         # Status should be updated to idle
         update_calls = mock_repo.update_session.call_args_list
-        assert any('idle' in str(c) for c in update_calls), "Should update status to idle"
+        assert any("idle" in str(c) for c in update_calls), "Should update status to idle"
 
-    @patch('orchestrator.state.repositories.tasks.update_task')
-    @patch('orchestrator.state.repositories.tasks.list_tasks')
-    @patch('orchestrator.api.routes.sessions.repo')
-    def test_stop_session_unassigns_non_done_tasks(self, mock_repo, mock_list_tasks, mock_update_task, db):
+    @patch("orchestrator.state.repositories.tasks.update_task")
+    @patch("orchestrator.state.repositories.tasks.list_tasks")
+    @patch("orchestrator.api.routes.sessions.repo")
+    def test_stop_session_unassigns_non_done_tasks(
+        self, mock_repo, mock_list_tasks, mock_update_task, db
+    ):
         """Stopping a session should unassign tasks that are not done."""
         from orchestrator.api.routes.sessions import stop_session
 
@@ -366,17 +368,19 @@ class TestSessionStop:
         mock_task.status = "in_progress"
         mock_list_tasks.return_value = [mock_task]
 
-        with patch('orchestrator.api.routes.sessions.send_keys'):
-            with patch('orchestrator.terminal.manager.send_keys_literal'):
+        with patch("orchestrator.api.routes.sessions.send_keys"):
+            with patch("orchestrator.terminal.manager.send_keys_literal"):
                 stop_session("test-session-id", db=db)
 
         # Task should be unassigned
         mock_update_task.assert_called()
 
-    @patch('orchestrator.state.repositories.tasks.update_task')
-    @patch('orchestrator.state.repositories.tasks.list_tasks')
-    @patch('orchestrator.api.routes.sessions.repo')
-    def test_stop_session_preserves_done_task_status(self, mock_repo, mock_list_tasks, mock_update_task, db):
+    @patch("orchestrator.state.repositories.tasks.update_task")
+    @patch("orchestrator.state.repositories.tasks.list_tasks")
+    @patch("orchestrator.api.routes.sessions.repo")
+    def test_stop_session_preserves_done_task_status(
+        self, mock_repo, mock_list_tasks, mock_update_task, db
+    ):
         """Stopping a session should NOT reset tasks that are already done."""
         from orchestrator.api.routes.sessions import stop_session
 
@@ -394,14 +398,14 @@ class TestSessionStop:
         mock_task.status = "done"
         mock_list_tasks.return_value = [mock_task]
 
-        with patch('orchestrator.api.routes.sessions.send_keys'):
-            with patch('orchestrator.terminal.manager.send_keys_literal'):
+        with patch("orchestrator.api.routes.sessions.send_keys"):
+            with patch("orchestrator.terminal.manager.send_keys_literal"):
                 stop_session("test-session-id", db=db)
 
         # Task status should remain done (None means don't change)
         if mock_update_task.called:
             call_kwargs = mock_update_task.call_args[1]
-            assert call_kwargs.get('status') is None or call_kwargs.get('status') == 'done'
+            assert call_kwargs.get("status") is None or call_kwargs.get("status") == "done"
 
 
 if __name__ == "__main__":

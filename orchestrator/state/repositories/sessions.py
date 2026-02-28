@@ -35,7 +35,7 @@ def list_sessions(
     session_type: str | None = None,
 ) -> list[Session]:
     """List sessions with optional filters.
-    
+
     Args:
         status: Filter by session status (idle, working, etc.)
         session_type: Filter by session type (worker, brain, system)
@@ -94,12 +94,9 @@ def update_session(
     # Auto-update last_status_changed_at whenever status changes
     if status is not None:
         if status not in _VALID_STATUSES:
-            logger.error(
-                "Rejected invalid status %r for session %s", status, id
-            )
+            logger.error("Rejected invalid status %r for session %s", status, id)
             raise ValueError(
-                f"Invalid session status: {status!r}. "
-                f"Valid: {sorted(_VALID_STATUSES)}"
+                f"Invalid session status: {status!r}. Valid: {sorted(_VALID_STATUSES)}"
             )
         sets.append("status = ?")
         params.append(status)
@@ -130,20 +127,21 @@ def update_session(
     old_status = None
     session_type = None
     if status is not None:
-        row = conn.execute("SELECT status, session_type FROM sessions WHERE id = ?", (id,)).fetchone()
+        row = conn.execute(
+            "SELECT status, session_type FROM sessions WHERE id = ?", (id,)
+        ).fetchone()
         if row:
             old_status = row["status"]
             session_type = row["session_type"]
 
     params.append(id)
-    conn.execute(
-        f"UPDATE sessions SET {', '.join(sets)} WHERE id = ?", params
-    )
+    conn.execute(f"UPDATE sessions SET {', '.join(sets)} WHERE id = ?", params)
 
     # Insert status event if status actually changed
     if status is not None and old_status is not None and old_status != status:
         try:
             from orchestrator.state.repositories.status_events import insert_event
+
             insert_event(conn, "session", id, old_status, status, session_type=session_type)
         except Exception:
             logger.debug("Failed to insert status event for session %s", id, exc_info=True)
@@ -155,10 +153,12 @@ def update_session(
 @with_retry
 def delete_session(conn: sqlite3.Connection, id: str) -> bool:
     """Delete a session and all related records.
-    
+
     Uses a single transaction to avoid partial deletes and reduce lock time.
     """
     with transaction(conn):
-        conn.execute("UPDATE tasks SET assigned_session_id = NULL WHERE assigned_session_id = ?", (id,))
+        conn.execute(
+            "UPDATE tasks SET assigned_session_id = NULL WHERE assigned_session_id = ?", (id,)
+        )
         cursor = conn.execute("DELETE FROM sessions WHERE id = ?", (id,))
     return cursor.rowcount > 0

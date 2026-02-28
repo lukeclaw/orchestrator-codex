@@ -81,8 +81,11 @@ def list_projects(status: str | None = None, include_stats: bool = True, db=Depe
     result = []
     for p in projects:
         item = {
-            "id": p.id, "name": p.name, "description": p.description,
-            "status": p.status, "target_date": p.target_date,
+            "id": p.id,
+            "name": p.name,
+            "description": p.description,
+            "status": p.status,
+            "target_date": p.target_date,
             "created_at": p.created_at,
         }
         if include_stats:
@@ -97,8 +100,11 @@ def get_project(project_id: str, db=Depends(get_db)):
     if p is None:
         raise HTTPException(404, "Project not found")
     return {
-        "id": p.id, "name": p.name, "description": p.description,
-        "status": p.status, "target_date": p.target_date,
+        "id": p.id,
+        "name": p.name,
+        "description": p.description,
+        "status": p.status,
+        "target_date": p.target_date,
         "created_at": p.created_at,
     }
 
@@ -115,7 +121,8 @@ def update_project(project_id: str, body: ProjectUpdate, db=Depends(get_db)):
     if p is None:
         raise HTTPException(404, "Project not found")
     updated = repo.update_project(
-        db, project_id,
+        db,
+        project_id,
         name=body.name,
         description=body.description,
         status=body.status,
@@ -141,4 +148,8 @@ def delete_project(project_id: str, db=Depends(get_db)):
 
     # Finally delete the project itself
     repo.delete_project(db, project_id)
-    return {"ok": True, "deleted_tasks": len(project_tasks), "deleted_context": len(project_context)}
+    return {
+        "ok": True,
+        "deleted_tasks": len(project_tasks),
+        "deleted_context": len(project_context),
+    }

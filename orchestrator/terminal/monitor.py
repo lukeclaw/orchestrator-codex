@@ -30,7 +30,7 @@ async def poll_session(
     tmux_session: str = "orchestrator",
 ) -> list[Event]:
     """Poll a single session and return any events detected.
-    
+
     This function is READ-ONLY. It parses terminal output for specific events
     (PR created, tests passed, etc.) but does NOT guess worker status.
     Worker status is managed by Claude Code hooks.
@@ -64,7 +64,7 @@ async def monitor_loop(
     active_interval: float = 2.0,
 ):
     """Main monitoring loop. Polls all sessions at the configured interval.
-    
+
     This loop is READ-ONLY. It reads session list and terminal output,
     then publishes events. The StateManager subscribes to these events
     and handles all database writes.

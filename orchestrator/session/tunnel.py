@@ -567,9 +567,7 @@ class ReverseTunnelManager:
                 except subprocess.TimeoutExpired:
                     proc.kill()
                 with self._lock:
-                    self._failure_counts[session_id] = (
-                        self._failure_counts.get(session_id, 0) + 1
-                    )
+                    self._failure_counts[session_id] = self._failure_counts.get(session_id, 0) + 1
                     self._last_errors[session_id] = "remote port forwarding failed"
                 if log_file:
                     log_file.close()
