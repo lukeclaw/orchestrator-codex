@@ -96,6 +96,11 @@
   color: #a78bfa;
 }
 
+.wc-type-tag.ssh {
+  background: rgba(139, 92, 246, 0.15);
+  color: #a78bfa;
+}
+
 /* Status duration indicator */
 .wc-duration {
   font-family: var(--font-mono);

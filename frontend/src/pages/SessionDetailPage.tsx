@@ -27,10 +27,11 @@ export default function SessionDetailPage() {
   const notify = useNotify()
   
   // Use shared state from AppContext for session
-  const { sessions, tasks: allTasks, refresh, interactiveCliSessions, interactiveCliMinimized } = useApp()
+  const { sessions, tasks: allTasks, refresh, interactiveCliSessions, interactiveCliMinimized, closeInteractiveCli } = useApp()
   const session = sessions.find(s => s.id === id) || null
   const tasks = allTasks.filter(t => t.assigned_session_id === id)
   const isRdev = session?.host?.includes('/') ?? false
+  const isSsh = !isRdev && (session?.host ? session.host !== 'localhost' : false)
   const isRemote = session?.host ? session.host !== 'localhost' : false
 
   const { readClipboard } = useSmartPaste()
@@ -480,6 +481,7 @@ export default function SessionDetailPage() {
         <div className="sd-topbar-left">
           <h2 className="sd-title">{session.name}</h2>
           {session.host.includes('/') && <span className="sd-type-tag rdev">rdev</span>}
+          {isSsh && <span className="sd-type-tag ssh">ssh</span>}
           <span className={`status-badge ${session.status}`}>{session.status}</span>
           {/* Check Status button next to status */}
           <button
@@ -639,6 +641,7 @@ export default function SessionDetailPage() {
               onClose={() => {
                 setIcliActiveLocal(false)
                 setIcliMinimized(false)
+                if (id) closeInteractiveCli(id)
                 terminalFocusRef.current?.()
               }}
             />

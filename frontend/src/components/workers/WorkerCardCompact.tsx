@@ -34,6 +34,7 @@ export default function WorkerCardCompact({ session, assignedTask, allRdev }: Pr
           <span className="wcc-name-suffix">{nameSuffix}</span>
         </span>
         {!allRdev && session.host.includes('/') && <span className="wcc-type-tag rdev">rdev</span>}
+        {session.host !== 'localhost' && !session.host.includes('/') && <span className="wcc-type-tag ssh">ssh</span>}
         <span className={`status-badge ${session.status}`}>{session.status}</span>
       </div>
 

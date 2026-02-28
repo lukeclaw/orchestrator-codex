@@ -72,6 +72,11 @@
   color: #a78bfa;
 }
 
+.wcc-type-tag.ssh {
+  background: rgba(139, 92, 246, 0.15);
+  color: #a78bfa;
+}
+
 /* Terminal preview — compact */
 .wcc-preview {
   background: #0d1117;

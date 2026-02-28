@@ -44,8 +44,9 @@ export default function WorkerCard({
   const sessionIdRef = useRef(session.id)
   const overflowRef = useRef<HTMLDivElement>(null)
 
-  // Check if this is an rdev worker
+  // Check if this is an rdev worker or SSH worker
   const isRdev = session.host.includes('/')
+  const isSsh = !isRdev && session.host !== 'localhost'
 
   // Whether to always show action buttons (error states)
   const alwaysShowActions = session.status === 'error' || session.status === 'disconnected' || session.status === 'screen_detached'
@@ -233,6 +234,7 @@ export default function WorkerCard({
             <span className="wc-name">{session.name}</span>
           )}
           {isRdev && <span className="wc-type-tag rdev">rdev</span>}
+          {isSsh && <span className="wc-type-tag ssh">ssh</span>}
           <span className={`status-badge ${session.status}`}>{session.status}</span>
           {session.last_status_changed_at && (
             <span className="wc-duration">{statusDuration(session.last_status_changed_at)}</span>

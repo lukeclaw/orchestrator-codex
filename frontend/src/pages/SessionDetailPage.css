@@ -47,6 +47,11 @@
   color: #a78bfa;
 }
 
+.sd-type-tag.ssh {
+  background: rgba(139, 92, 246, 0.15);
+  color: #a78bfa;
+}
+
 /* Check status button next to status badge */
 .sd-check-btn {
   display: flex;
