@@ -1,9 +1,10 @@
-import { useState, useMemo } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import { Link, useSearchParams, useNavigate } from 'react-router-dom'
 import { useApp } from '../context/AppContext'
 import { api } from '../api/client'
 import type { Task } from '../api/types'
 import { timeAgo, parseDate } from '../components/common/TimeAgo'
+import { IconTasks, IconFilter, IconSearch } from '../components/common/Icons'
 import TaskForm from '../components/tasks/TaskForm'
 import './TasksPage.css'
 
@@ -13,14 +14,12 @@ type SortDir = 'asc' | 'desc'
 const STATUS_ORDER: Record<string, number> = { blocked: 3, in_progress: 2, todo: 1, done: 0 }
 const PRIORITY_ORDER: Record<string, number> = { H: 3, M: 2, L: 1 }
 
+const STATUSES = ['todo', 'in_progress', 'done', 'blocked'] as const
+const STATUS_COLORS: Record<string, string> = { todo: '#6e7681', in_progress: '#58a6ff', done: '#3fb950', blocked: '#f85149' }
+const STATUS_LABELS: Record<string, string> = { todo: 'To Do', in_progress: 'In Progress', done: 'Done', blocked: 'Blocked' }
+
 function formatStatus(status: string) {
-  switch (status) {
-    case 'todo': return 'To Do'
-    case 'in_progress': return 'In Progress'
-    case 'done': return 'Done'
-    case 'blocked': return 'Blocked'
-    default: return status
-  }
+  return STATUS_LABELS[status] || status
 }
 
 export default function TasksPage() {
@@ -30,16 +29,18 @@ export default function TasksPage() {
   const [sortKey, setSortKey] = useState<SortKey>('updated')
   const [sortDir, setSortDir] = useState<SortDir>('desc')
   const [showAddTask, setShowAddTask] = useState(false)
+  const [showProjectDropdown, setShowProjectDropdown] = useState(false)
+  const projectThRef = useRef<HTMLTableCellElement>(null)
 
   // Filters from URL params
-  const statusFilter = searchParams.get('status') || 'all'
-  const priorityFilter = searchParams.get('priority') || 'all'
-  const projectFilter = searchParams.get('project') || 'all'
+  const statusFilter = searchParams.get('status') || ''
+  const priorityFilter = searchParams.get('priority') || ''
+  const projectFilter = searchParams.get('project') || ''
   const searchQuery = searchParams.get('q') || ''
 
   const updateFilter = (key: string, value: string) => {
     const newParams = new URLSearchParams(searchParams)
-    if (value === 'all' || value === '') {
+    if (!value) {
       newParams.delete(key)
     } else {
       newParams.set(key, value)
@@ -47,12 +48,52 @@ export default function TasksPage() {
     setSearchParams(newParams)
   }
 
+  // Click-outside for project dropdown
+  useEffect(() => {
+    if (!showProjectDropdown) return
+    function handleClickOutside(e: MouseEvent) {
+      if (projectThRef.current && !projectThRef.current.contains(e.target as Node)) {
+        setShowProjectDropdown(false)
+      }
+    }
+    function handleEscape(e: KeyboardEvent) {
+      if (e.key === 'Escape') setShowProjectDropdown(false)
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    document.addEventListener('keydown', handleEscape)
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside)
+      document.removeEventListener('keydown', handleEscape)
+    }
+  }, [showProjectDropdown])
+
   // Lookup helpers
   const projectMap = useMemo(() => new Map(projects.map(p => [p.id, p])), [projects])
   const sessionMap = useMemo(() => new Map(sessions.map(s => [s.id, s])), [sessions])
-
   const getProjectName = (id: string) => projectMap.get(id)?.name || 'Unknown'
   const getWorker = (id: string | null) => id ? sessionMap.get(id) || null : null
+
+  // Top-level tasks only
+  const topLevelTasks = useMemo(() => tasks.filter(t => !t.parent_task_id), [tasks])
+
+  // Status counts — computed from tasks with project/priority/search applied but NOT status
+  const statusCounts = useMemo(() => {
+    let filtered = topLevelTasks
+    if (projectFilter) filtered = filtered.filter(t => t.project_id === projectFilter)
+    if (priorityFilter) filtered = filtered.filter(t => t.priority === priorityFilter)
+    if (searchQuery) {
+      const q = searchQuery.toLowerCase()
+      filtered = filtered.filter(t =>
+        t.title.toLowerCase().includes(q) ||
+        t.task_key?.toLowerCase().includes(q) ||
+        t.description?.toLowerCase().includes(q)
+      )
+    }
+    return filtered.reduce<Record<string, number>>((acc, t) => {
+      acc[t.status] = (acc[t.status] || 0) + 1
+      return acc
+    }, {})
+  }, [topLevelTasks, projectFilter, priorityFilter, searchQuery])
 
   // Sort value extractor
   function getSortValue(t: Task, key: SortKey): string | number {
@@ -71,28 +112,25 @@ export default function TasksPage() {
 
   // Filter + sort
   const filteredTasks = useMemo(() => {
-    const filtered = tasks
-      .filter(t => !t.parent_task_id)
-      .filter(t => statusFilter === 'all' || t.status === statusFilter)
-      .filter(t => priorityFilter === 'all' || t.priority === priorityFilter)
-      .filter(t => projectFilter === 'all' || t.project_id === projectFilter)
-      .filter(t => {
-        if (!searchQuery) return true
-        const q = searchQuery.toLowerCase()
-        return (
-          t.title.toLowerCase().includes(q) ||
-          t.task_key?.toLowerCase().includes(q) ||
-          t.description?.toLowerCase().includes(q)
-        )
-      })
-
+    let filtered = topLevelTasks
+    if (statusFilter) filtered = filtered.filter(t => t.status === statusFilter)
+    if (priorityFilter) filtered = filtered.filter(t => t.priority === priorityFilter)
+    if (projectFilter) filtered = filtered.filter(t => t.project_id === projectFilter)
+    if (searchQuery) {
+      const q = searchQuery.toLowerCase()
+      filtered = filtered.filter(t =>
+        t.title.toLowerCase().includes(q) ||
+        t.task_key?.toLowerCase().includes(q) ||
+        t.description?.toLowerCase().includes(q)
+      )
+    }
     return [...filtered].sort((a, b) => {
       const aVal = getSortValue(a, sortKey)
       const bVal = getSortValue(b, sortKey)
       const cmp = aVal < bVal ? -1 : aVal > bVal ? 1 : 0
       return sortDir === 'asc' ? cmp : -cmp
     })
-  }, [tasks, statusFilter, priorityFilter, projectFilter, searchQuery, sortKey, sortDir])
+  }, [topLevelTasks, statusFilter, priorityFilter, projectFilter, searchQuery, sortKey, sortDir])
 
   function handleSort(key: SortKey) {
     if (sortKey === key) {
@@ -111,13 +149,74 @@ export default function TasksPage() {
         onClick={() => handleSort(k)}
       >
         {children}
-        {active && <span className="sort-arrow">{sortDir === 'asc' ? '↑' : '↓'}</span>}
+        <svg
+          className={`sort-chevron${active && sortDir === 'asc' ? ' asc' : ''}`}
+          width="10"
+          height="10"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2.5"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
+          <polyline points="6 9 12 15 18 9" />
+        </svg>
       </th>
     )
   }
 
+  // Project header with filter dropdown
+  function ProjectHeader() {
+    const active = sortKey === 'project'
+    const projName = projectFilter ? getProjectName(projectFilter) : null
+    return (
+      <th
+        ref={projectThRef}
+        className={`pt-th sortable ${active ? 'active' : ''} tk-th-filterable`}
+      >
+        <span className="tk-th-label" onClick={() => handleSort('project')}>
+          {projName || 'Project'}
+          <svg
+            className={`sort-chevron${active && sortDir === 'asc' ? ' asc' : ''}`}
+            width="10" height="10" viewBox="0 0 24 24" fill="none"
+            stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
+          ><polyline points="6 9 12 15 18 9" /></svg>
+        </span>
+        <button
+          className={`tk-th-icon-btn${projectFilter ? ' active' : ''}`}
+          onClick={e => { e.stopPropagation(); setShowProjectDropdown(p => !p) }}
+          type="button"
+          title="Filter by project"
+        >
+          <IconFilter size={13} />
+        </button>
+        {showProjectDropdown && (
+          <div className="tk-dropdown">
+            <button
+              className={`tk-dropdown-option${!projectFilter ? ' selected' : ''}`}
+              onClick={() => { updateFilter('project', ''); setShowProjectDropdown(false) }}
+              type="button"
+            >All Projects</button>
+            {projects.map(p => (
+              <button
+                key={p.id}
+                className={`tk-dropdown-option${projectFilter === p.id ? ' selected' : ''}`}
+                onClick={() => { updateFilter('project', p.id); setShowProjectDropdown(false) }}
+                type="button"
+              >{p.name}</button>
+            ))}
+          </div>
+        )}
+      </th>
+    )
+  }
+
+  const hasFilters = statusFilter || priorityFilter || projectFilter || searchQuery
+
   return (
     <div className="tasks-page">
+      {/* Header */}
       <div className="page-header">
         <h1>Tasks</h1>
         <div className="page-header-actions">
@@ -128,67 +227,61 @@ export default function TasksPage() {
         </div>
       </div>
 
-      {/* Filters */}
-      <div className="tasks-filters">
-        <input
-          type="text"
-          className="search-input"
-          placeholder="Search tasks..."
-          value={searchQuery}
-          onChange={e => updateFilter('q', e.target.value)}
-        />
-
-        <select
-          className="filter-select"
-          value={projectFilter}
-          onChange={e => updateFilter('project', e.target.value)}
-        >
-          <option value="all">All Projects</option>
-          {projects.map(p => (
-            <option key={p.id} value={p.id}>{p.name}</option>
+      {/* Status pills + inline search */}
+      {topLevelTasks.length > 0 && (
+        <div className="tk-status-bar">
+          {STATUSES.filter(s => statusCounts[s]).map(status => (
+            <button
+              key={status}
+              className={`tk-status-pill${statusFilter === status ? ' active' : ''}`}
+              onClick={() => updateFilter('status', statusFilter === status ? '' : status)}
+              type="button"
+            >
+              <span className="tk-status-dot" style={{ background: STATUS_COLORS[status] }} />
+              <span className="tk-status-pill-count">{statusCounts[status]}</span>
+              <span className="tk-status-pill-label">{STATUS_LABELS[status]}</span>
+            </button>
           ))}
-        </select>
+          <div className="tk-search-inline">
+            <IconSearch size={13} className="tk-search-inline-icon" />
+            <input
+              className="tk-search-inline-input"
+              type="text"
+              placeholder="Filter..."
+              value={searchQuery}
+              onChange={e => updateFilter('q', e.target.value)}
+            />
+            {searchQuery && (
+              <button
+                className="tk-search-inline-clear"
+                onMouseDown={e => { e.preventDefault(); updateFilter('q', '') }}
+                type="button"
+              >&times;</button>
+            )}
+          </div>
+        </div>
+      )}
 
-        <select
-          className="filter-select"
-          value={statusFilter}
-          onChange={e => updateFilter('status', e.target.value)}
-        >
-          <option value="all">All Statuses</option>
-          <option value="todo">To Do</option>
-          <option value="in_progress">In Progress</option>
-          <option value="done">Done</option>
-          <option value="blocked">Blocked</option>
-        </select>
-
-        <select
-          className="filter-select"
-          value={priorityFilter}
-          onChange={e => updateFilter('priority', e.target.value)}
-        >
-          <option value="all">All Priorities</option>
-          <option value="H">High</option>
-          <option value="M">Medium</option>
-          <option value="L">Low</option>
-        </select>
-
-        {(statusFilter !== 'all' || priorityFilter !== 'all' || projectFilter !== 'all' || searchQuery) && (
-          <button
-            className="btn btn-sm btn-secondary"
-            onClick={() => setSearchParams(new URLSearchParams())}
-          >
-            Clear Filters
-          </button>
-        )}
-      </div>
-
-      {/* Tasks Table */}
+      {/* Table */}
       {filteredTasks.length === 0 ? (
-        <div className="empty-state">
-          {tasks.length === 0 ? (
-            <p>No tasks yet. Create tasks from a project page.</p>
+        <div className="tk-empty-state">
+          {hasFilters ? (
+            <>
+              <IconFilter size={32} />
+              <p>No tasks match your filters.</p>
+              <button className="btn btn-secondary" onClick={() => setSearchParams(new URLSearchParams())}>
+                Clear Filters
+              </button>
+            </>
           ) : (
-            <p>No tasks match the current filters.</p>
+            <>
+              <IconTasks size={48} />
+              <h3>No tasks yet</h3>
+              <p>Create tasks from a project page or use the button above.</p>
+              <button className="btn btn-primary" onClick={() => setShowAddTask(true)}>
+                + Add Task
+              </button>
+            </>
           )}
         </div>
       ) : (
@@ -198,9 +291,9 @@ export default function TasksPage() {
               <tr>
                 <SortHeader k="key">Key</SortHeader>
                 <SortHeader k="title">Title</SortHeader>
-                <SortHeader k="project">Project</SortHeader>
+                <ProjectHeader />
                 <SortHeader k="status">Status</SortHeader>
-                <SortHeader k="priority">Priority</SortHeader>
+                <SortHeader k="priority" className="tk-col-priority">Priority</SortHeader>
                 <SortHeader k="subtasks" className="center">Subtasks</SortHeader>
                 <SortHeader k="assigned">Assigned</SortHeader>
                 <SortHeader k="updated">Updated</SortHeader>
@@ -213,7 +306,7 @@ export default function TasksPage() {
                 return (
                   <tr
                     key={task.id}
-                    className="pt-row"
+                    className={`pt-row tk-row tk-status-${task.status}`}
                     onClick={() => navigate(`/tasks/${task.id}`)}
                   >
                     <td className="pt-td task-key">
@@ -278,7 +371,7 @@ export default function TasksPage() {
           return result
         }}
         projects={projects}
-        defaultProjectId={projectFilter !== 'all' ? projectFilter : undefined}
+        defaultProjectId={projectFilter || undefined}
       />
     </div>
   )
