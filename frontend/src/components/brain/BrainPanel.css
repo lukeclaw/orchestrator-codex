@@ -219,3 +219,40 @@
   opacity: 0.4;
   cursor: not-allowed;
 }
+
+.bp-footer-paste-btn.pasting {
+  position: relative;
+  color: var(--accent, #58a6ff);
+  cursor: wait;
+  overflow: hidden;
+  opacity: 1;
+}
+
+.bp-footer-paste-btn.pasting::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1.5px;
+  background: conic-gradient(
+    from var(--bp-border-angle, 0deg),
+    transparent 30%,
+    rgba(88, 166, 255, 0.3) 70%,
+    var(--accent, #58a6ff) 100%
+  );
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  mask-composite: exclude;
+  animation: bp-border-spin 2.4s linear infinite;
+}
+
+@keyframes bp-border-spin {
+  to { --bp-border-angle: 360deg; }
+}
+
+@property --bp-border-angle {
+  syntax: "<angle>";
+  initial-value: 0deg;
+  inherits: false;
+}

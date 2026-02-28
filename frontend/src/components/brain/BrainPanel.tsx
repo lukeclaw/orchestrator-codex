@@ -30,6 +30,7 @@ export default function BrainPanel({
   const [starting, setStarting] = useState(false)
   const [stopping, setStopping] = useState(false)
   const [pasting, setPasting] = useState(false)
+  const [ctxPasting, setCtxPasting] = useState(false)
   const isDragging = useRef(false)
   const terminalInputRef = useRef<((text: string) => void) | null>(null)
   const terminalFocusRef = useRef<(() => void) | null>(null)
@@ -285,19 +286,20 @@ export default function BrainPanel({
           onTerminalFocusRef={(fn: () => void) => { terminalFocusRef.current = fn }}
           onImagePaste={handleImagePaste}
           onTextPaste={handleTextPaste}
+          onPastingChange={setCtxPasting}
         />
       </div>
 
       {isRunning && (
         <div className="bp-footer">
           <button
-            className="bp-footer-paste-btn"
+            className={`bp-footer-paste-btn${pasting || ctxPasting ? ' pasting' : ''}`}
             onClick={handlePaste}
-            disabled={pasting}
-            title="Paste from clipboard"
+            disabled={pasting || ctxPasting}
+            title={pasting || ctxPasting ? 'Pasting...' : 'Paste from clipboard'}
           >
             <IconClipboard size={12} />
-            <span>{pasting ? 'Pasting...' : 'Paste'}</span>
+            <span>{pasting || ctxPasting ? 'Pasting...' : 'Paste'}</span>
           </button>
         </div>
       )}

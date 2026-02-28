@@ -271,7 +271,11 @@ export default function TerminalView({ sessionId, wsPath, sessionStatus, disable
         if (imageFile) {
           e.preventDefault()
           e.stopPropagation()
-          onImagePasteRef.current?.(imageFile)
+          // Track pasting state for animation
+          onPastingChangeRef.current?.(true)
+          Promise.resolve(onImagePasteRef.current?.(imageFile)).finally(() => {
+            onPastingChangeRef.current?.(false)
+          })
           return
         }
       }
@@ -280,7 +284,11 @@ export default function TerminalView({ sessionId, wsPath, sessionStatus, disable
       if (text && text.length > 1000 && onTextPasteRef.current) {
         e.preventDefault()
         e.stopPropagation()
-        onTextPasteRef.current(text)
+        // Track pasting state for animation
+        onPastingChangeRef.current?.(true)
+        Promise.resolve(onTextPasteRef.current(text)).finally(() => {
+          onPastingChangeRef.current?.(false)
+        })
         return
       }
       // Short text: let xterm handle natively

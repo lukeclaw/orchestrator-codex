@@ -17,6 +17,7 @@ interface BrainTerminalProps {
   onTerminalFocusRef?: (fn: () => void) => void
   onImagePaste?: (file: File) => void
   onTextPaste?: (text: string) => void
+  onPastingChange?: (pasting: boolean) => void
 }
 
 export default function BrainTerminal({
@@ -29,6 +30,7 @@ export default function BrainTerminal({
   onTerminalFocusRef,
   onImagePaste,
   onTextPaste,
+  onPastingChange,
 }: BrainTerminalProps) {
   const isRunning = brainStatus?.running && brainStatus?.session_id
 
@@ -44,6 +46,7 @@ export default function BrainTerminal({
             onFocusRef={onTerminalFocusRef}
             onImagePaste={onImagePaste}
             onTextPaste={onTextPaste}
+            onPastingChange={onPastingChange}
           />
         </div>
       ) : (
