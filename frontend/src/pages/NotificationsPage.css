@@ -103,12 +103,15 @@
 }
 
 .np-tab-badge {
-  background: rgba(245, 158, 11, 0.15);
-  color: #f59e0b;
   font-size: 12px;
   font-weight: 600;
   padding: 2px 8px;
   border-radius: 10px;
+}
+
+.np-tab-badge.active {
+  background: rgba(96, 165, 250, 0.15);
+  color: var(--accent, #60a5fa);
 }
 
 /* Content */
@@ -121,13 +124,13 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  padding: 60px 20px;
+  padding: 40px 20px;
   text-align: center;
 }
 
 .np-empty-icon {
-  font-size: 48px;
   margin-bottom: 16px;
+  color: var(--text-muted);
 }
 
 .np-empty h3 {
@@ -148,6 +151,27 @@
   display: flex;
   flex-direction: column;
   gap: 12px;
+  outline: none;
+}
+
+/* Date Group */
+.np-date-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.np-date-group + .np-date-group {
+  margin-top: 16px;
+}
+
+.np-date-group-header {
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-muted);
+  padding: 0 4px;
 }
 
 .np-card {
@@ -166,6 +190,11 @@
 .np-card:hover {
   border-color: var(--border-hover);
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+}
+
+.np-card.focused {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
 }
 
 .np-card.dismissed {
@@ -218,9 +247,30 @@
   background: #f59e0b;
 }
 
-.np-card-icon {
-  font-size: 20px;
+/* Icon container — 32x32 rounded square with colored bg */
+.np-card-icon-wrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
   flex-shrink: 0;
+}
+
+.np-card-icon-wrap.blue {
+  background: rgba(59, 130, 246, 0.1);
+  color: #60a5fa;
+}
+
+.np-card-icon-wrap.purple {
+  background: rgba(139, 92, 246, 0.1);
+  color: #a78bfa;
+}
+
+.np-card-icon-wrap.amber {
+  background: rgba(245, 158, 11, 0.1);
+  color: #f59e0b;
 }
 
 .np-card-body {
@@ -277,22 +327,54 @@
   font-size: 13px;
   line-height: 1.4;
   color: var(--text-primary);
-  white-space: nowrap;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
   overflow: hidden;
-  text-overflow: ellipsis;
 }
 
 .np-card.expanded .np-message {
+  display: block;
   white-space: pre-wrap;
   overflow: visible;
-  text-overflow: unset;
+  -webkit-line-clamp: unset;
 }
 
+/* Chevron expand indicator */
+.np-card-chevron {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+  color: var(--text-muted);
+  transition: transform 150ms ease;
+  align-self: center;
+}
+
+.np-card-chevron.expanded {
+  transform: rotate(90deg);
+}
+
+/* Actions */
 .np-card-actions {
   display: flex;
   align-items: center;
   gap: 8px;
   flex-shrink: 0;
+}
+
+/* Hover-only action buttons */
+.np-hoverable-action {
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.np-card:hover .np-hoverable-action,
+.np-card.focused .np-hoverable-action,
+.np-card.expanded .np-hoverable-action {
+  opacity: 1;
 }
 
 .np-link-btn {
