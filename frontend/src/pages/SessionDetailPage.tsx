@@ -51,7 +51,7 @@ export default function SessionDetailPage() {
   const [hintDismissed, setHintDismissed] = useState(false)
   const [showAssignTask, setShowAssignTask] = useState(false)
   const [icliActiveLocal, setIcliActiveLocal] = useState(false)
-  const [icliMinimized, setIcliMinimized] = useState(false)
+  const [icliMinimized, setIcliMinimized] = useState(() => id ? interactiveCliMinimized.has(id) : false)
 
   // icliActive combines local state (from mount check) with AppContext WS events
   const icliFromContext = id ? interactiveCliSessions.has(id) : false
@@ -88,17 +88,19 @@ export default function SessionDetailPage() {
     }
   }, [id, interactiveCliMinimized])
 
-  // Check interactive CLI status on mount — show as minimized bar
+  // Check interactive CLI status on mount — restore previous state
   useEffect(() => {
     if (!id) return
     api<{ active: boolean }>(`/api/sessions/${id}/interactive-cli`)
       .then(r => {
         if (r.active) {
           setIcliActiveLocal(true)
-          setIcliMinimized(true)
+          // Preserve minimize state from WS context; default to open
+          setIcliMinimized(interactiveCliMinimized.has(id))
         }
       })
       .catch(() => {})
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id])
 
   // Record that user viewed this session
@@ -672,19 +674,6 @@ export default function SessionDetailPage() {
           )}
         </div>
         <div className="sd-footer-right">
-          {(session.work_dir || isRemote) && (
-            <label className="sd-fe-toggle" title="Toggle file explorer (Ctrl+Shift+E)">
-              <span className="sd-fe-toggle-label">Files</span>
-              <button
-                className={`sd-toggle-switch ${fe.open ? 'on' : ''}`}
-                onClick={fe.toggleOpen}
-                role="switch"
-                aria-checked={fe.open}
-              >
-                <span className="sd-toggle-knob" />
-              </button>
-            </label>
-          )}
           <label className="sd-auto-reconnect-toggle" title="When enabled, automatically reconnect this worker if it disconnects">
             <span className="sd-auto-reconnect-label">Auto-reconnect</span>
             <button
@@ -696,16 +685,32 @@ export default function SessionDetailPage() {
               <span className="sd-toggle-knob" />
             </button>
           </label>
-          <button
-            className={`sd-icli-btn${icliActive ? ' active' : ''}`}
-            onClick={handleInteractiveCli}
-            title={icliActive ? (icliMinimized ? 'Restore interactive CLI' : 'Minimize interactive CLI') : 'Open interactive CLI'}
-          >
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <polyline points="4 17 10 11 4 5" /><line x1="12" y1="19" x2="20" y2="19" />
-            </svg>
-            <span>Terminal</span>
-          </button>
+          <div className="sd-panel-toggles">
+            {(session.work_dir || isRemote) && (
+              <button
+                className={`sd-panel-btn${fe.open ? ' active' : ''}`}
+                onClick={fe.toggleOpen}
+                title="Toggle file explorer (Ctrl+Shift+E)"
+              >
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+                </svg>
+                <span>Files</span>
+                <span className="sd-panel-dot" />
+              </button>
+            )}
+            <button
+              className={`sd-panel-btn sd-panel-btn--terminal${icliActive ? ' active' : ''}`}
+              onClick={handleInteractiveCli}
+              title={icliActive ? (icliMinimized ? 'Restore interactive CLI' : 'Minimize interactive CLI') : 'Open interactive CLI'}
+            >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="4 17 10 11 4 5" /><line x1="12" y1="19" x2="20" y2="19" />
+              </svg>
+              <span>Terminal</span>
+              <span className="sd-panel-dot" />
+            </button>
+          </div>
           <button
             className="sd-paste-btn"
             onClick={handlePaste}

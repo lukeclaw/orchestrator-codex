@@ -85,9 +85,17 @@ orch-tunnel --list        # List active tunnels
 
 **Check the output** — if the port is occupied locally, a different port will be assigned. Use the port shown in output.
 
-### Interactive CLI (`orch-interactive`)
+### Interactive CLI (`orch-interactive`) — **Preferred for all user interaction**
 
-Open an interactive terminal for the user when you need them to enter passwords, MFA codes, or interact with CLI prompts. The terminal appears as a floating overlay in the user's dashboard.
+**Always use `orch-interactive` instead of raw tmux sessions** when you need the user to interact with a terminal. This opens a floating picture-in-picture terminal directly in the user's dashboard — no manual tmux attach required. It provides a significantly better experience than launching a separate tmux window.
+
+**Use `orch-interactive` for:**
+- Password prompts, MFA codes, SSH passphrases
+- Interactive CLI tools that require user input (installers, confirmations, setup wizards)
+- Any command where the user needs to see real-time output and type responses
+- Long-running processes the user wants to monitor (builds, deploys)
+
+**Do NOT use raw tmux** (`linkedin-cli-tools:launch-tmux`, `linkedin-cli-tools:interactive-cli`, or direct `tmux` commands) for user-facing interaction. Those require the user to manually find and attach to tmux sessions. Use `orch-interactive` instead — it automatically appears in the dashboard.
 
 **Important**: Avoid sending input while the user is actively typing to prevent keystroke interleaving.
 
@@ -101,6 +109,12 @@ orch-interactive --restore                   # Restore overlay from minimized
 orch-interactive --close                     # Close when done
 orch-interactive --status                    # Check if active
 ```
+
+**Typical workflow:**
+1. `orch-interactive "command-that-needs-input"` — open with the command
+2. Wait for the user to complete interaction (enter password, etc.)
+3. `orch-interactive --capture` — verify the command succeeded
+4. `orch-interactive --close` — clean up when done
 
 ### Project Context (`orch-context`)
 

@@ -396,20 +396,6 @@
   background: var(--border);
 }
 
-/* File explorer toggle in footer */
-.sd-fe-toggle {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  cursor: pointer;
-}
-
-.sd-fe-toggle-label {
-  font-size: 11px;
-  color: var(--text-muted);
-  white-space: nowrap;
-}
-
 /* Auto-reconnect toggle in footer */
 .sd-auto-reconnect-toggle {
   display: flex;
@@ -455,36 +441,71 @@
   transform: translateX(12px);
 }
 
-/* Interactive CLI footer button */
-.sd-icli-btn {
+/* Footer panel toggle button group (Files + Terminal) */
+.sd-panel-toggles {
+  display: flex;
+  align-items: center;
+  gap: 1px;
+  background: var(--border-subtle);
+  border-radius: 6px;
+  padding: 1px;
+}
+
+.sd-panel-btn {
   display: flex;
   align-items: center;
   gap: 5px;
-  background: none;
-  border: 1px solid var(--border-subtle);
-  color: var(--text-secondary);
+  background: var(--bg);
+  border: none;
+  color: var(--text-muted);
   font-size: 11px;
-  padding: 3px 10px;
-  border-radius: var(--radius);
+  font-weight: 500;
+  padding: 4px 10px;
   cursor: pointer;
-  transition: background 0.15s, color 0.15s, border-color 0.15s;
+  transition: color 0.15s, background 0.15s;
+  white-space: nowrap;
 }
 
-.sd-icli-btn:hover {
-  background: var(--surface-hover, var(--bg));
-  color: var(--text);
-  border-color: var(--border);
+.sd-panel-btn:first-child {
+  border-radius: 5px 0 0 5px;
 }
 
-.sd-icli-btn.active {
-  color: var(--green, #3fb950);
-  border-color: rgba(63, 185, 80, 0.4);
-  background: rgba(63, 185, 80, 0.08);
+.sd-panel-btn:last-child {
+  border-radius: 0 5px 5px 0;
 }
 
-.sd-icli-btn.active:hover {
-  background: rgba(63, 185, 80, 0.15);
-  border-color: rgba(63, 185, 80, 0.6);
+/* Single button — full rounded */
+.sd-panel-btn:first-child:last-child {
+  border-radius: 5px;
+}
+
+.sd-panel-btn:hover {
+  color: var(--text-secondary);
+  background: var(--surface-hover);
+}
+
+.sd-panel-btn.active {
+  color: var(--text-primary);
+  background: var(--surface-raised, var(--surface));
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+}
+
+.sd-panel-btn .sd-panel-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--text-muted);
+  opacity: 0;
+  transition: opacity 0.15s, background 0.15s;
+}
+
+.sd-panel-btn.active .sd-panel-dot {
+  opacity: 1;
+  background: var(--blue, #58a6ff);
+}
+
+.sd-panel-btn.active.sd-panel-btn--terminal .sd-panel-dot {
+  background: var(--green, #3fb950);
 }
 
 .sd-paste-btn {
