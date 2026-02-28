@@ -162,7 +162,7 @@ export default function WorkerCard({
     setActionPending(true)
     try {
       await api(`/api/sessions/${session.id}/reconnect`, { method: 'POST' })
-      notify(`Reconnecting worker ${session.name}...`, 'success')
+      notify(`Reconnecting worker ${session.name}...`, 'info')
     } catch (e) {
       notify(e instanceof Error ? e.message : 'Failed to reconnect', 'error')
     } finally {

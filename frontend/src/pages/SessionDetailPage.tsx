@@ -251,7 +251,7 @@ export default function SessionDetailPage() {
     try {
       await api(`/api/sessions/${id}/reconnect`, { method: 'POST' })
       refresh()
-      notify(`Reconnecting worker...`, 'success')
+      notify(`Reconnecting worker...`, 'info')
     } catch (e) {
       notify(e instanceof Error ? e.message : 'Failed to reconnect', 'error')
     } finally {
