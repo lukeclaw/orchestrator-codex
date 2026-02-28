@@ -51,6 +51,7 @@ export default function SessionDetailPage() {
   const [hintDismissed, setHintDismissed] = useState(false)
   const [showAssignTask, setShowAssignTask] = useState(false)
   const [icliActiveLocal, setIcliActiveLocal] = useState(false)
+  const [icliStarting, setIcliStarting] = useState(false)
   const [icliMinimized, setIcliMinimized] = useState(() => id ? interactiveCliMinimized.has(id) : false)
 
   // icliActive combines local state (from mount check) with AppContext WS events
@@ -347,12 +348,13 @@ export default function SessionDetailPage() {
 
   // Open or toggle interactive CLI
   const handleInteractiveCli = useCallback(async () => {
-    if (!id) return
+    if (!id || icliStarting) return
     if (icliActive) {
       // Already active — toggle minimize/restore
       setIcliMinimized(prev => !prev)
       return
     }
+    setIcliStarting(true)
     try {
       await api(`/api/sessions/${id}/interactive-cli`, {
         method: 'POST',
@@ -362,8 +364,10 @@ export default function SessionDetailPage() {
       setIcliMinimized(false)
     } catch (e) {
       notify(e instanceof Error ? e.message : 'Failed to open interactive CLI', 'error')
+    } finally {
+      setIcliStarting(false)
     }
-  }, [id, icliActive, notify])
+  }, [id, icliActive, icliStarting, notify])
 
   // Handle long text paste from Cmd+V in terminal (no permission popup)
   const handleTextPaste = useCallback(async (text: string) => {
@@ -703,9 +707,10 @@ export default function SessionDetailPage() {
               </button>
             )}
             <button
-              className={`sd-panel-btn sd-panel-btn--terminal${icliActive ? ' active' : ''}`}
+              className={`sd-panel-btn sd-panel-btn--terminal${icliActive ? ' active' : ''}${icliStarting ? ' starting' : ''}`}
               onClick={handleInteractiveCli}
-              title={icliActive ? (icliMinimized ? 'Restore interactive CLI' : 'Minimize interactive CLI') : 'Open interactive CLI'}
+              disabled={icliStarting}
+              title={icliStarting ? 'Starting interactive CLI...' : icliActive ? (icliMinimized ? 'Restore interactive CLI' : 'Minimize interactive CLI') : 'Open interactive CLI'}
             >
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <polyline points="4 17 10 11 4 5" /><line x1="12" y1="19" x2="20" y2="19" />

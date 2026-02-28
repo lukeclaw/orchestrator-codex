@@ -511,6 +511,42 @@
   background: var(--green, #3fb950);
 }
 
+.sd-panel-btn.starting {
+  position: relative;
+  color: var(--accent, #58a6ff);
+  cursor: wait;
+  overflow: hidden;
+}
+
+.sd-panel-btn.starting::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1.5px;
+  background: conic-gradient(
+    from var(--sd-border-angle, 0deg),
+    transparent 30%,
+    rgba(88, 166, 255, 0.3) 70%,
+    var(--accent, #58a6ff) 100%
+  );
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  mask-composite: exclude;
+  animation: sd-border-spin 2.4s linear infinite;
+}
+
+@keyframes sd-border-spin {
+  to { --sd-border-angle: 360deg; }
+}
+
+@property --sd-border-angle {
+  syntax: "<angle>";
+  initial-value: 0deg;
+  inherits: false;
+}
+
 .sd-paste-btn {
   display: flex;
   align-items: center;
