@@ -15,6 +15,7 @@ interface Props {
   onFocusRef?: (fn: () => void) => void  // Expose function to focus the terminal
   onImagePaste?: (file: File) => void  // Handle image paste from Cmd+V
   onTextPaste?: (text: string) => void  // Handle long text paste from Cmd+V
+  onPastingChange?: (pasting: boolean) => void  // Notify parent when context-menu paste is in progress
 }
 
 type ConnectionState = 'connected' | 'disconnected' | 'reconnecting'
@@ -23,7 +24,7 @@ type ConnectionState = 'connected' | 'disconnected' | 'reconnecting'
 const RECONNECT_DELAYS = [1000, 2000, 5000, 10000, 10000]
 const MAX_RECONNECT_ATTEMPTS = 5
 
-export default function TerminalView({ sessionId, wsPath, sessionStatus, disableScrollback, onInputRef, onFocusRef, onImagePaste, onTextPaste }: Props) {
+export default function TerminalView({ sessionId, wsPath, sessionStatus, disableScrollback, onInputRef, onFocusRef, onImagePaste, onTextPaste, onPastingChange }: Props) {
   const termRef = useRef<HTMLDivElement>(null)
   const terminalRef = useRef<Terminal | null>(null)
   const wsRef = useRef<WebSocket | null>(null)
@@ -35,6 +36,8 @@ export default function TerminalView({ sessionId, wsPath, sessionStatus, disable
   onImagePasteRef.current = onImagePaste
   const onTextPasteRef = useRef(onTextPaste)
   onTextPasteRef.current = onTextPaste
+  const onPastingChangeRef = useRef(onPastingChange)
+  onPastingChangeRef.current = onPastingChange
 
   const [isFocused, setIsFocused] = useState(false)
   const [connectionState, setConnectionState] = useState<ConnectionState>('disconnected')
@@ -382,8 +385,12 @@ export default function TerminalView({ sessionId, wsPath, sessionStatus, disable
     setContextMenu(null)
   }, [])
 
+  const [ctxPasting, setCtxPasting] = useState(false)
+
   const handlePaste = useCallback(async () => {
     setContextMenu(null)
+    setCtxPasting(true)
+    onPastingChangeRef.current?.(true)
     try {
       // Read clipboard via backend (uses pbpaste/osascript natively, no browser permission popup)
       const res = await fetch('/api/clipboard')
@@ -420,6 +427,9 @@ export default function TerminalView({ sessionId, wsPath, sessionStatus, disable
       } catch {
         // Clipboard read denied or empty
       }
+    } finally {
+      setCtxPasting(false)
+      onPastingChangeRef.current?.(false)
     }
     terminalRef.current?.focus()
   }, [])

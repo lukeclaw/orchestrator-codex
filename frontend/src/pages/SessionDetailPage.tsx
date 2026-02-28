@@ -48,6 +48,7 @@ export default function SessionDetailPage() {
   const [error, setError] = useState('')
   const [actionPending, setActionPending] = useState(false)
   const [pasting, setPasting] = useState(false)
+  const [ctxPasting, setCtxPasting] = useState(false)
   const [hintDismissed, setHintDismissed] = useState(false)
   const [showAssignTask, setShowAssignTask] = useState(false)
   const [icliActiveLocal, setIcliActiveLocal] = useState(false)
@@ -622,7 +623,7 @@ export default function SessionDetailPage() {
                 <button className="sd-rdev-hint-dismiss" onClick={() => setHintDismissed(true)} title="Dismiss">✕</button>
               </div>
             )}
-            <TerminalView sessionId={session.id} sessionStatus={session.status} disableScrollback={isRemote} onFocusRef={(fn) => { terminalFocusRef.current = fn }} onImagePaste={handleImagePaste} onTextPaste={handleTextPaste} />
+            <TerminalView sessionId={session.id} sessionStatus={session.status} disableScrollback={isRemote} onFocusRef={(fn) => { terminalFocusRef.current = fn }} onImagePaste={handleImagePaste} onTextPaste={handleTextPaste} onPastingChange={setCtxPasting} />
           </div>
 
           {/* Interactive CLI overlay — inside right pane so it follows terminal position */}
@@ -720,16 +721,16 @@ export default function SessionDetailPage() {
             </button>
           </div>
           <button
-            className="sd-paste-btn"
+            className={`sd-paste-btn${pasting || ctxPasting ? ' pasting' : ''}`}
             onClick={handlePaste}
-            disabled={pasting}
-            title={pasting ? 'Pasting...' : 'Paste clipboard to terminal'}
+            disabled={pasting || ctxPasting}
+            title={pasting || ctxPasting ? 'Pasting...' : 'Paste clipboard to terminal'}
           >
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2" />
               <rect x="8" y="2" width="8" height="4" rx="1" ry="1" />
             </svg>
-            <span>{pasting ? 'Pasting...' : 'Paste'}</span>
+            <span>{pasting || ctxPasting ? 'Pasting...' : 'Paste'}</span>
           </button>
         </div>
       </div>
