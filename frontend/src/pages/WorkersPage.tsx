@@ -8,7 +8,7 @@ import AddSessionModal from '../components/sessions/AddSessionModal'
 import RdevTable, { RdevSortKey, SortDir } from '../components/rdevs/RdevTable'
 import CreateRdevModal from '../components/rdevs/CreateRdevModal'
 import CustomSelect from '../components/common/CustomSelect'
-import { IconRefresh, IconSessions, IconFilter } from '../components/common/Icons'
+import { IconRefresh, IconSessions, IconFilter, IconSearch } from '../components/common/Icons'
 import { useNotify } from '../context/NotificationContext'
 import './WorkersPage.css'
 
@@ -44,6 +44,7 @@ export default function WorkersPage() {
   )
   const [showAddModal, setShowAddModal] = useState(false)
   const [statusFilter, setStatusFilter] = useState('')
+  const [searchQuery, setSearchQuery] = useState('')
   const [sortBy, setSortBy] = useState<SortOption>(() => {
     const stored = localStorage.getItem(SORT_KEY)
     return (stored as SortOption) || 'last_viewed'
@@ -75,9 +76,15 @@ export default function WorkersPage() {
     }
   })
 
-  const filtered = statusFilter
-    ? sorted.filter(s => s.status === statusFilter)
-    : sorted
+  const filtered = (() => {
+    let result = sorted
+    if (statusFilter) result = result.filter(s => s.status === statusFilter)
+    if (searchQuery) {
+      const q = searchQuery.toLowerCase()
+      result = result.filter(s => s.name.toLowerCase().includes(q))
+    }
+    return result
+  })()
 
   const { removeSession } = useApp()
 
@@ -321,6 +328,23 @@ export default function WorkersPage() {
                   <span className="status-summary-label">{status.replace('_', ' ')}</span>
                 </button>
               ))}
+              <div className="wp-search-inline">
+                <IconSearch size={13} className="wp-search-inline-icon" />
+                <input
+                  className="wp-search-inline-input"
+                  type="text"
+                  placeholder="Filter..."
+                  value={searchQuery}
+                  onChange={e => setSearchQuery(e.target.value)}
+                />
+                {searchQuery && (
+                  <button
+                    className="wp-search-inline-clear"
+                    onMouseDown={e => { e.preventDefault(); setSearchQuery('') }}
+                    type="button"
+                  >&times;</button>
+                )}
+              </div>
             </div>
           )}
 

@@ -1,7 +1,7 @@
 .workers-page {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 6px;
 }
 
 .workers-page .page-header {
@@ -10,6 +10,13 @@
   justify-content: space-between;
   flex-wrap: wrap;
   gap: 12px;
+}
+
+.workers-page .page-header h1 {
+  font-size: 20px;
+  font-weight: 600;
+  margin: 0;
+  flex-shrink: 0;
 }
 
 .workers-page .page-header-left {
@@ -137,11 +144,66 @@
   text-transform: capitalize;
 }
 
+/* ─── Inline search in status bar ─── */
+.wp-search-inline {
+  display: flex;
+  align-items: center;
+  position: relative;
+  margin-left: 4px;
+}
+
+.wp-search-inline-icon {
+  position: absolute;
+  left: 7px;
+  color: var(--text-muted);
+  pointer-events: none;
+}
+
+.wp-search-inline-input {
+  padding: 4px 22px 4px 26px;
+  width: 140px;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--text-primary);
+  font-size: 12px;
+  transition: border-color 0.15s, width 0.2s, background 0.15s;
+}
+
+.wp-search-inline-input::placeholder {
+  color: var(--text-muted);
+}
+
+.wp-search-inline-input:focus {
+  outline: none;
+  border-color: var(--accent);
+  background: var(--bg);
+  width: 200px;
+}
+
+.wp-search-inline-clear {
+  position: absolute;
+  right: 4px;
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+  padding: 0 4px;
+  border-radius: 50%;
+}
+
+.wp-search-inline-clear:hover {
+  color: var(--text-primary);
+}
+
 /* Worker grid */
 .worker-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(420px, 1fr));
   gap: 16px;
+  margin-top: 8px;
 }
 
 @media (max-width: 500px) {
