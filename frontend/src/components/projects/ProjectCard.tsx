@@ -38,6 +38,12 @@ export default function ProjectCard({ project, onEdit }: Props) {
 
   const workerDetails = workerStats?.details ?? []
 
+  /** Show only the alias part of auto-generated worker names (after last '_') */
+  function shortWorkerName(name: string) {
+    const idx = name.lastIndexOf('_')
+    return idx > 0 ? name.slice(idx + 1) : name
+  }
+
   function handleEditClick(e: React.MouseEvent) {
     e.preventDefault()
     e.stopPropagation()
@@ -93,7 +99,7 @@ export default function ProjectCard({ project, onEdit }: Props) {
             workerDetails.map(w => (
               <span key={w.id} className={`pc-worker ${w.status}`} title={`${w.name} (${w.status})`}>
                 <span className="pc-worker-dot" />
-                {w.name}
+                {shortWorkerName(w.name)}
               </span>
             ))
           ) : (
