@@ -194,15 +194,40 @@
 .bp-footer-paste-btn {
   display: flex;
   align-items: center;
-  gap: 5px;
+  gap: 6px;
   background: none;
   border: 1px solid var(--border-subtle);
   color: var(--text-secondary);
-  font-size: 11px;
+  font-size: 12px;
+  font-weight: 500;
   padding: 3px 10px;
   border-radius: var(--radius);
   cursor: pointer;
-  transition: background 0.15s, color 0.15s, border-color 0.15s;
+  position: relative;
+  overflow: hidden;
+  transition: background 0.15s, color 0.3s ease, border-color 0.15s;
+}
+
+.bp-footer-paste-btn::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1.5px;
+  background: conic-gradient(
+    from var(--bp-border-angle, 0deg),
+    transparent 30%,
+    rgba(88, 166, 255, 0.3) 70%,
+    var(--accent, #58a6ff) 100%
+  );
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  mask-composite: exclude;
+  animation: bp-border-spin 4s linear infinite;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+  pointer-events: none;
 }
 
 .bp-footer-paste-btn:hover:not(:disabled) {
@@ -221,30 +246,13 @@
 }
 
 .bp-footer-paste-btn.pasting {
-  position: relative;
   color: var(--accent, #58a6ff);
   cursor: wait;
-  overflow: hidden;
   opacity: 1;
 }
 
 .bp-footer-paste-btn.pasting::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  padding: 1.5px;
-  background: conic-gradient(
-    from var(--bp-border-angle, 0deg),
-    transparent 30%,
-    rgba(88, 166, 255, 0.3) 70%,
-    var(--accent, #58a6ff) 100%
-  );
-  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
-  -webkit-mask-composite: xor;
-  mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
-  mask-composite: exclude;
-  animation: bp-border-spin 2.4s linear infinite;
+  opacity: 1;
 }
 
 @keyframes bp-border-spin {

@@ -300,7 +300,7 @@ export default function BrainPanel({
             title={pasting || ctxPasting ? 'Pasting...' : 'Paste from clipboard'}
           >
             <IconClipboard size={12} />
-            <span>{pasting || ctxPasting ? 'Pasting...' : 'Paste'}</span>
+            <span>Paste</span>
           </button>
         </div>
       )}
