@@ -159,13 +159,19 @@
 .fe-node--git-conflicting { color: var(--git-conflicting); }
 .fe-node--git-ignored { color: var(--git-ignored); }
 
-/* Indent guides */
+/* Indent guides — hidden by default, visible on tree hover */
 .fe-indent-guide {
   position: absolute;
   top: 0;
   bottom: 0;
   width: 1px;
   background: var(--border-subtle);
+  opacity: 0;
+  transition: opacity 150ms;
+}
+
+.fe-tree:hover .fe-indent-guide {
+  opacity: 1;
 }
 
 /* Chevron */
@@ -193,16 +199,26 @@
   align-items: center;
   flex-shrink: 0;
   color: var(--text-secondary);
+  position: relative;
 }
 
-.fe-node--git-modified .fe-icon,
-.fe-node--git-added .fe-icon,
-.fe-node--git-untracked .fe-icon,
-.fe-node--git-deleted .fe-icon,
-.fe-node--git-renamed .fe-icon,
-.fe-node--git-conflicting .fe-icon {
-  color: inherit;
+/* Git status dot overlay for folder icons */
+.fe-git-dot {
+  position: absolute;
+  bottom: -1px;
+  right: -3px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  border: 1.5px solid var(--bg);
 }
+
+.fe-git-dot--modified { background: var(--git-modified); }
+.fe-git-dot--added { background: var(--git-added); }
+.fe-git-dot--untracked { background: var(--git-untracked); }
+.fe-git-dot--deleted { background: var(--git-deleted); }
+.fe-git-dot--renamed { background: var(--git-renamed); }
+.fe-git-dot--conflicting { background: var(--git-conflicting); }
 
 /* Name */
 .fe-name {

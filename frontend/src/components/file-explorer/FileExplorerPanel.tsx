@@ -60,6 +60,8 @@ interface FileExplorerPanelProps {
 
 // --- Helpers ---
 
+const INDENT_PX = 8
+
 const GIT_BADGE: Record<string, string> = {
   modified: 'M',
   added: 'A',
@@ -68,6 +70,36 @@ const GIT_BADGE: Record<string, string> = {
   renamed: 'R',
   conflicting: '!',
   ignored: 'I',
+}
+
+const GIT_STATUS_SEVERITY: Record<string, number> = {
+  ignored: 0,
+  untracked: 1,
+  added: 2,
+  renamed: 3,
+  modified: 4,
+  deleted: 5,
+  conflicting: 6,
+}
+
+function mergeGitStatuses(statuses: (string | null)[]): string | null {
+  let best: string | null = null
+  let bestSev = -1
+  for (const s of statuses) {
+    if (s && (GIT_STATUS_SEVERITY[s] ?? -1) > bestSev) {
+      best = s
+      bestSev = GIT_STATUS_SEVERITY[s] ?? -1
+    }
+  }
+  return best
+}
+
+interface FlatNode {
+  node: TreeNode
+  depth: number
+  displayName: string
+  chainPaths: string[]
+  mergedGitStatus: string | null
 }
 
 /** Propagate a parent's git_status down to cached children that lack their own. */
@@ -170,6 +202,17 @@ function renamePaths(node: TreeNode, oldPath: string, newPath: string): TreeNode
     })
   }
   return updated
+}
+
+/** Auto-expand single-child directory chains so compact rendering kicks in. */
+function autoMarkExpanded(nodes: TreeNode[]): TreeNode[] {
+  return nodes.map(n => {
+    if (!n.is_dir || !n.children) return n
+    if (n.children.length === 1 && n.children[0].is_dir) {
+      return { ...n, expanded: true, children: autoMarkExpanded(n.children) }
+    }
+    return n
+  })
 }
 
 // --- Component ---
@@ -304,31 +347,35 @@ export default function FileExplorerPanel({
     }
 
     if (node.children) {
-      // Children already cached — just expand, no fetch needed
-      setTree(prev => updateNode(prev, nodePath, n => ({ ...n, expanded: true })))
+      // Children already cached — expand and auto-expand single-child dir chains
+      setTree(prev => updateNode(prev, nodePath, n => ({
+        ...n,
+        expanded: true,
+        children: n.children ? autoMarkExpanded(n.children) : undefined,
+      })))
       return
     }
 
-    // Expanding without cached children — mark loading and fetch (depth=2 prefetches one sublevel)
+    // Expanding without cached children — mark loading and fetch (depth=4 for chain discovery)
     setTree(prev => updateNode(prev, nodePath, n => ({ ...n, loading: true, expanded: true })))
 
     try {
-      const { entries } = await fetchDir(nodePath, 2)
+      const { entries } = await fetchDir(nodePath, 4)
       setTree(prev => updateNode(prev, nodePath, n => ({
         ...n,
         loading: false,
         expanded: true,
-        children: entriesToNodes(entries),
+        children: autoMarkExpanded(entriesToNodes(entries)),
       })))
     } catch {
-      // depth=2 failed (large dir) — try depth=1
+      // depth=4 failed (large dir) — try depth=1
       try {
         const { entries } = await fetchDir(nodePath, 1)
         setTree(prev => updateNode(prev, nodePath, n => ({
           ...n,
           loading: false,
           expanded: true,
-          children: entriesToNodes(entries),
+          children: autoMarkExpanded(entriesToNodes(entries)),
         })))
       } catch {
         setTree(prev => updateNode(prev, nodePath, n => ({
@@ -340,15 +387,55 @@ export default function FileExplorerPanel({
     }
   }, [fetchDir, findNode, updateNode, setTree])
 
-  // Flatten tree for keyboard nav and rendering
+  // Flatten tree for keyboard nav and rendering (with compact folder chain support)
   const flatNodes = useMemo(() => {
-    const result: { node: TreeNode; depth: number }[] = []
+    const result: FlatNode[] = []
     const walk = (nodes: TreeNode[], depth: number) => {
       for (const n of nodes) {
         const matchesFilter = !filterText || n.name.toLowerCase().includes(filterText.toLowerCase())
-        if (matchesFilter || n.is_dir) {
-          result.push({ node: n, depth })
+        if (!matchesFilter && !n.is_dir) continue
+
+        // Compact folder logic: follow single-child dir chains (skip when filtering)
+        if (!filterText && n.is_dir && n.expanded && n.children) {
+          const chainNames: string[] = [n.name]
+          const chainPaths: string[] = [n.path]
+          const chainStatuses: (string | null)[] = [n.git_status]
+          let current = n
+          while (
+            current.children &&
+            current.children.length === 1 &&
+            current.children[0].is_dir &&
+            current.children[0].expanded
+          ) {
+            current = current.children[0]
+            chainNames.push(current.name)
+            chainPaths.push(current.path)
+            chainStatuses.push(current.git_status)
+          }
+
+          result.push({
+            node: current,
+            depth,
+            displayName: chainNames.join('/'),
+            chainPaths,
+            mergedGitStatus: mergeGitStatuses(chainStatuses),
+          })
+
+          if (current.expanded && current.children) {
+            walk(current.children, depth + 1)
+          }
+          continue
         }
+
+        // Normal (non-compacted) node
+        result.push({
+          node: n,
+          depth,
+          displayName: n.name,
+          chainPaths: [n.path],
+          mergedGitStatus: n.git_status,
+        })
+
         if (n.expanded && n.children) {
           walk(n.children, depth + 1)
         }
@@ -705,9 +792,14 @@ export default function FileExplorerPanel({
       setFocusIndex(prev => Math.max(prev - 1, 0))
     } else if (e.key === 'Enter') {
       if (focusIndex >= 0 && focusIndex < len) {
-        const { node } = flatNodes[focusIndex]
+        const { node, chainPaths } = flatNodes[focusIndex]
         if (node.is_dir) {
-          toggleExpand(node.path)
+          // Collapse compact chains from the first node
+          if (node.expanded && chainPaths.length > 1) {
+            toggleExpand(chainPaths[0])
+          } else {
+            toggleExpand(node.path)
+          }
         } else {
           onFileSelect(node.path)
         }
@@ -721,9 +813,9 @@ export default function FileExplorerPanel({
       }
     } else if (e.key === 'ArrowLeft') {
       if (focusIndex >= 0 && focusIndex < len) {
-        const { node } = flatNodes[focusIndex]
+        const { node, chainPaths } = flatNodes[focusIndex]
         if (node.is_dir && node.expanded) {
-          toggleExpand(node.path)
+          toggleExpand(chainPaths.length > 1 ? chainPaths[0] : node.path)
         }
       }
     }
@@ -884,8 +976,8 @@ export default function FileExplorerPanel({
                   />
                 </div>
               )}
-              {flatNodes.map(({ node, depth }, i) => {
-                const dimmed = filterText && !node.name.toLowerCase().includes(filterText.toLowerCase())
+              {flatNodes.map(({ node, depth, displayName, chainPaths, mergedGitStatus }, i) => {
+                const dimmed = filterText && !displayName.toLowerCase().includes(filterText.toLowerCase())
                 // Show new-file/folder input row after an expanded directory node
                 const showNewFileAfter = newFileInput
                   && node.is_dir && node.expanded
@@ -899,8 +991,8 @@ export default function FileExplorerPanel({
                 return (
                   <React.Fragment key={node.path}>
                     <div
-                      className={`fe-node ${node.path === selectedFile ? 'fe-node--selected' : ''} ${focusIndex === i ? 'fe-node--focused' : ''} ${node.git_status ? `fe-node--git-${node.git_status}` : ''} ${dimmed ? 'fe-node--dimmed' : ''} ${isDragging ? 'fe-node--dragging' : ''} ${isDropTarget ? 'fe-node--drop-target' : ''}`}
-                      style={{ paddingLeft: depth * 16 + 4 }}
+                      className={`fe-node ${node.path === selectedFile ? 'fe-node--selected' : ''} ${focusIndex === i ? 'fe-node--focused' : ''} ${!node.is_dir && mergedGitStatus ? `fe-node--git-${mergedGitStatus}` : ''} ${dimmed ? 'fe-node--dimmed' : ''} ${isDragging ? 'fe-node--dragging' : ''} ${isDropTarget ? 'fe-node--drop-target' : ''}`}
+                      style={{ paddingLeft: depth * INDENT_PX + 4 }}
                       role="treeitem"
                       aria-expanded={node.is_dir ? node.expanded : undefined}
                       aria-level={depth + 1}
@@ -911,7 +1003,12 @@ export default function FileExplorerPanel({
                       onClick={() => {
                         setFocusIndex(i)
                         if (node.is_dir) {
-                          toggleExpand(node.path)
+                          // Collapse compact chains from the first node
+                          if (node.expanded && chainPaths.length > 1) {
+                            toggleExpand(chainPaths[0])
+                          } else {
+                            toggleExpand(node.path)
+                          }
                         } else {
                           onFileSelect(node.path)
                         }
@@ -928,7 +1025,7 @@ export default function FileExplorerPanel({
                     >
                       {/* Indent guides */}
                       {depth > 0 && Array.from({ length: depth }).map((_, d) => (
-                        <span key={d} className="fe-indent-guide" style={{ left: d * 16 + 8 }} />
+                        <span key={d} className="fe-indent-guide" style={{ left: d * INDENT_PX + INDENT_PX / 2 }} />
                       ))}
 
                       {/* Chevron for dirs */}
@@ -953,6 +1050,9 @@ export default function FileExplorerPanel({
                           loading="lazy"
                           draggable={false}
                         />
+                        {node.is_dir && mergedGitStatus && mergedGitStatus !== 'ignored' && (
+                          <span className={`fe-git-dot fe-git-dot--${mergedGitStatus}`} />
+                        )}
                       </span>
 
                       {/* Name or inline rename input */}
@@ -970,13 +1070,13 @@ export default function FileExplorerPanel({
                           onClick={e => e.stopPropagation()}
                         />
                       ) : (
-                        <span className="fe-name">{node.name}</span>
+                        <span className="fe-name">{displayName}</span>
                       )}
 
                       {/* Meta: git badge */}
-                      {!isRenaming && node.git_status && GIT_BADGE[node.git_status] && (
-                        <span className={`fe-git-badge fe-git-badge--${node.git_status}`}>
-                          {GIT_BADGE[node.git_status]}
+                      {!isRenaming && mergedGitStatus && GIT_BADGE[mergedGitStatus] && (
+                        <span className={`fe-git-badge fe-git-badge--${mergedGitStatus}`}>
+                          {GIT_BADGE[mergedGitStatus]}
                         </span>
                       )}
 
@@ -986,7 +1086,7 @@ export default function FileExplorerPanel({
 
                     {/* Inline new-file input inside expanded directory */}
                     {showNewFileAfter && (
-                      <div className="fe-node fe-node--new-file" style={{ paddingLeft: (depth + 1) * 16 + 4 }}>
+                      <div className="fe-node fe-node--new-file" style={{ paddingLeft: (depth + 1) * INDENT_PX + 4 }}>
                         <span className="fe-chevron fe-chevron--spacer" />
                         <span className="fe-icon"><img src={getFileIconUrl('')} alt="" width={16} height={16} draggable={false} /></span>
                         <input
@@ -1004,7 +1104,7 @@ export default function FileExplorerPanel({
                     )}
                     {/* Inline new-folder input inside expanded directory */}
                     {showNewFolderAfter && (
-                      <div className="fe-node fe-node--new-file" style={{ paddingLeft: (depth + 1) * 16 + 4 }}>
+                      <div className="fe-node fe-node--new-file" style={{ paddingLeft: (depth + 1) * INDENT_PX + 4 }}>
                         <span className="fe-chevron fe-chevron--spacer" />
                         <span className="fe-icon"><img src={getFolderIconUrl('', false)} alt="" width={16} height={16} draggable={false} /></span>
                         <input
