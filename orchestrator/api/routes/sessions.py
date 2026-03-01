@@ -145,6 +145,13 @@ def get_session(session_id: str, db=Depends(get_db)):
     s = repo.get_session(db, session_id)
     if s is None:
         raise HTTPException(404, "Session not found")
+
+    # Pre-start RWS daemon for remote sessions so it's ready for file ops / terminal
+    if is_remote_host(s.host):
+        from orchestrator.terminal.remote_worker_server import ensure_rws_starting
+
+        ensure_rws_starting(s.host)
+
     return _serialize_session(s)
 
 
@@ -157,6 +164,13 @@ def record_session_viewed(session_id: str, db=Depends(get_db)):
     if s is None:
         raise HTTPException(404, "Session not found")
     repo.update_session(db, session_id, last_viewed_at=datetime.now(UTC).isoformat())
+
+    # Pre-start RWS daemon for remote sessions so it's ready when user clicks Terminal
+    if is_remote_host(s.host):
+        from orchestrator.terminal.remote_worker_server import ensure_rws_starting
+
+        ensure_rws_starting(s.host)
+
     return {"ok": True}
 
 

@@ -484,6 +484,175 @@ async def terminal_websocket(websocket: WebSocket, session_id: str):
     await stream_pane(websocket, tmux_sess, tmux_win, session_id=session_id)
 
 
+async def stream_remote_pty(
+    websocket: WebSocket,
+    session_id: str,
+    pty_id: str,
+    rws_host: str,
+) -> None:
+    """Proxy between a WebSocket client and a remote PTY via RWS daemon.
+
+    Opens a dedicated PTY stream connection to the RWS daemon, then:
+      - Reads raw PTY output bytes and sends as binary WebSocket frames
+      - Relays input/resize from WebSocket to the PTY stream as JSON-lines
+
+    The PTY stays alive on the daemon even after the WebSocket disconnects,
+    enabling reattach with history replay.
+    """
+
+    from orchestrator.terminal.remote_worker_server import get_remote_worker_server
+
+    try:
+        rws = get_remote_worker_server(rws_host)
+    except RuntimeError as e:
+        await websocket.send_json({"type": "error", "message": f"RWS not available: {e}"})
+        await websocket.close(code=4004)
+        return
+
+    try:
+        stream_sock, initial_data = rws.connect_pty_stream(pty_id)
+    except RuntimeError as e:
+        await websocket.send_json({"type": "error", "message": f"PTY stream failed: {e}"})
+        await websocket.close(code=4004)
+        return
+
+    # Send any initial data (ringbuffer history replay)
+    if initial_data:
+        try:
+            await websocket.send_bytes(initial_data)
+        except Exception:
+            stream_sock.close()
+            return
+
+    # After sending history, send Ctrl+L to force screen redraw
+    try:
+        stream_sock.setblocking(True)
+        stream_sock.settimeout(5.0)
+        ctrl_l_cmd = json.dumps({"type": "input", "data": "\x0c"}).encode() + b"\n"
+        stream_sock.sendall(ctrl_l_cmd)
+        stream_sock.setblocking(False)
+    except OSError:
+        pass
+
+    # --- Background task: read from PTY stream → send to WebSocket --------
+    stream_buffer = bytearray()
+    flush_event = asyncio.Event()
+    stream_closed = asyncio.Event()
+
+    async def read_pty_output():
+        """Read raw bytes from PTY stream socket and batch-send to WebSocket."""
+        loop = asyncio.get_running_loop()
+        while not stream_closed.is_set():
+            try:
+                data = await loop.run_in_executor(None, _blocking_recv, stream_sock)
+            except Exception:
+                stream_closed.set()
+                break
+            if data is None:
+                continue  # Timeout — no data yet, keep reading
+            if not data:
+                stream_closed.set()
+                break  # b"" means EOF — remote closed connection
+            stream_buffer.extend(data)
+            flush_event.set()
+
+    async def stream_flusher():
+        """Batch stream bytes and send as binary WebSocket frames (~60fps)."""
+        while not stream_closed.is_set():
+            await flush_event.wait()
+            await asyncio.sleep(0.016)  # ~16ms batch window
+            flush_event.clear()
+            if stream_buffer:
+                data = bytes(stream_buffer)
+                stream_buffer.clear()
+                try:
+                    await websocket.send_bytes(data)
+                except Exception:
+                    stream_closed.set()
+                    break
+
+    read_task = asyncio.create_task(read_pty_output())
+    flush_task = asyncio.create_task(stream_flusher())
+
+    try:
+        while not stream_closed.is_set():
+            try:
+                ws_msg = await asyncio.wait_for(websocket.receive(), timeout=1.0)
+            except TimeoutError:
+                continue
+            except WebSocketDisconnect:
+                break
+
+            raw = ws_msg.get("text", "")
+            if not raw:
+                continue
+
+            try:
+                msg = json.loads(raw)
+            except json.JSONDecodeError:
+                continue
+
+            if msg.get("type") == "input":
+                if session_id:
+                    record_user_input(session_id)
+                cmd = json.dumps({"type": "input", "data": msg.get("data", "")}).encode() + b"\n"
+                try:
+                    stream_sock.setblocking(True)
+                    stream_sock.settimeout(5.0)
+                    stream_sock.sendall(cmd)
+                    stream_sock.setblocking(False)
+                except OSError:
+                    break
+
+            elif msg.get("type") == "resize":
+                cols = msg.get("cols", 80)
+                rows = msg.get("rows", 24)
+                cmd = json.dumps({"type": "resize", "cols": cols, "rows": rows}).encode() + b"\n"
+                try:
+                    stream_sock.setblocking(True)
+                    stream_sock.settimeout(5.0)
+                    stream_sock.sendall(cmd)
+                    stream_sock.setblocking(False)
+                except OSError:
+                    break
+
+    except WebSocketDisconnect:
+        pass
+    finally:
+        stream_closed.set()
+        for task in (read_task, flush_task):
+            task.cancel()
+            try:
+                await task
+            except (asyncio.CancelledError, Exception):
+                pass
+        try:
+            stream_sock.close()
+        except OSError:
+            pass
+        if session_id:
+            clear_user_activity(session_id)
+
+
+def _blocking_recv(sock, bufsize: int = 65536, timeout: float = 1.0) -> bytes | None:
+    """Blocking recv with timeout for use in run_in_executor.
+
+    Returns:
+        bytes: Data received from the socket.
+        None: Timeout — no data available but connection is still alive.
+        b"": Connection closed by remote end (EOF).
+    """
+
+    sock.setblocking(True)
+    sock.settimeout(timeout)
+    try:
+        return sock.recv(bufsize)
+    except TimeoutError:
+        return None  # Timeout — connection still alive, just no data
+    except OSError:
+        return b""  # Connection closed
+
+
 async def ws_interactive_cli(websocket: WebSocket, session_id: str):
     """Stream the interactive CLI terminal for a session."""
     from orchestrator.terminal.interactive import get_active_cli
@@ -499,6 +668,11 @@ async def ws_interactive_cli(websocket: WebSocket, session_id: str):
             }
         )
         await websocket.close(code=4004)
+        return
+
+    # Route to RWS PTY streaming if this is a remote PTY-backed CLI
+    if cli.remote_pty_id and cli.rws_host:
+        await stream_remote_pty(websocket, session_id, cli.remote_pty_id, cli.rws_host)
         return
 
     tmux_sess = "orchestrator"

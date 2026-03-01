@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
+import base64
+import os
+import shutil
 import subprocess
+import tempfile
 from unittest.mock import patch
 
 import pytest
@@ -41,12 +45,282 @@ def client_with_session(tmp_path):
         yield c, session.id, tmp_path
 
 
+class FakeRWS:
+    """A fake RemoteWorkerServer that executes file operations locally."""
+
+    def execute(self, cmd, timeout=15.0):
+        action = cmd.get("action", "")
+        if action == "list_dir":
+            return self._list_dir(cmd)
+        elif action == "read_file":
+            return self._read_file(cmd)
+        elif action == "read_file_raw":
+            return self._read_file_raw(cmd)
+        elif action == "write_file":
+            return self._write_file(cmd)
+        elif action == "delete":
+            return self._delete(cmd)
+        elif action == "move":
+            return self._move(cmd)
+        elif action == "mkdir":
+            return self._mkdir(cmd)
+        return {"error": f"Unknown action: {action}"}
+
+    def _list_dir(self, cmd):
+        work_dir = cmd["work_dir"]
+        rel_path = cmd["path"]
+        show_hidden = cmd.get("show_hidden", True)
+        max_depth = cmd.get("depth", 1)
+
+        target = os.path.normpath(os.path.join(work_dir, rel_path))
+        if not target.startswith(os.path.normpath(work_dir)):
+            return {"error": "Path outside work_dir"}
+        if not os.path.isdir(target):
+            return {"error": "Directory not found"}
+
+        # Git status
+        git_statuses = {}
+        git_available = False
+        try:
+            r = subprocess.run(
+                ["git", "status", "--porcelain=v1", "-z", "--ignored"],
+                cwd=work_dir,
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+            if r.returncode == 0:
+                git_available = True
+                for entry in r.stdout.split("\0"):
+                    if len(entry) < 4:
+                        continue
+                    xy = entry[:2]
+                    p = entry[3:].rstrip("/")
+                    code = xy[0] if xy[0] != " " else xy[1]
+                    _map = {
+                        "M": "modified",
+                        "A": "added",
+                        "D": "deleted",
+                        "R": "renamed",
+                        "C": "copied",
+                        "U": "conflicting",
+                        "?": "untracked",
+                        "!": "ignored",
+                    }
+                    git_statuses[p] = _map.get(code, "modified")
+        except Exception:
+            pass
+
+        def scan_dir(abs_path, current_depth):
+            entries = []
+            try:
+                for e in os.scandir(abs_path):
+                    name = e.name
+                    if not show_hidden and name.startswith(".") and name != ".":
+                        continue
+                    rp = os.path.relpath(e.path, work_dir)
+                    is_dir = e.is_dir(follow_symlinks=False)
+                    try:
+                        st = e.stat(follow_symlinks=False)
+                        size = st.st_size if not is_dir else None
+                        modified = st.st_mtime
+                    except OSError:
+                        size = None
+                        modified = None
+                    children_count = None
+                    sub_children = None
+                    if is_dir:
+                        try:
+                            children_count = sum(1 for _ in os.scandir(e.path))
+                        except OSError:
+                            pass
+                        if current_depth < max_depth:
+                            sub_children = scan_dir(e.path, current_depth + 1)
+                    git_status = git_statuses.get(rp)
+                    entries.append(
+                        {
+                            "name": name,
+                            "path": rp,
+                            "is_dir": is_dir,
+                            "size": size,
+                            "modified": modified,
+                            "children_count": children_count,
+                            "git_status": git_status,
+                            "children": sub_children,
+                        }
+                    )
+            except PermissionError:
+                pass
+            entries.sort(key=lambda x: (not x["is_dir"], x["name"].lower()))
+            return entries
+
+        entries = scan_dir(target, 1)
+        return {"entries": entries, "git_available": git_available}
+
+    def _read_file(self, cmd):
+        work_dir = cmd["work_dir"]
+        rel_path = cmd["path"]
+        max_lines = cmd.get("max_lines", 500)
+
+        target = os.path.normpath(os.path.join(work_dir, rel_path))
+        if not target.startswith(os.path.normpath(work_dir)):
+            return {"error": "Path outside work_dir"}
+        if not os.path.isfile(target):
+            return {"error": "File not found"}
+
+        st = os.stat(target)
+        file_size = st.st_size
+        file_mtime = st.st_mtime
+        if file_size > 5 * 1024 * 1024:
+            return {"error": "File too large (>5MB)", "code": 413}
+
+        try:
+            with open(target, "rb") as f:
+                chunk = f.read(8192)
+                if b"\x00" in chunk:
+                    return {
+                        "content": "",
+                        "truncated": False,
+                        "total_lines": None,
+                        "size": file_size,
+                        "binary": True,
+                        "modified": file_mtime,
+                    }
+        except OSError as e:
+            return {"error": str(e)}
+
+        try:
+            with open(target, encoding="utf-8", errors="replace") as f:
+                lines = []
+                total = 0
+                for line in f:
+                    total += 1
+                    if total <= max_lines:
+                        lines.append(line)
+                return {
+                    "content": "".join(lines),
+                    "truncated": total > max_lines,
+                    "total_lines": total,
+                    "size": file_size,
+                    "modified": file_mtime,
+                    "binary": False,
+                }
+        except OSError as e:
+            return {"error": str(e)}
+
+    def _read_file_raw(self, cmd):
+        work_dir = cmd["work_dir"]
+        rel_path = cmd["path"]
+        max_size = cmd.get("max_size", 10 * 1024 * 1024)
+
+        target = os.path.normpath(os.path.join(work_dir, rel_path))
+        if not target.startswith(os.path.normpath(work_dir)):
+            return {"error": "Path outside work_dir"}
+        if not os.path.isfile(target):
+            return {"error": "File not found"}
+
+        file_size = os.path.getsize(target)
+        if file_size > max_size:
+            return {"error": f"File too large (>{max_size // (1024 * 1024)}MB)", "code": 413}
+
+        try:
+            with open(target, "rb") as f:
+                raw = f.read()
+            return {"content_b64": base64.b64encode(raw).decode("ascii"), "size": len(raw)}
+        except OSError as e:
+            return {"error": str(e)}
+
+    def _write_file(self, cmd):
+        work_dir = cmd["work_dir"]
+        rel_path = cmd["path"]
+        content_b64 = cmd["content_b64"]
+        expected_mtime = cmd.get("expected_mtime")
+        allow_create = cmd.get("create", False)
+
+        target = os.path.normpath(os.path.join(work_dir, rel_path))
+        if not target.startswith(os.path.normpath(work_dir)):
+            return {"error": "Path outside work_dir"}
+        if not allow_create and not os.path.isfile(target):
+            return {"error": "File not found"}
+        if allow_create:
+            os.makedirs(os.path.dirname(target), exist_ok=True)
+
+        if expected_mtime is not None and os.path.isfile(target):
+            cur = os.stat(target).st_mtime
+            if abs(cur - expected_mtime) > 0.5:
+                return {"conflict": True, "size": os.path.getsize(target), "modified": cur}
+
+        content = base64.b64decode(content_b64).decode("utf-8")
+        fd, tmp = tempfile.mkstemp(dir=os.path.dirname(target), suffix=".tmp")
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8", newline="") as f:
+                f.write(content)
+            os.replace(tmp, target)
+        except PermissionError:
+            try:
+                os.unlink(tmp)
+            except OSError:
+                pass
+            return {"error": "Permission denied"}
+
+        st = os.stat(target)
+        return {"conflict": False, "size": st.st_size, "modified": st.st_mtime}
+
+    def _delete(self, cmd):
+        work_dir = cmd["work_dir"]
+        rel_path = cmd.get("path", "")
+        if not rel_path:
+            return {"error": "No path provided"}
+        target = os.path.normpath(os.path.join(work_dir, rel_path))
+        norm_work = os.path.normpath(work_dir)
+        if not target.startswith(norm_work + os.sep) and target != norm_work:
+            return {"error": "Path outside work_dir"}
+        if os.path.isdir(target):
+            shutil.rmtree(target)
+        elif os.path.isfile(target) or os.path.islink(target):
+            os.remove(target)
+        else:
+            return {"error": "Not found"}
+        return {"status": "ok"}
+
+    def _move(self, cmd):
+        work_dir = cmd["work_dir"]
+        from_path = cmd.get("from_path", "")
+        to_path = cmd.get("to_path", "")
+        if not from_path or not to_path:
+            return {"error": "Both from_path and to_path are required"}
+        norm_work = os.path.normpath(work_dir)
+        src = os.path.normpath(os.path.join(work_dir, from_path))
+        dst = os.path.normpath(os.path.join(work_dir, to_path))
+        if not src.startswith(norm_work + os.sep):
+            return {"error": "Source path outside work_dir"}
+        if not dst.startswith(norm_work + os.sep):
+            return {"error": "Destination path outside work_dir"}
+        if not os.path.exists(src):
+            return {"error": "Not found"}
+        os.makedirs(os.path.dirname(dst), exist_ok=True)
+        shutil.move(src, dst)
+        return {"status": "ok"}
+
+    def _mkdir(self, cmd):
+        work_dir = cmd["work_dir"]
+        rel_path = cmd.get("path", "")
+        if not rel_path:
+            return {"error": "No path provided"}
+        target = os.path.normpath(os.path.join(work_dir, rel_path))
+        norm_work = os.path.normpath(work_dir)
+        if not target.startswith(norm_work + os.sep):
+            return {"error": "Path outside work_dir"}
+        os.makedirs(target, exist_ok=True)
+        return {"status": "ok"}
+
+
 @pytest.fixture
 def client_with_remote_session(tmp_path):
     """Create a test client with a remote session.
 
     Uses host="testhost" so is_remote_host returns True.
-    SSH subprocess calls are mocked to execute the remote scripts locally.
+    A FakeRWS instance handles file operations locally.
     """
     conn = get_memory_connection()
     apply_migrations(conn)
@@ -71,39 +345,14 @@ def client_with_remote_session(tmp_path):
     _remote_dir_cache.clear()
     _remote_content_cache.clear()
 
-    def fake_run_ssh(host, script, args):
-        """Execute the remote script locally instead of via SSH (text mode)."""
-        import sys
-
-        result = subprocess.run(
-            [sys.executable, "-"] + args,
-            input=script,
-            capture_output=True,
-            text=True,
-            timeout=15,
-        )
-        return result
-
-    def fake_run_ssh_bytes(host, script, args):
-        """Execute the remote script locally instead of via SSH (bytes mode)."""
-        import sys
-
-        result = subprocess.run(
-            [sys.executable, "-"] + args,
-            input=script,
-            capture_output=True,
-            timeout=15,
-        )
-        return result
+    fake_rws = FakeRWS()
 
     with (
         patch(
-            "orchestrator.api.routes.files.get_remote_file_server",
-            side_effect=RuntimeError("no persistent server in tests"),
+            "orchestrator.api.routes.files.get_remote_worker_server",
+            return_value=fake_rws,
         ),
-        patch("orchestrator.api.routes.files.ensure_server_starting"),
-        patch("orchestrator.api.routes.files._run_ssh", side_effect=fake_run_ssh),
-        patch("orchestrator.api.routes.files._run_ssh_bytes", side_effect=fake_run_ssh_bytes),
+        patch("orchestrator.api.routes.files.ensure_rws_starting"),
     ):
         with TestClient(app) as c:
             yield c, session.id, tmp_path

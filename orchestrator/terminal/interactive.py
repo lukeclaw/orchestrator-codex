@@ -1,18 +1,20 @@
 """Interactive CLI lifecycle manager.
 
-Provides in-memory registry and tmux operations for per-worker auxiliary
-terminals (picture-in-picture interactive CLI).
+Provides in-memory registry for per-worker auxiliary terminals
+(picture-in-picture interactive CLI).
+
+Backends:
+  - **tmux** (local workers): tmux window per CLI
+  - **RWS PTY** (remote workers): daemon PTY session via Remote Worker Server
 """
 
 from __future__ import annotations
 
 import logging
-import time
 from datetime import UTC, datetime
 
 from orchestrator.state.models import InteractiveCLI
 from orchestrator.terminal import manager as tmux
-from orchestrator.terminal import ssh
 
 logger = logging.getLogger(__name__)
 
@@ -53,60 +55,83 @@ def open_interactive_cli(
     return cli
 
 
-def open_interactive_cli_remote(
-    tmux_session: str,
-    window_name: str,
+def open_interactive_cli_via_rws(
     session_id: str,
     host: str,
     command: str | None = None,
     cwd: str | None = None,
+    cols: int = 80,
+    rows: int = 24,
 ) -> InteractiveCLI:
-    """Open an interactive CLI for a remote worker.
+    """Open an interactive CLI for a remote worker via RWS daemon PTY.
 
-    Creates a new tmux window, SSHs into the remote host, and optionally
-    runs a command.
+    Creates a PTY session on the remote daemon instead of a tmux window.
+    Much faster (~50ms vs 10-30s) and survives SSH disconnects.
     """
+    from orchestrator.terminal.remote_worker_server import get_remote_worker_server
+
     if session_id in _active_clis:
         raise ValueError(f"Interactive CLI already active for session {session_id}")
 
-    icli_window = f"{window_name}-icli"
+    rws = get_remote_worker_server(host)
+    pty_id = rws.create_pty(cmd="/bin/bash", cwd=cwd, cols=cols, rows=rows)
 
-    # Create new tmux window
-    tmux.create_window(tmux_session, icli_window)
-
-    # SSH into the remote host
-    ssh.remote_connect(tmux_session, icli_window, host)
-
-    # Wait for shell prompt
-    if not ssh.wait_for_prompt(tmux_session, icli_window, timeout=30):
-        tmux.kill_window(tmux_session, icli_window)
-        raise RuntimeError(f"SSH to {host} timed out for interactive CLI")
-
-    if cwd:
-        tmux.send_keys(tmux_session, icli_window, f"cd {cwd}", enter=True)
-        time.sleep(0.3)
-
+    # Send the initial command if provided
     if command:
-        tmux.send_keys(tmux_session, icli_window, command, enter=True)
+        rws.execute(
+            {
+                "action": "pty_input",
+                "pty_id": pty_id,
+                "data": command + "\n",
+            }
+        )
 
     cli = InteractiveCLI(
         session_id=session_id,
-        window_name=icli_window,
+        window_name=f"rws-{pty_id}",  # Synthetic name for identification
         status="active",
         created_at=datetime.now(UTC).isoformat(),
         initial_command=command,
+        remote_pty_id=pty_id,
+        rws_host=host,
     )
     _active_clis[session_id] = cli
+    logger.info(
+        "Opened interactive CLI via RWS for session %s (pty_id=%s, host=%s)",
+        session_id,
+        pty_id,
+        host,
+    )
     return cli
 
 
 def close_interactive_cli(session_id: str, tmux_session: str = "orchestrator") -> bool:
-    """Close the interactive CLI window for a worker."""
+    """Close the interactive CLI window for a worker.
+
+    Handles both tmux-based and RWS PTY-based CLIs.
+    """
     cli = _active_clis.pop(session_id, None)
     if not cli:
         return False
 
-    tmux.kill_window(tmux_session, cli.window_name)
+    if cli.remote_pty_id and cli.rws_host:
+        # RWS PTY-based: destroy the remote PTY
+        try:
+            from orchestrator.terminal.remote_worker_server import get_remote_worker_server
+
+            rws = get_remote_worker_server(cli.rws_host)
+            rws.destroy_pty(cli.remote_pty_id)
+        except Exception:
+            logger.warning(
+                "Failed to destroy remote PTY %s on %s",
+                cli.remote_pty_id,
+                cli.rws_host,
+                exc_info=True,
+            )
+    else:
+        # tmux-based: kill the tmux window
+        tmux.kill_window(tmux_session, cli.window_name)
+
     cli.status = "closed"
     return True
 
@@ -119,28 +144,93 @@ def get_active_cli(session_id: str) -> InteractiveCLI | None:
 def capture_interactive_cli(
     session_id: str, tmux_session: str = "orchestrator", lines: int = 30
 ) -> str | None:
-    """Capture recent output from the interactive CLI."""
+    """Capture recent output from the interactive CLI.
+
+    For RWS PTY-based CLIs, uses the daemon's pty_capture command.
+    For tmux-based CLIs, uses tmux capture_output.
+    """
     cli = _active_clis.get(session_id)
     if not cli:
         return None
+
+    if cli.remote_pty_id and cli.rws_host:
+        try:
+            from orchestrator.terminal.remote_worker_server import get_remote_worker_server
+
+            rws = get_remote_worker_server(cli.rws_host)
+            resp = rws.execute(
+                {
+                    "action": "pty_capture",
+                    "pty_id": cli.remote_pty_id,
+                    "lines": lines,
+                }
+            )
+            return resp.get("output", "")
+        except Exception:
+            logger.warning("Failed to capture remote PTY output", exc_info=True)
+            return None
+
     return tmux.capture_output(tmux_session, cli.window_name, lines=lines)
 
 
 def send_to_interactive_cli(
     session_id: str, tmux_session: str = "orchestrator", text: str = "", enter: bool = True
 ) -> bool:
-    """Send input to the interactive CLI."""
+    """Send input to the interactive CLI.
+
+    For RWS PTY-based CLIs, sends via the daemon's pty_input command.
+    For tmux-based CLIs, uses tmux send_keys.
+    """
     cli = _active_clis.get(session_id)
     if not cli:
         return False
+
+    if cli.remote_pty_id and cli.rws_host:
+        try:
+            from orchestrator.terminal.remote_worker_server import get_remote_worker_server
+
+            data = text + ("\n" if enter else "")
+            rws = get_remote_worker_server(cli.rws_host)
+            rws.execute(
+                {
+                    "action": "pty_input",
+                    "pty_id": cli.remote_pty_id,
+                    "data": data,
+                }
+            )
+            return True
+        except Exception:
+            logger.warning("Failed to send to remote PTY", exc_info=True)
+            return False
+
     return tmux.send_keys(tmux_session, cli.window_name, text, enter=enter)
 
 
 def check_interactive_cli_alive(session_id: str, tmux_session: str = "orchestrator") -> bool:
-    """Check if the interactive CLI window still exists in tmux."""
+    """Check if the interactive CLI is still alive.
+
+    For RWS PTY-based CLIs, checks via the daemon's pty_list command.
+    For tmux-based CLIs, checks if the tmux window still exists.
+    """
     cli = _active_clis.get(session_id)
     if not cli:
         return False
+
+    if cli.remote_pty_id and cli.rws_host:
+        try:
+            from orchestrator.terminal.remote_worker_server import get_remote_worker_server
+
+            rws = get_remote_worker_server(cli.rws_host)
+            resp = rws.execute({"action": "pty_list"})
+            ptys = resp.get("ptys", [])
+            alive = any(p["pty_id"] == cli.remote_pty_id and p["alive"] for p in ptys)
+            if not alive:
+                _active_clis.pop(session_id, None)
+            return alive
+        except Exception:
+            # RWS not reachable — keep the CLI entry (daemon may still be alive)
+            return True
+
     if not tmux.window_exists(tmux_session, cli.window_name):
         _active_clis.pop(session_id, None)
         return False

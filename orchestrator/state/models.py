@@ -154,6 +154,8 @@ class InteractiveCLI:
     status: str  # "active" | "closed"
     created_at: str
     initial_command: str | None = None
+    remote_pty_id: str | None = None  # Set when using RWS daemon PTY
+    rws_host: str | None = None  # Host for RWS lookup (remote workers)
 
 
 @dataclass

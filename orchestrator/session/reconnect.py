@@ -838,6 +838,81 @@ def check_screen_exists_via_tmux(
 
 
 # =============================================================================
+# RWS Reconnect Helper
+# =============================================================================
+
+
+def _reconnect_rws_for_host(session) -> None:
+    """Re-establish the RWS forward tunnel after SSH reconnects.
+
+    If an RWS daemon client exists for this host, reconnect the forward tunnel
+    (which died when SSH dropped).  If the daemon itself is dead (e.g. host
+    rebooted), the next `ensure_rws_starting()` will redeploy it.
+
+    Also checks if any active interactive CLI PTYs are still alive.
+    """
+    from orchestrator.terminal.interactive import _active_clis, get_active_cli
+    from orchestrator.terminal.remote_worker_server import (
+        _server_pool,
+        ensure_rws_starting,
+    )
+
+    host = session.host
+    rws = _server_pool.get(host)
+
+    if rws is not None:
+        # Try to reconnect the existing client's tunnel
+        try:
+            rws.reconnect_tunnel()
+            logger.info("Reconnect %s: RWS forward tunnel re-established", session.name)
+        except Exception:
+            logger.warning(
+                "Reconnect %s: RWS tunnel reconnect failed, will redeploy",
+                session.name,
+                exc_info=True,
+            )
+            # Remove stale client so ensure_rws_starting() redeploys
+            try:
+                rws.stop()
+            except Exception:
+                pass
+            _server_pool.pop(host, None)
+            ensure_rws_starting(host)
+    else:
+        # No existing RWS — kick off a fresh start (non-blocking)
+        ensure_rws_starting(host)
+
+    # Check if interactive CLI PTY is still alive
+    cli = get_active_cli(session.id)
+    if cli and cli.remote_pty_id and cli.rws_host:
+        try:
+            rws_new = _server_pool.get(host)
+            if rws_new:
+                resp = rws_new.execute({"action": "pty_list"})
+                ptys = resp.get("ptys", [])
+                alive = any(p["pty_id"] == cli.remote_pty_id and p["alive"] for p in ptys)
+                if not alive:
+                    logger.info(
+                        "Reconnect %s: remote PTY %s is dead, cleaning up",
+                        session.name,
+                        cli.remote_pty_id,
+                    )
+                    _active_clis.pop(session.id, None)
+                else:
+                    logger.info(
+                        "Reconnect %s: remote PTY %s still alive",
+                        session.name,
+                        cli.remote_pty_id,
+                    )
+        except Exception:
+            logger.debug(
+                "Reconnect %s: could not check PTY status",
+                session.name,
+                exc_info=True,
+            )
+
+
+# =============================================================================
 # Main Reconnect — rdev Workers (Sequential Pipeline)
 # =============================================================================
 
@@ -1043,6 +1118,9 @@ def reconnect_remote_worker(
                 repo,
                 conn,
             )
+
+        # ── Post-reconnect: Re-establish RWS forward tunnel ──────────────
+        _reconnect_rws_for_host(session)
 
     except TUIActiveError as e:
         logger.error("Reconnect %s: TUI guard blocked send_keys: %s", session.name, e)

@@ -14,7 +14,7 @@ from orchestrator.terminal.interactive import (
     close_interactive_cli,
     get_active_cli,
     open_interactive_cli,
-    open_interactive_cli_remote,
+    open_interactive_cli_via_rws,
     send_to_interactive_cli,
 )
 from orchestrator.terminal.manager import tmux_target
@@ -52,9 +52,7 @@ def open_interactive_cli_endpoint(session_id: str, body: OpenCLIRequest, db=Depe
 
     try:
         if is_remote_host(s.host):
-            cli = open_interactive_cli_remote(
-                tmux_sess,
-                s.name,
+            cli = open_interactive_cli_via_rws(
                 session_id,
                 host=s.host,
                 command=body.command,

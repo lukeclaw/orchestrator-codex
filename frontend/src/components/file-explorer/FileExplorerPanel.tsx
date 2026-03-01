@@ -219,11 +219,11 @@ export default function FileExplorerPanel({
     return { entries: data.entries, gitAvailable: data.git_available }
   }, [sessionId, showIgnored, workDir])
 
-  // Load root on mount / refresh — depth=5 prefetches multiple levels
+  // Load root on mount / refresh — depth=1 for reliability on large dirs
   const loadRoot = useCallback(async () => {
     setRootLoading(true)
     try {
-      const { entries } = await fetchDir('.', 5)
+      const { entries } = await fetchDir('.', 1)
       setTree(prev => entriesToNodes(entries, prev))
     } catch {
       // Silently fail - work_dir may not exist yet
@@ -278,11 +278,11 @@ export default function FileExplorerPanel({
       return
     }
 
-    // Expanding without cached children — mark loading and fetch (depth=2 prefetches)
+    // Expanding without cached children — mark loading and fetch (depth=2 prefetches one sublevel)
     setTree(prev => updateNode(prev, nodePath, n => ({ ...n, loading: true, expanded: true })))
 
     try {
-      const { entries } = await fetchDir(nodePath, 5)
+      const { entries } = await fetchDir(nodePath, 2)
       setTree(prev => updateNode(prev, nodePath, n => ({
         ...n,
         loading: false,
@@ -290,11 +290,22 @@ export default function FileExplorerPanel({
         children: entriesToNodes(entries),
       })))
     } catch {
-      setTree(prev => updateNode(prev, nodePath, n => ({
-        ...n,
-        loading: false,
-        expanded: false,
-      })))
+      // depth=2 failed (large dir) — try depth=1
+      try {
+        const { entries } = await fetchDir(nodePath, 1)
+        setTree(prev => updateNode(prev, nodePath, n => ({
+          ...n,
+          loading: false,
+          expanded: true,
+          children: entriesToNodes(entries),
+        })))
+      } catch {
+        setTree(prev => updateNode(prev, nodePath, n => ({
+          ...n,
+          loading: false,
+          expanded: false,
+        })))
+      }
     }
   }, [fetchDir, findNode, updateNode, setTree])
 

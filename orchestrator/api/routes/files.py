@@ -10,8 +10,6 @@ import os
 import shutil
 import subprocess
 import tempfile
-import textwrap
-import threading
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -23,9 +21,9 @@ from pydantic import BaseModel
 from orchestrator.api.deps import get_db
 from orchestrator.state.repositories import sessions as repo
 from orchestrator.terminal.file_sync import _SSH_OPTS
-from orchestrator.terminal.remote_file_server import (
-    ensure_server_starting,
-    get_remote_file_server,
+from orchestrator.terminal.remote_worker_server import (
+    ensure_rws_starting,
+    get_remote_worker_server,
 )
 from orchestrator.terminal.ssh import is_remote_host
 
@@ -209,10 +207,10 @@ def _resolve_session(db, session_id: str) -> SessionInfo:
     if not remote and not os.path.isdir(work_dir):
         raise HTTPException(status_code=400, detail="work_dir does not exist on disk")
 
-    # Eagerly start the persistent file server so it's ready by the time
+    # Eagerly start the RWS so it's ready by the time
     # the first file operation completes and the user clicks something else.
     if remote:
-        ensure_server_starting(session.host)
+        ensure_rws_starting(session.host)
 
     return SessionInfo(work_dir=work_dir, host=session.host, is_remote=remote)
 
@@ -280,219 +278,14 @@ def _human_size(size: int) -> str:
     return f"{size:.1f}TB"
 
 
-# ---------------------------------------------------------------------------
-# Remote (SSH) helpers
-# ---------------------------------------------------------------------------
-_SSH_TIMEOUT = 15  # seconds
-
-# Per-host semaphore to limit concurrent SSH connections
-_host_semaphores: dict[str, threading.Semaphore] = {}
-_host_sem_lock = threading.Lock()
-_MAX_SSH_CONCURRENT = 8
-_SSH_ACQUIRE_TIMEOUT = 10  # seconds
-
-
-def _get_host_semaphore(host: str) -> threading.Semaphore:
-    with _host_sem_lock:
-        if host not in _host_semaphores:
-            _host_semaphores[host] = threading.Semaphore(_MAX_SSH_CONCURRENT)
-        return _host_semaphores[host]
-
-
-def _acquire_ssh_slot(host: str) -> None:
-    sem = _get_host_semaphore(host)
-    if not sem.acquire(timeout=_SSH_ACQUIRE_TIMEOUT):
-        raise HTTPException(
-            status_code=503,
-            detail="Too many concurrent SSH connections; try again shortly",
-        )
-
-
-def _release_ssh_slot(host: str) -> None:
-    _get_host_semaphore(host).release()
-
-
-# Self-contained Python script executed on the remote host via SSH stdin.
-# Takes: work_dir, relative_path, show_hidden_flag ("1"/"0"), depth
-_REMOTE_LIST_SCRIPT = textwrap.dedent("""\
-    import json, os, subprocess, sys
-
-    work_dir = sys.argv[1]
-    rel_path = sys.argv[2]
-    show_hidden = sys.argv[3] == "1"
-    max_depth = int(sys.argv[4]) if len(sys.argv) > 4 else 1
-
-    DEFAULT_IGNORED = {
-        "__pycache__", "node_modules", ".git", ".tox", ".mypy_cache",
-        ".pytest_cache", ".ruff_cache", "dist", "build", ".egg-info",
-        ".venv", "venv", ".next", ".DS_Store", "Thumbs.db",
-    }
-    GIT_STATUS_MAP = {
-        "M": "modified", "A": "added", "D": "deleted", "R": "renamed",
-        "C": "copied", "U": "conflicting", "?": "untracked", "!": "ignored",
-    }
-    SEVERITY = ["conflicting","deleted","modified","added","renamed","untracked","ignored"]
-
-    norm_work = os.path.normpath(work_dir)
-    target = os.path.normpath(os.path.join(work_dir, rel_path))
-    if not target.startswith(norm_work):
-        print(json.dumps({"error": "Path outside work_dir"}))
-        sys.exit(1)
-
-    if not os.path.isdir(target):
-        print(json.dumps({"error": "Directory not found"}))
-        sys.exit(1)
-
-    # Git status (once, reused by all depths)
-    git_statuses = {}
-    git_available = False
-    cmd = ["git", "status", "--porcelain=v1", "-z", "--ignored"]
-    try:
-        r = subprocess.run(cmd, cwd=work_dir, capture_output=True, text=True, timeout=5)
-        if r.returncode == 0:
-            git_available = True
-            for entry in r.stdout.split("\\0"):
-                if len(entry) < 4:
-                    continue
-                xy = entry[:2]
-                p = entry[3:].rstrip("/")
-                code = xy[0] if xy[0] != " " else xy[1]
-                git_statuses[p] = GIT_STATUS_MAP.get(code, "modified")
-    except Exception:
-        pass
-
-    def apply_git(entries):
-        if not git_available:
-            return
-        for ent in entries:
-            p = ent["path"]
-            if p in git_statuses:
-                ent["git_status"] = git_statuses[p]
-            elif ent["is_dir"]:
-                prefix = p + "/"
-                child = [s for k, s in git_statuses.items() if k.startswith(prefix)]
-                if child:
-                    non_ignored = [s for s in child if s != "ignored"]
-                    if non_ignored:
-                        for sev in SEVERITY:
-                            if sev in non_ignored:
-                                ent["git_status"] = sev
-                                break
-                        else:
-                            ent["git_status"] = non_ignored[0]
-            if ent.get("children"):
-                apply_git(ent["children"])
-
-    def scan_dir(abs_path, current_depth):
-        entries = []
-        try:
-            for e in os.scandir(abs_path):
-                name = e.name
-                if not show_hidden and name.startswith(".") and name != ".":
-                    continue
-                rp = os.path.relpath(e.path, work_dir)
-                is_dir = e.is_dir(follow_symlinks=False)
-                try:
-                    st = e.stat(follow_symlinks=False)
-                    size = st.st_size if not is_dir else None
-                    modified = st.st_mtime
-                except OSError:
-                    size = None
-                    modified = None
-                children_count = None
-                sub_children = None
-                if is_dir:
-                    try:
-                        children_count = sum(1 for _ in os.scandir(e.path))
-                    except OSError:
-                        pass
-                    if current_depth < max_depth:
-                        sub_children = scan_dir(e.path, current_depth + 1)
-                entries.append({
-                    "name": name, "path": rp, "is_dir": is_dir,
-                    "size": size, "modified": modified,
-                    "children_count": children_count,
-                    "git_status": None,
-                    "children": sub_children,
-                })
-        except PermissionError:
-            pass
-        entries.sort(key=lambda x: (not x["is_dir"], x["name"].lower()))
-        return entries
-
-    entries = scan_dir(target, 1)
-    apply_git(entries)
-    print(json.dumps({"entries": entries, "git_available": git_available}))
-""")
-
-
-def _run_ssh(host: str, script: str, args: list[str]) -> subprocess.CompletedProcess:
-    """Execute a Python script on a remote host via SSH stdin (text mode)."""
-    cmd = ["ssh", *_SSH_OPTS, host, "python3", "-"] + args
-    return subprocess.run(
-        cmd,
-        input=script,
-        capture_output=True,
-        text=True,
-        timeout=_SSH_TIMEOUT,
-    )
-
-
-def _run_ssh_bytes(host: str, script: bytes, args: list[str]) -> subprocess.CompletedProcess:
-    """Execute a Python script on a remote host via SSH stdin (bytes mode)."""
-    cmd = ["ssh", *_SSH_OPTS, host, "python3", "-"] + args
-    return subprocess.run(
-        cmd,
-        input=script,
-        capture_output=True,
-        timeout=_SSH_TIMEOUT,
-    )
-
-
-def _list_remote_dir_fallback(
-    host: str, work_dir: str, path: str, show_hidden: bool, depth: int = 1
-) -> tuple[list[FileEntry], bool]:
-    """List a directory on a remote host via SSH (one-shot fallback)."""
-    _acquire_ssh_slot(host)
-    try:
-        result = _run_ssh(
-            host,
-            _REMOTE_LIST_SCRIPT,
-            [work_dir, path, "1" if show_hidden else "0", str(depth)],
-        )
-    except subprocess.TimeoutExpired:
-        raise HTTPException(status_code=504, detail="Remote directory listing timed out")
-    finally:
-        _release_ssh_slot(host)
-
-    if result.returncode != 0:
-        # Try to parse error from script output
-        try:
-            err = json.loads(result.stdout)
-            detail = err.get("error", "Remote listing failed")
-        except (json.JSONDecodeError, KeyError):
-            detail = result.stderr.strip() or "Remote listing failed"
-        if "not found" in detail.lower():
-            raise HTTPException(status_code=404, detail=detail)
-        raise HTTPException(status_code=502, detail=detail)
-
-    try:
-        data = json.loads(result.stdout)
-    except json.JSONDecodeError:
-        raise HTTPException(status_code=502, detail="Invalid response from remote host")
-
-    entries = _parse_remote_entries(data["entries"])
-    return entries, data.get("git_available", False)
-
-
 def _list_remote_dir(
     host: str, work_dir: str, path: str, show_hidden: bool, depth: int = 1
 ) -> tuple[list[FileEntry], bool]:
-    """List a directory on a remote host, preferring the persistent server."""
+    """List a directory on a remote host via RWS."""
     t0 = time.monotonic()
     try:
-        server = get_remote_file_server(host)
-        data = server.execute(
+        rws = get_remote_worker_server(host)
+        data = rws.execute(
             {
                 "action": "list_dir",
                 "work_dir": work_dir,
@@ -501,35 +294,19 @@ def _list_remote_dir(
                 "depth": depth,
             }
         )
-        if "error" in data:
-            detail = data["error"]
-            if "not found" in detail.lower():
-                raise HTTPException(status_code=404, detail=detail)
-            raise HTTPException(status_code=502, detail=detail)
-        entries = _parse_remote_entries(data["entries"])
-        elapsed = time.monotonic() - t0
-        logger.info(
-            "list_remote_dir %s:%s took %.3fs (server=persistent)",
-            host,
-            path,
-            elapsed,
-        )
-        return entries, data.get("git_available", False)
     except (RuntimeError, OSError, json.JSONDecodeError) as exc:
-        logger.warning(
-            "Persistent server failed for list_dir on %s, falling back: %s",
-            host,
-            exc,
-        )
-        result = _list_remote_dir_fallback(host, work_dir, path, show_hidden, depth)
-        elapsed = time.monotonic() - t0
-        logger.info(
-            "list_remote_dir %s:%s took %.3fs (server=fallback)",
-            host,
-            path,
-            elapsed,
-        )
-        return result
+        raise HTTPException(status_code=502, detail=f"Remote worker server error: {exc}")
+
+    if "error" in data:
+        detail = data["error"]
+        if "not found" in detail.lower():
+            raise HTTPException(status_code=404, detail=detail)
+        raise HTTPException(status_code=502, detail=detail)
+
+    entries = _parse_remote_entries(data["entries"])
+    elapsed = time.monotonic() - t0
+    logger.info("list_remote_dir %s:%s took %.3fs", host, path, elapsed)
+    return entries, data.get("git_available", False)
 
 
 def _parse_remote_entries(raw_list: list[dict]) -> list[FileEntry]:
@@ -552,107 +329,6 @@ def _parse_remote_entries(raw_list: list[dict]) -> list[FileEntry]:
             )
         )
     return entries
-
-
-# Self-contained Python script for reading file content on a remote host.
-# Takes: work_dir, relative_path, max_lines
-_REMOTE_READ_SCRIPT = textwrap.dedent("""\
-    import json, os, sys
-
-    work_dir = sys.argv[1]
-    rel_path = sys.argv[2]
-    max_lines = int(sys.argv[3])
-
-    target = os.path.normpath(os.path.join(work_dir, rel_path))
-    if not target.startswith(os.path.normpath(work_dir)):
-        print(json.dumps({"error": "Path outside work_dir"}))
-        sys.exit(1)
-
-    if not os.path.isfile(target):
-        print(json.dumps({"error": "File not found"}))
-        sys.exit(1)
-
-    st = os.stat(target)
-    file_size = st.st_size
-    file_mtime = st.st_mtime
-    if file_size > 5 * 1024 * 1024:
-        print(json.dumps({"error": "File too large (>5MB)", "code": 413}))
-        sys.exit(1)
-
-    # Binary detection
-    try:
-        with open(target, "rb") as f:
-            chunk = f.read(8192)
-            if b"\\x00" in chunk:
-                print(json.dumps({
-                    "content": "", "truncated": False,
-                    "total_lines": None, "size": file_size,
-                    "binary": True, "modified": file_mtime,
-                }))
-                sys.exit(0)
-    except OSError as e:
-        print(json.dumps({"error": str(e)}))
-        sys.exit(1)
-
-    # Read text
-    try:
-        with open(target, encoding="utf-8", errors="replace") as f:
-            lines = []
-            total = 0
-            for line in f:
-                total += 1
-                if total <= max_lines:
-                    lines.append(line)
-            print(json.dumps({
-                "content": "".join(lines),
-                "truncated": total > max_lines,
-                "total_lines": total,
-                "size": file_size,
-                "modified": file_mtime,
-                "binary": False,
-            }))
-    except OSError as e:
-        print(json.dumps({"error": str(e)}))
-        sys.exit(1)
-""")
-
-
-def _read_remote_file_fallback(
-    host: str, work_dir: str, path: str, max_lines: int
-) -> FileContentResponse:
-    """Read file content from a remote host via SSH (one-shot fallback)."""
-    _acquire_ssh_slot(host)
-    try:
-        result = _run_ssh(
-            host,
-            _REMOTE_READ_SCRIPT,
-            [work_dir, path, str(max_lines)],
-        )
-    except subprocess.TimeoutExpired:
-        raise HTTPException(status_code=504, detail="Remote file read timed out")
-    finally:
-        _release_ssh_slot(host)
-
-    if result.returncode != 0:
-        try:
-            err = json.loads(result.stdout)
-            detail = err.get("error", "Remote read failed")
-            code = err.get("code", 502)
-        except (json.JSONDecodeError, KeyError):
-            detail = result.stderr.strip() or "Remote read failed"
-            code = 502
-        if "not found" in detail.lower():
-            code = 404
-        elif "too large" in detail.lower():
-            code = 413
-        raise HTTPException(status_code=code, detail=detail)
-
-    try:
-        data = json.loads(result.stdout)
-    except json.JSONDecodeError:
-        raise HTTPException(status_code=502, detail="Invalid response from remote host")
-
-    return _build_file_content_response(path, data)
 
 
 def _build_file_content_response(path: str, data: dict) -> FileContentResponse:
@@ -679,49 +355,33 @@ def _build_file_content_response(path: str, data: dict) -> FileContentResponse:
 
 
 def _read_remote_file(host: str, work_dir: str, path: str, max_lines: int) -> FileContentResponse:
-    """Read file content from a remote host, preferring the persistent server."""
+    """Read file content from a remote host via RWS."""
     t0 = time.monotonic()
+    read_cmd = {
+        "action": "read_file",
+        "work_dir": work_dir,
+        "path": path,
+        "max_lines": max_lines,
+    }
+
     try:
-        server = get_remote_file_server(host)
-        data = server.execute(
-            {
-                "action": "read_file",
-                "work_dir": work_dir,
-                "path": path,
-                "max_lines": max_lines,
-            }
-        )
-        if "error" in data:
-            detail = data["error"]
-            code = data.get("code", 502)
-            if "not found" in detail.lower():
-                code = 404
-            elif "too large" in detail.lower():
-                code = 413
-            raise HTTPException(status_code=code, detail=detail)
-        elapsed = time.monotonic() - t0
-        logger.info(
-            "read_remote_file %s:%s took %.3fs (server=persistent)",
-            host,
-            path,
-            elapsed,
-        )
-        return _build_file_content_response(path, data)
+        rws = get_remote_worker_server(host)
+        data = rws.execute(read_cmd)
     except (RuntimeError, OSError, json.JSONDecodeError) as exc:
-        logger.warning(
-            "Persistent server failed for read_file on %s, falling back: %s",
-            host,
-            exc,
-        )
-        result = _read_remote_file_fallback(host, work_dir, path, max_lines)
-        elapsed = time.monotonic() - t0
-        logger.info(
-            "read_remote_file %s:%s took %.3fs (server=fallback)",
-            host,
-            path,
-            elapsed,
-        )
-        return result
+        raise HTTPException(status_code=502, detail=f"Remote worker server error: {exc}")
+
+    if "error" in data:
+        detail = data["error"]
+        code = data.get("code", 502)
+        if "not found" in detail.lower():
+            code = 404
+        elif "too large" in detail.lower():
+            code = 413
+        raise HTTPException(status_code=code, detail=detail)
+
+    elapsed = time.monotonic() - t0
+    logger.info("read_remote_file %s:%s took %.3fs", host, path, elapsed)
+    return _build_file_content_response(path, data)
 
 
 # ---------------------------------------------------------------------------
@@ -1179,100 +839,6 @@ def _write_local_file(work_dir: str, body: FileWriteRequest) -> FileWriteRespons
     return FileWriteResponse(path=body.path, size=stat.st_size, modified=stat.st_mtime)
 
 
-# Self-contained Python script for writing file content on a remote host.
-_REMOTE_WRITE_SCRIPT = textwrap.dedent("""\
-    import base64, json, os, sys, tempfile
-
-    work_dir, rel_path, mtime_arg, create_arg = sys.argv[1:5]
-    expected_mtime = float(mtime_arg) if mtime_arg != "none" else None
-    allow_create = create_arg == "true"
-
-    target = os.path.normpath(os.path.join(work_dir, rel_path))
-    if not target.startswith(os.path.normpath(work_dir)):
-        print(json.dumps({"error": "Path outside work_dir"}))
-        sys.exit(1)
-
-    if not allow_create and not os.path.isfile(target):
-        print(json.dumps({"error": "File not found"}))
-        sys.exit(1)
-
-    if allow_create:
-        os.makedirs(os.path.dirname(target), exist_ok=True)
-
-    # Conflict detection
-    if expected_mtime is not None and os.path.isfile(target):
-        cur = os.stat(target).st_mtime
-        if abs(cur - expected_mtime) > 0.5:
-            print(json.dumps({"conflict": True, "size": os.path.getsize(target), "modified": cur}))
-            sys.exit(0)
-
-    content = base64.b64decode("__CONTENT_B64__").decode("utf-8")
-
-    # Atomic write
-    fd, tmp = tempfile.mkstemp(dir=os.path.dirname(target), suffix=".tmp")
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8", newline="") as f:
-            f.write(content)
-        os.replace(tmp, target)
-    except PermissionError:
-        os.unlink(tmp)
-        print(json.dumps({"error": "Permission denied"}))
-        sys.exit(1)
-
-    st = os.stat(target)
-    print(json.dumps({"conflict": False, "size": st.st_size, "modified": st.st_mtime}))
-""")
-
-
-def _write_remote_file_fallback(
-    host: str, work_dir: str, body: FileWriteRequest
-) -> FileWriteResponse:
-    """Write a file on a remote host via SSH (one-shot fallback)."""
-    content_b64 = base64.b64encode(body.content.encode("utf-8")).decode("ascii")
-    script = _REMOTE_WRITE_SCRIPT.replace("__CONTENT_B64__", content_b64)
-
-    mtime_arg = str(body.expected_mtime) if body.expected_mtime is not None else "none"
-    create_arg = "true" if body.create else "false"
-
-    _acquire_ssh_slot(host)
-    try:
-        result = _run_ssh_bytes(
-            host,
-            script.encode(),
-            [work_dir, body.path, mtime_arg, create_arg],
-        )
-    except subprocess.TimeoutExpired:
-        raise HTTPException(status_code=504, detail="Remote file write timed out")
-    finally:
-        _release_ssh_slot(host)
-
-    stdout_str = (
-        result.stdout if isinstance(result.stdout, str) else result.stdout.decode(errors="replace")
-    )
-    stderr_str = (
-        result.stderr if isinstance(result.stderr, str) else result.stderr.decode(errors="replace")
-    )
-
-    if result.returncode != 0:
-        try:
-            err = json.loads(stdout_str)
-            detail = err.get("error", "Remote write failed")
-        except (json.JSONDecodeError, KeyError):
-            detail = stderr_str.strip() or "Remote write failed"
-        if "not found" in detail.lower():
-            raise HTTPException(status_code=404, detail=detail)
-        if "permission denied" in detail.lower():
-            raise HTTPException(status_code=403, detail=detail)
-        raise HTTPException(status_code=502, detail=detail)
-
-    try:
-        data = json.loads(stdout_str)
-    except json.JSONDecodeError:
-        raise HTTPException(status_code=502, detail="Invalid response from remote host")
-
-    return _build_write_response(body.path, data)
-
-
 def _build_write_response(path: str, data: dict) -> FileWriteResponse:
     """Build a FileWriteResponse from parsed remote data."""
     if data.get("conflict"):
@@ -1291,52 +857,37 @@ def _build_write_response(path: str, data: dict) -> FileWriteResponse:
 
 
 def _write_remote_file(host: str, work_dir: str, body: FileWriteRequest) -> FileWriteResponse:
-    """Write a file on a remote host, preferring the persistent server."""
+    """Write a file on a remote host via RWS."""
     t0 = time.monotonic()
-    try:
-        server = get_remote_file_server(host)
-        content_b64 = base64.b64encode(body.content.encode("utf-8")).decode("ascii")
-        data = server.execute(
-            {
-                "action": "write_file",
-                "work_dir": work_dir,
-                "path": body.path,
-                "content_b64": content_b64,
-                "expected_mtime": body.expected_mtime,
-                "create": body.create,
-            }
-        )
-        if "error" in data:
-            detail = data["error"]
-            if "not found" in detail.lower():
-                raise HTTPException(status_code=404, detail=detail)
-            if "permission denied" in detail.lower():
-                raise HTTPException(status_code=403, detail=detail)
-            raise HTTPException(status_code=502, detail=detail)
-        elapsed = time.monotonic() - t0
-        logger.info(
-            "write_remote_file %s:%s took %.3fs (server=persistent)",
-            host,
-            body.path,
-            elapsed,
-        )
-        resp = _build_write_response(body.path, data)
-    except (RuntimeError, OSError, json.JSONDecodeError) as exc:
-        logger.warning(
-            "Persistent server failed for write_file on %s, falling back: %s",
-            host,
-            exc,
-        )
-        resp = _write_remote_file_fallback(host, work_dir, body)
-        elapsed = time.monotonic() - t0
-        logger.info(
-            "write_remote_file %s:%s took %.3fs (server=fallback)",
-            host,
-            body.path,
-            elapsed,
-        )
+    content_b64 = base64.b64encode(body.content.encode("utf-8")).decode("ascii")
+    write_cmd = {
+        "action": "write_file",
+        "work_dir": work_dir,
+        "path": body.path,
+        "content_b64": content_b64,
+        "expected_mtime": body.expected_mtime,
+        "create": body.create,
+    }
 
-    # Invalidate content cache for this file (regardless of method used)
+    try:
+        rws = get_remote_worker_server(host)
+        data = rws.execute(write_cmd)
+    except (RuntimeError, OSError, json.JSONDecodeError) as exc:
+        raise HTTPException(status_code=502, detail=f"Remote worker server error: {exc}")
+
+    if "error" in data:
+        detail = data["error"]
+        if "not found" in detail.lower():
+            raise HTTPException(status_code=404, detail=detail)
+        if "permission denied" in detail.lower():
+            raise HTTPException(status_code=403, detail=detail)
+        raise HTTPException(status_code=502, detail=detail)
+
+    resp = _build_write_response(body.path, data)
+    elapsed = time.monotonic() - t0
+    logger.info("write_remote_file %s:%s took %.3fs", host, body.path, elapsed)
+
+    # Invalidate content cache for this file
     if not resp.conflict:
         for key in list(_remote_content_cache.keys()):
             if f"::{body.path}::" in key:
@@ -1381,34 +932,31 @@ def read_file_raw(
 
 
 def _read_remote_raw(host: str, work_dir: str, path: str, content_type: str) -> Response:
-    """Read raw file bytes from a remote host via SSH."""
-    # Use a simple cat command piped through SSH
-    remote_path = os.path.normpath(os.path.join(work_dir, path))
-    if not remote_path.startswith(os.path.normpath(work_dir)):
-        raise HTTPException(status_code=400, detail="Path outside work_dir")
-
-    _acquire_ssh_slot(host)
+    """Read raw file bytes from a remote host via RWS."""
     try:
-        result = subprocess.run(
-            ["ssh", *_SSH_OPTS, host, "cat", remote_path],
-            capture_output=True,
-            timeout=_SSH_TIMEOUT,
+        rws = get_remote_worker_server(host)
+        data = rws.execute(
+            {
+                "action": "read_file_raw",
+                "work_dir": work_dir,
+                "path": path,
+                "max_size": _MAX_RAW_SIZE,
+            }
         )
-    except subprocess.TimeoutExpired:
-        raise HTTPException(status_code=504, detail="Remote file read timed out")
-    finally:
-        _release_ssh_slot(host)
+    except (RuntimeError, OSError, json.JSONDecodeError) as exc:
+        raise HTTPException(status_code=502, detail=f"Remote worker server error: {exc}")
 
-    if result.returncode != 0:
-        stderr = result.stderr.decode(errors="replace").strip()
-        if "No such file" in stderr:
-            raise HTTPException(status_code=404, detail="File not found")
-        raise HTTPException(status_code=502, detail=stderr or "Remote read failed")
+    if "error" in data:
+        detail = data["error"]
+        code = data.get("code", 502)
+        if "not found" in detail.lower():
+            code = 404
+        elif "too large" in detail.lower():
+            code = 413
+        raise HTTPException(status_code=code, detail=detail)
 
-    if len(result.stdout) > _MAX_RAW_SIZE:
-        raise HTTPException(status_code=413, detail="File too large (>10MB)")
-
-    return Response(content=result.stdout, media_type=content_type)
+    raw_bytes = base64.b64decode(data["content_b64"])
+    return Response(content=raw_bytes, media_type=content_type)
 
 
 # ---------------------------------------------------------------------------
@@ -1459,65 +1007,23 @@ def _delete_local(work_dir: str, path: str) -> DeleteResponse:
     return DeleteResponse(status="ok")
 
 
-_REMOTE_DELETE_SCRIPT = textwrap.dedent("""\
-    import json, os, shutil, sys
+def _delete_remote(host: str, work_dir: str, path: str) -> DeleteResponse:
+    """Delete a file or directory on a remote host via RWS."""
+    delete_cmd = {"action": "delete", "work_dir": work_dir, "path": path}
 
-    work_dir = sys.argv[1]
-    rel_path = sys.argv[2]
-
-    target = os.path.normpath(os.path.join(work_dir, rel_path))
-    if not target.startswith(os.path.normpath(work_dir) + os.sep):
-        print(json.dumps({"error": "Path outside work_dir"}))
-        sys.exit(1)
-    if os.path.isdir(target):
-        shutil.rmtree(target)
-    elif os.path.isfile(target) or os.path.islink(target):
-        os.remove(target)
-    else:
-        print(json.dumps({"error": "Not found"}))
-        sys.exit(1)
-    print(json.dumps({"status": "ok"}))
-""")
-
-
-def _delete_remote_fallback(host: str, work_dir: str, path: str) -> DeleteResponse:
-    _acquire_ssh_slot(host)
     try:
-        result = _run_ssh(host, _REMOTE_DELETE_SCRIPT, [work_dir, path])
-    except subprocess.TimeoutExpired:
-        raise HTTPException(status_code=504, detail="Remote delete timed out")
-    finally:
-        _release_ssh_slot(host)
+        rws = get_remote_worker_server(host)
+        data = rws.execute(delete_cmd)
+    except (RuntimeError, OSError, json.JSONDecodeError) as exc:
+        raise HTTPException(status_code=502, detail=f"Remote worker server error: {exc}")
 
-    if result.returncode != 0:
-        try:
-            err = json.loads(result.stdout)
-            detail = err.get("error", "Remote delete failed")
-        except (json.JSONDecodeError, KeyError):
-            detail = result.stderr.strip() or "Remote delete failed"
+    if "error" in data:
+        detail = data["error"]
         if "not found" in detail.lower():
             raise HTTPException(status_code=404, detail=detail)
         raise HTTPException(status_code=502, detail=detail)
 
     return DeleteResponse(status="ok")
-
-
-def _delete_remote(host: str, work_dir: str, path: str) -> DeleteResponse:
-    try:
-        server = get_remote_file_server(host)
-        data = server.execute({"action": "delete", "work_dir": work_dir, "path": path})
-        if "error" in data:
-            # Any error from persistent server → fall back to one-shot SSH
-            # so stale servers (missing new handlers) degrade gracefully.
-            raise RuntimeError(data["error"])
-        return DeleteResponse(status="ok")
-    except (RuntimeError, OSError, json.JSONDecodeError) as exc:
-        logger.warning(
-            "Persistent server failed for delete on %s, falling back: %s",
-            host,
-            exc,
-        )
-        return _delete_remote_fallback(host, work_dir, path)
 
 
 # ---------------------------------------------------------------------------
@@ -1569,86 +1075,33 @@ def _move_local(work_dir: str, from_path: str, to_path: str) -> MoveResponse:
     return MoveResponse(status="ok")
 
 
-_REMOTE_MOVE_SCRIPT = textwrap.dedent("""\
-    import json, os, shutil, sys
-
-    work_dir = sys.argv[1]
-    from_path = sys.argv[2]
-    to_path = sys.argv[3]
-
-    norm_work = os.path.normpath(work_dir)
-    src = os.path.normpath(os.path.join(work_dir, from_path))
-    dst = os.path.normpath(os.path.join(work_dir, to_path))
-    if not src.startswith(norm_work + os.sep):
-        print(json.dumps({"error": "Source path outside work_dir"}))
-        sys.exit(1)
-    if not dst.startswith(norm_work + os.sep):
-        print(json.dumps({"error": "Destination path outside work_dir"}))
-        sys.exit(1)
-    if not os.path.exists(src):
-        print(json.dumps({"error": "Not found"}))
-        sys.exit(1)
-    os.makedirs(os.path.dirname(dst), exist_ok=True)
-    shutil.move(src, dst)
-    print(json.dumps({"status": "ok"}))
-""")
-
-
-def _move_remote_fallback(
-    host: str,
-    work_dir: str,
-    from_path: str,
-    to_path: str,
-) -> MoveResponse:
-    _acquire_ssh_slot(host)
-    try:
-        result = _run_ssh(host, _REMOTE_MOVE_SCRIPT, [work_dir, from_path, to_path])
-    except subprocess.TimeoutExpired:
-        raise HTTPException(status_code=504, detail="Remote move timed out")
-    finally:
-        _release_ssh_slot(host)
-
-    if result.returncode != 0:
-        try:
-            err = json.loads(result.stdout)
-            detail = err.get("error", "Remote move failed")
-        except (json.JSONDecodeError, KeyError):
-            detail = result.stderr.strip() or "Remote move failed"
-        if "not found" in detail.lower():
-            raise HTTPException(status_code=404, detail=detail)
-        raise HTTPException(status_code=502, detail=detail)
-
-    return MoveResponse(status="ok")
-
-
 def _move_remote(
     host: str,
     work_dir: str,
     from_path: str,
     to_path: str,
 ) -> MoveResponse:
+    """Move or rename a file/directory on a remote host via RWS."""
+    move_cmd = {
+        "action": "move",
+        "work_dir": work_dir,
+        "from_path": from_path,
+        "to_path": to_path,
+    }
+
     try:
-        server = get_remote_file_server(host)
-        data = server.execute(
-            {
-                "action": "move",
-                "work_dir": work_dir,
-                "from_path": from_path,
-                "to_path": to_path,
-            }
-        )
-        if "error" in data:
-            # Any error from persistent server → fall back to one-shot SSH
-            # so stale servers (missing new handlers) degrade gracefully.
-            raise RuntimeError(data["error"])
-        return MoveResponse(status="ok")
+        rws = get_remote_worker_server(host)
+        data = rws.execute(move_cmd)
     except (RuntimeError, OSError, json.JSONDecodeError) as exc:
-        logger.warning(
-            "Persistent server failed for move on %s, falling back: %s",
-            host,
-            exc,
-        )
-        return _move_remote_fallback(host, work_dir, from_path, to_path)
+        raise HTTPException(status_code=502, detail=f"Remote worker server error: {exc}")
+
+    if "error" in data:
+        detail = data["error"]
+        if "not found" in detail.lower():
+            raise HTTPException(status_code=404, detail=detail)
+        raise HTTPException(status_code=502, detail=detail)
+
+    return MoveResponse(status="ok")
 
 
 # ---------------------------------------------------------------------------
@@ -1687,53 +1140,18 @@ def _mkdir_local(work_dir: str, path: str) -> MkdirResponse:
     return MkdirResponse(status="ok")
 
 
-_REMOTE_MKDIR_SCRIPT = textwrap.dedent("""\
-    import json, os, sys
+def _mkdir_remote(host: str, work_dir: str, path: str) -> MkdirResponse:
+    """Create a directory on a remote host via RWS."""
+    mkdir_cmd = {"action": "mkdir", "work_dir": work_dir, "path": path}
 
-    work_dir = sys.argv[1]
-    rel_path = sys.argv[2]
-
-    norm_work = os.path.normpath(work_dir)
-    target = os.path.normpath(os.path.join(work_dir, rel_path))
-    if not target.startswith(norm_work + os.sep):
-        print(json.dumps({"error": "Path outside work_dir"}))
-        sys.exit(1)
-    os.makedirs(target, exist_ok=True)
-    print(json.dumps({"status": "ok"}))
-""")
-
-
-def _mkdir_remote_fallback(host: str, work_dir: str, path: str) -> MkdirResponse:
-    _acquire_ssh_slot(host)
     try:
-        result = _run_ssh(host, _REMOTE_MKDIR_SCRIPT, [work_dir, path])
-    except subprocess.TimeoutExpired:
-        raise HTTPException(status_code=504, detail="Remote mkdir timed out")
-    finally:
-        _release_ssh_slot(host)
+        rws = get_remote_worker_server(host)
+        data = rws.execute(mkdir_cmd)
+    except (RuntimeError, OSError, json.JSONDecodeError) as exc:
+        raise HTTPException(status_code=502, detail=f"Remote worker server error: {exc}")
 
-    if result.returncode != 0:
-        try:
-            err = json.loads(result.stdout)
-            detail = err.get("error", "Remote mkdir failed")
-        except (json.JSONDecodeError, KeyError):
-            detail = result.stderr.strip() or "Remote mkdir failed"
+    if "error" in data:
+        detail = data["error"]
         raise HTTPException(status_code=502, detail=detail)
 
     return MkdirResponse(status="ok")
-
-
-def _mkdir_remote(host: str, work_dir: str, path: str) -> MkdirResponse:
-    try:
-        server = get_remote_file_server(host)
-        data = server.execute({"action": "mkdir", "work_dir": work_dir, "path": path})
-        if "error" in data:
-            raise RuntimeError(data["error"])
-        return MkdirResponse(status="ok")
-    except (RuntimeError, OSError, json.JSONDecodeError) as exc:
-        logger.warning(
-            "Persistent server failed for mkdir on %s, falling back: %s",
-            host,
-            exc,
-        )
-        return _mkdir_remote_fallback(host, work_dir, path)

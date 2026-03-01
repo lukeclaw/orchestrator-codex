@@ -136,13 +136,13 @@ async def lifespan(app: FastAPI):
     # Shutdown: stop monitor, state manager, tunnels
     logger.info("Orchestrator API shutting down")
 
-    # Stop persistent remote file servers
-    from orchestrator.terminal.remote_file_server import shutdown_all_servers
+    # Stop remote worker server clients (forward tunnels)
+    from orchestrator.terminal.remote_worker_server import shutdown_all_rws_servers
 
     try:
-        shutdown_all_servers()
+        shutdown_all_rws_servers()
     except Exception:
-        logger.exception("Remote file server shutdown failed (non-fatal)")
+        logger.exception("Remote worker server shutdown failed (non-fatal)")
 
     await orch.stop()
     if state_manager:

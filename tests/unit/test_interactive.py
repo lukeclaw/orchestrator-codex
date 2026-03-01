@@ -12,7 +12,6 @@ from orchestrator.terminal.interactive import (
     close_interactive_cli,
     get_active_cli,
     open_interactive_cli,
-    open_interactive_cli_remote,
     send_to_interactive_cli,
 )
 
@@ -72,57 +71,6 @@ class TestOpenInteractiveCLI:
 
         assert get_active_cli("sess-1") is cli
         assert get_active_cli("nonexistent") is None
-
-
-class TestOpenInteractiveCLIRemote:
-    """Tests for open_interactive_cli_remote."""
-
-    @patch("orchestrator.terminal.interactive.tmux.send_keys")
-    @patch("orchestrator.terminal.interactive.ssh.wait_for_prompt", return_value=True)
-    @patch("orchestrator.terminal.interactive.ssh.remote_connect")
-    @patch("orchestrator.terminal.interactive.tmux.create_window")
-    def test_creates_window_and_connects(self, mock_create, mock_connect, mock_wait, mock_send):
-        cli = open_interactive_cli_remote("orchestrator", "worker1", "sess-1", host="user/rdev-vm")
-
-        mock_create.assert_called_once_with("orchestrator", "worker1-icli")
-        mock_connect.assert_called_once_with("orchestrator", "worker1-icli", "user/rdev-vm")
-        mock_wait.assert_called_once_with("orchestrator", "worker1-icli", timeout=30)
-        assert cli.window_name == "worker1-icli"
-        assert cli.status == "active"
-
-    @patch("orchestrator.terminal.interactive.tmux.kill_window")
-    @patch("orchestrator.terminal.interactive.ssh.wait_for_prompt", return_value=False)
-    @patch("orchestrator.terminal.interactive.ssh.remote_connect")
-    @patch("orchestrator.terminal.interactive.tmux.create_window")
-    def test_cleans_up_on_ssh_timeout(self, mock_create, mock_connect, mock_wait, mock_kill):
-        with pytest.raises(RuntimeError, match="SSH to .* timed out"):
-            open_interactive_cli_remote("orchestrator", "worker1", "sess-1", host="user/rdev-vm")
-
-        mock_kill.assert_called_once_with("orchestrator", "worker1-icli")
-        assert get_active_cli("sess-1") is None
-
-    @patch("orchestrator.terminal.interactive.time.sleep")
-    @patch("orchestrator.terminal.interactive.tmux.send_keys")
-    @patch("orchestrator.terminal.interactive.ssh.wait_for_prompt", return_value=True)
-    @patch("orchestrator.terminal.interactive.ssh.remote_connect")
-    @patch("orchestrator.terminal.interactive.tmux.create_window")
-    def test_sends_command_and_cwd(
-        self, mock_create, mock_connect, mock_wait, mock_send, mock_sleep
-    ):
-        cli = open_interactive_cli_remote(
-            "orchestrator",
-            "worker1",
-            "sess-1",
-            host="user/rdev-vm",
-            command="npm login",
-            cwd="/home/user/project",
-        )
-
-        # Should send cd first, then command
-        calls = mock_send.call_args_list
-        assert any("cd /home/user/project" in str(c) for c in calls), f"Expected cd call in {calls}"
-        assert any("npm login" in str(c) for c in calls), f"Expected command call in {calls}"
-        assert cli.initial_command == "npm login"
 
 
 class TestCloseInteractiveCLI:

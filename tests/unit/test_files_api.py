@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import os
 import subprocess
 import time
@@ -255,23 +254,13 @@ class TestResolveSession:
 
 
 class TestListRemoteDir:
-    """Tests for _list_remote_dir using fallback path (persistent server mocked out)."""
+    """Tests for _list_remote_dir via RWS."""
 
-    def _ssh_ok(self, entries, git_available=True):
-        return MagicMock(
-            returncode=0,
-            stdout=json.dumps({"entries": entries, "git_available": git_available}),
-            stderr="",
-        )
-
-    @patch(
-        "orchestrator.api.routes.files.get_remote_file_server",
-        side_effect=RuntimeError("no server"),
-    )
-    @patch("orchestrator.api.routes.files._run_ssh")
-    def test_valid_listing(self, mock_ssh, _mock_server):
-        mock_ssh.return_value = self._ssh_ok(
-            [
+    @patch("orchestrator.api.routes.files.get_remote_worker_server")
+    def test_valid_listing(self, mock_get_rws):
+        mock_rws = MagicMock()
+        mock_rws.execute.return_value = {
+            "entries": [
                 {
                     "name": "src",
                     "path": "src",
@@ -290,8 +279,10 @@ class TestListRemoteDir:
                     "children_count": None,
                     "git_status": None,
                 },
-            ]
-        )
+            ],
+            "git_available": True,
+        }
+        mock_get_rws.return_value = mock_rws
         entries, git_avail = _list_remote_dir("host", "/work", ".", False)
         assert len(entries) == 2
         assert entries[0].name == "src"
@@ -300,175 +291,104 @@ class TestListRemoteDir:
         assert entries[1].human_size == "1.0KB"
         assert git_avail is True
 
-    @patch(
-        "orchestrator.api.routes.files.get_remote_file_server",
-        side_effect=RuntimeError("no server"),
-    )
-    @patch("orchestrator.api.routes.files._run_ssh")
-    def test_remote_error_json(self, mock_ssh, _mock_server):
-        mock_ssh.return_value = MagicMock(
-            returncode=1,
-            stdout=json.dumps({"error": "Directory not found"}),
-            stderr="",
-        )
+    @patch("orchestrator.api.routes.files.get_remote_worker_server")
+    def test_remote_error_json(self, mock_get_rws):
+        mock_rws = MagicMock()
+        mock_rws.execute.return_value = {"error": "Directory not found"}
+        mock_get_rws.return_value = mock_rws
         with pytest.raises(HTTPException) as exc_info:
             _list_remote_dir("host", "/work", "bad/path", False)
         assert exc_info.value.status_code == 404
 
-    @patch(
-        "orchestrator.api.routes.files.get_remote_file_server",
-        side_effect=RuntimeError("no server"),
-    )
-    @patch("orchestrator.api.routes.files._run_ssh")
-    def test_ssh_timeout(self, mock_ssh, _mock_server):
-        mock_ssh.side_effect = subprocess.TimeoutExpired(cmd="ssh", timeout=15)
-        with pytest.raises(HTTPException) as exc_info:
-            _list_remote_dir("host", "/work", ".", False)
-        assert exc_info.value.status_code == 504
-
-    @patch(
-        "orchestrator.api.routes.files.get_remote_file_server",
-        side_effect=RuntimeError("no server"),
-    )
-    @patch("orchestrator.api.routes.files._run_ssh")
-    def test_nonzero_return_no_json(self, mock_ssh, _mock_server):
-        mock_ssh.return_value = MagicMock(
-            returncode=1,
-            stdout="not json",
-            stderr="Connection refused",
-        )
+    @patch("orchestrator.api.routes.files.get_remote_worker_server")
+    def test_rws_connection_error(self, mock_get_rws):
+        mock_get_rws.side_effect = RuntimeError("RWS not available")
         with pytest.raises(HTTPException) as exc_info:
             _list_remote_dir("host", "/work", ".", False)
         assert exc_info.value.status_code == 502
 
-    @patch(
-        "orchestrator.api.routes.files.get_remote_file_server",
-        side_effect=RuntimeError("no server"),
-    )
-    @patch("orchestrator.api.routes.files._run_ssh")
-    def test_invalid_json_stdout(self, mock_ssh, _mock_server):
-        mock_ssh.return_value = MagicMock(
-            returncode=0,
-            stdout="not json at all",
-            stderr="",
-        )
+    @patch("orchestrator.api.routes.files.get_remote_worker_server")
+    def test_rws_generic_error(self, mock_get_rws):
+        mock_rws = MagicMock()
+        mock_rws.execute.return_value = {"error": "Some internal error"}
+        mock_get_rws.return_value = mock_rws
         with pytest.raises(HTTPException) as exc_info:
             _list_remote_dir("host", "/work", ".", False)
         assert exc_info.value.status_code == 502
 
 
 class TestReadRemoteFile:
-    """Tests for _read_remote_file using fallback path (persistent server mocked out)."""
+    """Tests for _read_remote_file via RWS."""
 
-    @patch(
-        "orchestrator.api.routes.files.get_remote_file_server",
-        side_effect=RuntimeError("no server"),
-    )
-    @patch("orchestrator.api.routes.files._run_ssh")
-    def test_read_text_file(self, mock_ssh, _mock_server):
-        mock_ssh.return_value = MagicMock(
-            returncode=0,
-            stdout=json.dumps(
-                {
-                    "content": "hello world\n",
-                    "truncated": False,
-                    "total_lines": 1,
-                    "size": 12,
-                    "binary": False,
-                }
-            ),
-            stderr="",
-        )
+    @patch("orchestrator.api.routes.files.get_remote_worker_server")
+    def test_read_text_file(self, mock_get_rws):
+        mock_rws = MagicMock()
+        mock_rws.execute.return_value = {
+            "content": "hello world\n",
+            "truncated": False,
+            "total_lines": 1,
+            "size": 12,
+            "binary": False,
+        }
+        mock_get_rws.return_value = mock_rws
         resp = _read_remote_file("host", "/work", "hello.py", 500)
         assert resp.content == "hello world\n"
         assert resp.binary is False
         assert resp.language == "python"
         assert resp.truncated is False
 
-    @patch(
-        "orchestrator.api.routes.files.get_remote_file_server",
-        side_effect=RuntimeError("no server"),
-    )
-    @patch("orchestrator.api.routes.files._run_ssh")
-    def test_read_binary_file(self, mock_ssh, _mock_server):
-        mock_ssh.return_value = MagicMock(
-            returncode=0,
-            stdout=json.dumps(
-                {
-                    "content": "",
-                    "truncated": False,
-                    "total_lines": None,
-                    "size": 4096,
-                    "binary": True,
-                }
-            ),
-            stderr="",
-        )
+    @patch("orchestrator.api.routes.files.get_remote_worker_server")
+    def test_read_binary_file(self, mock_get_rws):
+        mock_rws = MagicMock()
+        mock_rws.execute.return_value = {
+            "content": "",
+            "truncated": False,
+            "total_lines": None,
+            "size": 4096,
+            "binary": True,
+        }
+        mock_get_rws.return_value = mock_rws
         resp = _read_remote_file("host", "/work", "image.bin", 500)
         assert resp.binary is True
         assert resp.content == ""
         assert resp.language is None
 
-    @patch(
-        "orchestrator.api.routes.files.get_remote_file_server",
-        side_effect=RuntimeError("no server"),
-    )
-    @patch("orchestrator.api.routes.files._run_ssh")
-    def test_read_truncated_file(self, mock_ssh, _mock_server):
-        mock_ssh.return_value = MagicMock(
-            returncode=0,
-            stdout=json.dumps(
-                {
-                    "content": "line1\nline2\n",
-                    "truncated": True,
-                    "total_lines": 100,
-                    "size": 500,
-                    "binary": False,
-                }
-            ),
-            stderr="",
-        )
+    @patch("orchestrator.api.routes.files.get_remote_worker_server")
+    def test_read_truncated_file(self, mock_get_rws):
+        mock_rws = MagicMock()
+        mock_rws.execute.return_value = {
+            "content": "line1\nline2\n",
+            "truncated": True,
+            "total_lines": 100,
+            "size": 500,
+            "binary": False,
+        }
+        mock_get_rws.return_value = mock_rws
         resp = _read_remote_file("host", "/work", "big.txt", 2)
         assert resp.truncated is True
         assert resp.total_lines == 100
 
-    @patch(
-        "orchestrator.api.routes.files.get_remote_file_server",
-        side_effect=RuntimeError("no server"),
-    )
-    @patch("orchestrator.api.routes.files._run_ssh")
-    def test_ssh_timeout(self, mock_ssh, _mock_server):
-        mock_ssh.side_effect = subprocess.TimeoutExpired(cmd="ssh", timeout=15)
+    @patch("orchestrator.api.routes.files.get_remote_worker_server")
+    def test_rws_connection_error(self, mock_get_rws):
+        mock_get_rws.side_effect = RuntimeError("RWS not available")
         with pytest.raises(HTTPException) as exc_info:
             _read_remote_file("host", "/work", "file.py", 500)
-        assert exc_info.value.status_code == 504
+        assert exc_info.value.status_code == 502
 
-    @patch(
-        "orchestrator.api.routes.files.get_remote_file_server",
-        side_effect=RuntimeError("no server"),
-    )
-    @patch("orchestrator.api.routes.files._run_ssh")
-    def test_file_not_found(self, mock_ssh, _mock_server):
-        mock_ssh.return_value = MagicMock(
-            returncode=1,
-            stdout=json.dumps({"error": "File not found"}),
-            stderr="",
-        )
+    @patch("orchestrator.api.routes.files.get_remote_worker_server")
+    def test_file_not_found(self, mock_get_rws):
+        mock_rws = MagicMock()
+        mock_rws.execute.return_value = {"error": "File not found"}
+        mock_get_rws.return_value = mock_rws
         with pytest.raises(HTTPException) as exc_info:
             _read_remote_file("host", "/work", "missing.py", 500)
         assert exc_info.value.status_code == 404
 
-    @patch(
-        "orchestrator.api.routes.files.get_remote_file_server",
-        side_effect=RuntimeError("no server"),
-    )
-    @patch("orchestrator.api.routes.files._run_ssh")
-    def test_file_too_large(self, mock_ssh, _mock_server):
-        mock_ssh.return_value = MagicMock(
-            returncode=1,
-            stdout=json.dumps({"error": "File too large (>5MB)", "code": 413}),
-            stderr="",
-        )
+    @patch("orchestrator.api.routes.files.get_remote_worker_server")
+    def test_file_too_large(self, mock_get_rws):
+        mock_rws = MagicMock()
+        mock_rws.execute.return_value = {"error": "File too large (>5MB)", "code": 413}
+        mock_get_rws.return_value = mock_rws
         with pytest.raises(HTTPException) as exc_info:
             _read_remote_file("host", "/work", "huge.bin", 500)
         assert exc_info.value.status_code == 413
@@ -589,35 +509,6 @@ class TestDetectRemoteWorkDir:
         assert result is None
 
 
-class TestSshSemaphore:
-    @patch("orchestrator.api.routes.files._run_ssh")
-    def test_semaphore_limits_concurrency(self, mock_ssh):
-        """Verify that the semaphore limits concurrent SSH calls to 8."""
-        from orchestrator.api.routes.files import (
-            _get_host_semaphore,
-            _host_semaphores,
-        )
-
-        host = "test-sem-host"
-        _host_semaphores.pop(host, None)
-        sem = _get_host_semaphore(host)
-
-        # Acquire all 8 slots
-        for _ in range(8):
-            assert sem.acquire(timeout=0)
-        # 9th should fail immediately
-        assert not sem.acquire(timeout=0)
-
-        # Release one and try again
-        sem.release()
-        assert sem.acquire(timeout=0)
-
-        # Clean up
-        for _ in range(8):
-            sem.release()
-        _host_semaphores.pop(host, None)
-
-
 # ---------------------------------------------------------------------------
 # Phase 3: Write endpoint tests
 # ---------------------------------------------------------------------------
@@ -716,105 +607,75 @@ class TestWriteFileLocal:
 
 
 class TestWriteFileRemote:
-    """Tests for _write_remote_file using fallback path (persistent server mocked out)."""
+    """Tests for _write_remote_file via RWS."""
 
-    @patch(
-        "orchestrator.api.routes.files.get_remote_file_server",
-        side_effect=RuntimeError("no server"),
-    )
-    @patch("orchestrator.api.routes.files.subprocess.run")
-    def test_write_remote_success(self, mock_run, _mock_server):
-        mock_run.return_value = MagicMock(
-            returncode=0,
-            stdout=json.dumps({"conflict": False, "size": 11, "modified": 1700000000.0}),
-            stderr=b"",
-        )
+    @patch("orchestrator.api.routes.files.get_remote_worker_server")
+    def test_write_remote_success(self, mock_get_rws):
+        mock_rws = MagicMock()
+        mock_rws.execute.return_value = {"conflict": False, "size": 11, "modified": 1700000000.0}
+        mock_get_rws.return_value = mock_rws
         body = FileWriteRequest(path="test.py", content="hello world")
         resp = _write_remote_file("host", "/work", body)
         assert resp.conflict is False
         assert resp.size == 11
         assert resp.modified == 1700000000.0
 
-    @patch(
-        "orchestrator.api.routes.files.get_remote_file_server",
-        side_effect=RuntimeError("no server"),
-    )
-    @patch("orchestrator.api.routes.files.subprocess.run")
-    def test_write_remote_timeout(self, mock_run, _mock_server):
-        mock_run.side_effect = subprocess.TimeoutExpired(cmd="ssh", timeout=15)
+    @patch("orchestrator.api.routes.files.get_remote_worker_server")
+    def test_write_remote_connection_error(self, mock_get_rws):
+        mock_get_rws.side_effect = RuntimeError("RWS not available")
         body = FileWriteRequest(path="test.py", content="data")
         with pytest.raises(HTTPException) as exc_info:
             _write_remote_file("host", "/work", body)
-        assert exc_info.value.status_code == 504
+        assert exc_info.value.status_code == 502
 
-    @patch(
-        "orchestrator.api.routes.files.get_remote_file_server",
-        side_effect=RuntimeError("no server"),
-    )
-    @patch("orchestrator.api.routes.files.subprocess.run")
-    def test_write_remote_permission_denied(self, mock_run, _mock_server):
-        mock_run.return_value = MagicMock(
-            returncode=1,
-            stdout=json.dumps({"error": "Permission denied"}),
-            stderr=b"",
-        )
+    @patch("orchestrator.api.routes.files.get_remote_worker_server")
+    def test_write_remote_permission_denied(self, mock_get_rws):
+        mock_rws = MagicMock()
+        mock_rws.execute.return_value = {"error": "Permission denied"}
+        mock_get_rws.return_value = mock_rws
         body = FileWriteRequest(path="test.py", content="data")
         with pytest.raises(HTTPException) as exc_info:
             _write_remote_file("host", "/work", body)
         assert exc_info.value.status_code == 403
 
-    @patch(
-        "orchestrator.api.routes.files.get_remote_file_server",
-        side_effect=RuntimeError("no server"),
-    )
-    @patch("orchestrator.api.routes.files.subprocess.run")
-    def test_write_remote_conflict(self, mock_run, _mock_server):
-        mock_run.return_value = MagicMock(
-            returncode=0,
-            stdout=json.dumps({"conflict": True, "size": 100, "modified": 1700000000.0}),
-            stderr=b"",
-        )
+    @patch("orchestrator.api.routes.files.get_remote_worker_server")
+    def test_write_remote_conflict(self, mock_get_rws):
+        mock_rws = MagicMock()
+        mock_rws.execute.return_value = {"conflict": True, "size": 100, "modified": 1700000000.0}
+        mock_get_rws.return_value = mock_rws
         body = FileWriteRequest(path="test.py", content="data", expected_mtime=1699999999.0)
         resp = _write_remote_file("host", "/work", body)
         assert resp.conflict is True
         assert resp.size == 100
 
-    @patch(
-        "orchestrator.api.routes.files.get_remote_file_server",
-        side_effect=RuntimeError("no server"),
-    )
-    @patch("orchestrator.api.routes.files.subprocess.run")
-    def test_base64_encoding_correctness(self, mock_run, _mock_server):
-        """Verify content is base64-encoded in the SSH script."""
+    @patch("orchestrator.api.routes.files.get_remote_worker_server")
+    def test_base64_sent_to_rws(self, mock_get_rws):
+        """Verify content is base64-encoded in the RWS command."""
         import base64
 
         content = "print('hello')\n"
         expected_b64 = base64.b64encode(content.encode("utf-8")).decode("ascii")
 
-        mock_run.return_value = MagicMock(
-            returncode=0,
-            stdout=json.dumps({"conflict": False, "size": len(content), "modified": 1700000000.0}),
-            stderr=b"",
-        )
+        mock_rws = MagicMock()
+        mock_rws.execute.return_value = {
+            "conflict": False,
+            "size": len(content),
+            "modified": 1700000000.0,
+        }
+        mock_get_rws.return_value = mock_rws
         body = FileWriteRequest(path="test.py", content=content)
         _write_remote_file("host", "/work", body)
 
-        # The script sent via stdin should contain the base64
-        call_args = mock_run.call_args
-        script_input = call_args.kwargs.get("input") or call_args[1].get("input", b"")
-        assert expected_b64.encode() in script_input
+        # Verify the execute call included the base64 content
+        call_args = mock_rws.execute.call_args[0][0]
+        assert call_args["content_b64"] == expected_b64
 
-    @patch(
-        "orchestrator.api.routes.files.get_remote_file_server",
-        side_effect=RuntimeError("no server"),
-    )
-    @patch("orchestrator.api.routes.files.subprocess.run")
-    def test_cache_invalidation_after_write(self, mock_run, _mock_server):
-        mock_run.return_value = MagicMock(
-            returncode=0,
-            stdout=json.dumps({"conflict": False, "size": 5, "modified": 1700000000.0}),
-            stderr=b"",
-        )
+    @patch("orchestrator.api.routes.files.get_remote_worker_server")
+    def test_cache_invalidation_after_write(self, mock_get_rws):
+        mock_rws = MagicMock()
+        mock_rws.execute.return_value = {"conflict": False, "size": 5, "modified": 1700000000.0}
+        mock_get_rws.return_value = mock_rws
+
         # Pre-populate cache
         cache_key = "host::/work::test.py::500"
         _remote_content_cache[cache_key] = (time.monotonic(), MagicMock())
@@ -859,67 +720,29 @@ class TestDeleteLocal:
 
 
 class TestDeleteRemote:
-    @patch(
-        "orchestrator.api.routes.files.get_remote_file_server",
-        side_effect=RuntimeError("no server"),
-    )
-    @patch("orchestrator.api.routes.files._run_ssh")
-    def test_delete_remote_success(self, mock_ssh, _mock_server):
-        mock_ssh.return_value = MagicMock(
-            returncode=0,
-            stdout=json.dumps({"status": "ok"}),
-            stderr="",
-        )
+    @patch("orchestrator.api.routes.files.get_remote_worker_server")
+    def test_delete_remote_success(self, mock_get_rws):
+        mock_rws = MagicMock()
+        mock_rws.execute.return_value = {"status": "ok"}
+        mock_get_rws.return_value = mock_rws
         resp = _delete_remote("host", "/work", "file.txt")
         assert resp.status == "ok"
 
-    @patch(
-        "orchestrator.api.routes.files.get_remote_file_server",
-        side_effect=RuntimeError("no server"),
-    )
-    @patch("orchestrator.api.routes.files._run_ssh")
-    def test_delete_remote_not_found(self, mock_ssh, _mock_server):
-        mock_ssh.return_value = MagicMock(
-            returncode=1,
-            stdout=json.dumps({"error": "Not found"}),
-            stderr="",
-        )
+    @patch("orchestrator.api.routes.files.get_remote_worker_server")
+    def test_delete_remote_not_found(self, mock_get_rws):
+        mock_rws = MagicMock()
+        mock_rws.execute.return_value = {"error": "Not found"}
+        mock_get_rws.return_value = mock_rws
         with pytest.raises(HTTPException) as exc_info:
             _delete_remote("host", "/work", "missing.txt")
         assert exc_info.value.status_code == 404
 
-    @patch(
-        "orchestrator.api.routes.files.get_remote_file_server",
-        side_effect=RuntimeError("no server"),
-    )
-    @patch("orchestrator.api.routes.files._run_ssh")
-    def test_delete_remote_timeout(self, mock_ssh, _mock_server):
-        mock_ssh.side_effect = subprocess.TimeoutExpired(cmd="ssh", timeout=15)
+    @patch("orchestrator.api.routes.files.get_remote_worker_server")
+    def test_delete_remote_connection_error(self, mock_get_rws):
+        mock_get_rws.side_effect = RuntimeError("RWS not available")
         with pytest.raises(HTTPException) as exc_info:
             _delete_remote("host", "/work", "file.txt")
-        assert exc_info.value.status_code == 504
-
-    @patch("orchestrator.api.routes.files._run_ssh")
-    def test_delete_falls_back_when_persistent_server_returns_unknown_action(self, mock_ssh):
-        """If the persistent server is running an old script that doesn't know
-        'delete', the error should trigger fallback to one-shot SSH."""
-        mock_server = MagicMock()
-        mock_server.execute.return_value = {"error": "Unknown action: delete"}
-
-        mock_ssh.return_value = MagicMock(
-            returncode=0,
-            stdout=json.dumps({"status": "ok"}),
-            stderr="",
-        )
-
-        with patch(
-            "orchestrator.api.routes.files.get_remote_file_server",
-            return_value=mock_server,
-        ):
-            resp = _delete_remote("host", "/work", "file.txt")
-
-        assert resp.status == "ok"
-        mock_ssh.assert_called_once()  # fallback was used
+        assert exc_info.value.status_code == 502
 
 
 # ---------------------------------------------------------------------------
@@ -981,67 +804,29 @@ class TestMoveLocal:
 
 
 class TestMoveRemote:
-    @patch(
-        "orchestrator.api.routes.files.get_remote_file_server",
-        side_effect=RuntimeError("no server"),
-    )
-    @patch("orchestrator.api.routes.files._run_ssh")
-    def test_move_remote_success(self, mock_ssh, _mock_server):
-        mock_ssh.return_value = MagicMock(
-            returncode=0,
-            stdout=json.dumps({"status": "ok"}),
-            stderr="",
-        )
+    @patch("orchestrator.api.routes.files.get_remote_worker_server")
+    def test_move_remote_success(self, mock_get_rws):
+        mock_rws = MagicMock()
+        mock_rws.execute.return_value = {"status": "ok"}
+        mock_get_rws.return_value = mock_rws
         resp = _move_remote("host", "/work", "old.txt", "new.txt")
         assert resp.status == "ok"
 
-    @patch(
-        "orchestrator.api.routes.files.get_remote_file_server",
-        side_effect=RuntimeError("no server"),
-    )
-    @patch("orchestrator.api.routes.files._run_ssh")
-    def test_move_remote_not_found(self, mock_ssh, _mock_server):
-        mock_ssh.return_value = MagicMock(
-            returncode=1,
-            stdout=json.dumps({"error": "Not found"}),
-            stderr="",
-        )
+    @patch("orchestrator.api.routes.files.get_remote_worker_server")
+    def test_move_remote_not_found(self, mock_get_rws):
+        mock_rws = MagicMock()
+        mock_rws.execute.return_value = {"error": "Not found"}
+        mock_get_rws.return_value = mock_rws
         with pytest.raises(HTTPException) as exc_info:
             _move_remote("host", "/work", "missing.txt", "dest.txt")
         assert exc_info.value.status_code == 404
 
-    @patch(
-        "orchestrator.api.routes.files.get_remote_file_server",
-        side_effect=RuntimeError("no server"),
-    )
-    @patch("orchestrator.api.routes.files._run_ssh")
-    def test_move_remote_timeout(self, mock_ssh, _mock_server):
-        mock_ssh.side_effect = subprocess.TimeoutExpired(cmd="ssh", timeout=15)
+    @patch("orchestrator.api.routes.files.get_remote_worker_server")
+    def test_move_remote_connection_error(self, mock_get_rws):
+        mock_get_rws.side_effect = RuntimeError("RWS not available")
         with pytest.raises(HTTPException) as exc_info:
             _move_remote("host", "/work", "old.txt", "new.txt")
-        assert exc_info.value.status_code == 504
-
-    @patch("orchestrator.api.routes.files._run_ssh")
-    def test_move_falls_back_when_persistent_server_returns_unknown_action(self, mock_ssh):
-        """If the persistent server is running an old script that doesn't know
-        'move', the error should trigger fallback to one-shot SSH."""
-        mock_server = MagicMock()
-        mock_server.execute.return_value = {"error": "Unknown action: move"}
-
-        mock_ssh.return_value = MagicMock(
-            returncode=0,
-            stdout=json.dumps({"status": "ok"}),
-            stderr="",
-        )
-
-        with patch(
-            "orchestrator.api.routes.files.get_remote_file_server",
-            return_value=mock_server,
-        ):
-            resp = _move_remote("host", "/work", "old.txt", "new.txt")
-
-        assert resp.status == "ok"
-        mock_ssh.assert_called_once()  # fallback was used
+        assert exc_info.value.status_code == 502
 
 
 class TestMkdirLocal:
@@ -1067,47 +852,17 @@ class TestMkdirLocal:
 
 
 class TestMkdirRemote:
-    @patch(
-        "orchestrator.api.routes.files.get_remote_file_server",
-        side_effect=RuntimeError("no server"),
-    )
-    @patch("orchestrator.api.routes.files._run_ssh")
-    def test_mkdir_remote_success(self, mock_ssh, _mock_server):
-        mock_ssh.return_value = MagicMock(
-            returncode=0,
-            stdout=json.dumps({"status": "ok"}),
-            stderr="",
-        )
+    @patch("orchestrator.api.routes.files.get_remote_worker_server")
+    def test_mkdir_remote_success(self, mock_get_rws):
+        mock_rws = MagicMock()
+        mock_rws.execute.return_value = {"status": "ok"}
+        mock_get_rws.return_value = mock_rws
         resp = _mkdir_remote("host", "/work", "newdir")
         assert resp.status == "ok"
 
-    @patch(
-        "orchestrator.api.routes.files.get_remote_file_server",
-        side_effect=RuntimeError("no server"),
-    )
-    @patch("orchestrator.api.routes.files._run_ssh")
-    def test_mkdir_remote_timeout(self, mock_ssh, _mock_server):
-        mock_ssh.side_effect = subprocess.TimeoutExpired(cmd="ssh", timeout=15)
+    @patch("orchestrator.api.routes.files.get_remote_worker_server")
+    def test_mkdir_remote_connection_error(self, mock_get_rws):
+        mock_get_rws.side_effect = RuntimeError("RWS not available")
         with pytest.raises(HTTPException) as exc_info:
             _mkdir_remote("host", "/work", "newdir")
-        assert exc_info.value.status_code == 504
-
-    @patch("orchestrator.api.routes.files._run_ssh")
-    def test_mkdir_falls_back_when_persistent_server_returns_unknown_action(self, mock_ssh):
-        mock_server = MagicMock()
-        mock_server.execute.return_value = {"error": "Unknown action: mkdir"}
-
-        mock_ssh.return_value = MagicMock(
-            returncode=0,
-            stdout=json.dumps({"status": "ok"}),
-            stderr="",
-        )
-
-        with patch(
-            "orchestrator.api.routes.files.get_remote_file_server",
-            return_value=mock_server,
-        ):
-            resp = _mkdir_remote("host", "/work", "newdir")
-
-        assert resp.status == "ok"
-        mock_ssh.assert_called_once()
+        assert exc_info.value.status_code == 502

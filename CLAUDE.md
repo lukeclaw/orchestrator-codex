@@ -28,6 +28,11 @@ Verify all changes with tests. Aim for full coverage of new and modified code pa
 
 Never use `window.confirm()`, `window.alert()`, `window.prompt()`, or any other native browser dialogs. They do not work in the Tauri webview. Instead, use the `<ConfirmPopover>` component (`components/common/ConfirmPopover.tsx`) for destructive action confirmations, which supports danger/warning/default variants and smart positioning.
 
+## Server Ports
+
+- **Backend API**: `http://localhost:8093` (uvicorn, configured in `orchestrator/launcher.py`)
+- **Frontend dev server**: `http://localhost:5173` (Vite, do not start a new one)
+
 ## Frontend — UI Inspection with Playwright
 
 Use Playwright MCP tools to verify frontend changes visually. The dev server runs at `http://localhost:5173` (do not start a new one). Always snapshot first to get `ref=` handles before clicking or screenshotting elements. Save screenshots to `tmp/`. Prefer read-only interaction — avoid typing or mutating app state when just exploring.

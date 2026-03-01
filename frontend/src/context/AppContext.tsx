@@ -27,6 +27,7 @@ interface AppState {
   refreshRdevs: (forceRefresh?: boolean) => Promise<void>
   refreshNotificationCount: () => Promise<void>
   removeSession: (id: string) => void
+  closeInteractiveCli: (sessionId: string) => void
 }
 
 const AppContext = createContext<AppState>({
@@ -46,6 +47,7 @@ const AppContext = createContext<AppState>({
   refreshRdevs: async () => {},
   refreshNotificationCount: async () => {},
   removeSession: () => {},
+  closeInteractiveCli: () => {},
 })
 
 export function useApp() {
@@ -214,10 +216,23 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setSessions(prev => prev.filter(s => s.id !== id))
   }, [])
 
+  const closeInteractiveCli = useCallback((sessionId: string) => {
+    setInteractiveCliSessions(prev => {
+      const next = new Set(prev)
+      next.delete(sessionId)
+      return next
+    })
+    setInteractiveCliMinimized(prev => {
+      const next = new Set(prev)
+      next.delete(sessionId)
+      return next
+    })
+  }, [])
+
   // Focus tracking now handled via WebSocket (see above)
 
   return (
-    <AppContext.Provider value={{ sessions, workers, projects, tasks, rdevs, notificationCount, connected, loading, smartPastePayload, interactiveCliSessions, interactiveCliMinimized, setSmartPastePayload, refresh: fetchAll, refreshRdevs, refreshNotificationCount, removeSession }}>
+    <AppContext.Provider value={{ sessions, workers, projects, tasks, rdevs, notificationCount, connected, loading, smartPastePayload, interactiveCliSessions, interactiveCliMinimized, setSmartPastePayload, refresh: fetchAll, refreshRdevs, refreshNotificationCount, removeSession, closeInteractiveCli }}>
       {children}
     </AppContext.Provider>
   )
