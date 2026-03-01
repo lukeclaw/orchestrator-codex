@@ -122,6 +122,78 @@ class TestApplyGitStatus:
         _apply_git_status(entries, {"other.py": "modified"})
         assert entries[0].git_status is None
 
+    def test_untracked_dir_propagates_to_children(self):
+        """When a folder is untracked, its children should inherit 'untracked'."""
+        child_file = FileEntry(name="app.py", path="new-pkg/app.py", is_dir=False, size=50)
+        child_dir = FileEntry(
+            name="sub",
+            path="new-pkg/sub",
+            is_dir=True,
+            children_count=1,
+            children=[
+                FileEntry(name="deep.py", path="new-pkg/sub/deep.py", is_dir=False, size=30),
+            ],
+        )
+        parent = FileEntry(
+            name="new-pkg",
+            path="new-pkg",
+            is_dir=True,
+            children_count=2,
+            children=[child_file, child_dir],
+        )
+        # git only reports the top-level untracked directory
+        _apply_git_status([parent], {"new-pkg": "untracked"})
+        assert parent.git_status == "untracked"
+        assert child_file.git_status == "untracked"
+        assert child_dir.git_status == "untracked"
+        assert child_dir.children[0].git_status == "untracked"
+
+    def test_ignored_dir_propagates_to_children(self):
+        """When a folder is ignored, its children should inherit 'ignored'."""
+        child = FileEntry(name="cache.dat", path="build/cache.dat", is_dir=False, size=100)
+        parent = FileEntry(
+            name="build",
+            path="build",
+            is_dir=True,
+            children_count=1,
+            children=[child],
+        )
+        _apply_git_status([parent], {"build": "ignored"})
+        assert parent.git_status == "ignored"
+        assert child.git_status == "ignored"
+
+    def test_modified_dir_does_not_propagate_to_clean_children(self):
+        """A folder with 'modified' status (from bubble-up) should NOT propagate
+        to children — only 'untracked' and 'ignored' propagate downward."""
+        clean_child = FileEntry(name="clean.py", path="src/clean.py", is_dir=False, size=50)
+        dirty_child = FileEntry(name="dirty.py", path="src/dirty.py", is_dir=False, size=50)
+        parent = FileEntry(
+            name="src",
+            path="src",
+            is_dir=True,
+            children_count=2,
+            children=[clean_child, dirty_child],
+        )
+        _apply_git_status([parent], {"src/dirty.py": "modified"})
+        assert parent.git_status == "modified"
+        assert dirty_child.git_status == "modified"
+        assert clean_child.git_status is None  # should NOT inherit "modified"
+
+    def test_child_explicit_status_not_overridden_by_inheritance(self):
+        """If a child has its own git status, it should not be overridden."""
+        child = FileEntry(name="moved.py", path="new-pkg/moved.py", is_dir=False, size=50)
+        parent = FileEntry(
+            name="new-pkg",
+            path="new-pkg",
+            is_dir=True,
+            children_count=1,
+            children=[child],
+        )
+        # Unusual but possible: parent is untracked but a child has explicit status
+        _apply_git_status([parent], {"new-pkg": "untracked", "new-pkg/moved.py": "added"})
+        assert parent.git_status == "untracked"
+        assert child.git_status == "added"  # explicit status preserved
+
 
 class TestGitStatusParsing:
     @patch("orchestrator.api.routes.files.subprocess.run")

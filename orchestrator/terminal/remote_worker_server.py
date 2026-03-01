@@ -104,7 +104,7 @@ _REMOTE_WORKER_SERVER_SCRIPT = textwrap.dedent("""\
         except Exception:
             pass
 
-        def apply_git(entries):
+        def apply_git(entries, inherited_status=None):
             if not git_available:
                 return
             for ent in entries:
@@ -123,8 +123,16 @@ _REMOTE_WORKER_SERVER_SCRIPT = textwrap.dedent("""\
                                     break
                             else:
                                 ent["git_status"] = non_ignored[0]
+                    elif inherited_status:
+                        ent["git_status"] = inherited_status
+                elif inherited_status:
+                    ent["git_status"] = inherited_status
+                # Propagate untracked/ignored downward (like VS Code)
+                propagate = None
+                if ent.get("git_status") in ("untracked", "ignored"):
+                    propagate = ent["git_status"]
                 if ent.get("children"):
-                    apply_git(ent["children"])
+                    apply_git(ent["children"], propagate)
 
         def scan_dir(abs_path, current_depth):
             entries = []
@@ -164,7 +172,10 @@ _REMOTE_WORKER_SERVER_SCRIPT = textwrap.dedent("""\
             return entries
 
         entries = scan_dir(target, 1)
-        apply_git(entries)
+        # If the listed directory itself is untracked/ignored, propagate to children
+        parent_status = git_statuses.get(rel_path) if rel_path != "." else None
+        initial_inherit = parent_status if parent_status in ("untracked", "ignored") else None
+        apply_git(entries, initial_inherit)
         return {"entries": entries, "git_available": git_available}
 
     def handle_read_file(cmd):

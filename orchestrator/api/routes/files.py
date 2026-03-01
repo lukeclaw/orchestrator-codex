@@ -548,7 +548,11 @@ def list_files(
         # Git status — always include ignored files so they appear greyed out
         git_statuses, git_available = _get_git_status(work_dir)
         if git_available:
-            _apply_git_status(entries, git_statuses)
+            # If the listed directory itself is untracked/ignored, its children
+            # won't appear individually in git status — propagate downward.
+            parent_status = git_statuses.get(path) if path != "." else None
+            initial_inherit = parent_status if parent_status in ("untracked", "ignored") else None
+            _apply_git_status(entries, git_statuses, initial_inherit)
 
     return DirectoryResponse(
         work_dir=info.work_dir,
@@ -623,8 +627,17 @@ def _scan_dir(
     return entries
 
 
-def _apply_git_status(entries: list[FileEntry], statuses: dict[str, str]) -> None:
-    """Attach git_status to entries that appear in git status output."""
+def _apply_git_status(
+    entries: list[FileEntry],
+    statuses: dict[str, str],
+    inherited_status: str | None = None,
+) -> None:
+    """Attach git_status to entries that appear in git status output.
+
+    When a directory is "untracked" or "ignored", git only reports the
+    directory itself — not its individual children.  Like VS Code, we
+    propagate that status **downward** so every descendant inherits it.
+    """
     for entry in entries:
         path = entry.path
         if path in statuses:
@@ -642,9 +655,23 @@ def _apply_git_status(entries: list[FileEntry], statuses: dict[str, str]) -> Non
                     entry.git_status = _highest_severity(non_ignored)
                 # else: all children are ignored, but we don't propagate "ignored"
                 # to the folder — only git's direct "!! dir/" marking does that.
+            elif inherited_status:
+                # No direct match and no children in git status — inherit from parent
+                entry.git_status = inherited_status
+        elif inherited_status:
+            # File with no direct match — inherit from parent
+            entry.git_status = inherited_status
+
+        # Determine what to propagate downward: only "untracked" and "ignored"
+        # warrant downward propagation (git collapses these into a single
+        # directory entry and doesn't list individual children).
+        propagate = None
+        if entry.git_status in ("untracked", "ignored"):
+            propagate = entry.git_status
+
         # Recurse into pre-fetched children
         if entry.children:
-            _apply_git_status(entry.children, statuses)
+            _apply_git_status(entry.children, statuses, propagate)
 
 
 _SEVERITY_ORDER = [

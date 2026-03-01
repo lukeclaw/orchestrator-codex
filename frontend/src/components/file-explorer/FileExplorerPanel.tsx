@@ -72,6 +72,17 @@ const GIT_BADGE: Record<string, string> = {
   ignored: 'I',
 }
 
+/** Propagate a parent's git_status down to cached children that lack their own. */
+function propagateGitStatus(nodes: TreeNode[], status: string): TreeNode[] {
+  return nodes.map(n => {
+    const updated = n.git_status ? n : { ...n, git_status: status }
+    if (updated.children && (updated.git_status === 'untracked' || updated.git_status === 'ignored')) {
+      return { ...updated, children: propagateGitStatus(updated.children, updated.git_status) }
+    }
+    return updated
+  })
+}
+
 /** Convert API entries into TreeNodes, preserving pre-fetched children. */
 function entriesToNodes(entries: FileEntry[], oldNodes?: TreeNode[]): TreeNode[] {
   const oldMap = new Map<string, TreeNode>()
@@ -80,12 +91,21 @@ function entriesToNodes(entries: FileEntry[], oldNodes?: TreeNode[]): TreeNode[]
   }
   return entries.map(e => {
     const old = oldMap.get(e.path)
+    let children: TreeNode[] | undefined
+    if (e.children) {
+      children = entriesToNodes(e.children, old?.children)
+    } else if (old?.expanded && old.children) {
+      children = old.children
+      // When the parent is untracked/ignored, propagate status to cached
+      // children that may have been fetched before the status was known.
+      if (e.git_status === 'untracked' || e.git_status === 'ignored') {
+        children = propagateGitStatus(children, e.git_status)
+      }
+    }
     return {
       ...e,
       expanded: old?.expanded ?? false,
-      children: e.children
-        ? entriesToNodes(e.children, old?.children)
-        : old?.expanded ? old.children : undefined,
+      children,
     }
   })
 }
