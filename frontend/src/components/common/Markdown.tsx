@@ -1,5 +1,4 @@
 import { useMemo, useState, useCallback } from 'react'
-import { openUrl } from '../../api/client'
 import { IconCopy, IconCheck } from './Icons'
 import './Markdown.css'
 
@@ -554,10 +553,8 @@ export default function Markdown({ children, className }: Props) {
             }
             return
           }
-          if (anchor.href && /^https?:\/\//.test(anchor.href)) {
-            e.preventDefault()
-            openUrl(anchor.href)
-          }
+          // External links are handled by the global click handler in main.tsx
+          // which intercepts <a href> clicks and opens them via openUrl().
         }}
       />
     </div>

@@ -755,7 +755,7 @@ export default function TaskDetailPage() {
                   ) : (
                     <div key={link.url} className="tdp-link">
                       <span className={`link-tag ${link.tag ? '' : 'empty'}`}>{link.tag || ''}</span>
-                      <a href={link.url} onClick={e => { e.preventDefault(); openUrl(link.url) }}>{link.url}</a>
+                      <a href={link.url}>{link.url}</a>
                       {isEditable && (
                         <div className="tdp-link-actions">
                           <button className="link-edit" onClick={() => startEditLink(link)} title="Edit">✎</button>
@@ -865,7 +865,7 @@ export default function TaskDetailPage() {
                         <a
                           href={st.links[0].url}
                           className="subtask-link-btn"
-                          onClick={e => { e.preventDefault(); e.stopPropagation(); openUrl(st.links[0].url) }}
+                          onClick={e => { e.stopPropagation() }}
                           title={st.links.length > 1 ? `${st.links[0].url} (+${st.links.length - 1} more)` : st.links[0].url}
                         >
                           ↗{st.links.length > 1 && <span className="link-more">...</span>}

@@ -258,7 +258,7 @@ export default function NotificationsPage() {
             {expanded.has(n.id) && n.notification_type === 'pr_comment' && n.metadata ? (
               <div className="np-pr-thread">
                 {n.metadata.pr_title && n.link_url && (
-                  <a href={n.link_url} className="np-pr-thread-title" onClick={e => { e.preventDefault(); e.stopPropagation(); openUrl(n.link_url!) }}>
+                  <a href={n.link_url} className="np-pr-thread-title" onClick={e => { e.stopPropagation() }}>
                     {n.metadata.pr_title}
                   </a>
                 )}
