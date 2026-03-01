@@ -179,6 +179,35 @@
   display: none !important;
 }
 
+/* Initial connecting skeleton */
+.terminal-skeleton {
+  position: absolute;
+  top: 12px;
+  left: 16px;
+  right: 16px;
+  bottom: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  z-index: 5;
+}
+
+.terminal-skeleton-line {
+  height: 12px;
+  border-radius: 3px;
+  background: rgba(110, 118, 129, 0.15);
+  animation: terminal-skeleton-pulse 1.5s ease-in-out infinite;
+}
+
+.terminal-skeleton-line:nth-child(even) {
+  animation-delay: 0.3s;
+}
+
+@keyframes terminal-skeleton-pulse {
+  0%, 100% { opacity: 0.3; }
+  50% { opacity: 0.7; }
+}
+
 /* Right-click context menu */
 .terminal-context-backdrop {
   position: fixed;

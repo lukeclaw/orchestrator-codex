@@ -18,7 +18,7 @@ interface Props {
   onPastingChange?: (pasting: boolean) => void  // Notify parent when context-menu paste is in progress
 }
 
-type ConnectionState = 'connected' | 'disconnected' | 'reconnecting'
+type ConnectionState = 'connecting' | 'connected' | 'disconnected' | 'reconnecting'
 
 // Reconnection backoff: 1s, 2s, 5s, 10s, 10s (max 5 attempts)
 const RECONNECT_DELAYS = [1000, 2000, 5000, 10000, 10000]
@@ -40,7 +40,7 @@ export default function TerminalView({ sessionId, wsPath, sessionStatus, disable
   onPastingChangeRef.current = onPastingChange
 
   const [isFocused, setIsFocused] = useState(false)
-  const [connectionState, setConnectionState] = useState<ConnectionState>('disconnected')
+  const [connectionState, setConnectionState] = useState<ConnectionState>('connecting')
   const [reconnectCountdown, setReconnectCountdown] = useState<number | null>(null)
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null)
   
@@ -364,8 +364,8 @@ export default function TerminalView({ sessionId, wsPath, sessionStatus, disable
     }
   }, [connectWebSocket])
 
-  // Determine overlay state
-  const showOverlay = connectionState !== 'connected' || isLocked
+  // Determine overlay state — 'connecting' (initial) shows skeleton, not an error
+  const showOverlay = (connectionState !== 'connected' && connectionState !== 'connecting') || isLocked
   const overlayMessage = isLocked
     ? 'Setting up connection...'
     : connectionState === 'reconnecting'
@@ -379,6 +379,7 @@ export default function TerminalView({ sessionId, wsPath, sessionStatus, disable
     'terminal-container',
     isFocused && 'terminal-focused',
     isLocked && 'terminal-locked',
+    connectionState === 'connecting' && 'terminal-connecting',
     connectionState === 'disconnected' && 'terminal-disconnected',
     connectionState === 'reconnecting' && 'terminal-reconnecting',
   ].filter(Boolean).join(' ')
@@ -462,6 +463,13 @@ export default function TerminalView({ sessionId, wsPath, sessionStatus, disable
         data-testid="terminal-view"
         onContextMenu={handleContextMenu}
       />
+      {connectionState === 'connecting' && (
+        <div className="terminal-skeleton">
+          {Array.from({ length: 6 }).map((_, i) => (
+            <div key={i} className="terminal-skeleton-line" style={{ width: `${20 + ((i * 23) % 55)}%` }} />
+          ))}
+        </div>
+      )}
       {showOverlay && (
         <div className="terminal-overlay">
           <div className="terminal-overlay-content">
