@@ -8,7 +8,7 @@ import AddSessionModal from '../components/sessions/AddSessionModal'
 import RdevTable, { RdevSortKey, SortDir } from '../components/rdevs/RdevTable'
 import CreateRdevModal from '../components/rdevs/CreateRdevModal'
 import CustomSelect from '../components/common/CustomSelect'
-import { IconRefresh, IconSessions, IconFilter, IconSearch } from '../components/common/Icons'
+import { IconRefresh, IconSessions, IconFilter, IconSearch, IconLaptop, IconServer } from '../components/common/Icons'
 import { useNotify } from '../context/NotificationContext'
 import './WorkersPage.css'
 
@@ -44,6 +44,7 @@ export default function WorkersPage() {
   )
   const [showAddModal, setShowAddModal] = useState(false)
   const [statusFilter, setStatusFilter] = useState('')
+  const [typeFilter, setTypeFilter] = useState<'' | 'local' | 'ssh' | 'rdev'>('')
   const [searchQuery, setSearchQuery] = useState('')
   const [sortBy, setSortBy] = useState<SortOption>(() => {
     const stored = localStorage.getItem(SORT_KEY)
@@ -79,6 +80,13 @@ export default function WorkersPage() {
   const filtered = (() => {
     let result = sorted
     if (statusFilter) result = result.filter(s => s.status === statusFilter)
+    if (typeFilter) {
+      result = result.filter(s => {
+        if (typeFilter === 'rdev') return s.host.includes('/')
+        if (typeFilter === 'ssh') return !s.host.includes('/') && s.host !== 'localhost'
+        return s.host === 'localhost' // local
+      })
+    }
     if (searchQuery) {
       const q = searchQuery.toLowerCase()
       result = result.filter(s => s.name.toLowerCase().includes(q))
@@ -95,6 +103,13 @@ export default function WorkersPage() {
   // Compute status counts for summary bar
   const statusCounts = workers.reduce<Record<string, number>>((acc, w) => {
     acc[w.status] = (acc[w.status] || 0) + 1
+    return acc
+  }, {})
+
+  // Compute type counts
+  const typeCounts = workers.reduce<Record<string, number>>((acc, w) => {
+    const type = w.host.includes('/') ? 'rdev' : w.host !== 'localhost' ? 'ssh' : 'local'
+    acc[type] = (acc[type] || 0) + 1
     return acc
   }, {})
 
@@ -328,12 +343,33 @@ export default function WorkersPage() {
                   <span className="status-summary-label">{status.replace('_', ' ')}</span>
                 </button>
               ))}
+
+              {Object.keys(typeCounts).length > 1 && (
+                <>
+                  <span className="status-summary-sep" />
+                  {(['local', 'ssh', 'rdev'] as const).filter(t => typeCounts[t]).map(type => (
+                    <button
+                      key={type}
+                      className={`status-summary-item type-filter-item${typeFilter === type ? ' active' : ''}`}
+                      onClick={() => setTypeFilter(typeFilter === type ? '' : type)}
+                      type="button"
+                    >
+                      <span className={`type-filter-icon type-filter-icon--${type}`}>
+                        {type === 'local' ? <IconLaptop size={11} /> : <IconServer size={11} />}
+                      </span>
+                      <span className="status-summary-count">{typeCounts[type]}</span>
+                      <span className="status-summary-label">{type}</span>
+                    </button>
+                  ))}
+                </>
+              )}
+
               <div className="wp-search-inline">
                 <IconSearch size={13} className="wp-search-inline-icon" />
                 <input
                   className="wp-search-inline-input"
                   type="text"
-                  placeholder="Filter..."
+                  placeholder="Filter by name..."
                   value={searchQuery}
                   onChange={e => setSearchQuery(e.target.value)}
                 />
@@ -361,12 +397,12 @@ export default function WorkersPage() {
             </div>
           ) : (
             <div className="workers-empty-state">
-              {statusFilter ? (
+              {statusFilter || typeFilter ? (
                 <>
                   <IconFilter size={32} />
-                  <p>No workers with status "{statusFilter}"</p>
-                  <button className="btn btn-secondary" onClick={() => setStatusFilter('')}>
-                    Clear filter
+                  <p>No workers matching current filters</p>
+                  <button className="btn btn-secondary" onClick={() => { setStatusFilter(''); setTypeFilter('') }}>
+                    Clear filters
                   </button>
                 </>
               ) : (

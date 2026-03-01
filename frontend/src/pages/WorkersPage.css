@@ -144,6 +144,38 @@
   text-transform: capitalize;
 }
 
+/* ─── Separator between status and type filters ─── */
+.status-summary-sep {
+  width: 1px;
+  height: 16px;
+  background: var(--border);
+  margin: 0 4px;
+  flex-shrink: 0;
+}
+
+/* ─── Type filter icons ─── */
+.type-filter-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+  flex-shrink: 0;
+}
+
+.type-filter-icon--local {
+  color: #3fb950;
+}
+
+.type-filter-icon--ssh {
+  color: #d29922;
+}
+
+.type-filter-icon--rdev {
+  color: #bc8cff;
+}
+
 /* ─── Inline search in status bar ─── */
 .wp-search-inline {
   display: flex;
