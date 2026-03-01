@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
-import { api, ApiError, openUrl } from '../api/client'
+import { api, ApiError } from '../api/client'
 import { useNotify } from '../context/NotificationContext'
 import { useApp } from '../context/AppContext'
 import { useSmartPaste } from '../hooks/useSmartPaste'
@@ -303,7 +303,7 @@ export default function SessionDetailPage() {
     try {
       await api(`/api/sessions/${id}`, { method: 'DELETE' })
       refresh()
-      navigate('/')
+      navigate(-1)
     } catch (e) {
       notify(e instanceof Error ? e.message : 'Failed to delete', 'error')
     }
@@ -690,7 +690,7 @@ export default function SessionDetailPage() {
                   key={port}
                   href={`http://localhost:${port}`}
                   className="sd-tunnel-badge"
-                  onClick={e => { e.preventDefault(); openUrl(`http://localhost:${port}`) }}
+                  onClick={e => { e.stopPropagation() }}
                   title={`Port forwarding: localhost:${port} → rdev:${port}`}
                 >
                   :{port}
