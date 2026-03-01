@@ -3,14 +3,12 @@ import { api } from '../../api/client'
 import { useNotify } from '../../context/NotificationContext'
 import {
   IconChevronRight,
-  IconFolder,
-  IconFolderOpen,
-  IconFile,
   IconFilter,
   IconX,
   IconEye,
   IconEyeOff,
 } from '../common/Icons'
+import { getFileIconUrl, getFolderIconUrl } from './fileIcons'
 import './FileExplorerPanel.css'
 
 // --- Types ---
@@ -854,7 +852,7 @@ export default function FileExplorerPanel({
               {newFileInput && (newFileInput.dirPath === '.' || newFileInput.dirPath === '') && (
                 <div className="fe-node fe-node--new-file" style={{ paddingLeft: 4 }}>
                   <span className="fe-chevron fe-chevron--spacer" />
-                  <span className="fe-icon"><IconFile size={16} /></span>
+                  <span className="fe-icon"><img src={getFileIconUrl('')} alt="" width={16} height={16} draggable={false} /></span>
                   <input
                     ref={newFileInputRef}
                     className="fe-new-file-input"
@@ -872,7 +870,7 @@ export default function FileExplorerPanel({
               {newFolderInput && (newFolderInput.dirPath === '.' || newFolderInput.dirPath === '') && (
                 <div className="fe-node fe-node--new-file" style={{ paddingLeft: 4 }}>
                   <span className="fe-chevron fe-chevron--spacer" />
-                  <span className="fe-icon"><IconFolder size={16} /></span>
+                  <span className="fe-icon"><img src={getFolderIconUrl('', false)} alt="" width={16} height={16} draggable={false} /></span>
                   <input
                     ref={newFolderInputRef}
                     className="fe-new-file-input"
@@ -944,10 +942,17 @@ export default function FileExplorerPanel({
 
                       {/* Icon */}
                       <span className="fe-icon">
-                        {node.is_dir
-                          ? (node.expanded ? <IconFolderOpen size={16} /> : <IconFolder size={16} />)
-                          : <IconFile size={16} />
-                        }
+                        <img
+                          src={node.is_dir
+                            ? getFolderIconUrl(node.name, !!node.expanded)
+                            : getFileIconUrl(node.name)
+                          }
+                          alt=""
+                          width={16}
+                          height={16}
+                          loading="lazy"
+                          draggable={false}
+                        />
                       </span>
 
                       {/* Name or inline rename input */}
@@ -983,7 +988,7 @@ export default function FileExplorerPanel({
                     {showNewFileAfter && (
                       <div className="fe-node fe-node--new-file" style={{ paddingLeft: (depth + 1) * 16 + 4 }}>
                         <span className="fe-chevron fe-chevron--spacer" />
-                        <span className="fe-icon"><IconFile size={16} /></span>
+                        <span className="fe-icon"><img src={getFileIconUrl('')} alt="" width={16} height={16} draggable={false} /></span>
                         <input
                           ref={newFileInputRef}
                           className="fe-new-file-input"
@@ -1001,7 +1006,7 @@ export default function FileExplorerPanel({
                     {showNewFolderAfter && (
                       <div className="fe-node fe-node--new-file" style={{ paddingLeft: (depth + 1) * 16 + 4 }}>
                         <span className="fe-chevron fe-chevron--spacer" />
-                        <span className="fe-icon"><IconFolder size={16} /></span>
+                        <span className="fe-icon"><img src={getFolderIconUrl('', false)} alt="" width={16} height={16} draggable={false} /></span>
                         <input
                           ref={newFolderInputRef}
                           className="fe-new-file-input"
