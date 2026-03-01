@@ -11,6 +11,8 @@ Backends:
 from __future__ import annotations
 
 import logging
+import sqlite3
+import threading
 from datetime import UTC, datetime
 
 from orchestrator.state.models import InteractiveCLI
@@ -74,7 +76,7 @@ def open_interactive_cli_via_rws(
         raise ValueError(f"Interactive CLI already active for session {session_id}")
 
     rws = get_remote_worker_server(host)
-    pty_id = rws.create_pty(cmd="/bin/bash", cwd=cwd, cols=cols, rows=rows)
+    pty_id = rws.create_pty(cmd="/bin/bash", cwd=cwd, cols=cols, rows=rows, session_id=session_id)
 
     # Send the initial command if provided
     if command:
@@ -237,16 +239,140 @@ def check_interactive_cli_alive(session_id: str, tmux_session: str = "orchestrat
     return True
 
 
-def cleanup_orphaned_icli_windows(
+def restore_icli_windows(
+    conn: sqlite3.Connection,
     tmux_session: str = "orchestrator",
 ) -> int:
-    """Kill any orphaned *-icli tmux windows from a previous server run."""
+    """Restore interactive CLI state from surviving tmux windows.
+
+    On server restart the in-memory ``_active_clis`` registry is empty, but
+    tmux windows named ``{worker}-icli`` may still be alive.  This scans for
+    them, looks up the matching session in the database, and repopulates the
+    registry so the frontend can reconnect seamlessly.
+
+    Windows with no matching session are killed as truly orphaned.
+    """
+    from orchestrator.state.repositories import sessions as repo
+
     windows = tmux.list_windows(tmux_session)
+    restored = 0
     killed = 0
     for w in windows:
-        if w.name.endswith("-icli"):
+        if not w.name.endswith("-icli"):
+            continue
+
+        worker_name = w.name[: -len("-icli")]
+        session = repo.get_session_by_name(conn, worker_name)
+        if session is None:
+            # No matching session — truly orphaned, kill it
             tmux.kill_window(tmux_session, w.name)
             killed += 1
+            continue
+
+        if session.id in _active_clis:
+            continue  # Already registered
+
+        cli = InteractiveCLI(
+            session_id=session.id,
+            window_name=w.name,
+            status="active",
+            created_at=datetime.now(UTC).isoformat(),
+        )
+        _active_clis[session.id] = cli
+        restored += 1
+
+    if restored:
+        logger.info("Restored %d interactive CLI sessions from tmux", restored)
     if killed:
-        logger.info("Cleaned up %d orphaned interactive CLI windows", killed)
-    return killed
+        logger.info("Killed %d orphaned interactive CLI windows (no matching session)", killed)
+
+    # Discover remote PTY-backed CLIs in the background (connecting to
+    # each daemon can take seconds — don't block server startup).
+    remote_sessions = [
+        s
+        for s in repo.list_sessions(conn, session_type="worker")
+        if s.host != "localhost" and s.id not in _active_clis
+    ]
+    if remote_sessions:
+        threading.Thread(
+            target=_restore_remote_iclis,
+            args=(remote_sessions,),
+            daemon=True,
+        ).start()
+
+    return restored
+
+
+def _restore_remote_iclis(sessions: list) -> None:
+    """Reconnect to alive PTY sessions on remote daemons using session_id.
+
+    The daemon tracks which session_id each PTY belongs to, so we can
+    directly map PTYs back to orchestrator sessions.  Orphaned PTYs
+    (no session_id or session_id not in our list) are destroyed.
+
+    Runs in a background thread so it doesn't block server startup.
+    """
+    from orchestrator.terminal.remote_worker_server import get_remote_worker_server
+
+    session_by_id = {s.id: s for s in sessions}
+    # Group sessions by host so we only query each daemon once
+    by_host: dict[str, list] = {}
+    for s in sessions:
+        by_host.setdefault(s.host, []).append(s)
+
+    for host, host_sessions in by_host.items():
+        try:
+            rws = get_remote_worker_server(host)
+        except RuntimeError:
+            # Daemon not ready yet — will be picked up by ensure_rws_starting later
+            continue
+
+        try:
+            ptys = rws.list_ptys()
+        except Exception:
+            continue
+
+        alive_ptys = [p for p in ptys if p.get("alive")]
+        if not alive_ptys:
+            continue
+
+        # Match PTYs to sessions by session_id
+        matched_session_ids: set[str] = set()
+        for pty in alive_ptys:
+            sid = pty.get("session_id")
+            if not sid or sid not in session_by_id or sid in _active_clis:
+                continue
+
+            cli = InteractiveCLI(
+                session_id=sid,
+                window_name=f"rws-{pty['pty_id']}",
+                status="active",
+                created_at=pty.get("created_at", datetime.now(UTC).isoformat()),
+                remote_pty_id=pty["pty_id"],
+                rws_host=host,
+            )
+            _active_clis[sid] = cli
+            matched_session_ids.add(sid)
+            logger.info(
+                "Restored remote interactive CLI for session %s (pty_id=%s, host=%s)",
+                sid,
+                pty["pty_id"],
+                host,
+            )
+
+        # Destroy orphaned PTYs (no session_id, or session not in our list)
+        for pty in alive_ptys:
+            sid = pty.get("session_id")
+            if sid and sid in matched_session_ids:
+                continue  # Just restored — keep it
+            if sid and sid in _active_clis:
+                continue  # Already registered before this run
+            try:
+                rws.destroy_pty(pty["pty_id"])
+                logger.info(
+                    "Destroyed orphaned remote PTY %s on %s",
+                    pty["pty_id"],
+                    host,
+                )
+            except Exception:
+                pass

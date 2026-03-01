@@ -524,16 +524,6 @@ async def stream_remote_pty(
             stream_sock.close()
             return
 
-    # After sending history, send Ctrl+L to force screen redraw
-    try:
-        stream_sock.setblocking(True)
-        stream_sock.settimeout(5.0)
-        ctrl_l_cmd = json.dumps({"type": "input", "data": "\x0c"}).encode() + b"\n"
-        stream_sock.sendall(ctrl_l_cmd)
-        stream_sock.setblocking(False)
-    except OSError:
-        pass
-
     # --- Background task: read from PTY stream → send to WebSocket --------
     stream_buffer = bytearray()
     flush_event = asyncio.Event()

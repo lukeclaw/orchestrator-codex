@@ -6,12 +6,13 @@ import pytest
 
 from orchestrator.terminal.interactive import (
     _active_clis,
+    _restore_remote_iclis,
     capture_interactive_cli,
     check_interactive_cli_alive,
-    cleanup_orphaned_icli_windows,
     close_interactive_cli,
     get_active_cli,
     open_interactive_cli,
+    restore_icli_windows,
     send_to_interactive_cli,
 )
 
@@ -161,12 +162,14 @@ class TestCheckInteractiveCLIAlive:
         assert check_interactive_cli_alive("nonexistent") is False
 
 
-class TestCleanupOrphanedICLIWindows:
-    """Tests for cleanup_orphaned_icli_windows."""
+class TestRestoreICLIWindows:
+    """Tests for restore_icli_windows."""
 
     @patch("orchestrator.terminal.interactive.tmux.kill_window")
     @patch("orchestrator.terminal.interactive.tmux.list_windows")
-    def test_kills_icli_windows(self, mock_list, mock_kill):
+    def test_restores_matching_sessions(self, mock_list, mock_kill):
+        from unittest.mock import MagicMock
+
         from orchestrator.terminal.manager import TmuxWindow
 
         mock_list.return_value = [
@@ -176,15 +179,54 @@ class TestCleanupOrphanedICLIWindows:
             TmuxWindow(index=3, name="worker2-icli", active=False),
         ]
 
-        killed = cleanup_orphaned_icli_windows("orchestrator")
+        # Mock DB: worker1 exists, worker2 exists
+        mock_conn = MagicMock()
+        mock_session1 = MagicMock(id="sess-1", name="worker1")
+        mock_session2 = MagicMock(id="sess-2", name="worker2")
 
-        assert killed == 2
-        mock_kill.assert_any_call("orchestrator", "worker1-icli")
-        mock_kill.assert_any_call("orchestrator", "worker2-icli")
+        with patch(
+            "orchestrator.state.repositories.sessions.get_session_by_name",
+            side_effect=lambda conn, name: {"worker1": mock_session1, "worker2": mock_session2}.get(
+                name
+            ),
+        ):
+            restored = restore_icli_windows(mock_conn, "orchestrator")
+
+        assert restored == 2
+        assert get_active_cli("sess-1") is not None
+        assert get_active_cli("sess-1").window_name == "worker1-icli"
+        assert get_active_cli("sess-2") is not None
+        assert get_active_cli("sess-2").window_name == "worker2-icli"
+        mock_kill.assert_not_called()
 
     @patch("orchestrator.terminal.interactive.tmux.kill_window")
     @patch("orchestrator.terminal.interactive.tmux.list_windows")
-    def test_no_orphans(self, mock_list, mock_kill):
+    def test_kills_orphaned_windows(self, mock_list, mock_kill):
+        from unittest.mock import MagicMock
+
+        from orchestrator.terminal.manager import TmuxWindow
+
+        mock_list.return_value = [
+            TmuxWindow(index=0, name="worker1", active=True),
+            TmuxWindow(index=1, name="worker1-icli", active=False),
+        ]
+
+        # Mock DB: worker1 does NOT exist
+        mock_conn = MagicMock()
+        with patch(
+            "orchestrator.state.repositories.sessions.get_session_by_name",
+            return_value=None,
+        ):
+            restored = restore_icli_windows(mock_conn, "orchestrator")
+
+        assert restored == 0
+        mock_kill.assert_called_once_with("orchestrator", "worker1-icli")
+
+    @patch("orchestrator.terminal.interactive.tmux.kill_window")
+    @patch("orchestrator.terminal.interactive.tmux.list_windows")
+    def test_no_icli_windows(self, mock_list, mock_kill):
+        from unittest.mock import MagicMock
+
         from orchestrator.terminal.manager import TmuxWindow
 
         mock_list.return_value = [
@@ -192,7 +234,177 @@ class TestCleanupOrphanedICLIWindows:
             TmuxWindow(index=1, name="worker2", active=False),
         ]
 
-        killed = cleanup_orphaned_icli_windows("orchestrator")
+        mock_conn = MagicMock()
+        restored = restore_icli_windows(mock_conn, "orchestrator")
 
-        assert killed == 0
+        assert restored == 0
         mock_kill.assert_not_called()
+
+    @patch("orchestrator.terminal.interactive.tmux.kill_window")
+    @patch("orchestrator.terminal.interactive.tmux.list_windows")
+    def test_skips_already_registered(self, mock_list, mock_kill):
+        from unittest.mock import MagicMock
+
+        from orchestrator.terminal.manager import TmuxWindow
+
+        # Pre-register worker1
+        _active_clis["sess-1"] = MagicMock(session_id="sess-1")
+
+        mock_list.return_value = [
+            TmuxWindow(index=1, name="worker1-icli", active=False),
+        ]
+        mock_conn = MagicMock()
+        mock_session = MagicMock(id="sess-1", name="worker1")
+
+        with patch(
+            "orchestrator.state.repositories.sessions.get_session_by_name",
+            return_value=mock_session,
+        ):
+            restored = restore_icli_windows(mock_conn, "orchestrator")
+
+        assert restored == 0
+        mock_kill.assert_not_called()
+
+
+class TestRestoreRemoteICLIs:
+    """Tests for _restore_remote_iclis."""
+
+    @patch("orchestrator.terminal.remote_worker_server.get_remote_worker_server")
+    def test_restores_pty_by_session_id(self, mock_get_rws):
+        from unittest.mock import MagicMock
+
+        mock_rws = MagicMock()
+        mock_rws.list_ptys.return_value = [
+            {
+                "pty_id": "pty-abc",
+                "alive": True,
+                "session_id": "sess-1",
+                "created_at": "2026-01-01T00:00:00",
+            }
+        ]
+        mock_get_rws.return_value = mock_rws
+
+        sessions = [MagicMock(id="sess-1", host="remote-host")]
+        _restore_remote_iclis(sessions)
+
+        cli = get_active_cli("sess-1")
+        assert cli is not None
+        assert cli.remote_pty_id == "pty-abc"
+        assert cli.rws_host == "remote-host"
+        assert cli.window_name == "rws-pty-abc"
+        mock_rws.destroy_pty.assert_not_called()
+
+    @patch("orchestrator.terminal.remote_worker_server.get_remote_worker_server")
+    def test_destroys_orphaned_ptys(self, mock_get_rws):
+        from unittest.mock import MagicMock
+
+        mock_rws = MagicMock()
+        mock_rws.list_ptys.return_value = [
+            {
+                "pty_id": "pty-abc",
+                "alive": True,
+                "session_id": "sess-1",
+                "created_at": "2026-01-01T00:00:00",
+            },
+            {
+                "pty_id": "pty-orphan",
+                "alive": True,
+                "session_id": None,
+                "created_at": "2026-01-01T00:00:00",
+            },
+        ]
+        mock_get_rws.return_value = mock_rws
+
+        sessions = [MagicMock(id="sess-1", host="remote-host")]
+        _restore_remote_iclis(sessions)
+
+        assert get_active_cli("sess-1") is not None
+        mock_rws.destroy_pty.assert_called_once_with("pty-orphan")
+
+    @patch("orchestrator.terminal.remote_worker_server.get_remote_worker_server")
+    def test_skips_already_registered(self, mock_get_rws):
+        from unittest.mock import MagicMock
+
+        _active_clis["sess-1"] = MagicMock(session_id="sess-1")
+
+        mock_rws = MagicMock()
+        mock_rws.list_ptys.return_value = [
+            {
+                "pty_id": "pty-abc",
+                "alive": True,
+                "session_id": "sess-1",
+                "created_at": "2026-01-01T00:00:00",
+            }
+        ]
+        mock_get_rws.return_value = mock_rws
+
+        sessions = [MagicMock(id="sess-1", host="remote-host")]
+        _restore_remote_iclis(sessions)
+
+        # Should not overwrite existing entry
+        assert _active_clis["sess-1"].session_id == "sess-1"
+        mock_rws.destroy_pty.assert_not_called()
+
+    @patch("orchestrator.terminal.remote_worker_server.get_remote_worker_server")
+    def test_skips_dead_ptys(self, mock_get_rws):
+        from unittest.mock import MagicMock
+
+        mock_rws = MagicMock()
+        mock_rws.list_ptys.return_value = [
+            {
+                "pty_id": "pty-dead",
+                "alive": False,
+                "session_id": "sess-1",
+                "created_at": "2026-01-01T00:00:00",
+            }
+        ]
+        mock_get_rws.return_value = mock_rws
+
+        sessions = [MagicMock(id="sess-1", host="remote-host")]
+        _restore_remote_iclis(sessions)
+
+        assert get_active_cli("sess-1") is None
+
+    @patch("orchestrator.terminal.remote_worker_server.get_remote_worker_server")
+    def test_handles_daemon_not_ready(self, mock_get_rws):
+        from unittest.mock import MagicMock
+
+        mock_get_rws.side_effect = RuntimeError("not ready")
+
+        sessions = [MagicMock(id="sess-1", host="remote-host")]
+        _restore_remote_iclis(sessions)
+
+        assert get_active_cli("sess-1") is None
+
+    @patch("orchestrator.terminal.remote_worker_server.get_remote_worker_server")
+    def test_groups_sessions_by_host(self, mock_get_rws):
+        """Multiple sessions on the same host should only query daemon once."""
+        from unittest.mock import MagicMock
+
+        mock_rws = MagicMock()
+        mock_rws.list_ptys.return_value = [
+            {
+                "pty_id": "pty-1",
+                "alive": True,
+                "session_id": "sess-1",
+                "created_at": "2026-01-01T00:00:00",
+            },
+            {
+                "pty_id": "pty-2",
+                "alive": True,
+                "session_id": "sess-2",
+                "created_at": "2026-01-01T00:00:00",
+            },
+        ]
+        mock_get_rws.return_value = mock_rws
+
+        sessions = [
+            MagicMock(id="sess-1", host="remote-host"),
+            MagicMock(id="sess-2", host="remote-host"),
+        ]
+        _restore_remote_iclis(sessions)
+
+        # Only one call to get_remote_worker_server for the shared host
+        mock_get_rws.assert_called_once_with("remote-host")
+        assert get_active_cli("sess-1") is not None
+        assert get_active_cli("sess-2") is not None

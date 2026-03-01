@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { api } from '../../api/client'
 import TerminalView from './TerminalView'
 import './InteractiveCLI.css'
@@ -28,6 +28,13 @@ export default function InteractiveCLI({ sessionId, minimized = false, onMinimiz
   const handleMinimize = () => {
     onMinimizedChange?.(!minimized)
   }
+
+  // Re-focus terminal when restoring from minimized
+  useEffect(() => {
+    if (!minimized && termFocusRef.current) {
+      requestAnimationFrame(() => termFocusRef.current?.())
+    }
+  }, [minimized])
 
   const classes = [
     'icli-overlay',
@@ -107,19 +114,18 @@ export default function InteractiveCLI({ sessionId, minimized = false, onMinimiz
           </button>
         </div>
       </div>
-      {!minimized && (
-        <div className="icli-terminal">
-          <TerminalView
-            sessionId={sessionId}
-            wsPath={`/ws/terminal/${sessionId}/interactive`}
-            onFocusRef={(fn) => {
-              termFocusRef.current = fn
-              // Auto-focus terminal on mount (initial open or restore from minimized)
-              requestAnimationFrame(() => fn())
-            }}
-          />
-        </div>
-      )}
+      <div className="icli-terminal" style={minimized ? { display: 'none' } : undefined}>
+        <TerminalView
+          sessionId={sessionId}
+          wsPath={`/ws/terminal/${sessionId}/interactive`}
+          sendPath={`/api/sessions/${sessionId}/interactive-cli/send`}
+          onFocusRef={(fn) => {
+            termFocusRef.current = fn
+            // Auto-focus terminal on initial mount
+            requestAnimationFrame(() => fn())
+          }}
+        />
+      </div>
     </div>
   )
 }

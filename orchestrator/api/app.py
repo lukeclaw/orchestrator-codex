@@ -105,13 +105,13 @@ async def lifespan(app: FastAPI):
     except Exception:
         logger.exception("Status events cleanup failed (non-fatal)")
 
-    # Clean up orphaned interactive CLI windows from previous server run
+    # Restore interactive CLI sessions from surviving tmux windows
     try:
-        from orchestrator.terminal.interactive import cleanup_orphaned_icli_windows
+        from orchestrator.terminal.interactive import restore_icli_windows
 
-        cleanup_orphaned_icli_windows()
+        restore_icli_windows(conn)
     except Exception:
-        logger.exception("Interactive CLI cleanup failed (non-fatal)")
+        logger.exception("Interactive CLI restore failed (non-fatal)")
 
     # Start rdev background refresh task (skip in test mode — no db_path means in-memory DB)
     from orchestrator.api.routes.rdevs import start_background_refresh, stop_background_refresh

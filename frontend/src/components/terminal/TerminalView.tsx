@@ -9,6 +9,7 @@ import './TerminalView.css'
 interface Props {
   sessionId: string
   wsPath?: string  // Custom WebSocket path (default: /ws/terminal/{sessionId})
+  sendPath?: string  // Custom REST send path (default: /api/sessions/{sessionId}/send)
   sessionStatus?: string  // Session status from parent (e.g., 'connecting', 'working')
   disableScrollback?: boolean  // Disable scrollback history (for rdev sessions with screen)
   onInputRef?: (fn: (text: string) => void) => void  // Expose function to inject text into terminal
@@ -24,7 +25,7 @@ type ConnectionState = 'connecting' | 'connected' | 'disconnected' | 'reconnecti
 const RECONNECT_DELAYS = [1000, 2000, 5000, 10000, 10000]
 const MAX_RECONNECT_ATTEMPTS = 5
 
-export default function TerminalView({ sessionId, wsPath, sessionStatus, disableScrollback, onInputRef, onFocusRef, onImagePaste, onTextPaste, onPastingChange }: Props) {
+export default function TerminalView({ sessionId, wsPath, sendPath, sessionStatus, disableScrollback, onInputRef, onFocusRef, onImagePaste, onTextPaste, onPastingChange }: Props) {
   const termRef = useRef<HTMLDivElement>(null)
   const terminalRef = useRef<Terminal | null>(null)
   const wsRef = useRef<WebSocket | null>(null)
@@ -245,8 +246,13 @@ export default function TerminalView({ sessionId, wsPath, sessionStatus, disable
     // Connect WebSocket
     connectWebSocket(terminal)
 
+    // Flag: suppress onData sends while our custom paste handler is active.
+    // Prevents double-paste if xterm somehow still receives the paste data.
+    let pasteInProgress = false
+
     // Send keystrokes - block if disconnected or locked
     const inputDisposable = terminal.onData(data => {
+      if (pasteInProgress) return  // Our paste handler already sent this text
       const ws = wsRef.current
       if (ws?.readyState === WebSocket.OPEN) {
         ws.send(JSON.stringify({ type: 'input', data }))
@@ -279,54 +285,82 @@ export default function TerminalView({ sessionId, wsPath, sessionStatus, disable
 
     // Intercept Cmd+V paste on the xterm textarea — all paste types go through
     // our handler so we can track pasting state for the animation.
-    const handlePaste = (e: ClipboardEvent) => {
-      // Check for image files first
-      const files = e.clipboardData?.files
-      if (files && files.length > 0) {
-        const imageFile = Array.from(files).find(f => f.type.startsWith('image/'))
-        if (imageFile) {
-          e.preventDefault()
-          e.stopPropagation()
-          onPastingChangeRef.current?.(true)
-          Promise.resolve(onImagePasteRef.current?.(imageFile)).finally(() => {
-            onPastingChangeRef.current?.(false)
-          })
-          return
+    // Only attach when paste callbacks are provided; otherwise let xterm handle
+    // paste natively via its WebSocket (used by the interactive CLI terminal).
+    const hasPasteHandlers = onImagePasteRef.current || onTextPasteRef.current || onPastingChangeRef.current
+
+    // Defense layer 1: Block Cmd+V / Ctrl+V at the xterm keyboard level so
+    // xterm never processes the keystroke.  The browser still triggers the
+    // native paste action, which our capture-phase paste listener handles.
+    if (hasPasteHandlers) {
+      terminal.attachCustomKeyEventHandler((event) => {
+        if ((event.metaKey || event.ctrlKey) && event.key === 'v' && event.type === 'keydown') {
+          return false  // tell xterm to ignore this key
         }
-      }
-      const text = e.clipboardData?.getData('text/plain')
-      if (!text) return
-      // Intercept ALL text paste (short and long) so animation tracks delivery
-      e.preventDefault()
-      e.stopPropagation()
-      onPastingChangeRef.current?.(true)
-      const trimmed = text.trim()
-      let task: Promise<unknown>
-      if (trimmed.length > 1000 && onTextPasteRef.current) {
-        // Long text: delegate to parent handler (saves to file)
-        task = Promise.resolve(onTextPasteRef.current(trimmed))
-      } else {
-        // Short text: send via REST API (awaits delivery to remote terminal)
-        task = fetch(`/api/sessions/${sessionId}/send`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ message: trimmed }),
-        })
-      }
-      task.finally(() => {
-        onPastingChangeRef.current?.(false)
+        return true
       })
     }
-    if (textarea) {
-      textarea.addEventListener('paste', handlePaste)
+
+    // Defense layer 2: Capture-phase paste listener on the container div.
+    // Fires BEFORE xterm's built-in paste handler on the textarea.
+    // stopImmediatePropagation() prevents any other listeners (including
+    // stale ones from HMR) from also processing the event.
+    //
+    // Use AbortController for reliable cleanup — guarantees the listener is
+    // removed even if the function reference changes across HMR / StrictMode.
+    const pasteAbort = new AbortController()
+    if (hasPasteHandlers && termRef.current) {
+      termRef.current.addEventListener('paste', (e: ClipboardEvent) => {
+        // Check for image files first
+        const files = e.clipboardData?.files
+        if (files && files.length > 0) {
+          const imageFile = Array.from(files).find(f => f.type.startsWith('image/'))
+          if (imageFile) {
+            e.preventDefault()
+            e.stopImmediatePropagation()
+            pasteInProgress = true
+            onPastingChangeRef.current?.(true)
+            Promise.resolve(onImagePasteRef.current?.(imageFile)).finally(() => {
+              pasteInProgress = false
+              onPastingChangeRef.current?.(false)
+            })
+            return
+          }
+        }
+        const text = e.clipboardData?.getData('text/plain')
+        if (!text) return
+        // Intercept ALL text paste (short and long) so animation tracks delivery
+        e.preventDefault()
+        e.stopImmediatePropagation()
+        pasteInProgress = true
+        onPastingChangeRef.current?.(true)
+        const trimmed = text.trim()
+        let task: Promise<unknown>
+        if (trimmed.length > 1000 && onTextPasteRef.current) {
+          // Long text: delegate to parent handler (saves to file)
+          task = Promise.resolve(onTextPasteRef.current(trimmed))
+        } else {
+          // Short text: type into terminal via REST API (no Enter — just inserts text)
+          task = fetch(sendPath || `/api/sessions/${sessionId}/type`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ text: trimmed }),
+          })
+        }
+        task.finally(() => {
+          requestAnimationFrame(() => { pasteInProgress = false })
+          onPastingChangeRef.current?.(false)
+        })
+      }, { capture: true, signal: pasteAbort.signal })
     }
 
     // Block mouse wheel scroll when scrollback is disabled (rdev + screen)
-    const wheelHandler = disableScrollback
-      ? (e: WheelEvent) => { e.preventDefault(); e.stopPropagation() }
-      : null
-    if (wheelHandler && termRef.current) {
-      termRef.current.addEventListener('wheel', wheelHandler, { passive: false })
+    const wheelAbort = new AbortController()
+    if (disableScrollback && termRef.current) {
+      termRef.current.addEventListener('wheel', (e: WheelEvent) => {
+        e.preventDefault()
+        e.stopPropagation()
+      }, { passive: false, capture: true, signal: wheelAbort.signal })
     }
 
     // Handle resize
@@ -360,11 +394,9 @@ export default function TerminalView({ sessionId, wsPath, sessionStatus, disable
       if (textarea) {
         textarea.removeEventListener('focus', handleFocus)
         textarea.removeEventListener('blur', handleBlur)
-        textarea.removeEventListener('paste', handlePaste)
       }
-      if (wheelHandler && termRef.current) {
-        termRef.current.removeEventListener('wheel', wheelHandler)
-      }
+      pasteAbort.abort()   // guaranteed to remove the paste listener
+      wheelAbort.abort()   // guaranteed to remove the wheel listener
       wsRef.current?.close()
       terminal.dispose()
     }
@@ -420,19 +452,30 @@ export default function TerminalView({ sessionId, wsPath, sessionStatus, disable
 
   const [ctxPasting, setCtxPasting] = useState(false)
 
-  // Send short text via REST API (awaits round-trip, so animation tracks actual delivery)
+  // Type text into terminal via REST API (no Enter — just inserts text).
+  // Awaits round-trip so animation tracks actual delivery.
   const sendTextViaApi = useCallback(async (text: string) => {
-    await fetch(`/api/sessions/${sessionId}/send`, {
+    await fetch(sendPath || `/api/sessions/${sessionId}/type`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ message: text }),
+      body: JSON.stringify({ text }),
     })
-  }, [sessionId])
+  }, [sessionId, sendPath])
+
+  // Write text directly to the terminal via WebSocket (no Enter appended).
+  // Used by right-click paste in terminals without custom paste handlers (e.g., interactive CLI).
+  const writeToWs = useCallback((text: string) => {
+    const ws = wsRef.current
+    if (ws?.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ type: 'input', data: text }))
+    }
+  }, [])
 
   const handlePaste = useCallback(async () => {
     setContextMenu(null)
     setCtxPasting(true)
     onPastingChangeRef.current?.(true)
+    const useRest = !!(onImagePasteRef.current || onTextPasteRef.current || onPastingChangeRef.current)
     try {
       // Read clipboard via backend (uses pbpaste/osascript natively, no browser permission popup)
       const res = await fetch('/api/clipboard')
@@ -449,8 +492,13 @@ export default function TerminalView({ sessionId, wsPath, sessionStatus, disable
           // Long text: delegate to parent handler (saves to file)
           await onTextPasteRef.current(trimmed)
         } else if (trimmed) {
-          // Short text: send via REST API (awaits delivery)
-          await sendTextViaApi(trimmed)
+          if (useRest) {
+            // Main terminal: send via REST API (awaits delivery, tracks animation)
+            await sendTextViaApi(trimmed)
+          } else {
+            // Interactive CLI: write directly to WebSocket (no Enter appended)
+            writeToWs(trimmed)
+          }
         }
       }
     } catch {
@@ -458,7 +506,11 @@ export default function TerminalView({ sessionId, wsPath, sessionStatus, disable
       try {
         const text = await navigator.clipboard.readText()
         if (text) {
-          await sendTextViaApi(text)
+          if (useRest) {
+            await sendTextViaApi(text)
+          } else {
+            writeToWs(text)
+          }
         }
       } catch {
         // Clipboard read denied or empty
@@ -468,7 +520,7 @@ export default function TerminalView({ sessionId, wsPath, sessionStatus, disable
       onPastingChangeRef.current?.(false)
     }
     terminalRef.current?.focus()
-  }, [sendTextViaApi])
+  }, [sendTextViaApi, writeToWs])
 
   return (
     <div className={containerClasses}>

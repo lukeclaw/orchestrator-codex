@@ -339,7 +339,7 @@ _REMOTE_WORKER_SERVER_SCRIPT = textwrap.dedent("""\
     # ── PTY management ────────────────────────────────────────────────────
 
     class PtySession:
-        def __init__(self, pty_id, master_fd, child_pid, cmd, cwd, cols, rows):
+        def __init__(self, pty_id, master_fd, child_pid, cmd, cwd, cols, rows, session_id=None):
             self.pty_id = pty_id
             self.master_fd = master_fd
             self.child_pid = child_pid
@@ -347,6 +347,7 @@ _REMOTE_WORKER_SERVER_SCRIPT = textwrap.dedent("""\
             self.cwd = cwd
             self.cols = cols
             self.rows = rows
+            self.session_id = session_id
             self.created_at = time.time()
             self.ringbuffer = bytearray()
             self.stream_conns = []  # list of socket connections for streaming
@@ -378,6 +379,7 @@ _REMOTE_WORKER_SERVER_SCRIPT = textwrap.dedent("""\
         cwd = cmd.get("cwd", os.path.expanduser("~"))
         cols = cmd.get("cols", 80)
         rows = cmd.get("rows", 24)
+        session_id = cmd.get("session_id")
         pty_id = uuid.uuid4().hex[:12]
 
         master_fd, slave_fd = pty_mod.openpty()
@@ -416,7 +418,7 @@ _REMOTE_WORKER_SERVER_SCRIPT = textwrap.dedent("""\
         flags = fcntl.fcntl(master_fd, fcntl.F_GETFL)
         fcntl.fcntl(master_fd, fcntl.F_SETFL, flags | os.O_NONBLOCK)
 
-        session = PtySession(pty_id, master_fd, child_pid, shell_cmd, cwd, cols, rows)
+        session = PtySession(pty_id, master_fd, child_pid, shell_cmd, cwd, cols, rows, session_id)
         pty_sessions[pty_id] = session
 
         # Register master_fd with selector for reading
@@ -443,6 +445,7 @@ _REMOTE_WORKER_SERVER_SCRIPT = textwrap.dedent("""\
                 "rows": session.rows,
                 "alive": session.is_child_alive(),
                 "created_at": session.created_at,
+                "session_id": session.session_id,
             })
         return {"status": "ok", "ptys": result}
 
@@ -1314,6 +1317,7 @@ class RemoteWorkerServer:
         cwd: str | None = None,
         cols: int = 80,
         rows: int = 24,
+        session_id: str | None = None,
     ) -> str:
         """Create a new PTY session on the remote daemon. Returns pty_id."""
         request: dict[str, Any] = {
@@ -1324,6 +1328,8 @@ class RemoteWorkerServer:
         }
         if cwd:
             request["cwd"] = cwd
+        if session_id:
+            request["session_id"] = session_id
         resp = self.execute(request)
         if "error" in resp:
             raise RuntimeError(f"PTY create failed on {self.host}: {resp['error']}")

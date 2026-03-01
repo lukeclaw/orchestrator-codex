@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, type ReactNode } from 'react'
+import { createPortal } from 'react-dom'
 import './ConfirmPopover.css'
 
 interface Props {
@@ -89,9 +90,9 @@ export default function ConfirmPopover({
   return (
     <div className="confirm-popover-wrapper" ref={triggerRef}>
       {children({ onClick: handleTriggerClick })}
-      {open && (
-        <div 
-          className={`confirm-popover ${variant}`} 
+      {open && createPortal(
+        <div
+          className={`confirm-popover ${variant}`}
           ref={popoverRef}
           style={position}
         >
@@ -110,7 +111,8 @@ export default function ConfirmPopover({
               {confirmLabel}
             </button>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   )

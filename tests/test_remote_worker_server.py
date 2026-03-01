@@ -674,7 +674,7 @@ class TestInteractiveCLIIntegration:
             assert cli.window_name == "rws-pty123"
 
             mock_rws.create_pty.assert_called_once_with(
-                cmd="/bin/bash", cwd="/home/user", cols=120, rows=40
+                cmd="/bin/bash", cwd="/home/user", cols=120, rows=40, session_id="session-1"
             )
             # Verify command was sent
             mock_rws.execute.assert_called_once()
