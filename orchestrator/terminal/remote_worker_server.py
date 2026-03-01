@@ -1257,7 +1257,7 @@ class RemoteWorkerServer:
                 if self._cmd_sock is None:
                     if attempt == 0:
                         continue  # retry — _ensure_connected will reconnect
-                    raise RuntimeError(f"RWS on {self.host} is not connected")
+                    raise RuntimeError("Remote host not connected")
                 try:
                     line = json.dumps(command) + "\n"
                     self._cmd_sock.sendall(line.encode())
@@ -1268,7 +1268,7 @@ class RemoteWorkerServer:
                         chunk = self._cmd_sock.recv(1048576)  # 1MB chunks
                         if not chunk:
                             self._cmd_sock = None
-                            raise RuntimeError(f"RWS on {self.host} closed connection")
+                            raise RuntimeError("Remote connection closed")
                         self._cmd_buffer.extend(chunk)
 
                     resp_line, self._cmd_buffer = self._cmd_buffer.split(b"\n", 1)
@@ -1277,7 +1277,7 @@ class RemoteWorkerServer:
                     # Timeout leaves socket in indeterminate state — discard
                     self._cmd_sock = None
                     self._cmd_buffer = bytearray()
-                    raise RuntimeError(f"RWS on {self.host} timed out after {timeout}s")
+                    raise RuntimeError(f"Remote operation timed out after {timeout}s")
                 except (RuntimeError, ConnectionError, OSError) as e:
                     self._cmd_sock = None
                     self._cmd_buffer = bytearray()
@@ -1291,9 +1291,9 @@ class RemoteWorkerServer:
                         continue
                     if isinstance(e, RuntimeError):
                         raise
-                    raise RuntimeError(f"RWS connection to {self.host} broken: {e}") from e
+                    raise RuntimeError(f"Remote connection lost: {e}") from e
         # Should not reach here, but safety net
-        raise RuntimeError(f"RWS on {self.host} failed after retry: {last_err}")
+        raise RuntimeError(f"Remote connection failed: {last_err}")
 
     def _ensure_connected(self) -> None:
         """Reconnect the command socket if it's dead but the tunnel is alive."""
@@ -1304,9 +1304,9 @@ class RemoteWorkerServer:
                 self._connect_command_socket()
                 logger.info("Auto-reconnected command socket for %s", self.host)
             except Exception:
-                raise RuntimeError(f"RWS on {self.host} is not connected (reconnect failed)")
+                raise RuntimeError("Remote host not connected")
         else:
-            raise RuntimeError(f"RWS on {self.host} is not connected")
+            raise RuntimeError("Remote host not connected")
 
     def create_pty(
         self,
@@ -1504,7 +1504,7 @@ def get_remote_worker_server(host: str) -> RemoteWorkerServer:
 
         # Already starting in background — don't launch a second one
         if host in _starting and _starting[host].is_alive():
-            raise RuntimeError(f"RWS for {host} is still starting up")
+            raise RuntimeError("Connecting to remote host\u2026")
 
         # Kick off background start
         def _start_in_background() -> None:
@@ -1545,7 +1545,7 @@ def get_remote_worker_server(host: str) -> RemoteWorkerServer:
         t = threading.Thread(target=_start_in_background, daemon=True)
         _starting[host] = t
         t.start()
-        raise RuntimeError(f"RWS for {host} starting in background")
+        raise RuntimeError("Connecting to remote host\u2026")
 
 
 def ensure_rws_starting(host: str) -> None:

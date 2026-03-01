@@ -56,6 +56,8 @@ interface FileExplorerPanelProps {
   onToggleIgnored: () => void
   onFileDeleted?: (path: string) => void
   onFileRenamed?: (oldPath: string, newPath: string) => void
+  isRemote?: boolean
+  onConnectingChange?: (connecting: boolean) => void
 }
 
 // --- Helpers ---
@@ -168,6 +170,8 @@ export default function FileExplorerPanel({
   onToggleIgnored,
   onFileDeleted,
   onFileRenamed,
+  isRemote,
+  onConnectingChange,
 }: FileExplorerPanelProps) {
   const notify = useNotify()
   const [tree, setTreeRaw] = useState<TreeNode[]>([])
@@ -181,6 +185,11 @@ export default function FileExplorerPanel({
     })
   }, [])
   const [rootLoading, setRootLoading] = useState(false)
+  const [connecting, setConnectingRaw] = useState(false)
+  const setConnecting = useCallback((v: boolean) => {
+    setConnectingRaw(v)
+    onConnectingChange?.(v)
+  }, [onConnectingChange])
   const [filterText, setFilterText] = useState('')
   const [showFilter, setShowFilter] = useState(false)
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; path: string } | null>(null)
@@ -221,16 +230,20 @@ export default function FileExplorerPanel({
 
   // Load root on mount / refresh — depth=1 for reliability on large dirs
   const loadRoot = useCallback(async () => {
+    const isEmpty = treeSnapshotRef.current.length === 0
+    if (isEmpty && isRemote) setConnecting(true)
     setRootLoading(true)
     try {
       const { entries } = await fetchDir('.', 1)
       setTree(prev => entriesToNodes(entries, prev))
+      setConnecting(false)
     } catch {
       // Silently fail - work_dir may not exist yet
+      // Keep connecting=true so skeleton persists for remote hosts
     } finally {
       setRootLoading(false)
     }
-  }, [fetchDir])
+  }, [fetchDir, isRemote, setConnecting])
 
   // Initial load + auto-refresh every 10s while panel is open
   useEffect(() => {
@@ -805,7 +818,7 @@ export default function FileExplorerPanel({
             }
           }}
         >
-          {rootLoading && tree.length === 0 ? (
+          {(rootLoading || connecting) && tree.length === 0 ? (
             <div className="fe-skeleton">
               {Array.from({ length: 8 }).map((_, i) => (
                 <div key={i} className="fe-skeleton-row" style={{ paddingLeft: (i % 3 === 0 ? 0 : i % 3 === 1 ? 16 : 32) + 4 }}>
@@ -813,6 +826,7 @@ export default function FileExplorerPanel({
                   <span className="fe-skeleton-text" style={{ width: `${40 + ((i * 17) % 60)}%` }} />
                 </div>
               ))}
+              {connecting && <div className="fe-skeleton-message">Connecting to remote host…</div>}
             </div>
           ) : (
             <>

@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
-import { api, openUrl } from '../api/client'
+import { api, ApiError, openUrl } from '../api/client'
 import { useNotify } from '../context/NotificationContext'
 import { useApp } from '../context/AppContext'
 import { useSmartPaste } from '../hooks/useSmartPaste'
@@ -52,6 +52,7 @@ export default function SessionDetailPage() {
   const [ctxPasting, setCtxPasting] = useState(false)
   const [hintDismissed, setHintDismissed] = useState(false)
   const [showAssignTask, setShowAssignTask] = useState(false)
+  const [feConnecting, setFeConnecting] = useState(false)
   const [icliActiveLocal, setIcliActiveLocal] = useState(false)
   const [icliStarting, setIcliStarting] = useState(false)
   const [icliMinimized, setIcliMinimized] = useState(() => id ? interactiveCliMinimized.has(id) : false)
@@ -358,14 +359,25 @@ export default function SessionDetailPage() {
     }
     setIcliStarting(true)
     try {
-      await api(`/api/sessions/${id}/interactive-cli`, {
-        method: 'POST',
-        body: JSON.stringify({}),
-      })
-      setIcliActiveLocal(true)
-      setIcliMinimized(false)
-    } catch (e) {
-      notify(e instanceof Error ? e.message : 'Failed to open interactive CLI', 'error')
+      for (let attempt = 0; ; attempt++) {
+        try {
+          await api(`/api/sessions/${id}/interactive-cli`, {
+            method: 'POST',
+            body: JSON.stringify({}),
+          })
+          setIcliActiveLocal(true)
+          setIcliMinimized(false)
+          return
+        } catch (e) {
+          // 503 = RWS still connecting — wait and retry silently
+          if (e instanceof ApiError && e.status === 503 && attempt < 30) {
+            await new Promise(r => setTimeout(r, 2000))
+            continue
+          }
+          notify(e instanceof Error ? e.message : 'Failed to open interactive CLI', 'error')
+          return
+        }
+      }
     } finally {
       setIcliStarting(false)
     }
@@ -585,6 +597,8 @@ export default function SessionDetailPage() {
             onToggleIgnored={fe.toggleShowIgnored}
             onFileDeleted={handleFileDeleted}
             onFileRenamed={handleFileRenamed}
+            isRemote={isRemote}
+            onConnectingChange={setFeConnecting}
           />
         )}
 
@@ -700,7 +714,7 @@ export default function SessionDetailPage() {
           <div className="sd-panel-toggles">
             {(session.work_dir || isRemote) && (
               <button
-                className={`sd-panel-btn${fe.open ? ' active' : ''}`}
+                className={`sd-panel-btn${fe.open ? ' active' : ''}${feConnecting && fe.open ? ' starting' : ''}`}
                 onClick={fe.toggleOpen}
                 title="Toggle file explorer (Ctrl+Shift+E)"
               >

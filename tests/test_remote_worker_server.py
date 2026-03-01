@@ -148,7 +148,7 @@ class TestRemoteWorkerServerClient:
         rws = RemoteWorkerServer("test-host")
         rws._cmd_sock = None
 
-        with pytest.raises(RuntimeError, match="not connected"):
+        with pytest.raises(RuntimeError, match="Remote host not connected"):
             rws.execute({"action": "ping"})
 
     def test_execute_timeout(self):
@@ -177,7 +177,7 @@ class TestRemoteWorkerServerClient:
         rws._cmd_sock = mock_sock
         rws._cmd_buffer = bytearray()
 
-        with pytest.raises(RuntimeError, match="not connected"):
+        with pytest.raises(RuntimeError, match="Remote host not connected"):
             rws.execute({"action": "ping"})
 
         # Socket should be cleared
@@ -301,7 +301,7 @@ class TestServerPool:
     def test_get_remote_worker_server_not_started(self):
         """Test that get_remote_worker_server kicks off background start."""
         with patch.object(RemoteWorkerServer, "start"):
-            with pytest.raises(RuntimeError, match="starting in background"):
+            with pytest.raises(RuntimeError, match="Connecting to remote host"):
                 get_remote_worker_server("test-host")
 
         # Wait a moment for the background thread to start
@@ -322,7 +322,7 @@ class TestServerPool:
         t.start()
         _starting["test-host"] = t
 
-        with pytest.raises(RuntimeError, match="still starting up"):
+        with pytest.raises(RuntimeError, match="Connecting to remote host"):
             get_remote_worker_server("test-host")
 
     def test_get_remote_worker_server_ready(self):
@@ -346,7 +346,7 @@ class TestServerPool:
         _server_pool["test-host"] = rws
 
         with patch.object(RemoteWorkerServer, "start"):
-            with pytest.raises(RuntimeError, match="starting in background"):
+            with pytest.raises(RuntimeError, match="Connecting to remote host"):
                 get_remote_worker_server("test-host")
 
         assert "test-host" not in _server_pool
@@ -412,7 +412,7 @@ class TestSocketReconnection:
             rws, "_connect_command_socket", side_effect=RuntimeError("connect failed")
         ):
             with patch.object(RemoteWorkerServer, "start"):
-                with pytest.raises(RuntimeError, match="starting in background"):
+                with pytest.raises(RuntimeError, match="Connecting to remote host"):
                     get_remote_worker_server("test-host")
 
         assert "test-host" not in _server_pool
@@ -449,7 +449,7 @@ class TestSocketReconnection:
         with patch.object(
             rws, "_connect_command_socket", side_effect=RuntimeError("connect failed")
         ):
-            with pytest.raises(RuntimeError, match="reconnect failed"):
+            with pytest.raises(RuntimeError, match="Remote host not connected"):
                 rws.execute({"action": "ping"})
 
     def test_execute_raises_when_no_tunnel(self):
@@ -460,7 +460,7 @@ class TestSocketReconnection:
         rws._tunnel_proc = mock_proc
         rws._cmd_sock = None
 
-        with pytest.raises(RuntimeError, match="not connected"):
+        with pytest.raises(RuntimeError, match="Remote host not connected"):
             rws.execute({"action": "ping"})
 
     def test_execute_raises_when_no_tunnel_proc(self):
@@ -469,7 +469,7 @@ class TestSocketReconnection:
         rws._tunnel_proc = None
         rws._cmd_sock = None
 
-        with pytest.raises(RuntimeError, match="not connected"):
+        with pytest.raises(RuntimeError, match="Remote host not connected"):
             rws.execute({"action": "ping"})
 
     def test_execute_retries_on_closed_connection(self):
@@ -540,7 +540,7 @@ class TestSocketReconnection:
         rws._cmd_buffer = bytearray()
 
         with patch.object(rws, "_connect_command_socket", side_effect=make_dead_sock):
-            with pytest.raises(RuntimeError, match="closed connection"):
+            with pytest.raises(RuntimeError, match="Remote connection closed"):
                 rws.execute({"action": "ping"})
 
     def test_execute_timeout_clears_socket(self):
@@ -598,7 +598,7 @@ class TestDaemonKillRestart:
             patch.object(RemoteWorkerServer, "start", mock_start),
             patch.object(RemoteWorkerServer, "kill_remote_daemon"),
         ):
-            with pytest.raises(RuntimeError, match="starting in background"):
+            with pytest.raises(RuntimeError, match="Connecting to remote host"):
                 get_remote_worker_server("retry-host")
 
             # Wait for background thread to finish
@@ -618,7 +618,7 @@ class TestDaemonKillRestart:
             patch.object(RemoteWorkerServer, "start", side_effect=RuntimeError("broken")),
             patch.object(RemoteWorkerServer, "kill_remote_daemon"),
         ):
-            with pytest.raises(RuntimeError, match="starting in background"):
+            with pytest.raises(RuntimeError, match="Connecting to remote host"):
                 get_remote_worker_server("fail-host")
 
             import time

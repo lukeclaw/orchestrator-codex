@@ -69,7 +69,10 @@ def open_interactive_cli_endpoint(session_id: str, body: OpenCLIRequest, db=Depe
     except ValueError as e:
         raise HTTPException(409, str(e))
     except RuntimeError as e:
-        raise HTTPException(502, str(e))
+        msg = str(e)
+        if "Connecting to remote host" in msg:
+            raise HTTPException(503, msg)
+        raise HTTPException(502, msg)
 
     # Broadcast event
     publish(

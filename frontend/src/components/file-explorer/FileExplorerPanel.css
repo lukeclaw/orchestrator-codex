@@ -293,6 +293,13 @@
   50% { opacity: 0.8; }
 }
 
+.fe-skeleton-message {
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 11px;
+  padding: 8px 12px 4px;
+}
+
 /* Drag and drop */
 .fe-node--drop-target {
   background: rgba(88, 166, 255, 0.15);

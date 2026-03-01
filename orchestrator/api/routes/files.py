@@ -138,6 +138,20 @@ _DEFAULT_IGNORED: set[str] = {
 
 
 # ---------------------------------------------------------------------------
+# Remote error helpers
+# ---------------------------------------------------------------------------
+def _raise_remote_error(exc: Exception) -> None:
+    """Raise an appropriate HTTPException for a remote connection error.
+
+    Returns 503 when the remote worker server is still starting up (transient),
+    502 for all other connection failures.
+    """
+    msg = str(exc)
+    status = 503 if "Connecting to remote host" in msg else 502
+    raise HTTPException(status_code=status, detail=f"Remote connection error: {exc}")
+
+
+# ---------------------------------------------------------------------------
 # Path validation
 # ---------------------------------------------------------------------------
 def _validate_path(path: str) -> None:
@@ -295,7 +309,7 @@ def _list_remote_dir(
             }
         )
     except (RuntimeError, OSError, json.JSONDecodeError) as exc:
-        raise HTTPException(status_code=502, detail=f"Remote worker server error: {exc}")
+        _raise_remote_error(exc)
 
     if "error" in data:
         detail = data["error"]
@@ -368,7 +382,7 @@ def _read_remote_file(host: str, work_dir: str, path: str, max_lines: int) -> Fi
         rws = get_remote_worker_server(host)
         data = rws.execute(read_cmd)
     except (RuntimeError, OSError, json.JSONDecodeError) as exc:
-        raise HTTPException(status_code=502, detail=f"Remote worker server error: {exc}")
+        _raise_remote_error(exc)
 
     if "error" in data:
         detail = data["error"]
@@ -873,7 +887,7 @@ def _write_remote_file(host: str, work_dir: str, body: FileWriteRequest) -> File
         rws = get_remote_worker_server(host)
         data = rws.execute(write_cmd)
     except (RuntimeError, OSError, json.JSONDecodeError) as exc:
-        raise HTTPException(status_code=502, detail=f"Remote worker server error: {exc}")
+        _raise_remote_error(exc)
 
     if "error" in data:
         detail = data["error"]
@@ -944,7 +958,7 @@ def _read_remote_raw(host: str, work_dir: str, path: str, content_type: str) -> 
             }
         )
     except (RuntimeError, OSError, json.JSONDecodeError) as exc:
-        raise HTTPException(status_code=502, detail=f"Remote worker server error: {exc}")
+        _raise_remote_error(exc)
 
     if "error" in data:
         detail = data["error"]
@@ -1015,7 +1029,7 @@ def _delete_remote(host: str, work_dir: str, path: str) -> DeleteResponse:
         rws = get_remote_worker_server(host)
         data = rws.execute(delete_cmd)
     except (RuntimeError, OSError, json.JSONDecodeError) as exc:
-        raise HTTPException(status_code=502, detail=f"Remote worker server error: {exc}")
+        _raise_remote_error(exc)
 
     if "error" in data:
         detail = data["error"]
@@ -1093,7 +1107,7 @@ def _move_remote(
         rws = get_remote_worker_server(host)
         data = rws.execute(move_cmd)
     except (RuntimeError, OSError, json.JSONDecodeError) as exc:
-        raise HTTPException(status_code=502, detail=f"Remote worker server error: {exc}")
+        _raise_remote_error(exc)
 
     if "error" in data:
         detail = data["error"]
@@ -1148,7 +1162,7 @@ def _mkdir_remote(host: str, work_dir: str, path: str) -> MkdirResponse:
         rws = get_remote_worker_server(host)
         data = rws.execute(mkdir_cmd)
     except (RuntimeError, OSError, json.JSONDecodeError) as exc:
-        raise HTTPException(status_code=502, detail=f"Remote worker server error: {exc}")
+        _raise_remote_error(exc)
 
     if "error" in data:
         detail = data["error"]
