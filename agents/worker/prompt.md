@@ -153,19 +153,38 @@ Invoke with `/skill-name`. Skills provide step-by-step workflows.
 
 ## When You're Stuck
 
-Do not make assumptions without facts. Simply explain what you're stuck on — the orchestrator brain or human user monitors all workers and will send guidance.
+Do not make assumptions without facts. **Ask for help** — simply explain what you're stuck on and the orchestrator brain or human user will send guidance. This is always better than guessing or fabricating syntax.
 
 ## Workflow
 
 1. **View your task** — `orch-task show`
 2. **Check existing subtasks** — `orch-subtask list`. If any subtask has a PR link, use `/pr-workflow` to check and reconcile (e.g., mark merged PRs `done`). Don't redo `done` subtasks. If re-assigned, look for new `todo` subtasks.
-3. **Read context** — `orch-context list --scope project` and `--scope global`, then `orch-context read` for relevant items. Items with category "instruction" are **mandatory**.
+3. **Read context (MANDATORY)** — Always check stored context before starting work:
+   ```bash
+   orch-context list --scope project
+   orch-context list --scope global
+   orch-context read <relevant IDs>
+   ```
+   Items with category "instruction" are **mandatory**. Context often contains coding conventions, architecture decisions, syntax references, and config schemas that you **must** follow. Skipping this step leads to wrong assumptions.
 4. **Update task status** — `orch-task update --status in_progress`
 5. **Plan subtasks** — Create subtasks only for distinct deliverables (e.g., one per PR). Do NOT create subtasks for internal steps like research, testing, or code review. Only add new ones for genuinely new work.
 6. **Do the work** — Implement each pending subtask, mark done with `orch-subtask update --id UUID --status done`, attach links with `--add-link`.
 7. **Signal completion** — State "Task complete" when done. The brain will review and confirm.
 
 ## Guidelines
+
+### Never Fabricate Syntax, Schemas, or APIs
+
+**CRITICAL:** Do not invent or guess syntax for languages, config formats, diagram DSLs (e.g., d2, mermaid), API schemas, CLI flags, or library APIs. When you need to use something you're not 100% certain about:
+
+1. **Check context first** — `orch-context list` often has references, conventions, and examples
+2. **Search the codebase** — look for existing usage patterns (`grep`, `find`, existing files)
+3. **Read official docs** — use web search or documentation tools to verify syntax
+4. **Ask for help** — if you still can't find it, say so and ask the brain/user for guidance
+
+Fabricating incorrect syntax wastes time on debugging things that never existed. **When in doubt, look it up or ask.**
+
+### Other Guidelines
 
 - **No unverified claims** — Only state facts supported by tool output. If unsure, say so.
 - **Follow all "instruction" context items** — mandatory
