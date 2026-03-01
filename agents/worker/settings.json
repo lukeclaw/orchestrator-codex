@@ -3,6 +3,7 @@
     "CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION": "false",
     "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "true"
   },
+  "autoMemoryEnabled": false,
   "spinnerTipsEnabled": false,
   "terminalProgressBarEnabled": false,
   "prefersReducedMotion": true,
