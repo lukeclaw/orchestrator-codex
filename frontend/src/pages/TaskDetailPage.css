@@ -530,7 +530,7 @@
   align-items: center;
   justify-content: center;
   gap: 8px;
-  padding: 16px;
+  padding: 2px 16px;
   color: var(--text-muted);
   font-size: 13px;
 }
@@ -681,7 +681,7 @@
   font-size: 13px;
   font-style: italic;
   margin: 0;
-  padding: 8px 0;
+  padding: 2px 0;
 }
 
 .tdp-subtasks-list {
