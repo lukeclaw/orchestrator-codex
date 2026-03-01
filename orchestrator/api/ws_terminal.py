@@ -42,7 +42,7 @@ from orchestrator.terminal.control import (
     resize_async,
     send_keys_async,
 )
-from orchestrator.terminal.manager import ensure_window, tmux_target
+from orchestrator.terminal.manager import ensure_window, tmux_target, window_exists
 from orchestrator.terminal.pty_stream import (
     TERMINAL_STREAM_MODE,
     PtyStreamPool,
@@ -528,9 +528,11 @@ async def stream_remote_pty(
     stream_buffer = bytearray()
     flush_event = asyncio.Event()
     stream_closed = asyncio.Event()
+    pty_exited = False  # True when the PTY process exits (EOF on stream)
 
     async def read_pty_output():
         """Read raw bytes from PTY stream socket and batch-send to WebSocket."""
+        nonlocal pty_exited
         loop = asyncio.get_running_loop()
         while not stream_closed.is_set():
             try:
@@ -541,6 +543,7 @@ async def stream_remote_pty(
             if data is None:
                 continue  # Timeout — no data yet, keep reading
             if not data:
+                pty_exited = True
                 stream_closed.set()
                 break  # b"" means EOF — remote closed connection
             stream_buffer.extend(data)
@@ -620,6 +623,12 @@ async def stream_remote_pty(
             stream_sock.close()
         except OSError:
             pass
+        # Notify the client that the PTY process exited (not just a WS drop)
+        if pty_exited:
+            try:
+                await websocket.send_json({"type": "pty_exit"})
+            except Exception:
+                pass
         if session_id:
             clear_user_activity(session_id)
 
@@ -645,7 +654,7 @@ def _blocking_recv(sock, bufsize: int = 65536, timeout: float = 1.0) -> bytes | 
 
 async def ws_interactive_cli(websocket: WebSocket, session_id: str):
     """Stream the interactive CLI terminal for a session."""
-    from orchestrator.terminal.interactive import get_active_cli
+    from orchestrator.terminal.interactive import _active_clis, get_active_cli
 
     await websocket.accept()
 
@@ -663,7 +672,41 @@ async def ws_interactive_cli(websocket: WebSocket, session_id: str):
     # Route to RWS PTY streaming if this is a remote PTY-backed CLI
     if cli.remote_pty_id and cli.rws_host:
         await stream_remote_pty(websocket, session_id, cli.remote_pty_id, cli.rws_host)
-        return
+        _active_clis.pop(session_id, None)
+    else:
+        tmux_sess = "orchestrator"
 
-    tmux_sess = "orchestrator"
-    await stream_pane(websocket, tmux_sess, cli.window_name)
+        # Watch for tmux window death (user typed 'exit').
+        # stream_pane doesn't detect window destruction — its main loop
+        # blocks on websocket.receive() and drift_correction fails silently.
+        # This watcher runs alongside and sends pty_exit + closes the
+        # websocket when the window is gone, causing stream_pane to exit.
+        window_gone = asyncio.Event()
+
+        async def _watch_window():
+            loop = asyncio.get_running_loop()
+            while not window_gone.is_set():
+                await asyncio.sleep(2)
+                exists = await loop.run_in_executor(None, window_exists, tmux_sess, cli.window_name)
+                if not exists:
+                    window_gone.set()
+                    try:
+                        await websocket.send_json({"type": "pty_exit"})
+                    except Exception:
+                        pass
+                    try:
+                        await websocket.close()
+                    except Exception:
+                        pass
+
+        watcher = asyncio.create_task(_watch_window())
+        try:
+            await stream_pane(websocket, tmux_sess, cli.window_name)
+        finally:
+            window_gone.set()
+            watcher.cancel()
+            try:
+                await watcher
+            except asyncio.CancelledError:
+                pass
+            _active_clis.pop(session_id, None)

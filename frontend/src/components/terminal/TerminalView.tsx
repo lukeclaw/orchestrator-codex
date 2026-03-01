@@ -17,6 +17,7 @@ interface Props {
   onImagePaste?: (file: File) => void  // Handle image paste from Cmd+V
   onTextPaste?: (text: string) => void  // Handle long text paste from Cmd+V
   onPastingChange?: (pasting: boolean) => void  // Notify parent when context-menu paste is in progress
+  onExit?: () => void  // Called when the underlying process exits (PTY closed)
 }
 
 type ConnectionState = 'connecting' | 'connected' | 'disconnected' | 'reconnecting'
@@ -25,7 +26,7 @@ type ConnectionState = 'connecting' | 'connected' | 'disconnected' | 'reconnecti
 const RECONNECT_DELAYS = [1000, 2000, 5000, 10000, 10000]
 const MAX_RECONNECT_ATTEMPTS = 5
 
-export default function TerminalView({ sessionId, wsPath, sendPath, sessionStatus, disableScrollback, onInputRef, onFocusRef, onImagePaste, onTextPaste, onPastingChange }: Props) {
+export default function TerminalView({ sessionId, wsPath, sendPath, sessionStatus, disableScrollback, onInputRef, onFocusRef, onImagePaste, onTextPaste, onPastingChange, onExit }: Props) {
   const termRef = useRef<HTMLDivElement>(null)
   const terminalRef = useRef<Terminal | null>(null)
   const wsRef = useRef<WebSocket | null>(null)
@@ -39,6 +40,8 @@ export default function TerminalView({ sessionId, wsPath, sendPath, sessionStatu
   onTextPasteRef.current = onTextPaste
   const onPastingChangeRef = useRef(onPastingChange)
   onPastingChangeRef.current = onPastingChange
+  const onExitRef = useRef(onExit)
+  onExitRef.current = onExit
 
   const [isFocused, setIsFocused] = useState(false)
   const [connectionState, setConnectionState] = useState<ConnectionState>('connecting')
@@ -50,6 +53,10 @@ export default function TerminalView({ sessionId, wsPath, sendPath, sessionStatu
 
   // Terminal is locked when session is in 'connecting' state (background op in progress)
   const isLocked = sessionStatus === 'connecting'
+
+  // Flag: set when the server reports the PTY process exited.
+  // Prevents reconnection attempts — the process is gone, not just a network blip.
+  const ptyExitedRef = useRef(false)
 
   // Create WebSocket connection with reconnection support
   const connectWebSocket = useCallback((terminal: Terminal) => {
@@ -98,6 +105,12 @@ export default function TerminalView({ sessionId, wsPath, sendPath, sessionStatu
       // Ignore close events from stale WebSocket instances
       // (e.g., React Strict Mode unmounts WS #1, but WS #2 is already current)
       if (wsRef.current !== ws) return
+
+      // PTY process exited — don't reconnect, notify parent
+      if (ptyExitedRef.current) {
+        setConnectionState('disconnected')
+        return
+      }
 
       // Don't reconnect if component is unmounting or max attempts reached
       if (reconnectAttemptRef.current >= MAX_RECONNECT_ATTEMPTS) {
@@ -172,6 +185,10 @@ export default function TerminalView({ sessionId, wsPath, sendPath, sessionStatu
             terminal.write(`\x1b[${msg.cursorY + 1};${msg.cursorX + 1}H`)
           }
           if (typeof msg.hash === 'number') lastSyncHash = msg.hash
+        } else if (msg.type === 'pty_exit') {
+          // The underlying PTY process exited — suppress reconnection
+          ptyExitedRef.current = true
+          onExitRef.current?.()
         } else if (msg.type === 'error') {
           terminal.write(`\r\n\x1b[31m${msg.message}\x1b[0m\r\n`)
         }

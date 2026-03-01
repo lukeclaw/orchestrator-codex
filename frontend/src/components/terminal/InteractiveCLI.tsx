@@ -124,6 +124,7 @@ export default function InteractiveCLI({ sessionId, minimized = false, onMinimiz
             // Auto-focus terminal on initial mount
             requestAnimationFrame(() => fn())
           }}
+          onExit={onClose}
         />
       </div>
     </div>
