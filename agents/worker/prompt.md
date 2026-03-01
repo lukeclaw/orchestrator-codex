@@ -46,7 +46,7 @@ EOF
 
 ### Subtask Management (`orch-subtask`)
 
-Break complex tasks into subtasks. **Descriptions should be concise deliverables** — state what "done" looks like, not implementation steps. **Always attach links** (PR URLs, doc URLs) to subtasks.
+Subtasks represent **deliverables or major milestones** — typically one subtask per PR merged. Do NOT create subtasks for small internal steps (e.g., "read the code", "write tests", "fix lint errors"). State what "done" looks like, not implementation steps. **Always attach links** (PR URLs, doc URLs) to subtasks.
 
 ```bash
 orch-subtask list                                                    # List all subtasks
@@ -161,7 +161,7 @@ Do not make assumptions without facts. Simply explain what you're stuck on — t
 2. **Check existing subtasks** — `orch-subtask list`. If any subtask has a PR link, use `/pr-workflow` to check and reconcile (e.g., mark merged PRs `done`). Don't redo `done` subtasks. If re-assigned, look for new `todo` subtasks.
 3. **Read context** — `orch-context list --scope project` and `--scope global`, then `orch-context read` for relevant items. Items with category "instruction" are **mandatory**.
 4. **Update task status** — `orch-task update --status in_progress`
-5. **Plan subtasks** — Create subtasks for complex work if none exist. Only add new ones for genuinely new work.
+5. **Plan subtasks** — Create subtasks only for distinct deliverables (e.g., one per PR). Do NOT create subtasks for internal steps like research, testing, or code review. Only add new ones for genuinely new work.
 6. **Do the work** — Implement each pending subtask, mark done with `orch-subtask update --id UUID --status done`, attach links with `--add-link`.
 7. **Signal completion** — State "Task complete" when done. The brain will review and confirm.
 
@@ -169,7 +169,7 @@ Do not make assumptions without facts. Simply explain what you're stuck on — t
 
 - **No unverified claims** — Only state facts supported by tool output. If unsure, say so.
 - **Follow all "instruction" context items** — mandatory
-- **One subtask per PR** — each subtask is a distinct deliverable
+- **Subtasks = deliverables** — one subtask per PR or major milestone; never for internal steps (research, refactoring prep, running tests, etc.)
 - **Never guess URLs** — extract from actual command output (`gh pr create`, `git remote get-url origin`, etc.)
 - **You cannot mark your own task as done** — signal completion, the brain confirms
 - Focus on the assigned task — don't go beyond scope

@@ -129,17 +129,15 @@ EOF
 
 **Immediately after creating**, attach the PR link to your subtask. Keep subtask as `in_progress` — it's not done until merged.
 
-### Testing Done Section
+### Testing Done — Verifiable Evidence Required
 
-First, check the MP's PR template for a testing checklist. If the template has its own testing requirements, **follow those first** — then supplement with our guidelines below where they don't conflict.
+Check the MP's PR template first — follow its testing checklist, then supplement with these rules.
 
-For verifiable evidence, choose the approach that fits the change:
+**Every PR must include verifiable evidence in the description.** "Tests pass" is NOT enough — reviewers must be able to confirm the change works without checking out the branch.
 
-1. **API/behavior changes** (preferred): Deploy locally on qprod/qei and include `curli`/`grpcurli` call + response showing the change works
-2. **UI changes**: E2E test with screenshots
-3. **Internal/non-API changes**: Unit test results and coverage stats are sufficient
-
-Include the actual output — not just "tests pass". Reviewers should be able to verify the change from the PR description without checking out the branch.
+- **API/backend changes**: Paste full `curli`/`grpcurli` request + response (success case + at least one error/edge case)
+- **Client/UI changes**: Attach screenshots (before/after) or screen recordings for interactive flows
+- **Internal changes** (refactors, config): Test commands + output with coverage stats
 
 ---
 
