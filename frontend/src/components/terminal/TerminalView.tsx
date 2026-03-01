@@ -43,7 +43,10 @@ export default function TerminalView({ sessionId, wsPath, sessionStatus, disable
   const [connectionState, setConnectionState] = useState<ConnectionState>('connecting')
   const [reconnectCountdown, setReconnectCountdown] = useState<number | null>(null)
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null)
-  
+  // Once the terminal has received a successful WS connection, it's "ready" forever.
+  // Before ready: show skeleton. After ready: show content (+ error overlay if disconnected).
+  const [ready, setReady] = useState(false)
+
   // Terminal is locked when session is in 'connecting' state (background op in progress)
   const isLocked = sessionStatus === 'connecting'
 
@@ -66,10 +69,12 @@ export default function TerminalView({ sessionId, wsPath, sessionStatus, disable
     })
 
     ws.onopen = () => {
+      if (wsRef.current !== ws) return // stale WS (React Strict Mode cleanup)
       setConnectionState('connected')
+      setReady(true)
       setReconnectCountdown(null)
       reconnectAttemptRef.current = 0
-      
+
       // Send initial size after a brief delay so fit has completed
       setTimeout(() => {
         if (ws.readyState === WebSocket.OPEN) {
@@ -88,7 +93,11 @@ export default function TerminalView({ sessionId, wsPath, sessionStatus, disable
 
     ws.onclose = () => {
       scrollDisposable.dispose()
-      
+
+      // Ignore close events from stale WebSocket instances
+      // (e.g., React Strict Mode unmounts WS #1, but WS #2 is already current)
+      if (wsRef.current !== ws) return
+
       // Don't reconnect if component is unmounting or max attempts reached
       if (reconnectAttemptRef.current >= MAX_RECONNECT_ATTEMPTS) {
         setConnectionState('disconnected')
@@ -122,6 +131,8 @@ export default function TerminalView({ sessionId, wsPath, sessionStatus, disable
     }
 
     ws.onmessage = (event) => {
+      if (wsRef.current !== ws) return // stale WS
+
       // Binary frames = raw PTY stream bytes (high-frequency path)
       if (event.data instanceof ArrayBuffer) {
         // Write to terminal unless user is scrolled up reviewing history
@@ -174,6 +185,10 @@ export default function TerminalView({ sessionId, wsPath, sessionStatus, disable
 
   useEffect(() => {
     if (!termRef.current) return
+
+    // Reset reconnect counter — critical for React Strict Mode which
+    // double-fires effects; the first cleanup sets this to MAX.
+    reconnectAttemptRef.current = 0
 
     const terminal = new Terminal({
       // NOTE: convertEol is intentionally NOT set (defaults to false).
@@ -364,15 +379,15 @@ export default function TerminalView({ sessionId, wsPath, sessionStatus, disable
     }
   }, [connectWebSocket])
 
-  // Determine overlay state — 'connecting' (initial) shows skeleton, not an error
-  const showOverlay = (connectionState !== 'connected' && connectionState !== 'connecting') || isLocked
+  // Before first successful connection: always show skeleton, never show errors.
+  // After first connection: show content; overlay only if connection is lost.
+  const showSkeleton = !ready
+  const showOverlay = isLocked || (ready && connectionState !== 'connected')
   const overlayMessage = isLocked
     ? 'Setting up connection...'
     : connectionState === 'reconnecting'
     ? `Reconnecting${reconnectCountdown ? ` in ${reconnectCountdown}s` : '...'}`
-    : connectionState === 'disconnected'
-    ? 'Connection lost'
-    : null
+    : 'Connection lost'
 
   // Build CSS classes
   const containerClasses = [
@@ -463,7 +478,7 @@ export default function TerminalView({ sessionId, wsPath, sessionStatus, disable
         data-testid="terminal-view"
         onContextMenu={handleContextMenu}
       />
-      {connectionState === 'connecting' && (
+      {showSkeleton && (
         <div className="terminal-skeleton">
           {Array.from({ length: 6 }).map((_, i) => (
             <div key={i} className="terminal-skeleton-line" style={{ width: `${20 + ((i * 23) % 55)}%` }} />
