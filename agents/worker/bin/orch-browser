@@ -62,27 +62,34 @@ logfile() {
 # On headless Linux servers, default font packages are often missing,
 # causing garbled/box characters in the browser.
 ensure_fonts() {
-    # Quick check: if liberation-sans fonts exist, skip install
+    # Quick check: if liberation fonts exist, skip install
     if fc-list 2>/dev/null | grep -qi "liberation\|noto" ; then
         return 0
     fi
     echo "Installing system fonts for Chromium..." >&2
+
+    # Strategy 1: Use Playwright's official deps installer (handles distro detection + fonts)
+    if command -v npx &>/dev/null; then
+        if npx playwright install-deps chromium >&2 2>&1; then
+            fc-cache -f 2>/dev/null || true
+            return 0
+        fi
+        echo "Playwright install-deps failed, trying manual font install..." >&2
+    fi
+
+    # Strategy 2: Manual package install (don't suppress output so sudo can prompt)
     if command -v yum &>/dev/null; then
-        sudo yum install -y \
-            liberation-fonts \
-            fontconfig \
-            &>/dev/null || echo "Warning: Could not install fonts via yum" >&2
+        sudo yum install -y liberation-fonts fontconfig >&2 || \
+            echo "Warning: Could not install fonts via yum" >&2
     elif command -v apt-get &>/dev/null; then
-        sudo apt-get install -y \
-            fonts-liberation \
-            fontconfig \
-            &>/dev/null || echo "Warning: Could not install fonts via apt" >&2
+        sudo apt-get install -y fonts-liberation fontconfig >&2 || \
+            echo "Warning: Could not install fonts via apt" >&2
     else
         echo "Warning: No supported package manager found for font installation" >&2
         return 0
     fi
     # Rebuild font cache
-    fc-cache -f &>/dev/null || true
+    fc-cache -f 2>/dev/null || true
 }
 
 # Find the Chromium binary from Playwright cache or PATH.
@@ -252,6 +259,9 @@ do_start() {
                 ;;
         esac
     done
+
+    # Step 0: Ensure system fonts are available for Chromium
+    ensure_fonts
 
     # Step 1: Check/launch browser
     if curl -sf "http://localhost:$port/json/version" &>/dev/null; then

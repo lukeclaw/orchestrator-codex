@@ -391,25 +391,29 @@ _REMOTE_WORKER_SERVER_SCRIPT = textwrap.dedent("""\
                 return
         except (OSError, subprocess.TimeoutExpired):
             pass
-        # Try yum (RHEL/CentOS), then apt (Debian/Ubuntu)
+
+        # Strategy 1: Use Playwright's official deps installer
+        npx = shutil.which("npx")
+        if npx:
+            try:
+                subprocess.run(
+                    [npx, "playwright", "install-deps", "chromium"],
+                    timeout=120,
+                )
+                subprocess.run(["fc-cache", "-f"], timeout=10)
+                return
+            except (subprocess.TimeoutExpired, OSError):
+                pass
+
+        # Strategy 2: Manual package install
         for cmd in (
             ["sudo", "yum", "install", "-y", "liberation-fonts", "fontconfig"],
             ["sudo", "apt-get", "install", "-y", "fonts-liberation", "fontconfig"],
         ):
             if shutil.which(cmd[1]):
                 try:
-                    subprocess.run(
-                        cmd,
-                        stdout=subprocess.DEVNULL,
-                        stderr=subprocess.DEVNULL,
-                        timeout=60,
-                    )
-                    subprocess.run(
-                        ["fc-cache", "-f"],
-                        stdout=subprocess.DEVNULL,
-                        stderr=subprocess.DEVNULL,
-                        timeout=10,
-                    )
+                    subprocess.run(cmd, timeout=60)
+                    subprocess.run(["fc-cache", "-f"], timeout=10)
                 except (subprocess.TimeoutExpired, OSError):
                     pass
                 return
@@ -516,6 +520,9 @@ _REMOTE_WORKER_SERVER_SCRIPT = textwrap.dedent("""\
             chromium_path = _install_chromium()
         if not chromium_path:
             return {"error": "Chromium not found and auto-install failed"}
+
+        # Ensure system fonts are available (best-effort, no-op if present)
+        _ensure_fonts()
 
         # Launch Chromium directly (no Node.js dependency)
         args = [
