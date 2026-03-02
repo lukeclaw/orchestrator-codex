@@ -8,12 +8,6 @@
   "terminalProgressBarEnabled": false,
   "prefersReducedMotion": true,
   "autoUpdatesChannel": "stable",
-  "mcpServers": {
-    "playwright": {
-      "command": "npx",
-      "args": ["-y", "@playwright/mcp@latest", "--cdp-endpoint", "http://localhost:9222"]
-    }
-  },
   "permissions": {
     "allow": [
       "Bash(orch-task *)",

@@ -477,10 +477,14 @@ def _launch_claude_in_screen(
         session_arg,
     )
 
-    # Remove stale Playwright plugin (replaced by mcpServers config)
-    remove_plugin_cmd = "claude plugin remove playwright 2>/dev/null || true"
-    send_keys(tmux_sess, tmux_win, remove_plugin_cmd, enter=True)
-    time.sleep(1)
+    # Register Playwright MCP to connect to orch-browser's CDP endpoint
+    mcp_add_cmd = (
+        "claude mcp add --scope user playwright"
+        " -- npx -y @playwright/mcp@latest"
+        " --cdp-endpoint http://localhost:9222"
+    )
+    send_keys(tmux_sess, tmux_win, mcp_add_cmd, enter=True)
+    time.sleep(2)
 
     # Launch Claude with skills from the remote .claude directory
     settings_file = f"{remote_tmp_dir}/configs/settings.json"

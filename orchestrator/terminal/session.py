@@ -694,14 +694,14 @@ def setup_remote_worker(
             time.sleep(0.3)
             logger.info("Deployed skills to %s for rdev worker %s", global_skills_dest, name)
 
-        # 8. Remove stale Playwright plugin (replaced by mcpServers config)
-        tmux.send_keys(
-            tmux_session,
-            name,
-            "claude plugin remove playwright 2>/dev/null || true",
-            enter=True,
+        # 8. Register Playwright MCP to connect to orch-browser's CDP endpoint
+        mcp_add_cmd = (
+            "claude mcp add --scope user playwright"
+            " -- npx -y @playwright/mcp@latest"
+            " --cdp-endpoint http://localhost:9222"
         )
-        time.sleep(1)
+        tmux.send_keys(tmux_session, name, mcp_add_cmd, enter=True)
+        time.sleep(2)
 
         # 9. Launch Claude (inside screen)
         settings_file = f"{remote_tmp_dir}/configs/settings.json"
@@ -822,14 +822,14 @@ def setup_local_worker(
                 f.write(worker_prompt)
             logger.info("Wrote worker prompt to %s", prompt_file)
 
-        # 5. Remove stale Playwright plugin (replaced by mcpServers config)
-        tmux.send_keys(
-            tmux_session,
-            name,
-            "claude plugin remove playwright 2>/dev/null || true",
-            enter=True,
+        # 5. Register Playwright MCP to connect to orch-browser's CDP endpoint
+        mcp_add_cmd = (
+            "claude mcp add --scope user playwright"
+            " -- npx -y @playwright/mcp@latest"
+            " --cdp-endpoint http://localhost:9222"
         )
-        time.sleep(1)
+        tmux.send_keys(tmux_session, name, mcp_add_cmd, enter=True)
+        time.sleep(2)
 
         # 6. Build and send claude command
         cmd_parts = []
