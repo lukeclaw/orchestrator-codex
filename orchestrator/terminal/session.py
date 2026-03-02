@@ -694,7 +694,16 @@ def setup_remote_worker(
             time.sleep(0.3)
             logger.info("Deployed skills to %s for rdev worker %s", global_skills_dest, name)
 
-        # 8. Launch Claude (inside screen)
+        # 8. Remove stale Playwright plugin (replaced by mcpServers config)
+        tmux.send_keys(
+            tmux_session,
+            name,
+            "claude plugin remove playwright 2>/dev/null || true",
+            enter=True,
+        )
+        time.sleep(1)
+
+        # 9. Launch Claude (inside screen)
         settings_file = f"{remote_tmp_dir}/configs/settings.json"
 
         claude_args = [
@@ -813,7 +822,16 @@ def setup_local_worker(
                 f.write(worker_prompt)
             logger.info("Wrote worker prompt to %s", prompt_file)
 
-        # 5. Build and send claude command
+        # 5. Remove stale Playwright plugin (replaced by mcpServers config)
+        tmux.send_keys(
+            tmux_session,
+            name,
+            "claude plugin remove playwright 2>/dev/null || true",
+            enter=True,
+        )
+        time.sleep(1)
+
+        # 6. Build and send claude command
         cmd_parts = []
         if work_dir:
             cmd_parts.append(f"cd {work_dir}")
