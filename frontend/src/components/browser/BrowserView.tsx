@@ -34,6 +34,8 @@ export default function BrowserView({ sessionId, minimized = false, onMinimizedC
   const aspectRatioRef = useRef(4 / 3)
   const [showSettings, setShowSettings] = useState(false)
   const settingsRef = useRef<HTMLDivElement>(null)
+  const [urlInput, setUrlInput] = useState('')
+  const [urlFocused, setUrlFocused] = useState(false)
   // Track actual frame dimensions for coordinate scaling
   const frameSizeRef = useRef({ width: 1280, height: 960 })
 
@@ -255,6 +257,37 @@ export default function BrowserView({ sessionId, minimized = false, onMinimizedC
     ws.send(JSON.stringify({ type: 'quality', quality: newQuality }))
   }, [])
 
+  const handleGoBack = useCallback(() => {
+    const ws = wsRef.current
+    if (!ws || ws.readyState !== WebSocket.OPEN) return
+    ws.send(JSON.stringify({ type: 'goBack' }))
+  }, [])
+
+  const handleGoForward = useCallback(() => {
+    const ws = wsRef.current
+    if (!ws || ws.readyState !== WebSocket.OPEN) return
+    ws.send(JSON.stringify({ type: 'goForward' }))
+  }, [])
+
+  const handleNavigate = useCallback((url: string) => {
+    const ws = wsRef.current
+    if (!ws || ws.readyState !== WebSocket.OPEN) return
+    let normalized = url.trim()
+    if (!normalized) return
+    // Add protocol if missing
+    if (!/^https?:\/\//i.test(normalized)) {
+      normalized = 'https://' + normalized
+    }
+    ws.send(JSON.stringify({ type: 'navigate', url: normalized }))
+  }, [])
+
+  // Sync pageUrl into urlInput when not focused
+  useEffect(() => {
+    if (!urlFocused && pageUrl) {
+      setUrlInput(pageUrl)
+    }
+  }, [pageUrl, urlFocused])
+
   const classes = [
     'bv-overlay',
     isFocused && 'bv-focused',
@@ -286,7 +319,7 @@ export default function BrowserView({ sessionId, minimized = false, onMinimizedC
         <div className="bv-title-group">
           <span className={`bv-status-dot ${connected ? 'connected' : ''}`} />
           <span className="bv-title">Browser View</span>
-          {!minimized && pageUrl && (
+          {minimized && pageUrl && (
             <span className="bv-url" title={pageUrl}>
               {pageTitle || new URL(pageUrl).hostname}
             </span>
@@ -365,6 +398,37 @@ export default function BrowserView({ sessionId, minimized = false, onMinimizedC
           </button>
         </div>
       </div>
+      {!minimized && connected && (
+        <div className="bv-navbar">
+          <button className="bv-nav-btn" onClick={handleGoBack} title="Back">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="15 18 9 12 15 6" />
+            </svg>
+          </button>
+          <button className="bv-nav-btn" onClick={handleGoForward} title="Forward">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="9 18 15 12 9 6" />
+            </svg>
+          </button>
+          <input
+            className="bv-url-input"
+            type="text"
+            value={urlInput}
+            onChange={(e) => setUrlInput(e.target.value)}
+            onFocus={(e) => { setUrlFocused(true); e.target.select() }}
+            onBlur={() => setUrlFocused(false)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                handleNavigate(urlInput)
+                ;(e.target as HTMLInputElement).blur()
+              }
+              e.stopPropagation()
+            }}
+            placeholder="Enter URL..."
+            spellCheck={false}
+          />
+        </div>
+      )}
       <div className="bv-canvas-container" style={minimized ? { display: 'none' } : undefined}>
         {error ? (
           <div className="bv-error">

@@ -502,3 +502,14 @@ async def handle_client_input(view: BrowserViewSession, msg: dict) -> None:
     elif msg_type == "quality":
         quality = msg.get("quality", 60)
         await set_screencast_quality(view, quality)
+
+    elif msg_type == "navigate":
+        url = msg.get("url", "")
+        if url:
+            await _cdp_send(view.cdp_ws, "Page.navigate", {"url": url})
+
+    elif msg_type == "goBack":
+        await _cdp_send(view.cdp_ws, "Page.goBack")
+
+    elif msg_type == "goForward":
+        await _cdp_send(view.cdp_ws, "Page.goForward")
