@@ -82,12 +82,11 @@ def test_04_add_session_flow(page):
 
     screenshot(page, "04a_add_session_modal")
 
-    # Switch to Local mode (modal defaults to rdev)
+    # Switch to Local mode (modal defaults to local, host is implicit "localhost")
     page.click("[data-testid='worker-type-toggle'] >> text=Local")
 
-    # Fill form
+    # Fill form (Local mode has name + path, no host input)
     page.fill("[data-testid='session-name-input']", "worker-delta")
-    page.fill("[data-testid='session-host-input']", "localhost")
     page.fill("[data-testid='session-path-input']", "/src/project-d")
 
     screenshot(page, "04b_add_session_filled")

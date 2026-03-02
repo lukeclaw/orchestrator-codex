@@ -8,6 +8,7 @@ from fastapi.testclient import TestClient
 from orchestrator.api.app import create_app
 from orchestrator.state.db import get_connection
 from orchestrator.state.migrations.runner import apply_migrations
+from orchestrator.state.models import InteractiveCLI
 from orchestrator.terminal.interactive import _active_clis
 
 pytestmark = pytest.mark.allow_subprocess
@@ -72,22 +73,27 @@ class TestOpenEndpoint:
         assert data["ok"] is True
         assert data["window_name"] == "test-worker-icli"
 
-    @patch("orchestrator.terminal.interactive.tmux.send_keys")
-    @patch("orchestrator.terminal.interactive.ssh.wait_for_prompt", return_value=True)
-    @patch("orchestrator.terminal.interactive.ssh.remote_connect")
-    @patch("orchestrator.terminal.interactive.tmux.create_window")
-    def test_opens_remote_cli(
-        self, mock_create, mock_connect, mock_wait, mock_send, client, rdev_session
-    ):
+    @patch("orchestrator.api.routes.interactive_cli.open_interactive_cli_via_rws")
+    def test_opens_remote_cli(self, mock_rws_open, client, rdev_session):
+        mock_rws_open.return_value = InteractiveCLI(
+            session_id=rdev_session.id,
+            window_name="rws-pty-1",
+            status="active",
+            created_at="2025-01-01T00:00:00",
+            initial_command="bash",
+            remote_pty_id="pty-1",
+            rws_host="user/rdev-vm",
+        )
         response = client.post(
             f"/api/sessions/{rdev_session.id}/interactive-cli",
-            json={"command": "sudo yum install screen"},
+            json={"command": "bash"},
         )
 
         assert response.status_code == 200
         data = response.json()
         assert data["ok"] is True
-        assert data["window_name"] == "rdev-worker-icli"
+        assert data["window_name"] == "rws-pty-1"
+        mock_rws_open.assert_called_once()
 
     @patch("orchestrator.terminal.interactive.tmux.create_window")
     def test_409_duplicate(self, mock_create, client, local_session):
