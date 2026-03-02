@@ -22,12 +22,14 @@ interface AppState {
   smartPastePayload: SmartPastePayload | null
   interactiveCliSessions: Set<string>
   interactiveCliMinimized: Set<string>
+  browserViewSessions: Set<string>
   setSmartPastePayload: (payload: SmartPastePayload | null) => void
   refresh: () => void
   refreshRdevs: (forceRefresh?: boolean) => Promise<void>
   refreshNotificationCount: () => Promise<void>
   removeSession: (id: string) => void
   closeInteractiveCli: (sessionId: string) => void
+  closeBrowserView: (sessionId: string) => void
 }
 
 const AppContext = createContext<AppState>({
@@ -42,12 +44,14 @@ const AppContext = createContext<AppState>({
   smartPastePayload: null,
   interactiveCliSessions: new Set(),
   interactiveCliMinimized: new Set(),
+  browserViewSessions: new Set(),
   setSmartPastePayload: () => {},
   refresh: () => {},
   refreshRdevs: async () => {},
   refreshNotificationCount: async () => {},
   removeSession: () => {},
   closeInteractiveCli: () => {},
+  closeBrowserView: () => {},
 })
 
 export function useApp() {
@@ -65,6 +69,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [smartPastePayload, setSmartPastePayload] = useState<SmartPastePayload | null>(null)
   const [interactiveCliSessions, setInteractiveCliSessions] = useState<Set<string>>(new Set())
   const [interactiveCliMinimized, setInteractiveCliMinimized] = useState<Set<string>>(new Set())
+  const [browserViewSessions, setBrowserViewSessions] = useState<Set<string>>(new Set())
 
   const fetchAll = useCallback(async () => {
     try {
@@ -157,6 +162,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
               next.delete(msg.data.session_id)
               return next
             })
+          } else if (msg.type === 'browser_view_started' && msg.data?.session_id) {
+            setBrowserViewSessions(prev => new Set([...prev, msg.data.session_id]))
+            fetchAll()
+          } else if (msg.type === 'browser_view_closed' && msg.data?.session_id) {
+            setBrowserViewSessions(prev => {
+              const next = new Set(prev)
+              next.delete(msg.data.session_id)
+              return next
+            })
+            fetchAll()
           } else {
             // Other messages trigger data refresh
             fetchAll()
@@ -229,10 +244,18 @@ export function AppProvider({ children }: { children: ReactNode }) {
     })
   }, [])
 
+  const closeBrowserView = useCallback((sessionId: string) => {
+    setBrowserViewSessions(prev => {
+      const next = new Set(prev)
+      next.delete(sessionId)
+      return next
+    })
+  }, [])
+
   // Focus tracking now handled via WebSocket (see above)
 
   return (
-    <AppContext.Provider value={{ sessions, workers, projects, tasks, rdevs, notificationCount, connected, loading, smartPastePayload, interactiveCliSessions, interactiveCliMinimized, setSmartPastePayload, refresh: fetchAll, refreshRdevs, refreshNotificationCount, removeSession, closeInteractiveCli }}>
+    <AppContext.Provider value={{ sessions, workers, projects, tasks, rdevs, notificationCount, connected, loading, smartPastePayload, interactiveCliSessions, interactiveCliMinimized, browserViewSessions, setSmartPastePayload, refresh: fetchAll, refreshRdevs, refreshNotificationCount, removeSession, closeInteractiveCli, closeBrowserView }}>
       {children}
     </AppContext.Provider>
   )

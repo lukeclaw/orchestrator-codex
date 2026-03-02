@@ -20,15 +20,17 @@ document.addEventListener('contextmenu', (e) => {
 // Intercept external link clicks so they open in the system browser
 // instead of navigating the Tauri webview away from the app.
 // Internal links (same origin, e.g. React Router) are left alone.
+// Uses CAPTURE phase so it fires before any component stopPropagation() can block it.
 document.addEventListener('click', (e) => {
   const anchor = (e.target as HTMLElement).closest('a[href]') as HTMLAnchorElement | null
   if (!anchor) return
   const href = anchor.href
   if (href && /^https?:\/\//.test(href) && new URL(href).origin !== location.origin) {
     e.preventDefault()
+    e.stopPropagation()
     openUrl(href)
   }
-})
+}, true)
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>

@@ -224,6 +224,7 @@ def create_app(
     from orchestrator.api.routes import (
         backup,
         brain,
+        browser_view,
         context,
         files,
         interactive_cli,
@@ -254,6 +255,7 @@ def create_app(
     app.include_router(trends.router, prefix="/api", tags=["trends"])
     app.include_router(updates.router, prefix="/api", tags=["updates"])
     app.include_router(interactive_cli.router, prefix="/api", tags=["interactive_cli"])
+    app.include_router(browser_view.router, prefix="/api", tags=["browser_view"])
 
     # Health check (used by Tauri shell to know when the sidecar is ready)
     @app.get("/api/health", tags=["health"])
@@ -299,6 +301,11 @@ def create_app(
     from orchestrator.api.ws_terminal import ws_interactive_cli
 
     app.add_api_websocket_route("/ws/terminal/{session_id}/interactive", ws_interactive_cli)
+
+    # Browser View WebSocket (CDP screencast)
+    from orchestrator.api.ws_browser_view import ws_browser_view
+
+    app.add_api_websocket_route("/ws/browser-view/{session_id}", ws_browser_view)
 
     # Static mount for saved images
     try:

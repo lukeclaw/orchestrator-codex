@@ -46,6 +46,14 @@ orch-tunnel 4200 --close  # Close tunnel
 orch-tunnel --list        # List active tunnels
 ```
 
+### Browser — Remote Debugging
+When launching a browser (Playwright, Chromium, etc.), **always** include `--remote-debugging-port=9222` so the operator can view and interact with your browser from the dashboard.
+```bash
+# Playwright example
+chromium --remote-debugging-port=9222
+# Or in code: browser = playwright.chromium.launch(args=["--remote-debugging-port=9222"])
+```
+
 ### `orch-interactive` — User-Facing Terminal
 **Always use instead of raw tmux** for user interaction (passwords, MFA, interactive tools, monitoring). Opens a floating terminal in the dashboard — no manual tmux attach needed. Don't send input while the user is typing.
 ```bash

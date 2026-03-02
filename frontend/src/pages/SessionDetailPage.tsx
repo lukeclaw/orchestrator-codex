@@ -8,6 +8,7 @@ import { useFileExplorerState } from '../hooks/useFileExplorerState'
 import { useEditorTabs } from '../hooks/useEditorTabs'
 import TerminalView from '../components/terminal/TerminalView'
 import InteractiveCLI from '../components/terminal/InteractiveCLI'
+import BrowserView from '../components/browser/BrowserView'
 import FileExplorerPanel from '../components/file-explorer/FileExplorerPanel'
 import FileViewer from '../components/file-explorer/FileViewer'
 import { IconPause, IconPlay, IconStop, IconRefresh, IconTrash, IconSync, IconBrain } from '../components/common/Icons'
@@ -27,7 +28,7 @@ export default function SessionDetailPage() {
   const notify = useNotify()
   
   // Use shared state from AppContext for session
-  const { sessions, tasks: allTasks, refresh, interactiveCliSessions, interactiveCliMinimized, closeInteractiveCli } = useApp()
+  const { sessions, tasks: allTasks, refresh, interactiveCliSessions, interactiveCliMinimized, closeInteractiveCli, browserViewSessions, closeBrowserView } = useApp()
   const session = sessions.find(s => s.id === id) || null
   const tasks = allTasks.filter(t => t.assigned_session_id === id)
   const isRdev = session?.host?.includes('/') ?? false
@@ -56,10 +57,17 @@ export default function SessionDetailPage() {
   const [icliActiveLocal, setIcliActiveLocal] = useState(false)
   const [icliStarting, setIcliStarting] = useState(false)
   const [icliMinimized, setIcliMinimized] = useState(() => id ? interactiveCliMinimized.has(id) : false)
+  const [bvActiveLocal, setBvActiveLocal] = useState(false)
+  const [bvStarting, setBvStarting] = useState(false)
+  const [bvMinimized, setBvMinimized] = useState(false)
 
   // icliActive combines local state (from mount check) with AppContext WS events
   const icliFromContext = id ? interactiveCliSessions.has(id) : false
   const icliActive = icliActiveLocal || icliFromContext
+
+  // Browser view state (same pattern as interactive CLI)
+  const bvFromContext = id ? browserViewSessions.has(id) : false
+  const bvActive = bvActiveLocal || bvFromContext
 
   // Auto-show overlay when interactive CLI becomes active (via WS event)
   useEffect(() => {
@@ -107,6 +115,42 @@ export default function SessionDetailPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id])
 
+  // Auto-show browser view overlay when it becomes active (via WS event)
+  useEffect(() => {
+    if (bvFromContext) {
+      setBvActiveLocal(true)
+      setBvMinimized(false)
+    }
+  }, [bvFromContext])
+
+  // Auto-hide browser view when WS says closed
+  useEffect(() => {
+    if (!bvFromContext && bvActiveLocal) {
+      if (!id) return
+      api<{ active: boolean }>(`/api/sessions/${id}/browser-view`)
+        .then(r => {
+          if (!r.active) {
+            setBvActiveLocal(false)
+            setBvMinimized(false)
+          }
+        })
+        .catch(() => {})
+    }
+  }, [bvFromContext, bvActiveLocal, id])
+
+  // Check browser view status on mount
+  useEffect(() => {
+    if (!id) return
+    api<{ active: boolean }>(`/api/sessions/${id}/browser-view`)
+      .then(r => {
+        if (r.active) {
+          setBvActiveLocal(true)
+        }
+      })
+      .catch(() => {})
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id])
+
   // Record that user viewed this session
   useEffect(() => {
     if (id) {
@@ -114,9 +158,9 @@ export default function SessionDetailPage() {
     }
   }, [id])
 
-  // Fetch tunnels for rdev workers
+  // Fetch tunnels for remote workers (rdev and SSH)
   useEffect(() => {
-    if (!isRdev || !id) {
+    if (!isRemote || !id) {
       setTunnels({})
       return
     }
@@ -140,7 +184,7 @@ export default function SessionDetailPage() {
     return () => {
       clearInterval(tunnelIntervalRef.current)
     }
-  }, [id, isRdev])
+  }, [id, isRemote])
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -382,6 +426,29 @@ export default function SessionDetailPage() {
       setIcliStarting(false)
     }
   }, [id, icliActive, icliStarting, notify])
+
+  // Open or toggle browser view
+  const handleBrowserView = useCallback(async () => {
+    if (!id || bvStarting) return
+    if (bvActive) {
+      // Already active — toggle minimize/restore
+      setBvMinimized(prev => !prev)
+      return
+    }
+    setBvStarting(true)
+    try {
+      await api(`/api/sessions/${id}/browser-view`, {
+        method: 'POST',
+        body: JSON.stringify({ cdp_port: 9222 }),
+      })
+      setBvActiveLocal(true)
+      setBvMinimized(false)
+    } catch (e) {
+      notify(e instanceof Error ? e.message : 'Failed to start browser view', 'error')
+    } finally {
+      setBvStarting(false)
+    }
+  }, [id, bvActive, bvStarting, notify])
 
   // Handle long text paste from Cmd+V in terminal (no permission popup)
   const handleTextPaste = useCallback(async (text: string) => {
@@ -660,6 +727,24 @@ export default function SessionDetailPage() {
               }}
             />
           )}
+
+          {/* Browser View overlay — CDP screencast for remote browser */}
+          {bvActive && id && (
+            <BrowserView
+              sessionId={id}
+              minimized={bvMinimized}
+              onMinimizedChange={(min) => {
+                setBvMinimized(min)
+                if (min) terminalFocusRef.current?.()
+              }}
+              onClose={() => {
+                setBvActiveLocal(false)
+                setBvMinimized(false)
+                if (id) closeBrowserView(id)
+                terminalFocusRef.current?.()
+              }}
+            />
+          )}
         </div>
       </div>
 
@@ -737,6 +822,20 @@ export default function SessionDetailPage() {
               <span>Terminal</span>
               <span className="sd-panel-dot" />
             </button>
+            {isRemote && (
+              <button
+                className={`sd-panel-btn sd-panel-btn--browser${bvActive ? ' active' : ''}${bvStarting ? ' starting' : ''}`}
+                onClick={handleBrowserView}
+                disabled={bvStarting}
+                title={bvStarting ? 'Starting browser view...' : bvActive ? (bvMinimized ? 'Restore browser view' : 'Minimize browser view') : 'View remote browser'}
+              >
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <circle cx="12" cy="12" r="10" /><line x1="2" y1="12" x2="22" y2="12" /><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
+                </svg>
+                <span>Browser</span>
+                <span className="sd-panel-dot" />
+              </button>
+            )}
           </div>
           <button
             className={`sd-paste-btn${pasting || ctxPasting ? ' pasting' : ''}`}

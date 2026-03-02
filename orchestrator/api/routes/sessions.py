@@ -504,6 +504,14 @@ def _delete_session_inner(s, session_id: str, request: Request, db):
     except Exception:
         logger.warning("Could not close interactive CLI for session %s", s.name, exc_info=True)
 
+    # Close browser view if active
+    try:
+        from orchestrator.browser.cdp_proxy import stop_browser_view_sync
+
+        stop_browser_view_sync(session_id)
+    except Exception:
+        logger.warning("Could not close browser view for session %s", s.name, exc_info=True)
+
     # Note: work_dir is NOT cleaned up - it's the user's working directory
     # Only tmp_dir (worker_scripts_dir) is cleaned up above
 

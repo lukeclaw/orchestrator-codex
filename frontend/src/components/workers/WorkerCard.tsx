@@ -44,9 +44,10 @@ export default function WorkerCard({
   const sessionIdRef = useRef(session.id)
   const overflowRef = useRef<HTMLDivElement>(null)
 
-  // Check if this is an rdev worker or SSH worker
+  // Check if this is an rdev worker, SSH worker, or any remote worker
   const isRdev = session.host.includes('/')
   const isSsh = !isRdev && session.host !== 'localhost'
+  const isRemote = session.host !== 'localhost'
 
   // Whether to always show action buttons (error states)
   const alwaysShowActions = session.status === 'error' || session.status === 'disconnected' || session.status === 'screen_detached'
@@ -54,9 +55,9 @@ export default function WorkerCard({
   // Update ref when session changes (for interval callbacks to read current value)
   sessionIdRef.current = session.id
 
-  // Fetch tunnels for rdev workers
+  // Fetch tunnels for remote workers (rdev and SSH)
   useEffect(() => {
-    if (!isRdev) {
+    if (!isRemote) {
       setTunnels({})
       return
     }
@@ -84,7 +85,7 @@ export default function WorkerCard({
     return () => {
       clearInterval(tunnelIntervalRef.current)
     }
-  }, [session.id, isRdev])
+  }, [session.id, isRemote])
 
   // Close overflow menu on click outside
   useEffect(() => {
