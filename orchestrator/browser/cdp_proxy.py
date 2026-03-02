@@ -53,6 +53,10 @@ class BrowserViewSession:
     quality: int = 60
     status: str = "active"  # "active" | "closed"
     created_at: str = field(default_factory=lambda: datetime.now(UTC).isoformat())
+    # Pending CDP responses: msg_id -> Future[dict]
+    _pending: dict[int, asyncio.Future] = field(
+        default_factory=dict, repr=False
+    )
 
 
 # In-memory registry: session_id -> BrowserViewSession
@@ -108,6 +112,22 @@ async def _cdp_send(
         msg["params"] = params
     await cdp_ws.send(json.dumps(msg))
     return msg_id
+
+
+async def _cdp_call(
+    view: BrowserViewSession,
+    method: str,
+    params: dict | None = None,
+    timeout: float = 5.0,
+) -> dict:
+    """Send a CDP command and wait for its response."""
+    msg_id = await _cdp_send(view.cdp_ws, method, params)
+    fut: asyncio.Future[dict] = asyncio.get_event_loop().create_future()
+    view._pending[msg_id] = fut
+    try:
+        return await asyncio.wait_for(fut, timeout)
+    finally:
+        view._pending.pop(msg_id, None)
 
 
 async def start_browser_view(
@@ -416,6 +436,13 @@ async def relay_cdp_to_client(
     try:
         async for raw_msg in view.cdp_ws:
             msg = json.loads(raw_msg)
+
+            # Resolve pending _cdp_call futures for response messages
+            resp_id = msg.get("id")
+            if resp_id is not None and resp_id in view._pending:
+                view._pending[resp_id].set_result(msg)
+                continue
+
             method = msg.get("method", "")
 
             if method == "Page.screencastFrame":
@@ -455,6 +482,27 @@ async def relay_cdp_to_client(
     except Exception as e:
         logger.error("CDP relay error for session %s: %s", view.session_id, e)
         await send_json({"type": "error", "message": f"CDP error: {e}"})
+
+
+async def _navigate_history(
+    view: BrowserViewSession, forward: bool = False
+) -> None:
+    """Navigate back or forward using CDP history APIs."""
+    try:
+        resp = await _cdp_call(view, "Page.getNavigationHistory")
+        result = resp.get("result", {})
+        entries = result.get("entries", [])
+        current = result.get("currentIndex", 0)
+        target_idx = current + (1 if forward else -1)
+        if 0 <= target_idx < len(entries):
+            entry_id = entries[target_idx]["id"]
+            await _cdp_send(
+                view.cdp_ws,
+                "Page.navigateToHistoryEntry",
+                {"entryId": entry_id},
+            )
+    except Exception as e:
+        logger.warning("History navigation failed: %s", e)
 
 
 async def handle_client_input(view: BrowserViewSession, msg: dict) -> None:
@@ -508,8 +556,5 @@ async def handle_client_input(view: BrowserViewSession, msg: dict) -> None:
         if url:
             await _cdp_send(view.cdp_ws, "Page.navigate", {"url": url})
 
-    elif msg_type == "goBack":
-        await _cdp_send(view.cdp_ws, "Page.goBack")
-
-    elif msg_type == "goForward":
-        await _cdp_send(view.cdp_ws, "Page.goForward")
+    elif msg_type in ("goBack", "goForward"):
+        await _navigate_history(view, forward=(msg_type == "goForward"))
