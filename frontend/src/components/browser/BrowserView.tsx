@@ -295,9 +295,9 @@ export default function BrowserView({ sessionId, minimized = false, onMinimizedC
     minimized && 'bv-minimized',
   ].filter(Boolean).join(' ')
 
-  // Dynamic aspect-ratio sizing (not applied when minimized)
+  // Pass frame aspect ratio as CSS variable (not applied when minimized).
+  // The canvas sizes itself via aspect-ratio; the overlay height is auto.
   const overlayStyle: React.CSSProperties = minimized ? {} : {
-    aspectRatio: `${aspectRatio}`,
     '--bv-aspect': `${aspectRatio}`,
   } as React.CSSProperties
 

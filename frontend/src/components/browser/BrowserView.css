@@ -5,7 +5,7 @@
   top: 48px;
   right: 80px;
   width: 640px;
-  /* height computed from inline aspect-ratio */
+  /* height driven by content: titlebar + navbar + canvas */
   z-index: 100;
   border-radius: 8px;
   border: 1px solid var(--border-subtle);
@@ -26,8 +26,8 @@
   right: auto;
   bottom: auto;
   transform: translate(-50%, -50%);
-  /* Fit viewport while preserving frame aspect ratio */
-  width: min(92vw, calc(88vh * var(--bv-aspect, 1.333)));
+  /* Fit viewport: subtract ~60px chrome (titlebar+navbar), then derive width from aspect ratio */
+  width: min(92vw, calc((88vh - 60px) * var(--bv-aspect, 1.333)));
   z-index: 200;
   border-radius: 8px;
 }
@@ -269,8 +269,8 @@
 
 /* Canvas container */
 .bv-canvas-container {
-  flex: 1;
-  min-height: 0;
+  width: 100%;
+  aspect-ratio: var(--bv-aspect, 1.333);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -279,9 +279,8 @@
 }
 
 .bv-canvas {
-  max-width: 100%;
-  max-height: 100%;
-  aspect-ratio: var(--bv-aspect, 1.333);
+  width: 100%;
+  height: 100%;
   cursor: default;
   outline: none;
 }
