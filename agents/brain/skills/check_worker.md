@@ -36,7 +36,15 @@ Classify prompt state before deciding actions:
 - **Running command** — output scrolling → no action needed
 - **Unclear** → mark "Needs human"
 
-### 3. Triage
+### 3. Check for stated wait reasons
+
+Before triaging, check the worker's task/subtask notes for a stated wait reason:
+```bash
+orch-tasks show <task-id>   # Check notes field for "Waiting: ..." messages
+```
+If the worker has stated a valid reason for waiting (e.g., outside working hours, waiting on a dependency, blocked on access), **respect it** — skip that worker or note the reason in the summary table. Don't nudge a worker to do something it has already explained it can't do yet.
+
+### 4. Triage
 
 Two paths based on terminal output:
 
@@ -72,7 +80,7 @@ Map `orch-prs` action field to suggested action:
 | draft | — (still working) |
 | closed | Investigate |
 
-### 4. Present summary
+### 5. Present summary
 
 Show a numbered table of non-idle workers. Collapse idle workers into one line. Group proposed actions by type letter.
 
@@ -94,7 +102,7 @@ Approve? (all / A,B / skip C / none / 1,3)
 
 User can approve by group letter, skip a group, or cherry-pick numbers.
 
-### 5. Execute and recap
+### 6. Execute and recap
 
 After approval, execute actions. Verify each with `orch-workers show <id> | jq '.status'`. If still "waiting" after sending a message, retry with `tmux send-keys -t orchestrator:<worker-name> Enter`.
 

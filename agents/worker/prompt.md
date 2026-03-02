@@ -100,6 +100,14 @@ After `/compact` or when context feels incomplete, **re-fetch context items** �
 
 **When in doubt, look it up or ask. Never guess.**
 
+### State Why You're Waiting
+
+When you decide to wait (for any reason — working hours, PR review, dependency, missing access, etc.), **always** update your task or subtask notes with the reason:
+```bash
+orch-task update --notes "Waiting: PR #123 clean but outside working hours (9AM-6PM Mon-Fri). Will mark ready next business day."
+```
+This lets the brain understand your situation and avoid nudging you to do something you can't or shouldn't do yet.
+
 ### Other Rules
 
 - **No unverified claims** — only state facts supported by tool output
