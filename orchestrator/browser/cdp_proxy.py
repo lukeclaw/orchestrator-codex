@@ -209,6 +209,16 @@ async def start_browser_view(
         await _cdp_send(cdp_ws, "Page.enable")
         await _cdp_send(
             cdp_ws,
+            "Emulation.setEmulatedMedia",
+            {"features": [{"name": "prefers-color-scheme", "value": "dark"}]},
+        )
+        await _cdp_send(
+            cdp_ws,
+            "Emulation.setDefaultBackgroundColorOverride",
+            {"color": {"r": 30, "g": 30, "b": 30, "a": 1}},
+        )
+        await _cdp_send(
+            cdp_ws,
             "Emulation.setDeviceMetricsOverride",
             {
                 "width": max_width,
