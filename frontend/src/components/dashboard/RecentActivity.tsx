@@ -40,17 +40,23 @@ export default function RecentActivity({ workers, tasks }: Props) {
         sortTime: ts,
       })
     } else if (t.status === 'in_progress' && t.assigned_session_id) {
-      const worker = workers.find(w => w.id === t.assigned_session_id)
-      const workerName = worker ? worker.name.split('_').pop() : 'worker'
-      taskItems.push({
-        id: `task-active-${t.id}`,
-        icon: '→',
-        iconClass: 'info',
-        text: `${t.task_key || 'Task'} picked up by ${workerName}`,
-        link: `/tasks/${t.id}`,
-        time: t.updated_at,
-        sortTime: ts,
-      })
+      // Only show "picked up" for tasks that were recently created — for older
+      // tasks updated_at drifts with note/link edits and the event looks stale.
+      const createdTs = new Date(t.created_at).getTime()
+      const createdAgo = Date.now() - createdTs
+      if (createdAgo <= 48 * 60 * 60 * 1000) {
+        const worker = workers.find(w => w.id === t.assigned_session_id)
+        const workerName = worker ? worker.name.split('_').pop() : 'worker'
+        taskItems.push({
+          id: `task-active-${t.id}`,
+          icon: '→',
+          iconClass: 'info',
+          text: `${t.task_key || 'Task'} picked up by ${workerName}`,
+          link: `/tasks/${t.id}`,
+          time: t.updated_at,
+          sortTime: ts,
+        })
+      }
     }
   }
 
