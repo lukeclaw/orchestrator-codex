@@ -204,8 +204,9 @@ async def start_browser_view(
         close_tunnel(local_port, host)
         raise RuntimeError(f"Failed to connect to CDP WebSocket: {e}") from e
 
-    # Step 4: Start screencast
+    # Step 4: Enable Page events (required for frameNavigated) and start screencast
     try:
+        await _cdp_send(cdp_ws, "Page.enable")
         await _cdp_send(
             cdp_ws,
             "Page.startScreencast",
