@@ -24,6 +24,8 @@ orch-tasks list --exclude-status done
 
 If zero non-idle workers, report "All workers idle — nothing to check" and stop.
 
+**Skip idle workers with no task** — these need no action. List them in the summary for awareness but never suggest "stop" (they're already idle). The user can decide to delete them or assign a new task later.
+
 ### 2. Capture terminal for each non-idle worker
 
 ```bash
@@ -82,7 +84,7 @@ Map `orch-prs` action field to suggested action:
 
 ### 5. Present summary
 
-Show a numbered table of non-idle workers. Collapse idle workers into one line. Group proposed actions by type letter.
+Show a numbered table of workers that need action. Collapse idle workers (no task) into one summary line — never suggest actions for them. Group proposed actions by type letter.
 
 ```
 | # | Worker | Task | Situation | Suggested Action |
@@ -91,7 +93,7 @@ Show a numbered table of non-idle workers. Collapse idle workers into one line. 
 | 2 | rdev-worker | PERP-3: Rename API | PR #254 review (3h) | Nudge PR check |
 | 3 | deploy-worker | PERP-9: Memory fix | PR #270 merged | Mark done + stop |
 
-+8 idle workers available: test-worker, infra-worker, ...
+Idle (no task): test-worker, infra-worker (no action needed — assign a task or delete when ready)
 
 A) Send "continue" (1): #1
 B) Nudge PR check (1): #2
@@ -131,6 +133,7 @@ orch-workers stop <worker-id>
 - **Never stop a worker waiting for PR review** — must stay alive for the review cycle
 - **PR created is not done** — worker stays alive until PR is MERGED
 - **Always notify before marking done** — completion notification with verification details
+- **Never suggest "stop" for idle workers** — idle workers with no task are already stopped; skip them and let the user decide
 - **Act on facts only** — if unsure, put "Needs human" rather than guessing
 - **Batch PR checks** — `orch-prs --repo <owner/repo> <pr1> <pr2> ...`
 - **For special keys** (arrow keys for selection menus): use `tmux send-keys Up/Down`
