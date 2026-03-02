@@ -209,6 +209,59 @@ class TestTasks:
         resp = client.delete(f"/api/tasks/{tid}")
         assert resp.status_code == 200
 
+    def test_patch_links_rejects_duplicates(self, client):
+        """PATCH /tasks/{id} with duplicate link URLs returns 400."""
+        proj = client.post("/api/projects", json={"name": "LinkProj"}).json()
+        task = client.post(
+            "/api/tasks", json={"project_id": proj["id"], "title": "Link task"}
+        ).json()
+
+        dup_links = [
+            {"url": "https://github.com/org/repo/pull/1"},
+            {"url": "https://github.com/org/repo/pull/1"},
+        ]
+        resp = client.patch(f"/api/tasks/{task['id']}", json={"links": dup_links})
+        assert resp.status_code == 400
+        assert "Duplicate link URL" in resp.json()["detail"]
+
+    def test_patch_links_unique_urls_accepted(self, client):
+        """PATCH /tasks/{id} with unique link URLs succeeds."""
+        proj = client.post("/api/projects", json={"name": "LinkProj2"}).json()
+        task = client.post(
+            "/api/tasks", json={"project_id": proj["id"], "title": "Link task 2"}
+        ).json()
+
+        links = [
+            {"url": "https://github.com/org/repo/pull/1"},
+            {"url": "https://github.com/org/repo/pull/2"},
+        ]
+        resp = client.patch(f"/api/tasks/{task['id']}", json={"links": links})
+        assert resp.status_code == 200
+        assert len(resp.json()["links"]) == 2
+
+    def test_agent_add_link_rejects_duplicate(self, client):
+        """POST /tasks/{id}/links add action rejects duplicate URL."""
+        proj = client.post("/api/projects", json={"name": "AgentLinkProj"}).json()
+        task = client.post(
+            "/api/tasks", json={"project_id": proj["id"], "title": "Agent link task"}
+        ).json()
+        tid = task["id"]
+
+        # Add a link
+        resp = client.post(
+            f"/api/tasks/{tid}/links",
+            json={"action": "add", "url": "https://example.com/pr/1"},
+        )
+        assert resp.status_code == 200
+
+        # Try to add the same link again
+        resp = client.post(
+            f"/api/tasks/{tid}/links",
+            json={"action": "add", "url": "https://example.com/pr/1"},
+        )
+        assert resp.status_code == 400
+        assert "already exists" in resp.json()["detail"]
+
 
 # --- Brain ---
 

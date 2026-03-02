@@ -1,5 +1,6 @@
 """Repository for tasks table."""
 
+import json
 import logging
 import sqlite3
 import uuid
@@ -140,6 +141,25 @@ def update_task(
         sets.append("notes = ?")
         params.append(notes)
     if links is not ...:
+        # Deduplicate links by URL as a safety net before DB write
+        if links is not None:
+            try:
+                links_data = json.loads(links)
+                seen_urls = set()
+                deduped = []
+                for link in links_data:
+                    url = link.get("url", "")
+                    if url not in seen_urls:
+                        seen_urls.add(url)
+                        deduped.append(link)
+                if len(deduped) != len(links_data):
+                    logger.warning(
+                        "Deduplicated links for task %s: %d -> %d",
+                        id, len(links_data), len(deduped),
+                    )
+                    links = json.dumps(deduped)
+            except (json.JSONDecodeError, TypeError):
+                pass
         sets.append("links = ?")
         params.append(links)
     if not sets:

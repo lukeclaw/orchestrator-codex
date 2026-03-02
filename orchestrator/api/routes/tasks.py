@@ -175,9 +175,15 @@ def update_task(task_id: str, body: TaskUpdate, request: Request, db=Depends(get
     links_json = None
     if "links" in body.model_fields_set:
         if body.links:
+            # Reject duplicate URLs
+            seen_urls = set()
             for link in body.links:
+                url = link.get("url", "")
+                if url in seen_urls:
+                    raise HTTPException(400, f"Duplicate link URL: {url}")
+                seen_urls.add(url)
                 if not link.get("tag"):
-                    derived = derive_tag_from_url(link.get("url", ""))
+                    derived = derive_tag_from_url(url)
                     if derived:
                         link["tag"] = derived
             links_json = json.dumps(body.links)

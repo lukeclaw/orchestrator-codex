@@ -227,16 +227,26 @@ export default function TaskDetailPage() {
 
   const handleAddLink = async () => {
     if (!newLinkUrl.trim() || !task) return
+    const trimmedUrl = newLinkUrl.trim()
+    if (links.some(l => l.url === trimmedUrl)) {
+      notify('This link has already been added', 'warning')
+      return
+    }
     const newLink: TaskLink = {
-      url: newLinkUrl.trim(),
+      url: trimmedUrl,
       tag: newLinkTag.trim() || undefined,
     }
     const updatedLinks = [...links, newLink]
     setLinks(updatedLinks)
-    await handleSaveField('links', updatedLinks)
-    setNewLinkUrl('')
-    setNewLinkTag('')
-    setShowAddLink(false)
+    try {
+      await handleSaveField('links', updatedLinks)
+      setNewLinkUrl('')
+      setNewLinkTag('')
+      setShowAddLink(false)
+    } catch {
+      setLinks(links)
+      notify('Failed to add link', 'error')
+    }
   }
 
   const handleRemoveLink = async (url: string) => {
@@ -259,14 +269,24 @@ export default function TaskDetailPage() {
 
   const handleSaveLink = async () => {
     if (!editLinkUrl.trim() || !editingLinkUrl) return
+    const trimmedUrl = editLinkUrl.trim()
+    if (trimmedUrl !== editingLinkUrl && links.some(l => l.url === trimmedUrl)) {
+      notify('This link has already been added', 'warning')
+      return
+    }
     const updatedLinks = links.map(l => 
       l.url === editingLinkUrl 
-        ? { url: editLinkUrl.trim(), tag: editLinkTag.trim() || undefined }
+        ? { url: trimmedUrl, tag: editLinkTag.trim() || undefined }
         : l
     )
     setLinks(updatedLinks)
-    await handleSaveField('links', updatedLinks)
-    cancelEditLink()
+    try {
+      await handleSaveField('links', updatedLinks)
+      cancelEditLink()
+    } catch {
+      setLinks(links)
+      notify('Failed to update link', 'error')
+    }
   }
 
   const isLinkChanged = () => {
@@ -349,10 +369,19 @@ export default function TaskDetailPage() {
         return
       }
 
+      if ((task.links || []).some(l => l.url === newLink.url)) {
+        notify('This link has already been added', 'warning')
+        return
+      }
       const updatedLinks = [...(task.links || []), newLink]
       setLinks(updatedLinks)
-      await handleSaveField('links', updatedLinks)
-      notify('Link added from clipboard', 'success')
+      try {
+        await handleSaveField('links', updatedLinks)
+        notify('Link added from clipboard', 'success')
+      } catch {
+        setLinks(task.links || [])
+        notify('Failed to add link', 'error')
+      }
     } catch (e) {
       if (e instanceof Error && e.name === 'NotAllowedError') {
         notify('Clipboard access denied. Please allow clipboard permissions.', 'error')
