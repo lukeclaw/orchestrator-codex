@@ -174,7 +174,7 @@ orchestrator/
 │   │   └── events.py              # Internal event bus (pub/sub)
 │   ├── auth/                      # Keychain + token
 │   ├── terminal/                  # tmux, SSH, skill installer, output parser
-│   ├── comm/                      # MCP server, hooks, heartbeat, reconciler
+│   ├── comm/                      # hooks, heartbeat, reconciler
 │   ├── state/                     # DB, models, repositories/, migrations/
 │   ├── scheduler/                 # Task matching, dependencies, conflicts
 │   ├── llm/                       # Brain, context selector, actions, templates
