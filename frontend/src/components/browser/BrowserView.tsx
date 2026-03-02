@@ -28,6 +28,12 @@ export default function BrowserView({ sessionId, minimized = false, onMinimizedC
   const [connected, setConnected] = useState(false)
   const [error, setError] = useState('')
   const [quality, setQuality] = useState(60)
+  const [zoom, setZoom] = useState(100)
+  const zoomRef = useRef(100)
+  const [aspectRatio, setAspectRatio] = useState(4 / 3)
+  const aspectRatioRef = useRef(4 / 3)
+  const [showSettings, setShowSettings] = useState(false)
+  const settingsRef = useRef<HTMLDivElement>(null)
   // Track actual frame dimensions for coordinate scaling
   const frameSizeRef = useRef({ width: 1280, height: 960 })
 
@@ -68,6 +74,11 @@ export default function BrowserView({ sessionId, minimized = false, onMinimizedC
           } else if (msg.type === 'metadata') {
             if (msg.url) setPageUrl(msg.url)
             if (msg.title) setPageTitle(msg.title)
+            if (msg.viewport?.width && msg.viewport?.height) {
+              const r = msg.viewport.width / msg.viewport.height
+              aspectRatioRef.current = r
+              setAspectRatio(r)
+            }
           } else if (msg.type === 'error') {
             setError(msg.message || 'Unknown error')
           } else if (msg.type === 'closed') {
@@ -93,6 +104,25 @@ export default function BrowserView({ sessionId, minimized = false, onMinimizedC
     }
   }, [sessionId])
 
+  // Auto-focus canvas when connected
+  useEffect(() => {
+    if (connected && !minimized && canvasRef.current) {
+      canvasRef.current.focus()
+    }
+  }, [connected, minimized])
+
+  // Close settings dropdown on click outside
+  useEffect(() => {
+    if (!showSettings) return
+    function handleClick(e: MouseEvent) {
+      if (settingsRef.current && !settingsRef.current.contains(e.target as Node)) {
+        setShowSettings(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClick)
+    return () => document.removeEventListener('mousedown', handleClick)
+  }, [showSettings])
+
   // Draw JPEG frame on canvas using createImageBitmap for better performance
   const drawFrame = useCallback((jpegData: ArrayBuffer) => {
     const canvas = canvasRef.current
@@ -108,6 +138,11 @@ export default function BrowserView({ sessionId, minimized = false, onMinimizedC
         canvas.width = bitmap.width
         canvas.height = bitmap.height
         frameSizeRef.current = { width: bitmap.width, height: bitmap.height }
+        const r = bitmap.width / bitmap.height
+        if (Math.abs(r - aspectRatioRef.current) > 0.01) {
+          aspectRatioRef.current = r
+          setAspectRatio(r)
+        }
       }
       ctx.drawImage(bitmap, 0, 0)
       bitmap.close()
@@ -122,6 +157,11 @@ export default function BrowserView({ sessionId, minimized = false, onMinimizedC
             canvas.width = img.width
             canvas.height = img.height
             frameSizeRef.current = { width: img.width, height: img.height }
+            const r = img.width / img.height
+            if (Math.abs(r - aspectRatioRef.current) > 0.01) {
+              aspectRatioRef.current = r
+              setAspectRatio(r)
+            }
           }
           ctx.drawImage(img, 0, 0)
         }
@@ -133,13 +173,16 @@ export default function BrowserView({ sessionId, minimized = false, onMinimizedC
   }, [])
 
   // Scale canvas display coordinates to browser viewport coordinates
+  // When zoomed out (e.g. 50%), the virtual viewport is larger than the frame,
+  // so frame coords must be scaled up by 100/zoom to get viewport coords.
   const scaleCoords = useCallback((e: React.MouseEvent): { x: number; y: number } => {
     const canvas = canvasRef.current
     if (!canvas) return { x: 0, y: 0 }
 
     const rect = canvas.getBoundingClientRect()
-    const scaleX = frameSizeRef.current.width / rect.width
-    const scaleY = frameSizeRef.current.height / rect.height
+    const zoomScale = 100 / zoomRef.current
+    const scaleX = (frameSizeRef.current.width / rect.width) * zoomScale
+    const scaleY = (frameSizeRef.current.height / rect.height) * zoomScale
     return {
       x: Math.round((e.clientX - rect.left) * scaleX),
       y: Math.round((e.clientY - rect.top) * scaleY),
@@ -195,6 +238,15 @@ export default function BrowserView({ sessionId, minimized = false, onMinimizedC
     }))
   }, [scaleCoords])
 
+  const handleZoomChange = useCallback((newZoom: number) => {
+    const ws = wsRef.current
+    if (!ws || ws.readyState !== WebSocket.OPEN) return
+
+    zoomRef.current = newZoom
+    setZoom(newZoom)
+    ws.send(JSON.stringify({ type: 'zoom', zoom: newZoom }))
+  }, [])
+
   const handleQualityChange = useCallback((newQuality: number) => {
     const ws = wsRef.current
     if (!ws || ws.readyState !== WebSocket.OPEN) return
@@ -210,9 +262,16 @@ export default function BrowserView({ sessionId, minimized = false, onMinimizedC
     minimized && 'bv-minimized',
   ].filter(Boolean).join(' ')
 
+  // Dynamic aspect-ratio sizing (not applied when minimized)
+  const overlayStyle: React.CSSProperties = minimized ? {} : {
+    aspectRatio: `${aspectRatio}`,
+    '--bv-aspect': `${aspectRatio}`,
+  } as React.CSSProperties
+
   return (
     <div
       className={classes}
+      style={overlayStyle}
       tabIndex={-1}
       onFocus={() => setIsFocused(true)}
       onBlur={(e) => {
@@ -235,18 +294,37 @@ export default function BrowserView({ sessionId, minimized = false, onMinimizedC
         </div>
         <div className="bv-controls">
           {!minimized && connected && (
-            <select
-              className="bv-quality-select"
-              value={quality}
-              onChange={(e) => handleQualityChange(Number(e.target.value))}
-              onClick={(e) => e.stopPropagation()}
-              title="JPEG quality"
-            >
-              <option value={30}>Low</option>
-              <option value={60}>Medium</option>
-              <option value={80}>High</option>
-              <option value={100}>Max</option>
-            </select>
+            <div className="bv-settings-menu" ref={settingsRef}>
+              <button
+                className="bv-btn"
+                onClick={(e) => { e.stopPropagation(); setShowSettings(!showSettings) }}
+                title="Settings"
+              >
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+                  <circle cx="12" cy="5" r="2" /><circle cx="12" cy="12" r="2" /><circle cx="12" cy="19" r="2" />
+                </svg>
+              </button>
+              {showSettings && (
+                <div className="bv-settings-dropdown" onClick={(e) => e.stopPropagation()}>
+                  <div className="bv-settings-row">
+                    <span>Zoom</span>
+                    <div className="bv-stepper">
+                      <button onClick={() => { const steps = [50,75,100,150]; const i = steps.indexOf(zoom); if (i > 0) handleZoomChange(steps[i-1]) }} disabled={zoom <= 50}>−</button>
+                      <span className="bv-stepper-value">{zoom}%</span>
+                      <button onClick={() => { const steps = [50,75,100,150]; const i = steps.indexOf(zoom); if (i < steps.length-1) handleZoomChange(steps[i+1]) }} disabled={zoom >= 150}>+</button>
+                    </div>
+                  </div>
+                  <div className="bv-settings-row">
+                    <span>Quality</span>
+                    <div className="bv-stepper">
+                      <button onClick={() => { const steps = [30,60,80,100]; const i = steps.indexOf(quality); if (i > 0) handleQualityChange(steps[i-1]) }} disabled={quality <= 30}>−</button>
+                      <span className="bv-stepper-value">{quality === 30 ? 'Low' : quality === 60 ? 'Med' : quality === 80 ? 'High' : 'Max'}</span>
+                      <button onClick={() => { const steps = [30,60,80,100]; const i = steps.indexOf(quality); if (i < steps.length-1) handleQualityChange(steps[i+1]) }} disabled={quality >= 100}>+</button>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
           )}
           <button
             className="bv-btn"
@@ -300,7 +378,7 @@ export default function BrowserView({ sessionId, minimized = false, onMinimizedC
             ref={canvasRef}
             tabIndex={0}
             className="bv-canvas"
-            onMouseDown={(e) => { e.preventDefault(); sendMouseEvent(e, 'mousePressed') }}
+            onMouseDown={(e) => { e.preventDefault(); canvasRef.current?.focus(); sendMouseEvent(e, 'mousePressed') }}
             onMouseUp={(e) => sendMouseEvent(e, 'mouseReleased')}
             onMouseMove={(e) => sendMouseEvent(e, 'mouseMoved')}
             onKeyDown={(e) => sendKeyEvent(e, 'keyDown')}

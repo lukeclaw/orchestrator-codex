@@ -69,18 +69,31 @@ def list_active_views() -> list[str]:
     return list(_active_views.keys())
 
 
-async def discover_browser_targets(cdp_port: int) -> list[dict]:
+async def discover_browser_targets(
+    cdp_port: int, retries: int = 5, delay: float = 1.0
+) -> list[dict]:
     """Query CDP /json endpoint to find debuggable pages.
 
     Returns list of targets with fields: id, title, url, webSocketDebuggerUrl.
     Filters to type='page' targets only.
+
+    Retries a few times to allow SSH tunnels to become ready.
     """
     url = f"http://localhost:{cdp_port}/json"
-    async with httpx.AsyncClient(timeout=5.0) as client:
-        resp = await client.get(url)
-        resp.raise_for_status()
-        targets = resp.json()
-        return [t for t in targets if t.get("type") == "page"]
+    last_exc: Exception | None = None
+    for attempt in range(retries):
+        try:
+            async with httpx.AsyncClient(timeout=5.0) as client:
+                resp = await client.get(url)
+                resp.raise_for_status()
+                targets = resp.json()
+                return [t for t in targets if t.get("type") == "page"]
+        except Exception as e:
+            last_exc = e
+            if attempt < retries - 1:
+                logger.debug("CDP discovery attempt %d/%d failed: %s", attempt + 1, retries, e)
+                await asyncio.sleep(delay)
+    raise last_exc  # type: ignore[misc]
 
 
 async def _cdp_send(
@@ -201,6 +214,12 @@ async def start_browser_view(
         quality=quality,
     )
     _active_views[session_id] = view
+
+    # Set initial viewport to match screencast dimensions (100% zoom)
+    try:
+        await set_viewport_zoom(view, 100)
+    except Exception:
+        logger.debug("Failed to set initial viewport zoom for session %s", session_id)
 
     logger.info(
         "Started browser view for session %s: %s (%s)",
@@ -360,6 +379,28 @@ async def set_screencast_quality(view: BrowserViewSession, quality: int) -> None
     )
 
 
+async def set_viewport_zoom(view: BrowserViewSession, zoom_percent: int) -> None:
+    """Adjust page zoom by overriding the device viewport size.
+
+    zoom_percent=50 means content renders at 50% size (2x virtual viewport),
+    showing more content in the same screencast area.
+    """
+    zoom_percent = max(25, min(200, zoom_percent))
+    scale = 100 / zoom_percent
+    width = round(view.viewport_width * scale)
+    height = round(view.viewport_height * scale)
+    await _cdp_send(
+        view.cdp_ws,
+        "Emulation.setDeviceMetricsOverride",
+        {
+            "width": width,
+            "height": height,
+            "deviceScaleFactor": 1,
+            "mobile": False,
+        },
+    )
+
+
 async def relay_cdp_to_client(
     view: BrowserViewSession,
     send_binary: Any,  # async callable to send binary frames
@@ -453,6 +494,10 @@ async def handle_client_input(view: BrowserViewSession, msg: dict) -> None:
             delta_y=msg.get("deltaY", 0),
             modifiers=msg.get("modifiers", 0),
         )
+
+    elif msg_type == "zoom":
+        zoom = msg.get("zoom", 100)
+        await set_viewport_zoom(view, zoom)
 
     elif msg_type == "quality":
         quality = msg.get("quality", 60)

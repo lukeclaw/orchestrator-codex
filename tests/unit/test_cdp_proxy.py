@@ -87,10 +87,13 @@ class TestStartBrowserView:
         assert view.page_url == "https://sso.example.com"
         assert view.tunnel_local_port == 9222
         assert "session-1" in _active_views
-        # Verify screencast was started
-        mock_ws.send.assert_called_once()
-        sent = json.loads(mock_ws.send.call_args[0][0])
-        assert sent["method"] == "Page.startScreencast"
+        # Verify screencast was started and initial viewport zoom was set
+        assert mock_ws.send.call_count == 2
+        sent_screencast = json.loads(mock_ws.send.call_args_list[0][0][0])
+        assert sent_screencast["method"] == "Page.startScreencast"
+        sent_zoom = json.loads(mock_ws.send.call_args_list[1][0][0])
+        assert sent_zoom["method"] == "Emulation.setDeviceMetricsOverride"
+        assert sent_zoom["params"]["width"] == 1280  # 100% zoom = same as screencast
 
     @pytest.mark.asyncio
     async def test_start_duplicate_raises_value_error(self):
