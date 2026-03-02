@@ -58,6 +58,33 @@ logfile() {
     echo "$LOG_DIR/browser-$SESSION_ID.log"
 }
 
+# Ensure system fonts are installed so Chromium renders text properly.
+# On headless Linux servers, default font packages are often missing,
+# causing garbled/box characters in the browser.
+ensure_fonts() {
+    # Quick check: if liberation-sans fonts exist, skip install
+    if fc-list 2>/dev/null | grep -qi "liberation\|noto" ; then
+        return 0
+    fi
+    echo "Installing system fonts for Chromium..." >&2
+    if command -v yum &>/dev/null; then
+        sudo yum install -y \
+            liberation-fonts \
+            fontconfig \
+            &>/dev/null || echo "Warning: Could not install fonts via yum" >&2
+    elif command -v apt-get &>/dev/null; then
+        sudo apt-get install -y \
+            fonts-liberation \
+            fontconfig \
+            &>/dev/null || echo "Warning: Could not install fonts via apt" >&2
+    else
+        echo "Warning: No supported package manager found for font installation" >&2
+        return 0
+    fi
+    # Rebuild font cache
+    fc-cache -f &>/dev/null || true
+}
+
 # Find the Chromium binary from Playwright cache or PATH.
 # Prints the path to stdout. Returns 1 if not found.
 find_chromium() {
@@ -124,6 +151,7 @@ launch_browser() {
     # Strategy 2: Install Chromium via Playwright and then launch the binary
     echo "Chromium not found, installing via Playwright..." >&2
     npx playwright install chromium >&2
+    ensure_fonts
 
     # After install, try to find the binary again
     if chromium_bin=$(find_chromium); then
@@ -375,6 +403,7 @@ do_restore() {
 do_install() {
     echo "Installing Playwright Chromium..." >&2
     npx playwright install chromium
+    ensure_fonts
     echo "Playwright Chromium installed."
 }
 

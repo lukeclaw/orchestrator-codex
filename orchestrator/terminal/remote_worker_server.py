@@ -375,6 +375,45 @@ _REMOTE_WORKER_SERVER_SCRIPT = textwrap.dedent("""\
                 return path
         return None
 
+    def _ensure_fonts():
+        \"\"\"Install system fonts so Chromium renders text properly.
+
+        On headless Linux servers, default font packages are often missing,
+        causing garbled/box characters in the browser.
+        \"\"\"
+        # Quick check: if liberation fonts exist, skip install
+        try:
+            result = subprocess.run(
+                ["fc-list"],
+                capture_output=True, text=True, timeout=5,
+            )
+            if "liberation" in result.stdout.lower() or "noto" in result.stdout.lower():
+                return
+        except (OSError, subprocess.TimeoutExpired):
+            pass
+        # Try yum (RHEL/CentOS), then apt (Debian/Ubuntu)
+        for cmd in (
+            ["sudo", "yum", "install", "-y", "liberation-fonts", "fontconfig"],
+            ["sudo", "apt-get", "install", "-y", "fonts-liberation", "fontconfig"],
+        ):
+            if shutil.which(cmd[1]):
+                try:
+                    subprocess.run(
+                        cmd,
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
+                        timeout=60,
+                    )
+                    subprocess.run(
+                        ["fc-cache", "-f"],
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
+                        timeout=10,
+                    )
+                except (subprocess.TimeoutExpired, OSError):
+                    pass
+                return
+
     def _install_chromium():
         \"\"\"Install Chromium via Playwright, return the binary path or None.\"\"\"
         npx = shutil.which("npx")
@@ -389,6 +428,7 @@ _REMOTE_WORKER_SERVER_SCRIPT = textwrap.dedent("""\
             )
         except (subprocess.TimeoutExpired, OSError):
             return None
+        _ensure_fonts()
         return _find_chromium()
 
     def _is_port_in_use(port):
