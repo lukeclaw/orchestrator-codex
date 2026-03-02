@@ -388,6 +388,7 @@ export default function BrowserView({ sessionId, minimized = false, onMinimizedC
               if (e.key === 'Enter') {
                 handleNavigate(urlInput)
                 ;(e.target as HTMLInputElement).blur()
+                canvasRef.current?.focus()
               }
               e.stopPropagation()
             }}
