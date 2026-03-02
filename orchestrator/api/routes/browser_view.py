@@ -1,5 +1,6 @@
 """API routes for remote browser view (CDP screencast)."""
 
+import asyncio
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -14,9 +15,68 @@ from orchestrator.browser.cdp_proxy import (
 )
 from orchestrator.core.events import Event, publish
 from orchestrator.state.repositories import sessions as repo
+from orchestrator.terminal.remote_worker_server import (
+    ensure_rws_starting,
+    get_remote_worker_server,
+)
 from orchestrator.terminal.ssh import is_remote_host
 
 logger = logging.getLogger(__name__)
+
+
+async def _wait_for_rws(host: str, timeout: float = 15.0):
+    """Wait for the Remote Worker Server to become available.
+
+    Polls get_remote_worker_server() in a loop, giving the background
+    start thread time to finish. Kicks off a start if not already happening.
+    """
+    ensure_rws_starting(host)
+    deadline = asyncio.get_event_loop().time() + timeout
+    last_err = None
+    while asyncio.get_event_loop().time() < deadline:
+        try:
+            return get_remote_worker_server(host)
+        except RuntimeError as e:
+            last_err = e
+            await asyncio.sleep(1.0)
+    raise RuntimeError(f"Remote worker server not ready after {timeout}s: {last_err}")
+
+
+async def _auto_start_browser_and_retry(
+    session_id: str,
+    host: str,
+    cdp_port: int,
+    quality: int,
+    max_width: int,
+    max_height: int,
+    original_error: str,
+):
+    """Auto-start browser via daemon and retry browser view creation.
+
+    Called when start_browser_view() fails with "No browser found".
+    Waits for the RWS daemon to be ready, starts browser, then retries.
+    """
+    try:
+        rws = await _wait_for_rws(host)
+        rws.start_browser(session_id, port=cdp_port)
+        await asyncio.sleep(1)  # Let CDP fully initialize after daemon confirms
+        return await start_browser_view(
+            session_id=session_id,
+            host=host,
+            cdp_port=cdp_port,
+            quality=quality,
+            max_width=max_width,
+            max_height=max_height,
+        )
+    except Exception as e:
+        logger.warning(
+            "Auto-start browser failed for session %s: %s (original: %s)",
+            session_id,
+            e,
+            original_error,
+        )
+        raise HTTPException(502, original_error)
+
 
 router = APIRouter()
 
@@ -26,6 +86,10 @@ class BrowserViewRequest(BaseModel):
     quality: int = Field(default=60, ge=1, le=100)
     max_width: int = Field(default=1280, ge=320, le=3840)
     max_height: int = Field(default=960, ge=240, le=2160)
+
+
+class BrowserStartRequest(BaseModel):
+    port: int = Field(default=9222, ge=1, le=65535)
 
 
 @router.post("/sessions/{session_id}/browser-view")
@@ -64,10 +128,22 @@ async def start_browser_view_endpoint(
     except RuntimeError as e:
         msg = str(e)
         if "No browser found" in msg or "No debuggable pages" in msg:
+            # Auto-start: launch browser via daemon, then retry browser view.
+            # The RWS daemon may still be connecting (esp. after reconnect),
+            # so we poll for it with a timeout.
+            view = await _auto_start_browser_and_retry(
+                session_id=session_id,
+                host=s.host,
+                cdp_port=body.cdp_port,
+                quality=body.quality,
+                max_width=body.max_width,
+                max_height=body.max_height,
+                original_error=msg,
+            )
+        elif "tunnel" in msg.lower():
             raise HTTPException(502, msg)
-        if "tunnel" in msg.lower():
-            raise HTTPException(502, msg)
-        raise HTTPException(500, msg)
+        else:
+            raise HTTPException(500, msg)
 
     # Broadcast event
     publish(
@@ -225,5 +301,57 @@ def restore_browser_view(session_id: str, db=Depends(get_db)):
             data={"session_id": session_id},
         )
     )
+
+    return {"ok": True}
+
+
+@router.post("/sessions/{session_id}/browser-start")
+def start_browser_endpoint(
+    session_id: str,
+    body: BrowserStartRequest,
+    db=Depends(get_db),
+):
+    """Start a browser process via the RWS daemon.
+
+    Used by the orch-browser CLI to launch Chromium on the remote worker.
+    """
+    s = repo.get_session(db, session_id)
+    if s is None:
+        raise HTTPException(404, "Session not found")
+
+    try:
+        rws = get_remote_worker_server(s.host)
+    except RuntimeError:
+        raise HTTPException(503, "Remote worker server not available")
+
+    try:
+        result = rws.start_browser(session_id, port=body.port)
+    except RuntimeError as e:
+        raise HTTPException(500, str(e))
+
+    return {
+        "ok": True,
+        "pid": result.get("pid"),
+        "port": result.get("port"),
+        "already_running": result.get("already_running", False),
+    }
+
+
+@router.post("/sessions/{session_id}/browser-stop")
+def stop_browser_endpoint(session_id: str, db=Depends(get_db)):
+    """Stop the browser process via the RWS daemon."""
+    s = repo.get_session(db, session_id)
+    if s is None:
+        raise HTTPException(404, "Session not found")
+
+    try:
+        rws = get_remote_worker_server(s.host)
+    except RuntimeError:
+        raise HTTPException(503, "Remote worker server not available")
+
+    try:
+        rws.stop_browser(session_id)
+    except RuntimeError as e:
+        raise HTTPException(500, str(e))
 
     return {"ok": True}

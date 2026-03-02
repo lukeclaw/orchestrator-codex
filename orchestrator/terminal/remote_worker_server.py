@@ -70,6 +70,7 @@ _REMOTE_WORKER_SERVER_SCRIPT = textwrap.dedent("""\
             "pid": os.getpid(),
             "port": LISTEN_PORT,
             "pty_count": len(pty_sessions),
+            "browser_count": len(browser_processes),
             "version": SCRIPT_VERSION,
         }
 
@@ -347,6 +348,209 @@ _REMOTE_WORKER_SERVER_SCRIPT = textwrap.dedent("""\
         os.makedirs(target, exist_ok=True)
         return {"status": "ok"}
 
+    # ── Browser process management ───────────────────────────────────────
+
+    # session_id -> {"pid": int, "port": int, "started_at": float}
+    browser_processes = {}
+
+    def _find_chromium():
+        \"\"\"Find a Chromium executable. Checks Playwright cache first, then PATH.\"\"\"
+        import glob as _glob
+        pw_dir = os.path.expanduser("~/.cache/ms-playwright")
+        # Search for chrome/chromium binaries in Playwright cache.
+        # Different Playwright versions and fallback builds use different
+        # directory layouts (chrome-linux/, chrome/, platform-specific, etc.)
+        # so we search broadly for known binary names.
+        binary_names = ("chrome", "headless_shell", "chromium")
+        for name in binary_names:
+            pattern = os.path.join(pw_dir, "chromium*", "**", name)
+            matches = sorted(_glob.glob(pattern, recursive=True), reverse=True)
+            for m in matches:
+                if os.path.isfile(m) and os.access(m, os.X_OK):
+                    return m
+        # Fallback: check PATH
+        for name in ("chromium-browser", "chromium", "google-chrome", "chrome"):
+            path = shutil.which(name)
+            if path:
+                return path
+        return None
+
+    def _is_port_in_use(port):
+        \"\"\"Check if a TCP port is in use on localhost.\"\"\"
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        try:
+            s.settimeout(1)
+            s.connect(("127.0.0.1", port))
+            s.close()
+            return True
+        except (ConnectionRefusedError, OSError):
+            s.close()
+            return False
+
+    def _wait_for_cdp(port, timeout=10):
+        \"\"\"Wait for CDP to become available on a port.\"\"\"
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            try:
+                s.settimeout(1)
+                s.connect(("127.0.0.1", port))
+                s.close()
+                return True
+            except (ConnectionRefusedError, OSError):
+                s.close()
+                time.sleep(0.5)
+        return False
+
+    def _cleanup_browser(session_id):
+        \"\"\"Stop a browser process and remove from registry.\"\"\"
+        info = browser_processes.pop(session_id, None)
+        if not info:
+            return
+        pid = info["pid"]
+        try:
+            os.kill(pid, signal.SIGTERM)
+        except (OSError, ProcessLookupError):
+            return
+        # Wait up to 3s for graceful shutdown
+        for _ in range(30):
+            try:
+                os.kill(pid, 0)
+            except OSError:
+                return
+            time.sleep(0.1)
+        # Force kill
+        try:
+            os.kill(pid, signal.SIGKILL)
+        except (OSError, ProcessLookupError):
+            pass
+
+    def handle_browser_start(cmd):
+        session_id = cmd.get("session_id", "")
+        port = cmd.get("port", 9222)
+        chromium_path = cmd.get("chromium_path")
+
+        if not session_id:
+            return {"error": "session_id required"}
+
+        # Already running for this session?
+        existing = browser_processes.get(session_id)
+        if existing:
+            # Verify still alive
+            try:
+                os.kill(existing["pid"], 0)
+                return {
+                    "status": "ok",
+                    "already_running": True,
+                    "pid": existing["pid"],
+                    "port": existing["port"],
+                }
+            except OSError:
+                # Dead — clean up stale entry
+                browser_processes.pop(session_id, None)
+
+        # Check if port is in use
+        if _is_port_in_use(port):
+            return {"error": f"Port {port} is already in use"}
+
+        # Find Chromium
+        if not chromium_path:
+            chromium_path = _find_chromium()
+        if not chromium_path:
+            return {"error": "Chromium not found. Install with: npx playwright install chromium"}
+
+        # Launch Chromium directly (no Node.js dependency)
+        args = [
+            chromium_path,
+            "--headless",
+            "--no-sandbox",
+            "--disable-gpu",
+            "--disable-dev-shm-usage",
+            "--remote-debugging-port=" + str(port),
+            "--remote-debugging-address=127.0.0.1",
+            "about:blank",
+        ]
+        try:
+            proc = subprocess.Popen(
+                args,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                start_new_session=False,  # Keep in daemon process group
+            )
+        except OSError as e:
+            return {"error": f"Failed to launch Chromium: {e}"}
+
+        # Wait for CDP to become available
+        if not _wait_for_cdp(port, timeout=10):
+            # Kill the process since it didn't start properly
+            try:
+                proc.kill()
+            except OSError:
+                pass
+            return {"error": "Chromium started but CDP did not become available within 10s"}
+
+        browser_processes[session_id] = {
+            "pid": proc.pid,
+            "port": port,
+            "started_at": time.time(),
+        }
+
+        return {
+            "status": "ok",
+            "already_running": False,
+            "pid": proc.pid,
+            "port": port,
+        }
+
+    def handle_browser_stop(cmd):
+        session_id = cmd.get("session_id", "")
+        if not session_id:
+            return {"error": "session_id required"}
+
+        if session_id not in browser_processes:
+            return {"status": "ok", "was_running": False}
+
+        _cleanup_browser(session_id)
+        return {"status": "ok", "was_running": True}
+
+    def handle_browser_status(cmd):
+        session_id = cmd.get("session_id")
+        if session_id:
+            info = browser_processes.get(session_id)
+            if not info:
+                return {"status": "ok", "running": False}
+            # Verify still alive
+            try:
+                os.kill(info["pid"], 0)
+            except OSError:
+                browser_processes.pop(session_id, None)
+                return {"status": "ok", "running": False}
+            return {
+                "status": "ok",
+                "running": True,
+                "pid": info["pid"],
+                "port": info["port"],
+                "started_at": info["started_at"],
+            }
+        else:
+            # Return all browsers
+            result = []
+            for sid, info in list(browser_processes.items()):
+                alive = True
+                try:
+                    os.kill(info["pid"], 0)
+                except OSError:
+                    alive = False
+                    browser_processes.pop(sid, None)
+                if alive:
+                    result.append({
+                        "session_id": sid,
+                        "pid": info["pid"],
+                        "port": info["port"],
+                        "started_at": info["started_at"],
+                    })
+            return {"status": "ok", "browsers": result}
+
     # ── PTY management ────────────────────────────────────────────────────
 
     class PtySession:
@@ -561,6 +765,9 @@ _REMOTE_WORKER_SERVER_SCRIPT = textwrap.dedent("""\
         "pty_capture": handle_pty_capture,
         "pty_resize": handle_pty_resize,
         "pty_input": handle_pty_input,
+        "browser_start": handle_browser_start,
+        "browser_stop": handle_browser_stop,
+        "browser_status": handle_browser_status,
     }
 
     # ── Connection management ─────────────────────────────────────────────
@@ -953,6 +1160,8 @@ _REMOTE_WORKER_SERVER_SCRIPT = textwrap.dedent("""\
 
         # Set up signal handler for clean shutdown
         def shutdown_handler(signum, frame):
+            for sid in list(browser_processes.keys()):
+                _cleanup_browser(sid)
             for pty_id in list(pty_sessions.keys()):
                 cleanup_pty(pty_id)
             for suffix in (".pid", ".version"):
@@ -982,6 +1191,7 @@ _REMOTE_WORKER_SERVER_SCRIPT = textwrap.dedent("""\
             # Inactivity check
             if (time.time() - last_activity > INACTIVITY_TIMEOUT
                     and not pty_sessions
+                    and not browser_processes
                     and not command_conns
                     and not pty_stream_conns):
                 break
@@ -991,6 +1201,15 @@ _REMOTE_WORKER_SERVER_SCRIPT = textwrap.dedent("""\
                 session = pty_sessions.get(pty_id)
                 if session and not session.is_child_alive():
                     cleanup_pty(pty_id)
+
+            # Clean up dead browsers
+            for sid in list(browser_processes.keys()):
+                info = browser_processes.get(sid)
+                if info:
+                    try:
+                        os.kill(info["pid"], 0)
+                    except OSError:
+                        browser_processes.pop(sid, None)
 
             try:
                 events = sel.select(timeout=5.0)
@@ -1011,6 +1230,8 @@ _REMOTE_WORKER_SERVER_SCRIPT = textwrap.dedent("""\
                     handle_pty_output(ident)
 
         # Shutdown
+        for sid in list(browser_processes.keys()):
+            _cleanup_browser(sid)
         for pty_id in list(pty_sessions.keys()):
             cleanup_pty(pty_id)
         for suffix in (".pid", ".version"):
@@ -1398,6 +1619,42 @@ class RemoteWorkerServer:
         """List active PTY sessions on the remote daemon."""
         resp = self.execute({"action": "pty_list"})
         return resp.get("ptys", [])
+
+    def start_browser(
+        self,
+        session_id: str,
+        port: int = 9222,
+        chromium_path: str | None = None,
+        timeout: float = 30.0,
+    ) -> dict:
+        """Start a browser on the remote daemon. Returns status dict with pid/port."""
+        request: dict[str, Any] = {
+            "action": "browser_start",
+            "session_id": session_id,
+            "port": port,
+        }
+        if chromium_path:
+            request["chromium_path"] = chromium_path
+        resp = self.execute(request, timeout=timeout)
+        if "error" in resp:
+            raise RuntimeError(f"Browser start failed on {self.host}: {resp['error']}")
+        return resp
+
+    def stop_browser(self, session_id: str) -> None:
+        """Stop a browser on the remote daemon."""
+        resp = self.execute({"action": "browser_stop", "session_id": session_id})
+        if "error" in resp:
+            raise RuntimeError(f"Browser stop failed on {self.host}: {resp['error']}")
+
+    def browser_status(self, session_id: str | None = None) -> dict:
+        """Get browser status from the remote daemon."""
+        request: dict[str, Any] = {"action": "browser_status"}
+        if session_id:
+            request["session_id"] = session_id
+        resp = self.execute(request)
+        if "error" in resp:
+            raise RuntimeError(f"Browser status failed on {self.host}: {resp['error']}")
+        return resp
 
     def is_alive(self) -> bool:
         """Check if the tunnel and command socket are still connected."""

@@ -114,15 +114,42 @@ class TestStartEndpoint:
         )
         assert response.status_code == 409
 
+    @patch("orchestrator.api.routes.browser_view._wait_for_rws")
     @patch("orchestrator.api.routes.browser_view.start_browser_view")
-    def test_502_no_browser(self, mock_start, client, rdev_session):
+    def test_502_no_browser_auto_start_fails(self, mock_start, mock_wait_rws, client, rdev_session):
+        """When no browser found and auto-start also fails, return 502."""
         mock_start.side_effect = RuntimeError("No browser found on CDP port 9222")
+        mock_wait_rws.side_effect = RuntimeError("Remote worker server not ready")
 
         response = client.post(
             f"/api/sessions/{rdev_session.id}/browser-view",
             json={"cdp_port": 9222},
         )
         assert response.status_code == 502
+
+    @patch("orchestrator.api.routes.browser_view._wait_for_rws")
+    @patch("orchestrator.api.routes.browser_view.start_browser_view")
+    def test_auto_start_browser_on_no_browser(
+        self, mock_start, mock_wait_rws, client, rdev_session
+    ):
+        """When no browser found, auto-start via daemon and retry."""
+        fake_view = _make_fake_view(rdev_session.id)
+        # First call raises, second call (retry) succeeds
+        mock_start.side_effect = [RuntimeError("No browser found on CDP port 9222"), fake_view]
+
+        mock_server = MagicMock()
+        mock_server.start_browser.return_value = {"status": "ok", "pid": 1234, "port": 9222}
+        mock_wait_rws.return_value = mock_server
+
+        response = client.post(
+            f"/api/sessions/{rdev_session.id}/browser-view",
+            json={"cdp_port": 9222},
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["ok"] is True
+        mock_server.start_browser.assert_called_once_with(rdev_session.id, port=9222)
 
     def test_404_session_not_found(self, client):
         response = client.post(
@@ -239,4 +266,106 @@ class TestRestoreEndpoint:
 
     def test_404_session_not_found(self, client):
         response = client.post("/api/sessions/nonexistent-id/browser-view/restore")
+        assert response.status_code == 404
+
+
+class TestBrowserStartEndpoint:
+    """Tests for POST /api/sessions/{id}/browser-start."""
+
+    @patch("orchestrator.api.routes.browser_view.get_remote_worker_server")
+    def test_starts_browser_via_daemon(self, mock_rws, client, rdev_session):
+        mock_server = MagicMock()
+        mock_server.start_browser.return_value = {
+            "status": "ok",
+            "pid": 1234,
+            "port": 9222,
+            "already_running": False,
+        }
+        mock_rws.return_value = mock_server
+
+        response = client.post(
+            f"/api/sessions/{rdev_session.id}/browser-start",
+            json={"port": 9222},
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["ok"] is True
+        assert data["pid"] == 1234
+        assert data["port"] == 9222
+        assert data["already_running"] is False
+
+    @patch("orchestrator.api.routes.browser_view.get_remote_worker_server")
+    def test_returns_already_running(self, mock_rws, client, rdev_session):
+        mock_server = MagicMock()
+        mock_server.start_browser.return_value = {
+            "status": "ok",
+            "pid": 5678,
+            "port": 9222,
+            "already_running": True,
+        }
+        mock_rws.return_value = mock_server
+
+        response = client.post(
+            f"/api/sessions/{rdev_session.id}/browser-start",
+            json={"port": 9222},
+        )
+
+        assert response.status_code == 200
+        assert response.json()["already_running"] is True
+
+    @patch("orchestrator.api.routes.browser_view.get_remote_worker_server")
+    def test_503_daemon_unavailable(self, mock_rws, client, rdev_session):
+        mock_rws.side_effect = RuntimeError("Connecting to remote host\u2026")
+
+        response = client.post(
+            f"/api/sessions/{rdev_session.id}/browser-start",
+            json={"port": 9222},
+        )
+        assert response.status_code == 503
+
+    @patch("orchestrator.api.routes.browser_view.get_remote_worker_server")
+    def test_500_browser_start_failure(self, mock_rws, client, rdev_session):
+        mock_server = MagicMock()
+        mock_server.start_browser.side_effect = RuntimeError("Chromium not found")
+        mock_rws.return_value = mock_server
+
+        response = client.post(
+            f"/api/sessions/{rdev_session.id}/browser-start",
+            json={"port": 9222},
+        )
+        assert response.status_code == 500
+
+    def test_404_session_not_found(self, client):
+        response = client.post(
+            "/api/sessions/nonexistent-id/browser-start",
+            json={"port": 9222},
+        )
+        assert response.status_code == 404
+
+
+class TestBrowserStopEndpoint:
+    """Tests for POST /api/sessions/{id}/browser-stop."""
+
+    @patch("orchestrator.api.routes.browser_view.get_remote_worker_server")
+    def test_stops_browser_via_daemon(self, mock_rws, client, rdev_session):
+        mock_server = MagicMock()
+        mock_server.stop_browser.return_value = None
+        mock_rws.return_value = mock_server
+
+        response = client.post(f"/api/sessions/{rdev_session.id}/browser-stop")
+
+        assert response.status_code == 200
+        assert response.json()["ok"] is True
+        mock_server.stop_browser.assert_called_once_with(rdev_session.id)
+
+    @patch("orchestrator.api.routes.browser_view.get_remote_worker_server")
+    def test_503_daemon_unavailable(self, mock_rws, client, rdev_session):
+        mock_rws.side_effect = RuntimeError("Connecting to remote host\u2026")
+
+        response = client.post(f"/api/sessions/{rdev_session.id}/browser-stop")
+        assert response.status_code == 503
+
+    def test_404_session_not_found(self, client):
+        response = client.post("/api/sessions/nonexistent-id/browser-stop")
         assert response.status_code == 404

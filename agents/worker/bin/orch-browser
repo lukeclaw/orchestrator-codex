@@ -5,6 +5,9 @@
 # visible in the operator's dashboard, and configures Playwright MCP tools
 # to connect to the same browser instance.
 #
+# Browser lifecycle is managed by the RWS daemon when available, with fallback
+# to direct launch when the daemon is not running.
+#
 # Usage:
 #   orch-browser --start [--port PORT]  Launch browser + tunnel + view + MCP
 #   orch-browser --close                Close browser view, kill browser, remove MCP
@@ -55,6 +58,33 @@ logfile() {
     echo "$LOG_DIR/browser-$SESSION_ID.log"
 }
 
+# Find the Chromium binary from Playwright cache or PATH.
+# Prints the path to stdout. Returns 1 if not found.
+find_chromium() {
+    local pw_dir="$HOME/.cache/ms-playwright"
+    # Search for chrome/chromium binaries in Playwright cache.
+    # Different Playwright versions and fallback builds use different
+    # directory layouts (chrome-linux/, chrome/, platform-specific, etc.)
+    # so we search broadly for known binary names.
+    local chrome_path
+    for name in chrome headless_shell chromium; do
+        while IFS= read -r chrome_path; do
+            if [[ -x "$chrome_path" ]]; then
+                echo "$chrome_path"
+                return 0
+            fi
+        done < <(find "$pw_dir" -path "*/chromium*/$name" -type f 2>/dev/null | sort -r)
+    done
+    # Check PATH
+    for name in chromium-browser chromium google-chrome chrome; do
+        if command -v "$name" &>/dev/null; then
+            command -v "$name"
+            return 0
+        fi
+    done
+    return 1
+}
+
 # Wait for CDP endpoint to become available
 wait_for_cdp() {
     local port="$1"
@@ -68,36 +98,54 @@ wait_for_cdp() {
     return 1
 }
 
-# Launch headless Chromium with CDP enabled
+# Launch headless Chromium with CDP enabled (fallback when daemon is unavailable).
+# Tries to find the Chromium binary directly first, then falls back to Node/Playwright.
 launch_browser() {
     local port="$1"
-    mkdir -p "$PIDFILE_DIR"
+    mkdir -p "$PIDFILE_DIR" "$LOG_DIR"
 
-    # Check if Playwright Chromium is installed
-    if ! npx playwright install --check chromium 2>/dev/null; then
-        echo "Installing Playwright Chromium..." >&2
-        npx playwright install chromium >&2
+    # Strategy 1: Launch Chromium binary directly (no Node.js needed)
+    local chromium_bin
+    if chromium_bin=$(find_chromium); then
+        echo "Found Chromium at $chromium_bin" >&2
+        nohup "$chromium_bin" \
+            --headless \
+            --no-sandbox \
+            --disable-gpu \
+            --disable-dev-shm-usage \
+            --remote-debugging-port="$port" \
+            --remote-debugging-address=127.0.0.1 \
+            about:blank \
+            > "$(logfile)" 2>&1 &
+        echo $! > "$(pidfile)"
+        return 0
     fi
 
-    # Launch headless Chromium via Playwright's Node API
-    nohup node -e "
-const { chromium } = require('playwright');
-(async () => {
-    const browser = await chromium.launch({
-        headless: true,
-        args: ['--remote-debugging-port=$port', '--no-sandbox']
-    });
-    console.log('Browser launched on port $port');
-    // Keep process alive until killed
-    process.on('SIGTERM', async () => { await browser.close(); process.exit(0); });
-    process.on('SIGINT', async () => { await browser.close(); process.exit(0); });
-    setInterval(() => {}, 60000);
-})().catch(e => { console.error(e); process.exit(1); });
-" > "$(logfile)" 2>&1 &
-    echo $! > "$(pidfile)"
+    # Strategy 2: Install Chromium via Playwright and then launch the binary
+    echo "Chromium not found, installing via Playwright..." >&2
+    npx playwright install chromium >&2
+
+    # After install, try to find the binary again
+    if chromium_bin=$(find_chromium); then
+        echo "Found Chromium at $chromium_bin" >&2
+        nohup "$chromium_bin" \
+            --headless \
+            --no-sandbox \
+            --disable-gpu \
+            --disable-dev-shm-usage \
+            --remote-debugging-port="$port" \
+            --remote-debugging-address=127.0.0.1 \
+            about:blank \
+            > "$(logfile)" 2>&1 &
+        echo $! > "$(pidfile)"
+        return 0
+    fi
+
+    echo "Error: Could not find Chromium binary after installation" >&2
+    return 1
 }
 
-# Kill the browser process if running
+# Kill the browser process if running (fallback cleanup)
 kill_browser() {
     local pf
     pf="$(pidfile)"
@@ -115,6 +163,44 @@ kill_browser() {
             kill -9 "$pid" 2>/dev/null || true
         fi
         rm -f "$pf"
+    fi
+}
+
+# Try to start browser via daemon API. Returns 0 on success, 1 on failure.
+daemon_start_browser() {
+    local port="$1"
+    local result
+    local http_code
+
+    result=$(curl -s -w "\n%{http_code}" --connect-timeout 5 \
+        -X POST "$API_BASE/api/sessions/$SESSION_ID/browser-start" \
+        -H "Content-Type: application/json" \
+        -d "{\"port\": $port}")
+    http_code=$(echo "$result" | tail -n1)
+    result=$(echo "$result" | sed '$d')
+
+    if [[ "$http_code" == "200" ]]; then
+        echo "Browser started via daemon." >&2
+        return 0
+    else
+        echo "Daemon browser-start returned HTTP $http_code: $result" >&2
+        return 1
+    fi
+}
+
+# Try to stop browser via daemon API. Returns 0 on success, 1 on failure.
+daemon_stop_browser() {
+    local result
+    local http_code
+
+    result=$(curl -s -w "\n%{http_code}" --connect-timeout 5 \
+        -X POST "$API_BASE/api/sessions/$SESSION_ID/browser-stop")
+    http_code=$(echo "$result" | tail -n1)
+
+    if [[ "$http_code" == "200" ]]; then
+        return 0
+    else
+        return 1
     fi
 }
 
@@ -139,15 +225,20 @@ do_start() {
         esac
     done
 
-    local browser_was_running=false
-
     # Step 1: Check/launch browser
     if curl -sf "http://localhost:$port/json/version" &>/dev/null; then
         echo "Browser already running on port $port" >&2
-        browser_was_running=true
     else
         echo "Launching browser on port $port..." >&2
-        launch_browser "$port"
+
+        # Try daemon API first, fall back to direct launch
+        if ! daemon_start_browser "$port"; then
+            echo "Falling back to direct launch..." >&2
+            if ! launch_browser "$port"; then
+                echo "Error: Failed to launch browser" >&2
+                exit 1
+            fi
+        fi
 
         if ! wait_for_cdp "$port"; then
             echo "Error: Browser failed to start within 10s. Check log: $(logfile)" >&2
@@ -223,9 +314,13 @@ do_close() {
         echo "Warning: Browser view close returned HTTP $bv_http" >&2
     fi
 
-    # Step 2: Kill browser process
-    kill_browser
-    echo "Browser stopped." >&2
+    # Step 2: Stop browser via daemon, fall back to PID file
+    if daemon_stop_browser; then
+        echo "Browser stopped via daemon." >&2
+    else
+        kill_browser
+        echo "Browser stopped." >&2
+    fi
 
     jq -n '{ok: true}'
 }
@@ -233,17 +328,17 @@ do_close() {
 do_status() {
     local port="$DEFAULT_PORT"
     local browser_running=false
-    local cdp_version=""
 
-    # Check browser
-    cdp_version=$(curl -sf "http://localhost:$port/json/version" 2>/dev/null || true)
-    if [[ -n "$cdp_version" ]]; then
+    # Check browser via CDP
+    if curl -sf "http://localhost:$port/json/version" &>/dev/null; then
         browser_running=true
     fi
 
     # Check browser view
     local bv_result
-    bv_result=$(curl -sf --connect-timeout 5 "$API_BASE/api/sessions/$SESSION_ID/browser-view" 2>/dev/null || echo '{"active": false}')
+    bv_result=$(curl -sf --connect-timeout 5 \
+        "$API_BASE/api/sessions/$SESSION_ID/browser-view" 2>/dev/null \
+        || echo '{"active": false}')
 
     local bv_active
     bv_active=$(echo "$bv_result" | jq -r '.active // false')

@@ -2,7 +2,7 @@
 title: "orch-browser — Worker CLI for Browser Lifecycle Management"
 author: Yudong Qiu
 created: 2026-03-01
-last_modified: 2026-03-01
+last_modified: 2026-03-02
 status: Implemented
 ---
 
@@ -458,17 +458,78 @@ Worker                  orch-browser          Backend API           Dashboard
 
 3. **Playwright browser installation on rdev** — **Resolved.** The worker prompt instructs: if Playwright browsers are not installed, run `orch-browser install`. The `orch-browser open` command also auto-detects missing installations and prints instructions.
 
-## 12. Remaining Considerations
+## 12. Daemon-Managed Browser Lifecycle
+
+### 12.1 Problem with Direct Launch
+
+The original design had `orch-browser` launching Chromium directly via Node/Playwright on the worker. This meant:
+- The browser was an orphaned process if the worker died
+- Clicking "Browser" in the dashboard required the worker to have already run `orch-browser --start`
+- No centralized cleanup on shutdown
+
+### 12.2 Solution: RWS Daemon Integration
+
+Browser process management is now integrated into the Remote Worker Server (RWS) daemon (`orchestrator/terminal/remote_worker_server.py`). The daemon:
+- Launches Chromium directly (the Chromium binary from Playwright's cache, no Node.js needed)
+- Tracks browser processes per session in `browser_processes` dict
+- Kills all browsers on daemon shutdown (SIGTERM handler)
+- Cleans up dead browser processes in the main event loop
+- Stays alive while browsers are running (inactivity timeout check includes browser count)
+
+### 12.3 Daemon Browser Handlers
+
+| Handler | Description |
+|---|---|
+| `browser_start` | Launch Chromium on a CDP port for a session. Idempotent (returns existing if running). Uses `_find_chromium()` to locate the binary. |
+| `browser_stop` | Stop a browser by session_id (SIGTERM, wait 3s, SIGKILL). |
+| `browser_status` | Query running state of one or all browsers. |
+
+### 12.4 API Endpoints
+
+| Endpoint | Description |
+|---|---|
+| `POST /api/sessions/{id}/browser-start` | Start browser via daemon. Returns pid/port. 503 if daemon unavailable. |
+| `POST /api/sessions/{id}/browser-stop` | Stop browser via daemon. |
+
+### 12.5 Auto-Start on Dashboard Click
+
+When the operator clicks "Browser" in the dashboard, the `POST /api/sessions/{id}/browser-view` endpoint now auto-starts the browser if none is found:
+
+1. `start_browser_view()` raises `RuntimeError("No browser found...")`
+2. Backend calls `rws.start_browser(session_id, port)` via the daemon
+3. Waits 1s for CDP initialization
+4. Retries `start_browser_view()`
+5. If retry fails, returns the original 502
+
+### 12.6 `orch-browser` CLI Integration
+
+The CLI now uses the daemon API with fallback:
+
+**`--start`**: Calls `POST /api/sessions/$SESSION_ID/browser-start` first. If daemon returns 503 or fails, falls back to the direct Node/Playwright launch (original behavior).
+
+**`--close`**: Calls `POST /api/sessions/$SESSION_ID/browser-stop` first. If daemon fails, falls back to PID-file-based kill (original behavior).
+
+### 12.7 Design Decisions
+
+- **Daemon launches Chromium binary directly** — no Node.js dependency for the daemon, which is stdlib-only Python. Uses `subprocess.Popen` with the binary found in `~/.cache/ms-playwright/chromium-*/`.
+- **`start_new_session=False`** — browser stays in daemon's process group so the shutdown handler kills it. PTYs use `setsid()` because they need a controlling terminal; browsers do not.
+- **No race conditions** — the daemon is single-threaded (selector event loop), so handlers execute sequentially.
+- **Graceful fallback** — `orch-browser` CLI falls back to direct launch if daemon is unavailable, maintaining backward compatibility.
+
+## 13. Remaining Considerations
 
 1. **Multiple browser instances**: The current design supports only one browser per session. This matches the one-browser-view-per-session constraint already in place.
 
 2. **Node.js availability on rdev**: The `@playwright/mcp` package requires Node.js 18+. On rdev, this is typically available. If not, the worker should install it or the deploy process should verify its presence.
 
-## 13. Summary
+3. **Daemon upgrade**: When the daemon script version changes, the old daemon is killed. Old browser processes become orphaned, but `browser_start` detects port-in-use and returns an error. A fresh start on a different port or after the orphaned browser exits will work.
+
+## 14. Summary
 
 The `orch-browser` command gives workers a single entry point for browser management:
 - **Launch**: Detects installation, launches Chromium with CDP, triggers dashboard overlay.
 - **Share**: Playwright MCP connects to the same browser via `--cdp-endpoint http://localhost:9222`, so the operator's Browser View and Playwright's automation see the same browser.
 - **Close**: Cleans up the browser process, CDP proxy, tunnel, and dashboard overlay.
+- **Daemon-managed**: Browser lifecycle is managed by the RWS daemon for clean shutdown, auto-start from the dashboard, and centralized process tracking.
 
 The key insight is that CDP supports multiple simultaneous clients, so our screencast-based Browser View and Playwright's CDP-based automation coexist without conflict. The `--cdp-endpoint` / `PLAYWRIGHT_MCP_CDP_ENDPOINT` configuration ensures Playwright MCP reuses the existing browser rather than launching a second one.

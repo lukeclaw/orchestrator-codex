@@ -54,9 +54,7 @@ class BrowserViewSession:
     status: str = "active"  # "active" | "closed"
     created_at: str = field(default_factory=lambda: datetime.now(UTC).isoformat())
     # Pending CDP responses: msg_id -> Future[dict]
-    _pending: dict[int, asyncio.Future] = field(
-        default_factory=dict, repr=False
-    )
+    _pending: dict[int, asyncio.Future] = field(default_factory=dict, repr=False)
 
 
 # In-memory registry: session_id -> BrowserViewSession
@@ -204,9 +202,21 @@ async def start_browser_view(
         close_tunnel(local_port, host)
         raise RuntimeError(f"Failed to connect to CDP WebSocket: {e}") from e
 
-    # Step 4: Enable Page events (required for frameNavigated) and start screencast
+    # Step 4: Set viewport, enable Page events, and start screencast.
+    # Viewport must be set BEFORE screencast starts, otherwise the first
+    # frames render at Chrome's default viewport size (wrong zoom).
     try:
         await _cdp_send(cdp_ws, "Page.enable")
+        await _cdp_send(
+            cdp_ws,
+            "Emulation.setDeviceMetricsOverride",
+            {
+                "width": max_width,
+                "height": max_height,
+                "deviceScaleFactor": 1,
+                "mobile": False,
+            },
+        )
         await _cdp_send(
             cdp_ws,
             "Page.startScreencast",
@@ -235,12 +245,6 @@ async def start_browser_view(
         quality=quality,
     )
     _active_views[session_id] = view
-
-    # Set initial viewport to match screencast dimensions (100% zoom)
-    try:
-        await set_viewport_zoom(view, 100)
-    except Exception:
-        logger.debug("Failed to set initial viewport zoom for session %s", session_id)
 
     logger.info(
         "Started browser view for session %s: %s (%s)",
@@ -503,10 +507,14 @@ async def poll_url(
     while True:
         await asyncio.sleep(interval)
         try:
-            resp = await _cdp_call(view, "Runtime.evaluate", {
-                "expression": js,
-                "returnByValue": True,
-            })
+            resp = await _cdp_call(
+                view,
+                "Runtime.evaluate",
+                {
+                    "expression": js,
+                    "returnByValue": True,
+                },
+            )
             value = resp.get("result", {}).get("result", {}).get("value", "")
             if value:
                 data = json.loads(value)
@@ -517,20 +525,20 @@ async def poll_url(
                     last_title = title
                     view.page_url = url
                     view.page_title = title
-                    await send_json({
-                        "type": "navigate",
-                        "url": url,
-                        "title": title,
-                    })
+                    await send_json(
+                        {
+                            "type": "navigate",
+                            "url": url,
+                            "title": title,
+                        }
+                    )
         except asyncio.CancelledError:
             raise
         except Exception:
             pass  # Browser may be navigating; skip this tick
 
 
-async def _navigate_history(
-    view: BrowserViewSession, forward: bool = False
-) -> None:
+async def _navigate_history(view: BrowserViewSession, forward: bool = False) -> None:
     """Navigate back or forward using CDP history APIs."""
     try:
         resp = await _cdp_call(view, "Page.getNavigationHistory")
