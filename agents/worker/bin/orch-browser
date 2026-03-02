@@ -68,15 +68,21 @@ ensure_fonts() {
     fi
     echo "Installing system fonts for Chromium..." >&2
 
-    # Use Playwright's official deps installer (handles distro detection + fonts)
-    if command -v npx &>/dev/null; then
-        if npx playwright install-deps chromium >&2 2>&1; then
-            fc-cache -f 2>/dev/null || true
-            return 0
-        fi
-        echo "Warning: Could not install system fonts via playwright install-deps" >&2
+    # Download Liberation fonts to user-local directory (no root required)
+    local font_dir="$HOME/.local/share/fonts"
+    local tmp_tar="/tmp/liberation-fonts-ttf.tar.gz"
+    local font_url="https://github.com/liberationfonts/liberation-fonts/releases/download/2.1.5/liberation-fonts-ttf-2.1.5.tar.gz"
+
+    mkdir -p "$font_dir"
+    if curl -fsSL -o "$tmp_tar" "$font_url" 2>/dev/null; then
+        tar xzf "$tmp_tar" -C /tmp/ 2>/dev/null
+        cp /tmp/liberation-fonts-ttf-2.1.5/*.ttf "$font_dir/" 2>/dev/null
+        rm -f "$tmp_tar"
+        rm -rf /tmp/liberation-fonts-ttf-2.1.5
+        fc-cache -f "$font_dir" 2>/dev/null || true
+        echo "Liberation fonts installed to $font_dir" >&2
     else
-        echo "Warning: npx not found, cannot install system fonts" >&2
+        echo "Warning: Could not download Liberation fonts" >&2
     fi
 }
 

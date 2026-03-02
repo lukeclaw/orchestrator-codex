@@ -392,17 +392,32 @@ _REMOTE_WORKER_SERVER_SCRIPT = textwrap.dedent("""\
         except (OSError, subprocess.TimeoutExpired):
             pass
 
-        # Use Playwright's official deps installer
-        npx = shutil.which("npx")
-        if npx:
-            try:
-                subprocess.run(
-                    [npx, "playwright", "install-deps", "chromium"],
-                    timeout=120,
-                )
-                subprocess.run(["fc-cache", "-f"], timeout=10)
-            except (subprocess.TimeoutExpired, OSError):
-                pass
+        # Download Liberation fonts to user-local directory (no root required)
+        import glob as _glob
+        font_dir = os.path.join(os.path.expanduser("~"), ".local", "share", "fonts")
+        tmp_tar = "/tmp/liberation-fonts-ttf.tar.gz"
+        font_url = "https://github.com/liberationfonts/liberation-fonts/releases/download/2.1.5/liberation-fonts-ttf-2.1.5.tar.gz"
+        try:
+            os.makedirs(font_dir, exist_ok=True)
+            subprocess.run(
+                ["curl", "-fsSL", "-o", tmp_tar, font_url],
+                timeout=30, check=True,
+            )
+            subprocess.run(
+                ["tar", "xzf", tmp_tar, "-C", "/tmp/"],
+                timeout=10, check=True,
+            )
+            for ttf in _glob.glob("/tmp/liberation-fonts-ttf-2.1.5/*.ttf"):
+                shutil.copy2(ttf, os.path.join(font_dir, os.path.basename(ttf)))
+            subprocess.run(["fc-cache", "-f", font_dir], timeout=10)
+        except Exception:
+            pass
+        # Cleanup
+        try:
+            os.remove(tmp_tar)
+        except OSError:
+            pass
+        shutil.rmtree("/tmp/liberation-fonts-ttf-2.1.5", ignore_errors=True)
 
     def _install_chromium():
         \"\"\"Install Chromium via Playwright, return the binary path or None.\"\"\"
