@@ -392,7 +392,7 @@ _REMOTE_WORKER_SERVER_SCRIPT = textwrap.dedent("""\
         except (OSError, subprocess.TimeoutExpired):
             pass
 
-        # Strategy 1: Use Playwright's official deps installer
+        # Use Playwright's official deps installer
         npx = shutil.which("npx")
         if npx:
             try:
@@ -401,22 +401,8 @@ _REMOTE_WORKER_SERVER_SCRIPT = textwrap.dedent("""\
                     timeout=120,
                 )
                 subprocess.run(["fc-cache", "-f"], timeout=10)
-                return
             except (subprocess.TimeoutExpired, OSError):
                 pass
-
-        # Strategy 2: Manual package install
-        for cmd in (
-            ["sudo", "yum", "install", "-y", "liberation-fonts", "fontconfig"],
-            ["sudo", "apt-get", "install", "-y", "fonts-liberation", "fontconfig"],
-        ):
-            if shutil.which(cmd[1]):
-                try:
-                    subprocess.run(cmd, timeout=60)
-                    subprocess.run(["fc-cache", "-f"], timeout=10)
-                except (subprocess.TimeoutExpired, OSError):
-                    pass
-                return
 
     def _install_chromium():
         \"\"\"Install Chromium via Playwright, return the binary path or None.\"\"\"
