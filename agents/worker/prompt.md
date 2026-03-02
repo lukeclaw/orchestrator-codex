@@ -46,13 +46,22 @@ orch-tunnel 4200 --close  # Close tunnel
 orch-tunnel --list        # List active tunnels
 ```
 
-### Browser — Remote Debugging
-When launching a browser (Playwright, Chromium, etc.), **always** include `--remote-debugging-port=9222` so the operator can view and interact with your browser from the dashboard.
+### `orch-browser` — Browser Management
+Launch and manage a browser for web tasks. The browser is visible to the operator
+in the dashboard and shared with Playwright MCP tools.
 ```bash
-# Playwright example
-chromium --remote-debugging-port=9222
-# Or in code: browser = playwright.chromium.launch(args=["--remote-debugging-port=9222"])
+orch-browser --start               # Launch browser + open dashboard view + configure MCP
+orch-browser --start --port 9222   # Specify CDP port (default 9222)
+orch-browser --close               # Close browser + dashboard view
+orch-browser --status              # Check if browser is running
+orch-browser --minimize            # Minimize browser view overlay
+orch-browser --restore             # Restore browser view overlay
+orch-browser --install             # Install Playwright Chromium if missing
 ```
+
+After `--start`, Playwright MCP tools (browser_navigate, browser_click, etc.)
+connect to the same browser the operator sees in the dashboard.
+Always start the browser before using Playwright MCP tools.
 
 ### `orch-interactive` — User-Facing Terminal
 **Always use instead of raw tmux** for user interaction (passwords, MFA, interactive tools, monitoring). Opens a floating terminal in the dashboard — no manual tmux attach needed. Don't send input while the user is typing.

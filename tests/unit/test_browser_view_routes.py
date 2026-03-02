@@ -200,3 +200,43 @@ class TestStatusEndpoint:
     def test_404_session_not_found(self, client):
         response = client.get("/api/sessions/nonexistent-id/browser-view")
         assert response.status_code == 404
+
+
+class TestMinimizeEndpoint:
+    """Tests for POST /api/sessions/{id}/browser-view/minimize."""
+
+    def test_minimizes_active_view(self, client, rdev_session):
+        _active_views[rdev_session.id] = _make_fake_view(rdev_session.id)
+
+        response = client.post(f"/api/sessions/{rdev_session.id}/browser-view/minimize")
+
+        assert response.status_code == 200
+        assert response.json()["ok"] is True
+
+    def test_404_no_active_view(self, client, rdev_session):
+        response = client.post(f"/api/sessions/{rdev_session.id}/browser-view/minimize")
+        assert response.status_code == 404
+
+    def test_404_session_not_found(self, client):
+        response = client.post("/api/sessions/nonexistent-id/browser-view/minimize")
+        assert response.status_code == 404
+
+
+class TestRestoreEndpoint:
+    """Tests for POST /api/sessions/{id}/browser-view/restore."""
+
+    def test_restores_active_view(self, client, rdev_session):
+        _active_views[rdev_session.id] = _make_fake_view(rdev_session.id)
+
+        response = client.post(f"/api/sessions/{rdev_session.id}/browser-view/restore")
+
+        assert response.status_code == 200
+        assert response.json()["ok"] is True
+
+    def test_404_no_active_view(self, client, rdev_session):
+        response = client.post(f"/api/sessions/{rdev_session.id}/browser-view/restore")
+        assert response.status_code == 404
+
+    def test_404_session_not_found(self, client):
+        response = client.post("/api/sessions/nonexistent-id/browser-view/restore")
+        assert response.status_code == 404

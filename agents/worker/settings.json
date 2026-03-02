@@ -15,7 +15,8 @@
       "Bash(orch-context *)",
       "Bash(orch-notify *)",
       "Bash(orch-worker *)",
-      "Bash(orch-tunnel *)"
+      "Bash(orch-tunnel *)",
+      "Bash(orch-browser *)"
     ]
   },
   "hooks": {

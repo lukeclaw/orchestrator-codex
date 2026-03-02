@@ -185,3 +185,45 @@ async def list_browser_targets(
             for t in targets
         ]
     }
+
+
+@router.post("/sessions/{session_id}/browser-view/minimize")
+def minimize_browser_view(session_id: str, db=Depends(get_db)):
+    """Minimize the browser view overlay (UI-only, no CDP changes)."""
+    s = repo.get_session(db, session_id)
+    if s is None:
+        raise HTTPException(404, "Session not found")
+
+    view = get_active_view(session_id)
+    if not view:
+        raise HTTPException(404, "No active browser view for this session")
+
+    publish(
+        Event(
+            type="browser_view_minimized",
+            data={"session_id": session_id},
+        )
+    )
+
+    return {"ok": True}
+
+
+@router.post("/sessions/{session_id}/browser-view/restore")
+def restore_browser_view(session_id: str, db=Depends(get_db)):
+    """Restore the browser view overlay from minimized state."""
+    s = repo.get_session(db, session_id)
+    if s is None:
+        raise HTTPException(404, "Session not found")
+
+    view = get_active_view(session_id)
+    if not view:
+        raise HTTPException(404, "No active browser view for this session")
+
+    publish(
+        Event(
+            type="browser_view_restored",
+            data={"session_id": session_id},
+        )
+    )
+
+    return {"ok": True}

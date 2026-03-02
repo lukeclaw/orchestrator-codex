@@ -28,7 +28,7 @@ export default function SessionDetailPage() {
   const notify = useNotify()
   
   // Use shared state from AppContext for session
-  const { sessions, tasks: allTasks, refresh, interactiveCliSessions, interactiveCliMinimized, closeInteractiveCli, browserViewSessions, closeBrowserView } = useApp()
+  const { sessions, tasks: allTasks, refresh, interactiveCliSessions, interactiveCliMinimized, closeInteractiveCli, browserViewSessions, browserViewMinimized, closeBrowserView } = useApp()
   const session = sessions.find(s => s.id === id) || null
   const tasks = allTasks.filter(t => t.assigned_session_id === id)
   const isRdev = session?.host?.includes('/') ?? false
@@ -59,7 +59,7 @@ export default function SessionDetailPage() {
   const [icliMinimized, setIcliMinimized] = useState(() => id ? interactiveCliMinimized.has(id) : false)
   const [bvActiveLocal, setBvActiveLocal] = useState(false)
   const [bvStarting, setBvStarting] = useState(false)
-  const [bvMinimized, setBvMinimized] = useState(false)
+  const [bvMinimized, setBvMinimized] = useState(() => id ? browserViewMinimized.has(id) : false)
 
   // icliActive combines local state (from mount check) with AppContext WS events
   const icliFromContext = id ? interactiveCliSessions.has(id) : false
@@ -119,7 +119,7 @@ export default function SessionDetailPage() {
   useEffect(() => {
     if (bvFromContext) {
       setBvActiveLocal(true)
-      setBvMinimized(false)
+      setBvMinimized(false) // Show full when agent opens it
     }
   }, [bvFromContext])
 
@@ -138,13 +138,22 @@ export default function SessionDetailPage() {
     }
   }, [bvFromContext, bvActiveLocal, id])
 
-  // Check browser view status on mount
+  // Sync minimize state from WS events (agent triggered minimize/restore)
+  useEffect(() => {
+    if (id) {
+      setBvMinimized(browserViewMinimized.has(id))
+    }
+  }, [id, browserViewMinimized])
+
+  // Check browser view status on mount — restore previous state
   useEffect(() => {
     if (!id) return
     api<{ active: boolean }>(`/api/sessions/${id}/browser-view`)
       .then(r => {
         if (r.active) {
           setBvActiveLocal(true)
+          // Preserve minimize state from WS context; default to open
+          setBvMinimized(browserViewMinimized.has(id))
         }
       })
       .catch(() => {})

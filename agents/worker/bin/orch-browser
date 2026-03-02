@@ -1,0 +1,315 @@
+#!/bin/bash
+# orch-browser: Launch and manage a browser for web tasks
+#
+# Launches a headless Chromium with CDP, creates an SSH tunnel + browser view
+# visible in the operator's dashboard, and configures Playwright MCP tools
+# to connect to the same browser instance.
+#
+# Usage:
+#   orch-browser --start [--port PORT]  Launch browser + tunnel + view + MCP
+#   orch-browser --close                Close browser view, kill browser, remove MCP
+#   orch-browser --status               Check browser/view status
+#   orch-browser --minimize             Minimize browser view overlay
+#   orch-browser --restore              Restore browser view overlay
+#   orch-browser --install              Install Playwright Chromium browser
+#   orch-browser -h, --help             Show this help message
+
+set -e
+
+source "$(dirname "$0")/lib.sh"
+
+DEFAULT_PORT=9222
+PIDFILE_DIR="/tmp/orchestrator"
+LOG_DIR="/tmp/orchestrator"
+
+show_help() {
+    echo "Usage: orch-browser <command> [options]"
+    echo ""
+    echo "Launch and manage a browser for web tasks. The browser is visible to the"
+    echo "operator in the dashboard and shared with Playwright MCP tools."
+    echo ""
+    echo "Commands:"
+    echo "  --start [--port PORT]  Launch browser + open dashboard view + configure MCP"
+    echo "                         Default port: $DEFAULT_PORT"
+    echo "  --close                Close browser view, kill browser, remove MCP config"
+    echo "  --status               Check if browser and view are running"
+    echo "  --minimize             Minimize browser view overlay in dashboard"
+    echo "  --restore              Restore browser view overlay in dashboard"
+    echo "  --install              Install Playwright Chromium if missing"
+    echo "  -h, --help             Show this help"
+    echo ""
+    echo "After --start, Playwright MCP tools (browser_navigate, browser_click, etc.)"
+    echo "connect to the same browser the operator sees in the dashboard."
+}
+
+if [ -z "$SESSION_ID" ]; then
+    echo "Error: ORCH_SESSION_ID not set" >&2
+    exit 1
+fi
+
+pidfile() {
+    echo "$PIDFILE_DIR/browser-$SESSION_ID.pid"
+}
+
+logfile() {
+    echo "$LOG_DIR/browser-$SESSION_ID.log"
+}
+
+# Wait for CDP endpoint to become available
+wait_for_cdp() {
+    local port="$1"
+    local max_attempts=20
+    for i in $(seq 1 "$max_attempts"); do
+        if curl -sf "http://localhost:$port/json/version" &>/dev/null; then
+            return 0
+        fi
+        sleep 0.5
+    done
+    return 1
+}
+
+# Launch headless Chromium with CDP enabled
+launch_browser() {
+    local port="$1"
+    mkdir -p "$PIDFILE_DIR"
+
+    # Check if Playwright Chromium is installed
+    if ! npx playwright install --check chromium 2>/dev/null; then
+        echo "Installing Playwright Chromium..." >&2
+        npx playwright install chromium >&2
+    fi
+
+    # Launch headless Chromium via Playwright's Node API
+    nohup node -e "
+const { chromium } = require('playwright');
+(async () => {
+    const browser = await chromium.launch({
+        headless: true,
+        args: ['--remote-debugging-port=$port', '--no-sandbox']
+    });
+    console.log('Browser launched on port $port');
+    // Keep process alive until killed
+    process.on('SIGTERM', async () => { await browser.close(); process.exit(0); });
+    process.on('SIGINT', async () => { await browser.close(); process.exit(0); });
+    setInterval(() => {}, 60000);
+})().catch(e => { console.error(e); process.exit(1); });
+" > "$(logfile)" 2>&1 &
+    echo $! > "$(pidfile)"
+}
+
+# Kill the browser process if running
+kill_browser() {
+    local pf
+    pf="$(pidfile)"
+    if [ -f "$pf" ]; then
+        local pid
+        pid=$(cat "$pf")
+        if kill -0 "$pid" 2>/dev/null; then
+            kill "$pid" 2>/dev/null || true
+            # Wait briefly for graceful shutdown
+            for _ in $(seq 1 10); do
+                if ! kill -0 "$pid" 2>/dev/null; then break; fi
+                sleep 0.2
+            done
+            # Force kill if still alive
+            kill -9 "$pid" 2>/dev/null || true
+        fi
+        rm -f "$pf"
+    fi
+}
+
+# ----- Commands -----
+
+do_start() {
+    local port="$DEFAULT_PORT"
+
+    # Parse --port
+    shift  # skip --start
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --port)
+                port="$2"
+                shift 2
+                ;;
+            *)
+                echo "Error: Unknown option: $1" >&2
+                show_help
+                exit 1
+                ;;
+        esac
+    done
+
+    local browser_was_running=false
+
+    # Step 1: Check/launch browser
+    if curl -sf "http://localhost:$port/json/version" &>/dev/null; then
+        echo "Browser already running on port $port" >&2
+        browser_was_running=true
+    else
+        echo "Launching browser on port $port..." >&2
+        launch_browser "$port"
+
+        if ! wait_for_cdp "$port"; then
+            echo "Error: Browser failed to start within 10s. Check log: $(logfile)" >&2
+            exit 1
+        fi
+        echo "Browser started." >&2
+    fi
+
+    # Step 2: Create tunnel + browser view via API
+    local bv_result
+    bv_result=$(curl -s -w "\n%{http_code}" --connect-timeout 5 \
+        -X POST "$API_BASE/api/sessions/$SESSION_ID/browser-view" \
+        -H "Content-Type: application/json" \
+        -d "{\"cdp_port\": $port}")
+    local bv_http
+    bv_http=$(echo "$bv_result" | tail -n1)
+    bv_result=$(echo "$bv_result" | sed '$d')
+
+    local browser_view=true
+    if [[ "$bv_http" == "409" ]]; then
+        echo "Browser view already active." >&2
+    elif [[ "$bv_http" == "200" || "$bv_http" == "201" ]]; then
+        echo "Browser view opened." >&2
+    elif [[ "$bv_http" == "400" ]]; then
+        # Not a remote worker — browser view not supported, but browser+MCP still work
+        echo "Note: Browser view requires a remote (rdev) worker. Skipping view." >&2
+        browser_view=false
+    else
+        echo "Warning: Browser view API returned HTTP $bv_http" >&2
+        echo "$bv_result" >&2
+        browser_view=false
+    fi
+
+    # Step 3: Get page URL from browser view response or CDP
+    local page_url=""
+    if [[ "$browser_view" == "true" ]]; then
+        page_url=$(echo "$bv_result" | jq -r '.page_url // empty' 2>/dev/null || true)
+    fi
+    if [[ -z "$page_url" ]]; then
+        page_url=$(curl -sf "http://localhost:$port/json" 2>/dev/null | jq -r '.[0].url // empty' 2>/dev/null || true)
+    fi
+
+    # Output JSON result
+    jq -n \
+        --argjson ok true \
+        --argjson cdp_port "$port" \
+        --arg page_url "$page_url" \
+        --argjson browser_view "$browser_view" \
+        '{ok: $ok, cdp_port: $cdp_port, page_url: $page_url, browser_view: $browser_view}'
+
+    echo "" >&2
+    echo "Browser started on port $port." >&2
+    if [[ "$browser_view" == "true" ]]; then
+        echo "Browser View opened in the dashboard." >&2
+    fi
+    echo "Playwright MCP tools are pre-configured to connect to this browser." >&2
+}
+
+do_close() {
+    # Step 1: Close browser view via API
+    local bv_result
+    bv_result=$(curl -s -w "\n%{http_code}" --connect-timeout 5 \
+        -X DELETE "$API_BASE/api/sessions/$SESSION_ID/browser-view")
+    local bv_http
+    bv_http=$(echo "$bv_result" | tail -n1)
+    bv_result=$(echo "$bv_result" | sed '$d')
+
+    if [[ "$bv_http" == "200" ]]; then
+        echo "Browser view closed." >&2
+    elif [[ "$bv_http" == "404" ]]; then
+        echo "No active browser view." >&2
+    else
+        echo "Warning: Browser view close returned HTTP $bv_http" >&2
+    fi
+
+    # Step 2: Kill browser process
+    kill_browser
+    echo "Browser stopped." >&2
+
+    jq -n '{ok: true}'
+}
+
+do_status() {
+    local port="$DEFAULT_PORT"
+    local browser_running=false
+    local cdp_version=""
+
+    # Check browser
+    cdp_version=$(curl -sf "http://localhost:$port/json/version" 2>/dev/null || true)
+    if [[ -n "$cdp_version" ]]; then
+        browser_running=true
+    fi
+
+    # Check browser view
+    local bv_result
+    bv_result=$(curl -sf --connect-timeout 5 "$API_BASE/api/sessions/$SESSION_ID/browser-view" 2>/dev/null || echo '{"active": false}')
+
+    local bv_active
+    bv_active=$(echo "$bv_result" | jq -r '.active // false')
+
+    jq -n \
+        --argjson browser_running "$browser_running" \
+        --argjson browser_view_active "$bv_active" \
+        --argjson cdp_port "$port" \
+        '{browser_running: $browser_running, browser_view_active: $browser_view_active, cdp_port: $cdp_port}'
+}
+
+do_minimize() {
+    result=$(curl -sf -X POST "$API_BASE/api/sessions/$SESSION_ID/browser-view/minimize" 2>&1) || {
+        echo "Error: Failed to minimize browser view" >&2
+        echo "$result" >&2
+        exit 1
+    }
+    echo "$result" | jq .
+    echo ""
+    echo "Browser view minimized."
+}
+
+do_restore() {
+    result=$(curl -sf -X POST "$API_BASE/api/sessions/$SESSION_ID/browser-view/restore" 2>&1) || {
+        echo "Error: Failed to restore browser view" >&2
+        echo "$result" >&2
+        exit 1
+    }
+    echo "$result" | jq .
+    echo ""
+    echo "Browser view restored."
+}
+
+do_install() {
+    echo "Installing Playwright Chromium..." >&2
+    npx playwright install chromium
+    echo "Playwright Chromium installed."
+}
+
+# ----- Main dispatch -----
+
+case "${1:-}" in
+    -h|--help)
+        show_help
+        exit 0
+        ;;
+    --start)
+        do_start "$@"
+        ;;
+    --close)
+        do_close
+        ;;
+    --status)
+        do_status
+        ;;
+    --minimize)
+        do_minimize
+        ;;
+    --restore)
+        do_restore
+        ;;
+    --install)
+        do_install
+        ;;
+    *)
+        show_help
+        exit 0
+        ;;
+esac

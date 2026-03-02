@@ -14,6 +14,7 @@ import pytest
 
 from orchestrator.agents import (
     BRAIN_SCRIPT_NAMES,
+    PLAYWRIGHT_PLUGIN,
     WORKER_SCRIPT_NAMES,
     deploy_brain_scripts,
     deploy_worker_scripts,
@@ -468,6 +469,82 @@ json_encode "$1"
         assert r"\n" in encoded
         assert r"\t" in encoded
         assert r"\\" in encoded
+
+
+class TestOrchBrowserScript:
+    """Tests for orch-browser CLI script."""
+
+    def test_orch_browser_in_worker_script_names(self):
+        """Verify orch-browser is included in WORKER_SCRIPT_NAMES."""
+        assert "orch-browser" in WORKER_SCRIPT_NAMES
+
+    def test_orch_browser_script_has_start_command(self):
+        """Verify orch-browser has --start command."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            bin_dir = deploy_worker_scripts(tmpdir, "session-123")
+            content = _read_script(bin_dir, "orch-browser")
+            assert "--start" in content
+            assert "do_start" in content
+
+    def test_orch_browser_script_has_close_command(self):
+        """Verify orch-browser has --close command."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            bin_dir = deploy_worker_scripts(tmpdir, "session-123")
+            content = _read_script(bin_dir, "orch-browser")
+            assert "--close" in content
+            assert "do_close" in content
+
+    def test_orch_browser_script_has_status_command(self):
+        """Verify orch-browser has --status command."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            bin_dir = deploy_worker_scripts(tmpdir, "session-123")
+            content = _read_script(bin_dir, "orch-browser")
+            assert "--status" in content
+            assert "do_status" in content
+
+    def test_orch_browser_script_has_minimize_restore(self):
+        """Verify orch-browser has --minimize and --restore commands."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            bin_dir = deploy_worker_scripts(tmpdir, "session-123")
+            content = _read_script(bin_dir, "orch-browser")
+            assert "--minimize" in content
+            assert "--restore" in content
+            assert "do_minimize" in content
+            assert "do_restore" in content
+
+    def test_orch_browser_script_no_runtime_mcp_commands(self):
+        """Verify orch-browser does not use claude mcp add/remove (config is pre-deployed)."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            bin_dir = deploy_worker_scripts(tmpdir, "session-123")
+            content = _read_script(bin_dir, "orch-browser")
+            assert "claude mcp add" not in content
+            assert "claude mcp remove" not in content
+
+    def test_orch_browser_permission_in_settings(self):
+        """Verify orch-browser permission is in worker settings.json."""
+        import json
+
+        settings_path = os.path.join(
+            os.path.dirname(__file__),
+            "..",
+            "..",
+            "agents",
+            "worker",
+            "settings.json",
+        )
+        with open(settings_path) as f:
+            settings = json.load(f)
+
+        permissions = settings["permissions"]["allow"]
+        assert "Bash(orch-browser *)" in permissions
+
+
+class TestPlaywrightPlugin:
+    """Tests for Playwright plugin configuration."""
+
+    def test_playwright_plugin_constant(self):
+        """Verify the Playwright plugin identifier is set correctly."""
+        assert PLAYWRIGHT_PLUGIN == "playwright@claude-plugins-official"
 
 
 class TestWorkerHooksGeneration:

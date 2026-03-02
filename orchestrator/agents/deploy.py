@@ -24,6 +24,7 @@ WORKER_SCRIPT_NAMES = [
     "orch-tunnel",
     "orch-prs",
     "orch-interactive",
+    "orch-browser",
 ]
 BRAIN_SCRIPT_NAMES = [
     "orch-workers",
@@ -397,6 +398,10 @@ def generate_worker_hooks(
         f.write(settings_content)
 
     return worker_dir
+
+
+# Playwright plugin identifier (from the official Claude Code marketplace)
+PLAYWRIGHT_PLUGIN = "playwright@claude-plugins-official"
 
 
 def generate_brain_hooks(

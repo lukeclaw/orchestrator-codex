@@ -13,6 +13,7 @@ import subprocess
 import time
 
 from orchestrator.agents import (
+    PLAYWRIGHT_PLUGIN,
     deploy_worker_scripts,
     generate_worker_hooks,
     get_path_export_command,
@@ -466,6 +467,44 @@ def _copy_dir_to_remote(
     logger.info("Copied %s to remote %s via tar+base64 (tmux)", local_dir, remote_dir)
 
 
+def _install_playwright_plugin(tmux_session: str, window_name: str):
+    """Install the Claude Code Playwright plugin (user scope).
+
+    Runs ``claude plugin install`` non-interactively.  The command is
+    idempotent — reinstalling an already-installed plugin is a no-op.
+    """
+    tmux.send_keys(
+        tmux_session,
+        window_name,
+        f"claude plugin install {PLAYWRIGHT_PLUGIN} --scope user 2>/dev/null || true",
+        enter=True,
+    )
+    time.sleep(3)  # plugin install fetches from marketplace
+
+
+def ensure_rdev_node(tmux_session: str, window_name: str, remote_tmp_dir: str):
+    """Install Node 24 via volta and create symlinks in node-bin/.
+
+    Rdev images ship Node 16 via a LinkedIn wrapper that force-resets volta's
+    platform.json on every invocation.  We bypass both the wrapper and the volta
+    shim by symlinking the actual Node 24 binary into a dedicated directory
+    that gets placed first in PATH.
+
+    Idempotent — safe to call on every setup or reconnect.
+    """
+    node_bin_dir = f"{remote_tmp_dir}/node-bin"
+    volta_cmd = (
+        "volta install node@24"
+        f" && mkdir -p {node_bin_dir}"
+        f" && ln -sf $(volta which node) {node_bin_dir}/node"
+        f" && ln -sf $(volta which npx) {node_bin_dir}/npx"
+        f" && ln -sf $(volta which npm) {node_bin_dir}/npm"
+    )
+    tmux.send_keys(tmux_session, window_name, volta_cmd, enter=True)
+    time.sleep(8)  # volta downloads + installs + creates symlinks
+    logger.info("Ensured Node 24 symlinks at %s", node_bin_dir)
+
+
 def setup_remote_worker(
     conn: sqlite3.Connection,
     session_id: str,
@@ -536,18 +575,12 @@ def setup_remote_worker(
                     f"Timed out waiting for shell prompt on {host} (after kill+recreate retry)"
                 )
 
-        # 3b. rdev-specific: PATH fixup and claude update (skip for generic SSH)
+        # 3b. rdev-specific: claude update and Node upgrade
         if ssh.is_rdev_host(host):
-            tmux.send_keys(
-                tmux_session,
-                name,
-                "echo 'export PATH=\"$HOME/.local/bin:$PATH\"' >> ~/.bashrc && source ~/.bashrc",
-                enter=True,
-            )
-            time.sleep(1)
             tmux.send_keys(tmux_session, name, "claude update", enter=True)
             time.sleep(5)  # Wait for update to complete
-            logger.info("Configured PATH and updated Claude for %s", name)
+            ensure_rdev_node(tmux_session, name, remote_tmp_dir)
+            logger.info("Updated Claude and installed Node 24 for %s", name)
 
         # 3c. Install screen if needed
         if not _install_screen_if_needed(tmux_session, name):
@@ -637,8 +670,14 @@ def setup_remote_worker(
         )
         time.sleep(0.3)
 
-        # Export PATH
+        # Export PATH — on rdev, put our Node 24 symlinks first so they
+        # take precedence over the LinkedIn wrapper that force-pins Node 16.
         path_export = get_path_export_command(f"{remote_tmp_dir}/bin")
+        if ssh.is_rdev_host(host):
+            path_export = (
+                f'export PATH="{remote_tmp_dir}/node-bin:{remote_tmp_dir}/bin'
+                ':$HOME/.local/bin:$PATH"'
+            )
         tmux.send_keys(tmux_session, name, path_export, enter=True)
         time.sleep(0.5)
         logger.info("Copied all files to remote via tar+base64 and updated PATH")
@@ -671,7 +710,11 @@ def setup_remote_worker(
             time.sleep(0.3)
             logger.info("Deployed skills to %s for rdev worker %s", global_skills_dest, name)
 
-        # 8. Launch Claude (inside screen)
+        # 8. Install Playwright plugin (provides browser automation tools)
+        _install_playwright_plugin(tmux_session, name)
+        logger.info("Installed Playwright plugin for remote worker %s", name)
+
+        # 9. Launch Claude (inside screen)
         settings_file = f"{remote_tmp_dir}/configs/settings.json"
 
         claude_args = [
@@ -790,7 +833,11 @@ def setup_local_worker(
                 f.write(worker_prompt)
             logger.info("Wrote worker prompt to %s", prompt_file)
 
-        # 5. Build and send claude command
+        # 5. Install Playwright plugin (provides browser automation tools)
+        _install_playwright_plugin(tmux_session, name)
+        logger.info("Installed Playwright plugin for local worker %s", name)
+
+        # 6. Build and send claude command
         cmd_parts = []
         if work_dir:
             cmd_parts.append(f"cd {work_dir}")

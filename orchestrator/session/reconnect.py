@@ -33,7 +33,11 @@ from orchestrator.session.health import (
 )
 from orchestrator.terminal.manager import capture_output, kill_window, send_keys
 from orchestrator.terminal.markers import MarkerCommand
-from orchestrator.terminal.session import _copy_dir_to_remote_ssh, _kill_orphaned_screen
+from orchestrator.terminal.session import (
+    _copy_dir_to_remote_ssh,
+    _kill_orphaned_screen,
+    ensure_rdev_node,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -441,8 +445,15 @@ def _launch_claude_in_screen(
     - If session exists: use 'claude -r <id>' to resume
     - If session doesn't exist: use 'claude --session-id <id>' to create new
     """
-    # Set up environment
-    path_export = get_path_export_command(f"{remote_tmp_dir}/bin")
+    # Set up environment — on rdev, include node-bin for Node 24 symlinks
+    from orchestrator.terminal.ssh import is_rdev_host
+
+    if is_rdev_host(session.host):
+        path_export = (
+            f'export PATH="{remote_tmp_dir}/node-bin:{remote_tmp_dir}/bin:$HOME/.local/bin:$PATH"'
+        )
+    else:
+        path_export = get_path_export_command(f"{remote_tmp_dir}/bin")
     send_keys(tmux_sess, tmux_win, path_export, enter=True)
     time.sleep(0.3)
 
@@ -465,6 +476,11 @@ def _launch_claude_in_screen(
         session_exists,
         session_arg,
     )
+
+    # Ensure Playwright plugin is installed (idempotent, user scope)
+    from orchestrator.terminal.session import _install_playwright_plugin
+
+    _install_playwright_plugin(tmux_sess, tmux_win)
 
     # Launch Claude with skills from the remote .claude directory
     settings_file = f"{remote_tmp_dir}/configs/settings.json"
@@ -1054,6 +1070,10 @@ def reconnect_remote_worker(
                     )
             time.sleep(1)
         # ✓ We are now guaranteed at a remote shell prompt.
+
+        # ── Step 3b: rdev-specific — ensure Node 24 for Playwright ──────
+        if ssh.is_rdev_host(session.host):
+            ensure_rdev_node(tmux_sess, tmux_win, remote_tmp_dir)
 
         # ── Step 4: Ensure configs on remote ──────────────────────────────
         api_base = f"http://127.0.0.1:{api_port}"
