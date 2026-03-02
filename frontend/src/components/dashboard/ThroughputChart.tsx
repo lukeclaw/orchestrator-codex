@@ -35,6 +35,11 @@ function formatDate(dateStr: string): string {
   return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
 }
 
+function formatDateWithWeekday(dateStr: string): string {
+  const d = new Date(dateStr + 'T00:00:00')
+  return d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })
+}
+
 export default function ThroughputChart({ data, range, onBarClick }: Props) {
   const rangeDays = range === '90d' ? 90 : range === '30d' ? 30 : 7
   const filled = useMemo(() => fillDays(data, rangeDays), [data, rangeDays])
@@ -90,7 +95,7 @@ export default function ThroughputChart({ data, range, onBarClick }: Props) {
               fontSize: '12px',
               color: 'var(--text-primary)',
             }}
-            labelFormatter={(label) => formatDate(String(label))}
+            labelFormatter={(label) => formatDateWithWeekday(String(label))}
             cursor={{ fill: 'var(--surface-hover)' }}
           />
           <Bar
