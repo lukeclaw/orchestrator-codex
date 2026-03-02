@@ -1,7 +1,7 @@
 .task-board {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  grid-template-rows: minmax(300px, 60vh);
+  grid-template-rows: minmax(300px, auto);
   gap: 12px;
   width: 100%;
   overflow-x: auto;
@@ -80,6 +80,7 @@
   position: relative;
   flex: 1;
   min-height: 0;
+  max-height: 60vh;
   overflow: hidden;
 }
 
@@ -103,16 +104,12 @@
 }
 
 .tb-column-body {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
   padding: 8px;
   display: flex;
   flex-direction: column;
   gap: 6px;
   overflow-y: auto;
+  max-height: inherit;
 }
 
 @media (max-width: 900px) {
