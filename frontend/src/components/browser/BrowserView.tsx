@@ -33,6 +33,7 @@ export default function BrowserView({ sessionId, minimized = false, onMinimizedC
   const [aspectRatio, setAspectRatio] = useState(4 / 3)
   const aspectRatioRef = useRef(4 / 3)
   const [showSettings, setShowSettings] = useState(false)
+  const [showToolbar, setShowToolbar] = useState(true)
   const settingsRef = useRef<HTMLDivElement>(null)
   const [urlInput, setUrlInput] = useState('')
   const [urlFocused, setUrlFocused] = useState(false)
@@ -344,6 +345,17 @@ export default function BrowserView({ sessionId, minimized = false, onMinimizedC
           {!minimized && (
             <button
               className="bv-btn"
+              onClick={() => setShowToolbar(!showToolbar)}
+              title={showToolbar ? 'Hide toolbar' : 'Show toolbar'}
+            >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="3" y="3" width="18" height="18" rx="2" /><line x1="3" y1="9" x2="21" y2="9" />
+              </svg>
+            </button>
+          )}
+          {!minimized && (
+            <button
+              className="bv-btn"
               onClick={() => setIsExpanded(!isExpanded)}
               title={isExpanded ? 'Collapse' : 'Expand'}
             >
@@ -365,7 +377,7 @@ export default function BrowserView({ sessionId, minimized = false, onMinimizedC
           </button>
         </div>
       </div>
-      {!minimized && connected && (
+      {!minimized && connected && showToolbar && (
         <div className="bv-navbar">
           <button className="bv-nav-btn" onClick={handleGoBack} title="Back">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
