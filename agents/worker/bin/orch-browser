@@ -62,27 +62,41 @@ logfile() {
 # On headless Linux servers, default font packages are often missing,
 # causing garbled/box characters in the browser.
 ensure_fonts() {
-    # Quick check: if liberation fonts exist, skip install
-    if fc-list 2>/dev/null | grep -qi "liberation\|noto" ; then
+    # Quick check: if Noto or Liberation fonts exist, skip install
+    if fc-list 2>/dev/null | grep -qi "noto\|liberation" ; then
         return 0
     fi
     echo "Installing system fonts for Chromium..." >&2
 
-    # Download Liberation fonts to user-local directory (no root required)
+    # Download Noto Sans fonts to user-local directory (no root required).
+    # Uses Google Fonts CDN (fonts.gstatic.com) which serves TTF files directly.
     local font_dir="$HOME/.local/share/fonts"
-    local tmp_tar="/tmp/liberation-fonts-ttf.tar.gz"
-    local font_url="https://github.com/liberationfonts/liberation-fonts/releases/download/2.1.5/liberation-fonts-ttf-2.1.5.tar.gz"
-
     mkdir -p "$font_dir"
-    if curl -fsSL -o "$tmp_tar" "$font_url" 2>/dev/null; then
-        tar xzf "$tmp_tar" -C /tmp/ 2>/dev/null
-        cp /tmp/liberation-fonts-ttf-2.1.5/*.ttf "$font_dir/" 2>/dev/null
-        rm -f "$tmp_tar"
-        rm -rf /tmp/liberation-fonts-ttf-2.1.5
+
+    local base="https://fonts.gstatic.com/s"
+    local urls=(
+        "$base/notosans/v42/o-0mIpQlx3QUlC5A4PNB6Ryti20_6n1iPHjcz6L1SoM-jCpoiyD9A99d.ttf|NotoSans-Regular.ttf"
+        "$base/notosans/v42/o-0mIpQlx3QUlC5A4PNB6Ryti20_6n1iPHjcz6L1SoM-jCpoiyAaBN9d.ttf|NotoSans-Bold.ttf"
+        "$base/notosansmono/v37/BngrUXNETWXI6LwhGYvaxZikqZqK6fBq6kPvUce2oAZcdthSBUsYck4-_FNJ49o.ttf|NotoSansMono-Regular.ttf"
+    )
+
+    local ok=true
+    for entry in "${urls[@]}"; do
+        local url="${entry%%|*}"
+        local fname="${entry##*|}"
+        if [ -f "$font_dir/$fname" ]; then
+            continue
+        fi
+        if ! curl -fSL -o "$font_dir/$fname" "$url" >&2; then
+            echo "Warning: Failed to download $fname" >&2
+            ok=false
+            break
+        fi
+    done
+
+    if [ "$ok" = true ]; then
         fc-cache -f "$font_dir" 2>/dev/null || true
-        echo "Liberation fonts installed to $font_dir" >&2
-    else
-        echo "Warning: Could not download Liberation fonts" >&2
+        echo "Noto Sans fonts installed to $font_dir" >&2
     fi
 }
 

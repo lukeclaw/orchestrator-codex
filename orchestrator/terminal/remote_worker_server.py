@@ -392,32 +392,28 @@ _REMOTE_WORKER_SERVER_SCRIPT = textwrap.dedent("""\
         except (OSError, subprocess.TimeoutExpired):
             pass
 
-        # Download Liberation fonts to user-local directory (no root required)
-        import glob as _glob
+        # Download Noto Sans fonts to user-local directory (no root required).
+        # Uses Google Fonts CDN (fonts.gstatic.com) which serves TTF files directly.
         font_dir = os.path.join(os.path.expanduser("~"), ".local", "share", "fonts")
-        tmp_tar = "/tmp/liberation-fonts-ttf.tar.gz"
-        font_url = "https://github.com/liberationfonts/liberation-fonts/releases/download/2.1.5/liberation-fonts-ttf-2.1.5.tar.gz"
+        base = "https://fonts.gstatic.com/s"
+        fonts = {
+            "NotoSans-Regular.ttf": f"{base}/notosans/v42/o-0mIpQlx3QUlC5A4PNB6Ryti20_6n1iPHjcz6L1SoM-jCpoiyD9A99d.ttf",
+            "NotoSans-Bold.ttf": f"{base}/notosans/v42/o-0mIpQlx3QUlC5A4PNB6Ryti20_6n1iPHjcz6L1SoM-jCpoiyAaBN9d.ttf",
+            "NotoSansMono-Regular.ttf": f"{base}/notosansmono/v37/BngrUXNETWXI6LwhGYvaxZikqZqK6fBq6kPvUce2oAZcdthSBUsYck4-_FNJ49o.ttf",
+        }
         try:
             os.makedirs(font_dir, exist_ok=True)
-            subprocess.run(
-                ["curl", "-fsSL", "-o", tmp_tar, font_url],
-                timeout=30, check=True,
-            )
-            subprocess.run(
-                ["tar", "xzf", tmp_tar, "-C", "/tmp/"],
-                timeout=10, check=True,
-            )
-            for ttf in _glob.glob("/tmp/liberation-fonts-ttf-2.1.5/*.ttf"):
-                shutil.copy2(ttf, os.path.join(font_dir, os.path.basename(ttf)))
+            for fname, url in fonts.items():
+                dest = os.path.join(font_dir, fname)
+                if os.path.exists(dest):
+                    continue
+                subprocess.run(
+                    ["curl", "-fSL", "-o", dest, url],
+                    timeout=30, check=True,
+                )
             subprocess.run(["fc-cache", "-f", font_dir], timeout=10)
         except Exception:
             pass
-        # Cleanup
-        try:
-            os.remove(tmp_tar)
-        except OSError:
-            pass
-        shutil.rmtree("/tmp/liberation-fonts-ttf-2.1.5", ignore_errors=True)
 
     def _install_chromium():
         \"\"\"Install Chromium via Playwright, return the binary path or None.\"\"\"
