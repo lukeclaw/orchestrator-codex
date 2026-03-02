@@ -326,39 +326,6 @@ export default function BrowserView({ sessionId, minimized = false, onMinimizedC
           )}
         </div>
         <div className="bv-controls">
-          {!minimized && connected && (
-            <div className="bv-settings-menu" ref={settingsRef}>
-              <button
-                className="bv-btn"
-                onClick={(e) => { e.stopPropagation(); setShowSettings(!showSettings) }}
-                title="Settings"
-              >
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
-                  <circle cx="12" cy="5" r="2" /><circle cx="12" cy="12" r="2" /><circle cx="12" cy="19" r="2" />
-                </svg>
-              </button>
-              {showSettings && (
-                <div className="bv-settings-dropdown" onClick={(e) => e.stopPropagation()}>
-                  <div className="bv-settings-row">
-                    <span>Zoom</span>
-                    <div className="bv-stepper">
-                      <button onClick={() => { const steps = [50,75,100,150]; const i = steps.indexOf(zoom); if (i > 0) handleZoomChange(steps[i-1]) }} disabled={zoom <= 50}>−</button>
-                      <span className="bv-stepper-value">{zoom}%</span>
-                      <button onClick={() => { const steps = [50,75,100,150]; const i = steps.indexOf(zoom); if (i < steps.length-1) handleZoomChange(steps[i+1]) }} disabled={zoom >= 150}>+</button>
-                    </div>
-                  </div>
-                  <div className="bv-settings-row">
-                    <span>Quality</span>
-                    <div className="bv-stepper">
-                      <button onClick={() => { const steps = [30,60,80,100]; const i = steps.indexOf(quality); if (i > 0) handleQualityChange(steps[i-1]) }} disabled={quality <= 30}>−</button>
-                      <span className="bv-stepper-value">{quality === 30 ? 'Low' : quality === 60 ? 'Med' : quality === 80 ? 'High' : 'Max'}</span>
-                      <button onClick={() => { const steps = [30,60,80,100]; const i = steps.indexOf(quality); if (i < steps.length-1) handleQualityChange(steps[i+1]) }} disabled={quality >= 100}>+</button>
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
           <button
             className="bv-btn"
             onClick={handleMinimize}
@@ -427,6 +394,37 @@ export default function BrowserView({ sessionId, minimized = false, onMinimizedC
             placeholder="Enter URL..."
             spellCheck={false}
           />
+          <div className="bv-settings-menu" ref={settingsRef}>
+            <button
+              className="bv-nav-btn"
+              onClick={(e) => { e.stopPropagation(); setShowSettings(!showSettings) }}
+              title="Settings"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+                <circle cx="12" cy="5" r="2" /><circle cx="12" cy="12" r="2" /><circle cx="12" cy="19" r="2" />
+              </svg>
+            </button>
+            {showSettings && (
+              <div className="bv-settings-dropdown" onClick={(e) => e.stopPropagation()}>
+                <div className="bv-settings-row">
+                  <span>Zoom</span>
+                  <div className="bv-stepper">
+                    <button onClick={() => { const steps = [50,75,100,150]; const i = steps.indexOf(zoom); if (i > 0) handleZoomChange(steps[i-1]) }} disabled={zoom <= 50}>−</button>
+                    <span className="bv-stepper-value">{zoom}%</span>
+                    <button onClick={() => { const steps = [50,75,100,150]; const i = steps.indexOf(zoom); if (i < steps.length-1) handleZoomChange(steps[i+1]) }} disabled={zoom >= 150}>+</button>
+                  </div>
+                </div>
+                <div className="bv-settings-row">
+                  <span>Quality</span>
+                  <div className="bv-stepper">
+                    <button onClick={() => { const steps = [30,60,80,100]; const i = steps.indexOf(quality); if (i > 0) handleQualityChange(steps[i-1]) }} disabled={quality <= 30}>−</button>
+                    <span className="bv-stepper-value">{quality === 30 ? 'Low' : quality === 60 ? 'Med' : quality === 80 ? 'High' : 'Max'}</span>
+                    <button onClick={() => { const steps = [30,60,80,100]; const i = steps.indexOf(quality); if (i < steps.length-1) handleQualityChange(steps[i+1]) }} disabled={quality >= 100}>+</button>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
       )}
       <div className="bv-canvas-container" style={minimized ? { display: 'none' } : undefined}>
