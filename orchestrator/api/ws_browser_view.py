@@ -23,6 +23,7 @@ from fastapi import WebSocket, WebSocketDisconnect
 from orchestrator.browser.cdp_proxy import (
     get_active_view,
     handle_client_input,
+    poll_url,
     relay_cdp_to_client,
 )
 
@@ -76,10 +77,15 @@ async def ws_browser_view(websocket: WebSocket, session_id: str):
     # Task 2: Read client input and dispatch to CDP
     client_input_task = asyncio.create_task(_relay_client_input(websocket, view))
 
+    # Task 3: Poll browser URL to keep the address bar in sync
+    url_poll_task = asyncio.create_task(poll_url(view, send_json))
+
+    tasks = [cdp_relay_task, client_input_task, url_poll_task]
+
     try:
-        # Wait for either task to complete (first one wins)
+        # Wait for any task to complete (first one wins)
         done, pending = await asyncio.wait(
-            [cdp_relay_task, client_input_task],
+            tasks,
             return_when=asyncio.FIRST_COMPLETED,
         )
 
@@ -105,7 +111,7 @@ async def ws_browser_view(websocket: WebSocket, session_id: str):
         logger.error("Browser view WebSocket error for session %s: %s", session_id, e)
     finally:
         # Clean up: cancel any remaining tasks
-        for task in [cdp_relay_task, client_input_task]:
+        for task in tasks:
             if not task.done():
                 task.cancel()
                 try:

@@ -485,6 +485,49 @@ async def relay_cdp_to_client(
         await send_json({"type": "error", "message": f"CDP error: {e}"})
 
 
+async def poll_url(
+    view: BrowserViewSession,
+    send_json: Any,
+    interval: float = 0.5,
+) -> None:
+    """Periodically poll the browser URL via Runtime.evaluate.
+
+    This is more reliable than relying on Page.frameNavigated events,
+    which may not fire for SPA navigation, pushState, or hash changes.
+    Only sends an update when the URL or title actually changes.
+    """
+    last_url = view.page_url
+    last_title = view.page_title
+    js = "JSON.stringify({url: location.href, title: document.title})"
+
+    while True:
+        await asyncio.sleep(interval)
+        try:
+            resp = await _cdp_call(view, "Runtime.evaluate", {
+                "expression": js,
+                "returnByValue": True,
+            })
+            value = resp.get("result", {}).get("result", {}).get("value", "")
+            if value:
+                data = json.loads(value)
+                url = data.get("url", "")
+                title = data.get("title", "")
+                if url and (url != last_url or title != last_title):
+                    last_url = url
+                    last_title = title
+                    view.page_url = url
+                    view.page_title = title
+                    await send_json({
+                        "type": "navigate",
+                        "url": url,
+                        "title": title,
+                    })
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            pass  # Browser may be navigating; skip this tick
+
+
 async def _navigate_history(
     view: BrowserViewSession, forward: bool = False
 ) -> None:
