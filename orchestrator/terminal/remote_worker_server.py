@@ -375,6 +375,22 @@ _REMOTE_WORKER_SERVER_SCRIPT = textwrap.dedent("""\
                 return path
         return None
 
+    def _install_chromium():
+        \"\"\"Install Chromium via Playwright, return the binary path or None.\"\"\"
+        npx = shutil.which("npx")
+        if not npx:
+            return None
+        try:
+            subprocess.run(
+                [npx, "playwright", "install", "chromium"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                timeout=120,
+            )
+        except (subprocess.TimeoutExpired, OSError):
+            return None
+        return _find_chromium()
+
     def _is_port_in_use(port):
         \"\"\"Check if a TCP port is in use on localhost.\"\"\"
         s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -453,11 +469,13 @@ _REMOTE_WORKER_SERVER_SCRIPT = textwrap.dedent("""\
         if _is_port_in_use(port):
             return {"error": f"Port {port} is already in use"}
 
-        # Find Chromium
+        # Find Chromium, auto-install if missing
         if not chromium_path:
             chromium_path = _find_chromium()
         if not chromium_path:
-            return {"error": "Chromium not found. Install with: npx playwright install chromium"}
+            chromium_path = _install_chromium()
+        if not chromium_path:
+            return {"error": "Chromium not found and auto-install failed"}
 
         # Launch Chromium directly (no Node.js dependency)
         args = [
