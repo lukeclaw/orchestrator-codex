@@ -155,7 +155,9 @@ def update_task(
                 if len(deduped) != len(links_data):
                     logger.warning(
                         "Deduplicated links for task %s: %d -> %d",
-                        id, len(links_data), len(deduped),
+                        id,
+                        len(links_data),
+                        len(deduped),
                     )
                     links = json.dumps(deduped)
             except (json.JSONDecodeError, TypeError):

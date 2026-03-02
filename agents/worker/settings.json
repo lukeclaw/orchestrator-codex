@@ -1,14 +1,19 @@
 {
   "env": {
     "CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION": "false",
-    "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "true",
-    "CDP_ENDPOINT": "http://localhost:9222"
+    "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "true"
   },
   "autoMemoryEnabled": false,
   "spinnerTipsEnabled": false,
   "terminalProgressBarEnabled": false,
   "prefersReducedMotion": true,
   "autoUpdatesChannel": "stable",
+  "mcpServers": {
+    "playwright": {
+      "command": "npx",
+      "args": ["-y", "@playwright/mcp@latest", "--cdp-endpoint", "http://localhost:9222"]
+    }
+  },
   "permissions": {
     "allow": [
       "Bash(orch-task *)",

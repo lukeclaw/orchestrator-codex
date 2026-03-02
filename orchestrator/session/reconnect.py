@@ -477,11 +477,6 @@ def _launch_claude_in_screen(
         session_arg,
     )
 
-    # Ensure Playwright plugin is installed (idempotent, user scope)
-    from orchestrator.terminal.session import _install_playwright_plugin
-
-    _install_playwright_plugin(tmux_sess, tmux_win)
-
     # Launch Claude with skills from the remote .claude directory
     settings_file = f"{remote_tmp_dir}/configs/settings.json"
     claude_args = [

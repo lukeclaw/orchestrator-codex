@@ -14,7 +14,6 @@ import pytest
 
 from orchestrator.agents import (
     BRAIN_SCRIPT_NAMES,
-    PLAYWRIGHT_PLUGIN,
     WORKER_SCRIPT_NAMES,
     deploy_brain_scripts,
     deploy_worker_scripts,
@@ -537,14 +536,6 @@ class TestOrchBrowserScript:
 
         permissions = settings["permissions"]["allow"]
         assert "Bash(orch-browser *)" in permissions
-
-
-class TestPlaywrightPlugin:
-    """Tests for Playwright plugin configuration."""
-
-    def test_playwright_plugin_constant(self):
-        """Verify the Playwright plugin identifier is set correctly."""
-        assert PLAYWRIGHT_PLUGIN == "playwright@claude-plugins-official"
 
 
 class TestWorkerHooksGeneration:

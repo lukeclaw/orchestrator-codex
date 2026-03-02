@@ -400,10 +400,6 @@ def generate_worker_hooks(
     return worker_dir
 
 
-# Playwright plugin identifier (from the official Claude Code marketplace)
-PLAYWRIGHT_PLUGIN = "playwright@claude-plugins-official"
-
-
 def generate_brain_hooks(
     brain_dir: str,
     api_base: str = "http://127.0.0.1:8093",

@@ -13,7 +13,6 @@ import subprocess
 import time
 
 from orchestrator.agents import (
-    PLAYWRIGHT_PLUGIN,
     deploy_worker_scripts,
     generate_worker_hooks,
     get_path_export_command,
@@ -467,21 +466,6 @@ def _copy_dir_to_remote(
     logger.info("Copied %s to remote %s via tar+base64 (tmux)", local_dir, remote_dir)
 
 
-def _install_playwright_plugin(tmux_session: str, window_name: str):
-    """Install the Claude Code Playwright plugin (user scope).
-
-    Runs ``claude plugin install`` non-interactively.  The command is
-    idempotent — reinstalling an already-installed plugin is a no-op.
-    """
-    tmux.send_keys(
-        tmux_session,
-        window_name,
-        f"claude plugin install {PLAYWRIGHT_PLUGIN} --scope user 2>/dev/null || true",
-        enter=True,
-    )
-    time.sleep(3)  # plugin install fetches from marketplace
-
-
 def ensure_rdev_node(tmux_session: str, window_name: str, remote_tmp_dir: str):
     """Install Node 24 via volta and create symlinks in node-bin/.
 
@@ -710,11 +694,7 @@ def setup_remote_worker(
             time.sleep(0.3)
             logger.info("Deployed skills to %s for rdev worker %s", global_skills_dest, name)
 
-        # 8. Install Playwright plugin (provides browser automation tools)
-        _install_playwright_plugin(tmux_session, name)
-        logger.info("Installed Playwright plugin for remote worker %s", name)
-
-        # 9. Launch Claude (inside screen)
+        # 8. Launch Claude (inside screen)
         settings_file = f"{remote_tmp_dir}/configs/settings.json"
 
         claude_args = [
@@ -833,11 +813,7 @@ def setup_local_worker(
                 f.write(worker_prompt)
             logger.info("Wrote worker prompt to %s", prompt_file)
 
-        # 5. Install Playwright plugin (provides browser automation tools)
-        _install_playwright_plugin(tmux_session, name)
-        logger.info("Installed Playwright plugin for local worker %s", name)
-
-        # 6. Build and send claude command
+        # 5. Build and send claude command
         cmd_parts = []
         if work_dir:
             cmd_parts.append(f"cd {work_dir}")

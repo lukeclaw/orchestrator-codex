@@ -2,7 +2,6 @@
 
 from orchestrator.agents.deploy import (
     BRAIN_SCRIPT_NAMES,
-    PLAYWRIGHT_PLUGIN,
     WORKER_SCRIPT_NAMES,
     deploy_brain_scripts,
     deploy_worker_scripts,
@@ -23,5 +22,4 @@ __all__ = [
     "generate_brain_hooks",
     "WORKER_SCRIPT_NAMES",
     "BRAIN_SCRIPT_NAMES",
-    "PLAYWRIGHT_PLUGIN",
 ]
