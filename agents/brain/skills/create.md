@@ -62,6 +62,10 @@ echo '<content>' | orch-ctx create --title "<title>" --content-stdin --scope pro
 
 ## Phase 2: Worker Assignment
 
+**Important:** Workers are assigned to **top-level tasks only**, never to sub-tasks. If you just created a sub-task, check whether the parent task already has a worker:
+- **Parent has a worker** → send the worker a message pointing to the new sub-task: `orch-send <worker> "New sub-task created: <title>. Run orch-tasks show <parent-id> for details."`
+- **Parent has no worker** → propose assigning a worker to the **parent task** (not the sub-task)
+
 ### 5. Check availability and propose
 
 ```bash
@@ -81,7 +85,7 @@ Present assignment plan and wait for approval (yes / no).
 ### 6. Execute
 
 ```bash
-# Assign to existing worker
+# Assign to existing worker (always the top-level task, never a sub-task)
 orch-tasks assign <task-id> <worker-id>
 
 # Or create new worker + assign in one step
@@ -99,4 +103,5 @@ Print recap of what was created and assigned.
 - **Overlap detection** — flag duplicates, let user decide; never silently create
 - **Store reference material** — URLs, pasted content, images go into context for the worker
 - **Idle workers first** — reuse idle workers over creating new ones
+- **Never assign workers to sub-tasks** — assign to the parent task; message the worker about the new sub-task
 - **Let user decide scope** — if ambiguous between project/task/subtask, present options

@@ -239,6 +239,53 @@ class TestTasks:
         assert resp.status_code == 200
         assert len(resp.json()["links"]) == 2
 
+    def test_assign_worker_to_subtask_rejected(self, client):
+        """Assigning a worker to a sub-task should return 400."""
+        proj = client.post("/api/projects", json={"name": "SubP"}).json()
+        parent = client.post(
+            "/api/tasks", json={"project_id": proj["id"], "title": "Parent task"}
+        ).json()
+        subtask = client.post(
+            "/api/tasks",
+            json={"project_id": proj["id"], "title": "Sub task", "parent_task_id": parent["id"]},
+        ).json()
+
+        # Use a real session to avoid FK issues — validation fires before DB write
+        with patch(
+            "orchestrator.api.routes.sessions.ensure_window", return_value="orchestrator:w-sub"
+        ):
+            worker = client.post(
+                "/api/sessions", json={"name": "w-sub", "host": "localhost"}
+            ).json()
+
+        resp = client.patch(
+            f"/api/tasks/{subtask['id']}", json={"assigned_session_id": worker["id"]}
+        )
+        assert resp.status_code == 400
+        assert "sub-task" in resp.json()["detail"]
+        assert parent["id"] in resp.json()["detail"]
+
+    def test_assign_worker_to_parent_task_allowed(self, client):
+        """Assigning a worker to a top-level task should succeed."""
+        proj = client.post("/api/projects", json={"name": "TopP"}).json()
+        task = client.post(
+            "/api/tasks", json={"project_id": proj["id"], "title": "Top task"}
+        ).json()
+
+        with patch(
+            "orchestrator.api.routes.sessions.ensure_window", return_value="orchestrator:w-top"
+        ):
+            worker = client.post(
+                "/api/sessions", json={"name": "w-top", "host": "localhost"}
+            ).json()
+
+        with patch("orchestrator.api.routes.tasks._notify_worker_of_assignment"):
+            resp = client.patch(
+                f"/api/tasks/{task['id']}", json={"assigned_session_id": worker["id"]}
+            )
+        assert resp.status_code == 200
+        assert resp.json()["assigned_session_id"] == worker["id"]
+
     def test_agent_add_link_rejects_duplicate(self, client):
         """POST /tasks/{id}/links add action rejects duplicate URL."""
         proj = client.post("/api/projects", json={"name": "AgentLinkProj"}).json()

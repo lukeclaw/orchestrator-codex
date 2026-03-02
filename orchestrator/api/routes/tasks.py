@@ -166,6 +166,14 @@ def update_task(task_id: str, body: TaskUpdate, request: Request, db=Depends(get
     assigned_session_explicitly_set = "assigned_session_id" in body.model_fields_set
     new_assigned = body.assigned_session_id if assigned_session_explicitly_set else old_assigned
 
+    # Reject worker assignment on sub-tasks — only top-level tasks can have workers
+    if assigned_session_explicitly_set and new_assigned and t.parent_task_id:
+        raise HTTPException(
+            400,
+            f"Cannot assign a worker to a sub-task. "
+            f"Assign the worker to the parent task ({t.parent_task_id}) instead.",
+        )
+
     # Auto-transition: assigning a task moves it to in_progress
     effective_status = body.status
     if new_assigned and new_assigned != old_assigned and t.status == "todo" and not body.status:

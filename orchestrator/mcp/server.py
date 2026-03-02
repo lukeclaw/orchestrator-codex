@@ -172,6 +172,17 @@ def update_task(
     Set assigned_session_id to a session ID to assign, or 'none' to unassign."""
     conn = _get_conn()
     try:
+        # Reject worker assignment on sub-tasks — only top-level tasks can have workers
+        if assigned_session_id is not None and assigned_session_id.lower() != "none":
+            row = conn.execute(
+                "SELECT parent_task_id FROM tasks WHERE id = ?", (task_id,)
+            ).fetchone()
+            if row and row["parent_task_id"]:
+                return json.dumps({
+                    "error": f"Cannot assign a worker to a sub-task. "
+                    f"Assign the worker to the parent task ({row['parent_task_id']}) instead."
+                })
+
         sets, params = [], []
         if status is not None:
             sets.append("status = ?")
