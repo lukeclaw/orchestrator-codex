@@ -29,11 +29,13 @@ def setup_path():
         if os.path.isdir(bundled_tmux):
             extra_paths.append(bundled_tmux)
 
-    # Common Homebrew paths (ARM and Intel Macs) + LinkedIn CLI tools
+    # Common Homebrew paths (Intel and ARM Macs) + LinkedIn CLI tools.
+    # /usr/local/bin first — on machines with both Intel and ARM Homebrew,
+    # the /opt/homebrew tmux can have server compatibility issues.
     extra_paths.extend(
         [
-            "/opt/homebrew/bin",
             "/usr/local/bin",
+            "/opt/homebrew/bin",
             "/usr/local/linkedin/bin",
         ]
     )

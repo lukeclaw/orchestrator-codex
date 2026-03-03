@@ -52,6 +52,13 @@ def is_tmux_available() -> bool:
 def session_exists(session_name: str) -> bool:
     """Check if a tmux session exists."""
     result = _run_tmux("has-session", "-t", session_name, check=False)
+    if result.returncode != 0:
+        logger.warning(
+            "session_exists(%s) returned False (rc=%d, stderr=%r)",
+            session_name,
+            result.returncode,
+            result.stderr.strip(),
+        )
     return result.returncode == 0
 
 
@@ -63,7 +70,34 @@ def create_session(session_name: str, cols: int = 80, rows: int = 24) -> bool:
     """
     if session_exists(session_name):
         return False
-    _run_tmux("new-session", "-d", "-s", session_name, "-x", str(cols), "-y", str(rows))
+    result = _run_tmux(
+        "new-session",
+        "-d",
+        "-s",
+        session_name,
+        "-x",
+        str(cols),
+        "-y",
+        str(rows),
+        check=False,
+    )
+    if result.returncode != 0:
+        stderr = result.stderr.strip()
+        logger.warning(
+            "create_session(%s) new-session failed: rc=%d stderr=%r",
+            session_name,
+            result.returncode,
+            stderr,
+        )
+        # Race condition or session already exists
+        if "duplicate" in stderr or session_exists(session_name):
+            return False
+        raise subprocess.CalledProcessError(
+            result.returncode,
+            result.args,
+            result.stdout,
+            result.stderr,
+        )
     logger.info("Created tmux session: %s (size %dx%d)", session_name, cols, rows)
     return True
 

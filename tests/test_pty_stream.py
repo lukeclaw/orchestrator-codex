@@ -836,7 +836,8 @@ class TestWsTerminalPipePanePath:
             await cb(chunk)
 
             # Wait for drift correction to pick up sync_requested
-            await asyncio.sleep(3)
+            # Drift has random stagger (0-2s) + adaptive interval (2-5s)
+            await asyncio.sleep(8)
 
             ws.inject_disconnect()
             await asyncio.sleep(0.1)

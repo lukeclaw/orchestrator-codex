@@ -469,10 +469,23 @@ async def send_keys_async(session: str, window: str, keys: str) -> bool:
 
     Retries once with a fresh connection on failure.
     """
+    import time as _time
+
+    t0 = _time.monotonic()
     pool = TmuxControlPool.get_instance()
     target = f"{session}:{window}"
     conn = await pool.get_connection(session)
+    t1 = _time.monotonic()
     if await conn.send_keys(target, keys):
+        elapsed_ms = (_time.monotonic() - t0) * 1000
+        if elapsed_ms > 50:
+            conn_ms = (t1 - t0) * 1000
+            logger.warning(
+                "send_keys_async[%s] took %.0fms (get_conn=%.0fms)",
+                target,
+                elapsed_ms,
+                conn_ms,
+            )
         return True
     # First attempt failed — get_connection will replace the dead conn
     logger.warning("send_keys first attempt failed for %s, retrying with fresh connection", target)

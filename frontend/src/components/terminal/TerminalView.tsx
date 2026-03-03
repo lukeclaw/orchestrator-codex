@@ -58,6 +58,30 @@ export default function TerminalView({ sessionId, wsPath, sendPath, sessionStatu
   // Prevents reconnection attempts — the process is gone, not just a network blip.
   const ptyExitedRef = useRef(false)
 
+  // --- Typing latency tracker (component-level so both WS and onData can access) ---
+  const latencyRef = useRef({
+    lastInputTime: 0,
+    lastInputData: '',
+    samples: [] as number[],
+  })
+
+  const recordLatency = useCallback((ms: number) => {
+    const state = latencyRef.current
+    state.samples.push(ms)
+    if (state.samples.length > 100) state.samples.shift()
+    const sorted = [...state.samples].sort((a, b) => a - b);
+    // Expose stats on window.__terminalLatency for manual inspection
+    (window as any).__terminalLatency = {
+      last: ms,
+      avg: Math.round(sorted.reduce((a, b) => a + b, 0) / sorted.length),
+      p50: sorted[Math.floor(sorted.length * 0.5)],
+      p95: sorted[Math.floor(sorted.length * 0.95)],
+      max: sorted[sorted.length - 1],
+      min: sorted[0],
+      count: sorted.length,
+    }
+  }, [])
+
   // Create WebSocket connection with reconnection support
   const connectWebSocket = useCallback((terminal: Terminal) => {
     const proto = location.protocol === 'https:' ? 'wss:' : 'ws:'
@@ -69,6 +93,7 @@ export default function TerminalView({ sessionId, wsPath, sendPath, sessionStatu
     // Track scroll state and divergence detection
     let userScrolledUp = false
     let lastSyncHash: number | null = null  // CRC32 from last sync message
+
 
     // Track when user scrolls up to pause live updates
     const scrollDisposable = terminal.onScroll(() => {
@@ -149,6 +174,13 @@ export default function TerminalView({ sessionId, wsPath, sendPath, sessionStatu
 
       // Binary frames = raw PTY stream bytes (high-frequency path)
       if (event.data instanceof ArrayBuffer) {
+        // Measure typing latency: time from last input send to first echo
+        if (latencyRef.current.lastInputTime > 0) {
+          const now = performance.now()
+          const latencyMs = Math.round(now - latencyRef.current.lastInputTime)
+          latencyRef.current.lastInputTime = 0  // reset — only measure first echo after input
+          recordLatency(latencyMs)
+        }
         // Write to terminal unless user is scrolled up reviewing history
         if (!userScrolledUp) {
           const bytes = new Uint8Array(event.data)
@@ -272,6 +304,8 @@ export default function TerminalView({ sessionId, wsPath, sendPath, sessionStatu
       if (pasteInProgress) return  // Our paste handler already sent this text
       const ws = wsRef.current
       if (ws?.readyState === WebSocket.OPEN) {
+        latencyRef.current.lastInputTime = performance.now()
+        latencyRef.current.lastInputData = data
         ws.send(JSON.stringify({ type: 'input', data }))
       }
     })

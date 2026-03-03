@@ -82,6 +82,16 @@ def is_user_active(session_id: str, timeout: float = USER_ACTIVITY_TIMEOUT) -> b
     return (time.time() - last_input) < timeout
 
 
+def is_any_session_active(timeout: float = 5.0) -> bool:
+    """Check if ANY session has had recent user input.
+
+    Used by drift correction to avoid tmux subprocess contention
+    (capture-pane, list-panes) while the user is typing in any terminal.
+    """
+    now = time.time()
+    return any((now - t) < timeout for t in _session_last_input.values())
+
+
 def clear_user_activity(session_id: str) -> None:
     """Clear activity tracking for a session (on disconnect/delete)."""
     _session_last_input.pop(session_id, None)
@@ -129,6 +139,7 @@ async def stream_pane(
     last_flush_time: float = 0.0  # monotonic time of last successful flush
     sync_requested = False  # set True to trigger an immediate sync
     sync_in_progress = False  # prevents flusher from sending during sync
+    last_sync_hash: int | None = None  # CRC32 of last sync content — skip if unchanged
 
     # --- Callback for stream data (used by both pipe-pane and %output) --------
     # NEVER drops bytes.  If the buffer grows too large (client can't keep
@@ -148,11 +159,19 @@ async def stream_pane(
         flush_event.set()
 
     async def stream_flusher():
-        """Batch stream bytes and send as binary WebSocket frames (~60 fps)."""
+        """Batch stream bytes and send as binary WebSocket frames.
+
+        Adaptive batching: short delay for small buffers (typing echo),
+        longer for burst output (command output scrolling).
+        """
         nonlocal last_flush_time
         while True:
             await flush_event.wait()  # zero-cost when idle
-            await asyncio.sleep(0.016)  # ~16ms batch window (one frame)
+            # Adaptive batch window: 1ms for typing echo, 8ms for bursts.
+            await asyncio.sleep(0.001)
+            if len(stream_buffer) > 512:
+                # Large burst — coalesce a bit more to avoid WS frame flood
+                await asyncio.sleep(0.007)  # total ~8ms
             flush_event.clear()
             if stream_buffer and not sync_in_progress:
                 data = bytes(stream_buffer)
@@ -166,7 +185,7 @@ async def stream_pane(
     # --- Helpers for sync with divergence hash ---------------------------------
     async def _send_sync():
         """Capture pane and send a sync message with CRC32 hash."""
-        nonlocal sync_in_progress
+        nonlocal sync_in_progress, last_sync_hash
 
         sync_in_progress = True
         try:
@@ -181,6 +200,14 @@ async def stream_pane(
             if content.endswith("\n"):
                 content = content[:-1]
             content_hash = zlib.crc32(content.encode("utf-8")) & 0xFFFFFFFF
+
+            # Skip sending if content hasn't changed — avoids expensive
+            # client-side full-screen rewrite that blocks the browser
+            # main thread and delays keyboard event processing.
+            if content_hash == last_sync_hash and not sync_requested:
+                return
+            last_sync_hash = content_hash
+
             await websocket.send_json(
                 {
                     "type": "sync",
@@ -273,13 +300,59 @@ async def stream_pane(
             except Exception:
                 pass
 
-        # Regular interval — 2s during initial rollout for quick recovery
+        # Stagger drift correction across connections to avoid all terminals
+        # spawning tmux subprocesses simultaneously.
+        import random
+
+        stagger = random.uniform(0, 2.0)
+        await asyncio.sleep(stagger)
+
         while True:
-            await asyncio.sleep(2)
+            # Longer interval when streaming is healthy (5s); standard 2s
+            # when stream is unhealthy and we need ground-truth syncs.
+            now = asyncio.get_running_loop().time()
+            stream_healthy = (
+                using_pipe_pane
+                and stream_active
+                and last_flush_time > 0
+                and (now - last_flush_time) < 5.0
+            )
+            interval = 5.0 if stream_healthy else 2.0
+            await asyncio.sleep(interval)
+
             if not initial_sent:
                 continue
 
+            # Skip subprocess-heavy work while user is actively typing
+            # in ANY terminal — avoids cross-session tmux contention.
+            if is_any_session_active():
+                continue
+
+            # Re-check stream health after sleep (may have changed)
+            now = asyncio.get_running_loop().time()
+            stream_healthy = (
+                using_pipe_pane
+                and stream_active
+                and last_flush_time > 0
+                and (now - last_flush_time) < 5.0
+            )
+
+            if stream_healthy and not sync_requested:
+                continue
+
+            loop_t0 = time.monotonic()
+
+            # Immediate sync requested by snapshot recovery
+            if sync_requested:
+                sync_requested = False
+                try:
+                    await _send_sync()
+                except Exception:
+                    pass
+                continue
+
             # --- Detect pane ID change (window destroyed & recreated) ---
+            # Only check when stream is NOT healthy (EOF, no recent data, etc.)
             try:
                 new_pane_id = await get_pane_id_async(tmux_sess, tmux_win)
                 if new_pane_id and new_pane_id != pane_id:
@@ -294,27 +367,24 @@ async def stream_pane(
                     pane_id = new_pane_id
                     await _start_streaming()
                     sync_requested = True
+                    continue
             except Exception:
                 pass
 
-            # Immediate sync requested by snapshot recovery
-            if sync_requested:
-                sync_requested = False
-                try:
-                    await _send_sync()
-                except Exception:
-                    pass
-                continue
-
-            # Skip sync if stream was successfully flushed recently
-            now = asyncio.get_running_loop().time()
-            if last_flush_time > 0 and (now - last_flush_time) < 2.0:
-                continue
-
+            # No recent stream data — do a full sync via capture-pane
             try:
                 await _send_sync()
             except Exception:
                 pass
+
+            loop_ms = (time.monotonic() - loop_t0) * 1000
+            if loop_ms > 100:
+                logger.warning(
+                    "drift[%s:%s] full loop took %.0fms",
+                    tmux_sess,
+                    tmux_win,
+                    loop_ms,
+                )
 
     # --- Start drift correction (streaming is deferred until after history) ----
     flush_task: asyncio.Task | None = None
@@ -351,41 +421,45 @@ async def stream_pane(
                 if session_id:
                     record_user_input(session_id)
 
-                async def _send_input(data: str):
-                    # When Enter (\r) follows other characters in the
-                    # same chunk, split it out with a small delay so it
-                    # arrives in a separate PTY read.  Claude Code (Ink
-                    # TUI) treats \r bundled with other chars as a
-                    # literal newline instead of submit.
-                    # Bracketed paste (ESC[200~) is sent as-is.
-                    cr_idx = data.find("\r")
-                    if cr_idx > 0 and "\x1b[200~" not in data:
-                        before = data[:cr_idx]
-                        after = data[cr_idx:]
-                        ok = await send_keys_async(tmux_sess, tmux_win, before)
-                        if ok:
-                            await asyncio.sleep(0.015)
-                            ok = await send_keys_async(tmux_sess, tmux_win, after)
-                    else:
-                        ok = await send_keys_async(tmux_sess, tmux_win, data)
+                input_data = msg.get("data", "")
+                cr_idx = input_data.find("\r")
+                needs_enter_split = cr_idx > 0 and "\x1b[200~" not in input_data
+
+                async def _send_input_split(data: str):
+                    """Handle Enter-split case in a task (needs sleep)."""
+                    before = data[: data.find("\r")]
+                    after = data[data.find("\r") :]
+                    ok = await send_keys_async(tmux_sess, tmux_win, before)
+                    if ok:
+                        await asyncio.sleep(0.015)
+                        ok = await send_keys_async(tmux_sess, tmux_win, after)
+                    if not ok:
+                        try:
+                            await websocket.send_json(
+                                {"type": "error", "message": "Failed to send input to terminal"}
+                            )
+                        except Exception:
+                            pass
+
+                if needs_enter_split:
+                    # Enter after text: must split with delay → use background task
+                    asyncio.create_task(_send_input_split(input_data))
+                else:
+                    # Simple keystroke: send inline to avoid task scheduling delay
+                    ok = await send_keys_async(tmux_sess, tmux_win, input_data)
                     if not ok:
                         logger.error(
                             "send_keys failed for %s:%s (data_len=%d)",
                             tmux_sess,
                             tmux_win,
-                            len(data),
+                            len(input_data),
                         )
                         try:
                             await websocket.send_json(
-                                {
-                                    "type": "error",
-                                    "message": "Failed to send input to terminal",
-                                }
+                                {"type": "error", "message": "Failed to send input to terminal"}
                             )
                         except Exception:
                             pass
-
-                asyncio.create_task(_send_input(msg.get("data", "")))
             elif msg.get("type") == "request_sync":
                 sync_requested = True
             elif msg.get("type") == "request_history":
@@ -565,10 +639,13 @@ async def stream_remote_pty(
             flush_event.set()
 
     async def stream_flusher():
-        """Batch stream bytes and send as binary WebSocket frames (~60fps)."""
+        """Batch stream bytes and send as binary WebSocket frames."""
         while not stream_closed.is_set():
             await flush_event.wait()
-            await asyncio.sleep(0.016)  # ~16ms batch window
+            # Adaptive batch: 1ms for small buffers, 8ms for bursts
+            await asyncio.sleep(0.001)
+            if len(stream_buffer) > 512:
+                await asyncio.sleep(0.007)
             flush_event.clear()
             if stream_buffer:
                 data = bytes(stream_buffer)

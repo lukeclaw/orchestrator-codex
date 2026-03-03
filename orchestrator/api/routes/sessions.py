@@ -118,6 +118,12 @@ def _capture_preview(s) -> str:
         return ""
 
 
+# Preview cache: avoids tmux contention during active typing.
+# Key: session name, Value: (preview_text, timestamp)
+_preview_cache: dict[str, tuple[str, float]] = {}
+_PREVIEW_CACHE_TTL = 3.0  # seconds — stale previews are fine during typing
+
+
 @router.get("/sessions")
 def list_sessions(
     status: str | None = None,
@@ -135,8 +141,18 @@ def list_sessions(
     sessions = repo.list_sessions(db, status=status, session_type=session_type)
     result = [_serialize_session(s) for s in sessions]
     if include_preview:
+        from orchestrator.api.ws_terminal import is_any_session_active
+
+        typing_active = is_any_session_active()
+        now = time.time()
         for s, data in zip(sessions, result):
-            data["preview"] = _capture_preview(s)
+            cached = _preview_cache.get(s.name)
+            if typing_active and cached and (now - cached[1]) < _PREVIEW_CACHE_TTL:
+                data["preview"] = cached[0]
+            else:
+                preview = _capture_preview(s)
+                _preview_cache[s.name] = (preview, now)
+                data["preview"] = preview
     return result
 
 
