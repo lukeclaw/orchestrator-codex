@@ -1,7 +1,10 @@
-"""API routes for remote browser view (CDP screencast)."""
+"""API routes for browser view (CDP screencast) — works for both local and remote workers."""
 
 import asyncio
+import glob
 import logging
+import os
+import subprocess
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
@@ -44,6 +47,106 @@ async def _wait_for_rws(host: str, timeout: float = 15.0):
     raise RuntimeError(f"Remote worker server not ready after {timeout}s: {last_err}")
 
 
+def _read_cdp_port_for_session(session_name: str) -> int | None:
+    """Read ORCH_CDP_PORT from a local worker's deployed lib.sh."""
+    import re
+
+    lib_path = os.path.join("/tmp/orchestrator/workers", session_name, "bin", "lib.sh")
+    if os.path.exists(lib_path):
+        with open(lib_path) as f:
+            for line in f:
+                if "ORCH_CDP_PORT" in line:
+                    m = re.search(r":-(\d+)", line)
+                    if m:
+                        return int(m.group(1))
+    return None
+
+
+def _auto_start_browser_local(session_id: str, cdp_port: int) -> None:
+    """Launch Chrome/Chromium locally for a local worker session.
+
+    Search order: Playwright cache, system apps (macOS), PATH.
+    Launches headed with CDP enabled, stores PID for cleanup.
+    """
+    import platform
+
+    chromium_bin = None
+
+    # 1. Playwright cache (Linux: ~/.cache, macOS: ~/Library/Caches)
+    pw_dirs = [
+        os.path.expanduser("~/.cache/ms-playwright"),
+        os.path.expanduser("~/Library/Caches/ms-playwright"),
+    ]
+    for pw_dir in pw_dirs:
+        if not os.path.isdir(pw_dir):
+            continue
+        # Standard Playwright binary names
+        for name in ("chrome", "headless_shell", "chromium"):
+            matches = sorted(glob.glob(f"{pw_dir}/chromium*/{name}"), reverse=True)
+            for m in matches:
+                if os.access(m, os.X_OK):
+                    chromium_bin = m
+                    break
+            if chromium_bin:
+                break
+        if chromium_bin:
+            break
+        # macOS: Playwright installs Chrome as a .app bundle
+        matches = sorted(
+            glob.glob(f"{pw_dir}/chromium*/*/Google Chrome*.app/Contents/MacOS/*"),
+            reverse=True,
+        )
+        for m in matches:
+            if os.access(m, os.X_OK):
+                chromium_bin = m
+                break
+        if chromium_bin:
+            break
+
+    # 2. System-installed browsers (macOS .app bundles)
+    if not chromium_bin and platform.system() == "Darwin":
+        for app in (
+            "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+            "/Applications/Chromium.app/Contents/MacOS/Chromium",
+        ):
+            if os.access(app, os.X_OK):
+                chromium_bin = app
+                break
+
+    # 3. PATH
+    if not chromium_bin:
+        for name in ("chromium-browser", "chromium", "google-chrome", "chrome"):
+            result = subprocess.run(["which", name], capture_output=True, text=True)
+            if result.returncode == 0:
+                chromium_bin = result.stdout.strip()
+                break
+
+    if not chromium_bin:
+        raise RuntimeError(
+            "Chrome/Chromium not found. Install Google Chrome or run: orch-browser --install"
+        )
+
+    pid_dir = "/tmp/orchestrator"
+    os.makedirs(pid_dir, exist_ok=True)
+
+    # Local/headed: normal browser window with URL bar (no sandbox/gpu flags)
+    log_file = open(f"{pid_dir}/browser-{session_id}.log", "w")
+    proc = subprocess.Popen(
+        [
+            chromium_bin,
+            f"--remote-debugging-port={cdp_port}",
+            "--remote-debugging-address=127.0.0.1",
+            "--window-size=1280,960",
+            "about:blank",
+        ],
+        stdout=log_file,
+        stderr=subprocess.STDOUT,
+    )
+    # Store PID for cleanup
+    with open(f"{pid_dir}/browser-{session_id}.pid", "w") as f:
+        f.write(str(proc.pid))
+
+
 async def _auto_start_browser_and_retry(
     session_id: str,
     host: str,
@@ -53,15 +156,20 @@ async def _auto_start_browser_and_retry(
     max_height: int,
     original_error: str,
 ):
-    """Auto-start browser via daemon and retry browser view creation.
+    """Auto-start browser and retry browser view creation.
 
     Called when start_browser_view() fails with "No browser found".
-    Waits for the RWS daemon to be ready, starts browser, then retries.
+    For remote: waits for the RWS daemon to be ready, starts browser, then retries.
+    For local: launches Chromium directly, then retries.
     """
     try:
-        rws = await _wait_for_rws(host)
-        rws.start_browser(session_id, port=cdp_port)
-        await asyncio.sleep(1)  # Let CDP fully initialize after daemon confirms
+        if is_remote_host(host):
+            rws = await _wait_for_rws(host)
+            rws.start_browser(session_id, port=cdp_port)
+        else:
+            _auto_start_browser_local(session_id, cdp_port)
+
+        await asyncio.sleep(1)  # Let CDP fully initialize
         return await start_browser_view(
             session_id=session_id,
             host=host,
@@ -109,8 +217,11 @@ async def start_browser_view_endpoint(
     if s is None:
         raise HTTPException(404, "Session not found")
 
+    # For local workers, read the actual CDP port from deployed lib.sh
+    # (each local worker gets a unique port to avoid collisions).
+    cdp_port = body.cdp_port
     if not is_remote_host(s.host):
-        raise HTTPException(400, "Browser view is only supported for remote (rdev/SSH) workers")
+        cdp_port = _read_cdp_port_for_session(s.name) or body.cdp_port
 
     existing = get_active_view(session_id)
     if existing:
@@ -124,7 +235,7 @@ async def start_browser_view_endpoint(
         view = await start_browser_view(
             session_id=session_id,
             host=s.host,
-            cdp_port=body.cdp_port,
+            cdp_port=cdp_port,
             quality=body.quality,
             max_width=body.max_width,
             max_height=body.max_height,
@@ -140,7 +251,7 @@ async def start_browser_view_endpoint(
             view = await _auto_start_browser_and_retry(
                 session_id=session_id,
                 host=s.host,
-                cdp_port=body.cdp_port,
+                cdp_port=cdp_port,
                 quality=body.quality,
                 max_width=body.max_width,
                 max_height=body.max_height,
@@ -317,30 +428,45 @@ def start_browser_endpoint(
     body: BrowserStartRequest,
     db=Depends(get_db),
 ):
-    """Start a browser process via the RWS daemon.
+    """Start a browser process.
 
-    Used by the orch-browser CLI to launch Chromium on the remote worker.
+    For remote workers: uses the RWS daemon.
+    For local workers: launches Chromium directly.
     """
     s = repo.get_session(db, session_id)
     if s is None:
         raise HTTPException(404, "Session not found")
 
-    try:
-        rws = get_remote_worker_server(s.host)
-    except RuntimeError:
-        raise HTTPException(503, "Remote worker server not available")
+    # For local workers, read the actual CDP port from deployed lib.sh
+    port = body.port
+    if not is_remote_host(s.host):
+        port = _read_cdp_port_for_session(s.name) or body.port
 
-    try:
-        result = rws.start_browser(session_id, port=body.port)
-    except RuntimeError as e:
-        raise HTTPException(500, str(e))
+    if is_remote_host(s.host):
+        # Remote: use RWS daemon
+        try:
+            rws = get_remote_worker_server(s.host)
+        except RuntimeError:
+            raise HTTPException(503, "Remote worker server not available")
 
-    return {
-        "ok": True,
-        "pid": result.get("pid"),
-        "port": result.get("port"),
-        "already_running": result.get("already_running", False),
-    }
+        try:
+            result = rws.start_browser(session_id, port=port)
+        except RuntimeError as e:
+            raise HTTPException(500, str(e))
+
+        return {
+            "ok": True,
+            "pid": result.get("pid"),
+            "port": result.get("port"),
+            "already_running": result.get("already_running", False),
+        }
+    else:
+        # Local: launch Chromium directly
+        try:
+            _auto_start_browser_local(session_id, port)
+            return {"ok": True, "pid": None, "port": port, "already_running": False}
+        except RuntimeError as e:
+            raise HTTPException(500, str(e))
 
 
 @router.post("/sessions/{session_id}/browser-stop")

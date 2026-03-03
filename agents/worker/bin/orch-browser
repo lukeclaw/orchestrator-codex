@@ -21,7 +21,7 @@ set -e
 
 source "$(dirname "$0")/lib.sh"
 
-DEFAULT_PORT=9222
+DEFAULT_PORT="${ORCH_CDP_PORT:-9222}"
 PIDFILE_DIR="/tmp/orchestrator"
 LOG_DIR="/tmp/orchestrator"
 
@@ -100,24 +100,41 @@ ensure_fonts() {
     fi
 }
 
-# Find the Chromium binary from Playwright cache or PATH.
+# Find a Chrome/Chromium binary — checks Playwright cache, system apps, then PATH.
 # Prints the path to stdout. Returns 1 if not found.
 find_chromium() {
-    local pw_dir="$HOME/.cache/ms-playwright"
-    # Search for chrome/chromium binaries in Playwright cache.
-    # Different Playwright versions and fallback builds use different
-    # directory layouts (chrome-linux/, chrome/, platform-specific, etc.)
-    # so we search broadly for known binary names.
+    # 1. Playwright cache (Linux: ~/.cache, macOS: ~/Library/Caches)
+    local pw_dirs=("$HOME/.cache/ms-playwright" "$HOME/Library/Caches/ms-playwright")
     local chrome_path
-    for name in chrome headless_shell chromium; do
+    for pw_dir in "${pw_dirs[@]}"; do
+        [[ -d "$pw_dir" ]] || continue
+        for name in chrome headless_shell chromium; do
+            while IFS= read -r chrome_path; do
+                if [[ -x "$chrome_path" ]]; then
+                    echo "$chrome_path"
+                    return 0
+                fi
+            done < <(find "$pw_dir" -path "*/chromium*/$name" -type f 2>/dev/null | sort -r)
+        done
+        # macOS: Playwright installs Chrome as a .app bundle
         while IFS= read -r chrome_path; do
             if [[ -x "$chrome_path" ]]; then
                 echo "$chrome_path"
                 return 0
             fi
-        done < <(find "$pw_dir" -path "*/chromium*/$name" -type f 2>/dev/null | sort -r)
+        done < <(find "$pw_dir" -path "*/Contents/MacOS/Google Chrome*" -type f 2>/dev/null | sort -r)
     done
-    # Check PATH
+    # 2. System-installed browsers (macOS .app bundles)
+    local app
+    for app in "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" \
+               "/Applications/Chromium.app/Contents/MacOS/Chromium" \
+               "/Applications/Google Chrome Canary.app/Contents/MacOS/Google Chrome Canary"; do
+        if [[ -x "$app" ]]; then
+            echo "$app"
+            return 0
+        fi
+    done
+    # 3. PATH
     for name in chromium-browser chromium google-chrome chrome; do
         if command -v "$name" &>/dev/null; then
             command -v "$name"
@@ -140,25 +157,38 @@ wait_for_cdp() {
     return 1
 }
 
-# Launch headless Chromium with CDP enabled (fallback when daemon is unavailable).
+# Launch Chromium with CDP enabled (fallback when daemon is unavailable).
+# Headed on local (for Touch ID, passkeys, OS dialogs), headless on remote.
 # Tries to find the Chromium binary directly first, then falls back to Node/Playwright.
 launch_browser() {
     local port="$1"
     mkdir -p "$PIDFILE_DIR" "$LOG_DIR"
 
+    # Build launch args — headed on local, headless on remote
+    _build_chrome_args() {
+        local port="$1"
+        local args=(
+            --remote-debugging-port="$port"
+            --remote-debugging-address=127.0.0.1
+        )
+        if [[ "${ORCH_BROWSER_HEADLESS:-true}" == "true" ]]; then
+            # Remote/headless: add Linux container flags
+            args+=(--headless --no-sandbox --disable-gpu --disable-dev-shm-usage)
+        else
+            # Local/headed: normal browser window with URL bar
+            args+=(--window-size=1280,960)
+        fi
+        args+=(about:blank)
+        echo "${args[@]}"
+    }
+
     # Strategy 1: Launch Chromium binary directly (no Node.js needed)
     local chromium_bin
     if chromium_bin=$(find_chromium); then
         echo "Found Chromium at $chromium_bin" >&2
-        nohup "$chromium_bin" \
-            --headless \
-            --no-sandbox \
-            --disable-gpu \
-            --disable-dev-shm-usage \
-            --remote-debugging-port="$port" \
-            --remote-debugging-address=127.0.0.1 \
-            about:blank \
-            > "$(logfile)" 2>&1 &
+        local chrome_args
+        read -ra chrome_args <<< "$(_build_chrome_args "$port")"
+        nohup "$chromium_bin" "${chrome_args[@]}" > "$(logfile)" 2>&1 &
         echo $! > "$(pidfile)"
         return 0
     fi
@@ -171,15 +201,9 @@ launch_browser() {
     # After install, try to find the binary again
     if chromium_bin=$(find_chromium); then
         echo "Found Chromium at $chromium_bin" >&2
-        nohup "$chromium_bin" \
-            --headless \
-            --no-sandbox \
-            --disable-gpu \
-            --disable-dev-shm-usage \
-            --remote-debugging-port="$port" \
-            --remote-debugging-address=127.0.0.1 \
-            about:blank \
-            > "$(logfile)" 2>&1 &
+        local chrome_args
+        read -ra chrome_args <<< "$(_build_chrome_args "$port")"
+        nohup "$chromium_bin" "${chrome_args[@]}" > "$(logfile)" 2>&1 &
         echo $! > "$(pidfile)"
         return 0
     fi

@@ -470,6 +470,52 @@ json_encode "$1"
         assert r"\\" in encoded
 
 
+class TestWorkerLibCdpPortAndHeadless:
+    """Tests for ORCH_CDP_PORT and ORCH_BROWSER_HEADLESS in deployed lib.sh."""
+
+    def test_default_cdp_port_in_lib(self):
+        """Verify lib.sh contains default CDP port 9222."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            bin_dir = deploy_worker_scripts(tmpdir, "session-123")
+            lib_content = _read_script(bin_dir, "lib.sh")
+            assert "ORCH_CDP_PORT" in lib_content
+            assert "9222" in lib_content
+
+    def test_custom_cdp_port_in_lib(self):
+        """Verify lib.sh reflects a custom CDP port."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            bin_dir = deploy_worker_scripts(tmpdir, "session-123", cdp_port=9333)
+            lib_content = _read_script(bin_dir, "lib.sh")
+            assert ":-9333" in lib_content
+
+    def test_default_browser_headless_true(self):
+        """Verify lib.sh defaults to headless=true."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            bin_dir = deploy_worker_scripts(tmpdir, "session-123")
+            lib_content = _read_script(bin_dir, "lib.sh")
+            assert "ORCH_BROWSER_HEADLESS" in lib_content
+            assert ":-true" in lib_content
+
+    def test_browser_headless_false_for_local(self):
+        """Verify lib.sh sets headless=false when browser_headless=False."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            bin_dir = deploy_worker_scripts(tmpdir, "session-123", browser_headless=False)
+            lib_content = _read_script(bin_dir, "lib.sh")
+            assert ":-false" in lib_content
+
+    def test_cdp_port_and_headless_together(self):
+        """Verify both params are written correctly."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            bin_dir = deploy_worker_scripts(
+                tmpdir, "session-456", cdp_port=9444, browser_headless=False
+            )
+            lib_content = _read_script(bin_dir, "lib.sh")
+            assert "ORCH_CDP_PORT" in lib_content
+            assert ":-9444" in lib_content
+            assert "ORCH_BROWSER_HEADLESS" in lib_content
+            assert ":-false" in lib_content
+
+
 class TestOrchBrowserScript:
     """Tests for orch-browser CLI script."""
 
@@ -510,6 +556,22 @@ class TestOrchBrowserScript:
             assert "--restore" in content
             assert "do_minimize" in content
             assert "do_restore" in content
+
+    def test_orch_browser_reads_cdp_port_from_env(self):
+        """Verify orch-browser reads DEFAULT_PORT from ORCH_CDP_PORT env var."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            bin_dir = deploy_worker_scripts(tmpdir, "session-123")
+            content = _read_script(bin_dir, "orch-browser")
+            assert "ORCH_CDP_PORT" in content
+            assert 'DEFAULT_PORT="${ORCH_CDP_PORT:-9222}"' in content
+
+    def test_orch_browser_respects_headless_env(self):
+        """Verify orch-browser uses ORCH_BROWSER_HEADLESS for headed/headless mode."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            bin_dir = deploy_worker_scripts(tmpdir, "session-123")
+            content = _read_script(bin_dir, "orch-browser")
+            assert "ORCH_BROWSER_HEADLESS" in content
+            assert "--window-size=1280,960" in content
 
     def test_orch_browser_script_no_runtime_mcp_commands(self):
         """Verify orch-browser does not use claude mcp add/remove (config is pre-deployed)."""

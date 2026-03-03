@@ -99,12 +99,21 @@ class TestStartEndpoint:
         assert data["viewport"]["width"] == 1280
         assert data["viewport"]["height"] == 960
 
-    def test_400_local_session(self, client, local_session):
+    @patch("orchestrator.api.routes.browser_view._auto_start_browser_local")
+    @patch("orchestrator.api.routes.browser_view.start_browser_view")
+    def test_local_session_auto_starts_browser(
+        self, mock_start, mock_auto_start, client, local_session
+    ):
+        """Local sessions are supported — auto-start launches headed Chromium."""
+        mock_start.side_effect = RuntimeError("No browser found on CDP port 9222")
+        mock_auto_start.side_effect = RuntimeError("Chromium not found")
+
         response = client.post(
             f"/api/sessions/{local_session.id}/browser-view",
             json={"cdp_port": 9222},
         )
-        assert response.status_code == 400
+        # 502 because auto-start also failed, but importantly NOT 400
+        assert response.status_code == 502
 
     def test_409_already_active(self, client, rdev_session):
         # Pre-register a fake view

@@ -28,6 +28,7 @@ import websockets.exceptions
 from websockets.protocol import State as WsState
 
 from orchestrator.session.tunnel import close_tunnel, create_tunnel
+from orchestrator.terminal.ssh import is_remote_host
 
 logger = logging.getLogger(__name__)
 
@@ -106,11 +107,12 @@ async def cleanup_stale_view(session_id: str) -> bool:
     except Exception:
         pass
 
-    # Close SSH tunnel
-    try:
-        close_tunnel(view.tunnel_local_port, view.host)
-    except Exception:
-        pass
+    # Close SSH tunnel (only if remote)
+    if is_remote_host(view.host):
+        try:
+            close_tunnel(view.tunnel_local_port, view.host)
+        except Exception:
+            pass
 
     logger.info("Cleaned up stale browser view for session %s", session_id)
     return True
@@ -219,32 +221,37 @@ async def start_browser_view(
     if session_id in _active_views:
         raise ValueError(f"Browser view already active for session {session_id}")
 
-    # Step 1: Create SSH tunnel for CDP port
-    success, info = create_tunnel(host, cdp_port)
-    if not success:
-        raise RuntimeError(f"Failed to create CDP tunnel: {info.get('error', 'unknown')}")
-
-    local_port = info["local_port"]
-    logger.info(
-        "Created CDP tunnel local:%d -> %s:%d for session %s",
-        local_port,
-        host,
-        cdp_port,
-        session_id,
-    )
+    # Step 1: Connect to CDP — tunnel for remote, direct for local
+    if is_remote_host(host):
+        success, info = create_tunnel(host, cdp_port)
+        if not success:
+            raise RuntimeError(f"Failed to create CDP tunnel: {info.get('error', 'unknown')}")
+        local_port = info["local_port"]
+        logger.info(
+            "Created CDP tunnel local:%d -> %s:%d for session %s",
+            local_port,
+            host,
+            cdp_port,
+            session_id,
+        )
+    else:
+        # Local: connect directly, no tunnel needed
+        local_port = cdp_port
 
     # Step 2: Discover page targets
     try:
         targets = await discover_browser_targets(local_port)
     except Exception as e:
-        close_tunnel(local_port, host)
+        if is_remote_host(host):
+            close_tunnel(local_port, host)
         raise RuntimeError(
             f"No browser found on CDP port {cdp_port}. "
             f"Ensure Chromium is running with --remote-debugging-port={cdp_port}: {e}"
         ) from e
 
     if not targets:
-        close_tunnel(local_port, host)
+        if is_remote_host(host):
+            close_tunnel(local_port, host)
         raise RuntimeError(
             f"No debuggable pages found on CDP port {cdp_port}. The browser may have no open tabs."
         )
@@ -252,7 +259,8 @@ async def start_browser_view(
     target = targets[0]
     ws_url = target.get("webSocketDebuggerUrl", "")
     if not ws_url:
-        close_tunnel(local_port, host)
+        if is_remote_host(host):
+            close_tunnel(local_port, host)
         raise RuntimeError("Target has no webSocketDebuggerUrl")
 
     # The CDP WebSocket URL from the browser uses the original port.
@@ -268,7 +276,8 @@ async def start_browser_view(
             open_timeout=10,
         )
     except Exception as e:
-        close_tunnel(local_port, host)
+        if is_remote_host(host):
+            close_tunnel(local_port, host)
         raise RuntimeError(f"Failed to connect to CDP WebSocket: {e}") from e
 
     # Step 4: Set viewport, enable Page events, and start screencast.
@@ -309,7 +318,8 @@ async def start_browser_view(
         )
     except Exception as e:
         await cdp_ws.close()
-        close_tunnel(local_port, host)
+        if is_remote_host(host):
+            close_tunnel(local_port, host)
         raise RuntimeError(f"Failed to start screencast: {e}") from e
 
     view = BrowserViewSession(
@@ -358,11 +368,12 @@ async def stop_browser_view(session_id: str) -> bool:
     except Exception:
         pass
 
-    # Close SSH tunnel
-    try:
-        close_tunnel(view.tunnel_local_port, view.host)
-    except Exception:
-        pass
+    # Close SSH tunnel (only if remote)
+    if is_remote_host(view.host):
+        try:
+            close_tunnel(view.tunnel_local_port, view.host)
+        except Exception:
+            pass
 
     logger.info("Stopped browser view for session %s", session_id)
     return True
@@ -389,11 +400,12 @@ def stop_browser_view_sync(session_id: str) -> bool:
         # No event loop — just close the tunnel, WS will die eventually
         pass
 
-    # Close SSH tunnel
-    try:
-        close_tunnel(view.tunnel_local_port, view.host)
-    except Exception:
-        pass
+    # Close SSH tunnel (only if remote)
+    if is_remote_host(view.host):
+        try:
+            close_tunnel(view.tunnel_local_port, view.host)
+        except Exception:
+            pass
 
     logger.info("Stopped browser view (sync) for session %s", session_id)
     return True
@@ -594,15 +606,15 @@ async def relay_cdp_to_client(
                 await send_binary(frame_data)
 
             elif method == "Page.frameNavigated":
-                # Notify client of URL change
+                # Notify client of URL change (ignore chrome-error:// pages)
                 frame = msg.get("params", {}).get("frame", {})
                 url = frame.get("url", "")
                 title = frame.get("name", "")
-                if url:
+                if url and not url.startswith("chrome-error://"):
                     view.page_url = url
                 if title:
                     view.page_title = title
-                await send_json({"type": "navigate", "url": url, "title": title})
+                await send_json({"type": "navigate", "url": view.page_url, "title": title})
 
             elif method == "Page.screencastVisibilityChanged":
                 visible = msg.get("params", {}).get("visible", True)
@@ -647,18 +659,19 @@ async def poll_url(
                 data = json.loads(value)
                 url = data.get("url", "")
                 title = data.get("title", "")
-                if url and (url != last_url or title != last_title):
-                    last_url = url
-                    last_title = title
-                    view.page_url = url
-                    view.page_title = title
-                    await send_json(
-                        {
-                            "type": "navigate",
-                            "url": url,
-                            "title": title,
-                        }
-                    )
+                if url and not url.startswith("chrome-error://"):
+                    if url != last_url or title != last_title:
+                        last_url = url
+                        last_title = title
+                        view.page_url = url
+                        view.page_title = title
+                        await send_json(
+                            {
+                                "type": "navigate",
+                                "url": url,
+                                "title": title,
+                            }
+                        )
         except asyncio.CancelledError:
             raise
         except Exception:

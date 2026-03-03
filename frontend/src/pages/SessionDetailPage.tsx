@@ -829,19 +829,17 @@ export default function SessionDetailPage() {
               </svg>
               <span>Terminal</span>
             </button>
-            {isRemote && (
-              <button
-                className={`sd-panel-btn sd-panel-btn--browser${bvActive ? (bvMinimized ? ' active' : ' active open') : ''}${bvStarting ? ' starting' : ''}`}
-                onClick={handleBrowserView}
-                disabled={bvStarting}
-                title={bvStarting ? 'Starting browser view...' : bvActive ? (bvMinimized ? 'Restore browser view' : 'Minimize browser view') : 'View remote browser'}
-              >
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <circle cx="12" cy="12" r="10" /><line x1="2" y1="12" x2="22" y2="12" /><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
-                </svg>
-                <span>Browser</span>
-              </button>
-            )}
+            <button
+              className={`sd-panel-btn sd-panel-btn--browser${bvActive ? (bvMinimized ? ' active' : ' active open') : ''}${bvStarting ? ' starting' : ''}`}
+              onClick={handleBrowserView}
+              disabled={bvStarting}
+              title={bvStarting ? 'Starting browser view...' : bvActive ? (bvMinimized ? 'Restore browser view' : 'Minimize browser view') : 'View browser'}
+            >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="12" cy="12" r="10" /><line x1="2" y1="12" x2="22" y2="12" /><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
+              </svg>
+              <span>Browser</span>
+            </button>
           </div>
           <button
             className={`sd-paste-btn${pasting || ctxPasting ? ' pasting' : ''}`}

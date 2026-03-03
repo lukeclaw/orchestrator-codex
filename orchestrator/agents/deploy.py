@@ -48,6 +48,8 @@ def deploy_worker_scripts(
     worker_dir: str,
     session_id: str,
     api_base: str = "http://127.0.0.1:8093",
+    cdp_port: int = 9222,
+    browser_headless: bool = True,
 ) -> str:
     """Deploy worker CLI scripts to the worker's bin directory.
 
@@ -58,6 +60,8 @@ def deploy_worker_scripts(
         worker_dir: Base directory for the worker (e.g., /tmp/orchestrator/workers/worker1)
         session_id: Worker's session ID
         api_base: API base URL
+        cdp_port: CDP port for browser debugging (default 9222)
+        browser_headless: Whether browser runs headless (True for remote, False for local)
 
     Returns:
         Path to the bin directory containing the scripts
@@ -74,6 +78,8 @@ def deploy_worker_scripts(
 export ORCH_SESSION_ID="${{ORCH_SESSION_ID:-{session_id}}}"
 export ORCH_API_BASE="${{ORCH_API_BASE:-{api_base}}}"
 export ORCH_WORKER_DIR="${{ORCH_WORKER_DIR:-{worker_dir}}}"
+export ORCH_CDP_PORT="${{ORCH_CDP_PORT:-{cdp_port}}}"
+export ORCH_BROWSER_HEADLESS="${{ORCH_BROWSER_HEADLESS:-{str(browser_headless).lower()}}}"
 
 # Aliases for cleaner script code
 SESSION_ID="$ORCH_SESSION_ID"

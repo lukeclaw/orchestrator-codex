@@ -21,6 +21,7 @@ Critical invariant: **never send commands to a tmux pane that has a TUI running.
 
 import logging
 import os
+import re
 import shlex
 import subprocess
 import threading
@@ -477,14 +478,14 @@ def _launch_claude_in_screen(
         session_arg,
     )
 
-    # Register Playwright MCP to connect to orch-browser's CDP endpoint
-    mcp_add_cmd = (
-        "claude mcp add --scope user playwright"
-        " -- npx -y @playwright/mcp@latest"
-        " --cdp-endpoint http://localhost:9222"
+    # Configure Playwright MCP via env var (replaces old `claude mcp add` approach)
+    send_keys(
+        tmux_sess,
+        tmux_win,
+        "export PLAYWRIGHT_MCP_CDP_ENDPOINT=http://localhost:9222",
+        enter=True,
     )
-    send_keys(tmux_sess, tmux_win, mcp_add_cmd, enter=True)
-    time.sleep(2)
+    time.sleep(0.3)
 
     # Launch Claude with skills from the remote .claude directory
     settings_file = f"{remote_tmp_dir}/configs/settings.json"
@@ -586,6 +587,19 @@ def _get_custom_skills_from_conn(conn, target: str) -> list[dict]:
         return []
 
 
+def _read_cdp_port_from_lib(tmp_dir: str) -> int:
+    """Read ORCH_CDP_PORT from the deployed lib.sh file."""
+    lib_path = os.path.join(tmp_dir, "bin", "lib.sh")
+    if os.path.exists(lib_path):
+        with open(lib_path) as f:
+            for line in f:
+                if "ORCH_CDP_PORT" in line:
+                    m = re.search(r":-(\d+)", line)
+                    if m:
+                        return int(m.group(1))
+    return 9222  # fallback default
+
+
 def _ensure_local_configs_exist(
     tmp_dir: str, session_id: str, api_base: str = "http://127.0.0.1:8093", conn=None
 ):
@@ -610,9 +624,10 @@ def _ensure_local_configs_exist(
     logger.info("Regenerating local configs at %s from templates", configs_dir)
     generate_worker_hooks(configs_dir, session_id, api_base)
 
-    # Always regenerate bin scripts from templates
+    # Always regenerate bin scripts from templates (preserve CDP port from existing lib.sh)
     logger.info("Regenerating local bin scripts at %s", tmp_dir)
-    deploy_worker_scripts(tmp_dir, session_id, api_base)
+    cdp_port = _read_cdp_port_from_lib(tmp_dir)
+    deploy_worker_scripts(tmp_dir, session_id, api_base, cdp_port=cdp_port, browser_headless=False)
 
     # Always regenerate skills to .claude/commands/ (skip disabled built-ins)
     disabled_builtin_names: set[str] = set()
@@ -1219,6 +1234,16 @@ def reconnect_local_worker(
 
         path_export = get_path_export_command(os.path.join(tmp_dir, "bin"))
         safe_send_keys(tmux_sess, tmux_win, path_export, enter=True)
+        time.sleep(0.3)
+
+        # Configure Playwright MCP via env var (read port from lib.sh)
+        cdp_port = _read_cdp_port_from_lib(tmp_dir)
+        safe_send_keys(
+            tmux_sess,
+            tmux_win,
+            f"export PLAYWRIGHT_MCP_CDP_ENDPOINT=http://localhost:{cdp_port}",
+            enter=True,
+        )
         time.sleep(0.3)
 
         if session.work_dir:

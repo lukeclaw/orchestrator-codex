@@ -586,6 +586,8 @@ def setup_remote_worker(
             worker_dir=local_tmp_dir,
             session_id=session_id,
             api_base=f"http://127.0.0.1:{api_port}",
+            cdp_port=9222,
+            browser_headless=True,  # Remote: headless (no display)
         )
         logger.info("Deployed CLI scripts in %s", bin_dir)
 
@@ -694,14 +696,16 @@ def setup_remote_worker(
             time.sleep(0.3)
             logger.info("Deployed skills to %s for rdev worker %s", global_skills_dest, name)
 
-        # 8. Register Playwright MCP to connect to orch-browser's CDP endpoint
-        mcp_add_cmd = (
-            "claude mcp add --scope user playwright"
-            " -- npx -y @playwright/mcp@latest"
-            " --cdp-endpoint http://localhost:9222"
+        # 8. Configure Playwright MCP via env var and launch Claude (inside screen)
+        # Replaces the old `claude mcp add` approach — the built-in Playwright plugin
+        # reads PLAYWRIGHT_MCP_CDP_ENDPOINT from its environment.
+        tmux.send_keys(
+            tmux_session,
+            name,
+            "export PLAYWRIGHT_MCP_CDP_ENDPOINT=http://localhost:9222",
+            enter=True,
         )
-        tmux.send_keys(tmux_session, name, mcp_add_cmd, enter=True)
-        time.sleep(2)
+        time.sleep(0.3)
 
         # 9. Launch Claude (inside screen)
         settings_file = f"{remote_tmp_dir}/configs/settings.json"
@@ -762,13 +766,23 @@ def setup_local_worker(
         os.makedirs(local_tmp_dir, exist_ok=True)
         api_base = f"http://127.0.0.1:{api_port}"
 
-        # 1. Deploy CLI scripts
+        # 1. Deploy CLI scripts with a unique CDP port for this worker
+        from orchestrator.session.tunnel import find_available_port
+
+        cdp_port = find_available_port(9222) or 9222
         bin_dir = deploy_worker_scripts(
             worker_dir=local_tmp_dir,
             session_id=session_id,
             api_base=api_base,
+            cdp_port=cdp_port,
+            browser_headless=False,  # Local: headed for Touch ID / passkeys
         )
-        logger.info("Deployed CLI scripts for local worker %s in %s", name, bin_dir)
+        logger.info(
+            "Deployed CLI scripts for local worker %s in %s (cdp_port=%d)",
+            name,
+            bin_dir,
+            cdp_port,
+        )
 
         # 2. Generate Claude Code hooks
         configs_dir = os.path.join(local_tmp_dir, "configs")
@@ -822,19 +836,16 @@ def setup_local_worker(
                 f.write(worker_prompt)
             logger.info("Wrote worker prompt to %s", prompt_file)
 
-        # 5. Register Playwright MCP to connect to orch-browser's CDP endpoint
-        mcp_add_cmd = (
-            "claude mcp add --scope user playwright"
-            " -- npx -y @playwright/mcp@latest"
-            " --cdp-endpoint http://localhost:9222"
-        )
-        tmux.send_keys(tmux_session, name, mcp_add_cmd, enter=True)
-        time.sleep(2)
-
-        # 6. Build and send claude command
+        # 5. Build and send claude command
         cmd_parts = []
         if work_dir:
             cmd_parts.append(f"cd {work_dir}")
+
+        cmd_parts.append("volta install node@24")  # Ensure Node 24 for npx
+
+        # Configure built-in Playwright plugin to connect to orch-browser's CDP endpoint.
+        # Replaces the old `claude mcp add` approach (npx blocked by company policy locally).
+        cmd_parts.append(f"export PLAYWRIGHT_MCP_CDP_ENDPOINT=http://localhost:{cdp_port}")
 
         path_export = get_path_export_command(os.path.join(local_tmp_dir, "bin"))
         cmd_parts.append(path_export)
