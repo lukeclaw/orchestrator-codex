@@ -34,11 +34,13 @@ class TestTaskLinkDedup:
         conn = _setup_db()
         task = _create_project_and_task(conn)
 
-        dup_links = json.dumps([
-            {"url": "https://example.com/pr/1", "tag": "PR"},
-            {"url": "https://example.com/pr/1", "tag": "PR"},
-            {"url": "https://example.com/pr/2", "tag": "PR"},
-        ])
+        dup_links = json.dumps(
+            [
+                {"url": "https://example.com/pr/1", "tag": "PR"},
+                {"url": "https://example.com/pr/1", "tag": "PR"},
+                {"url": "https://example.com/pr/2", "tag": "PR"},
+            ]
+        )
         updated = repo.update_task(conn, task.id, links=dup_links)
         assert len(updated.links_list) == 2
         urls = [link["url"] for link in updated.links_list]
@@ -49,10 +51,12 @@ class TestTaskLinkDedup:
         conn = _setup_db()
         task = _create_project_and_task(conn)
 
-        dup_links = json.dumps([
-            {"url": "https://example.com/pr/1", "tag": "First"},
-            {"url": "https://example.com/pr/1", "tag": "Second"},
-        ])
+        dup_links = json.dumps(
+            [
+                {"url": "https://example.com/pr/1", "tag": "First"},
+                {"url": "https://example.com/pr/1", "tag": "Second"},
+            ]
+        )
         updated = repo.update_task(conn, task.id, links=dup_links)
         assert len(updated.links_list) == 1
         assert updated.links_list[0]["tag"] == "First"
@@ -62,10 +66,12 @@ class TestTaskLinkDedup:
         conn = _setup_db()
         task = _create_project_and_task(conn)
 
-        links = json.dumps([
-            {"url": "https://example.com/pr/1"},
-            {"url": "https://example.com/pr/2"},
-        ])
+        links = json.dumps(
+            [
+                {"url": "https://example.com/pr/1"},
+                {"url": "https://example.com/pr/2"},
+            ]
+        )
         updated = repo.update_task(conn, task.id, links=links)
         assert len(updated.links_list) == 2
 

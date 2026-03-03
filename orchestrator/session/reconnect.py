@@ -1237,9 +1237,7 @@ def reconnect_local_worker(
         time.sleep(3)
 
         # Ensure the official Playwright plugin is installed
-        safe_send_keys(
-            tmux_sess, tmux_win, "claude plugin install playwright", enter=True
-        )
+        safe_send_keys(tmux_sess, tmux_win, "claude plugin install playwright", enter=True)
         time.sleep(2)
 
         path_export = get_path_export_command(os.path.join(tmp_dir, "bin"))
@@ -1255,9 +1253,7 @@ def reconnect_local_worker(
             try:
                 proxy_port = start_cdp_proxy(session.id, chrome_port=cdp_port)
             except Exception:
-                logger.warning(
-                    "CDP proxy failed for %s, falling back to direct", session.name
-                )
+                logger.warning("CDP proxy failed for %s, falling back to direct", session.name)
                 proxy_port = cdp_port
         safe_send_keys(
             tmux_sess,

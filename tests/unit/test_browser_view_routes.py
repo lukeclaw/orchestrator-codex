@@ -408,7 +408,7 @@ class TestSharedChromeInstance:
 
     @patch("orchestrator.api.routes.browser_view.httpx")
     def test_auto_start_skips_launch_when_running(self, mock_httpx):
-        """If Chrome is already running on the port, _auto_start_browser_local returns immediately."""
+        """_auto_start_browser_local returns immediately if Chrome is running."""
         from orchestrator.api.routes.browser_view import _auto_start_browser_local
 
         mock_resp = MagicMock()
