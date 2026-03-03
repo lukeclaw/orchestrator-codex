@@ -25,6 +25,7 @@ import httpx
 import websockets
 import websockets.asyncio.client
 import websockets.exceptions
+from websockets.protocol import State as WsState
 
 from orchestrator.session.tunnel import close_tunnel, create_tunnel
 
@@ -71,6 +72,50 @@ def list_active_views() -> list[str]:
     return list(_active_views.keys())
 
 
+def is_view_alive(session_id: str) -> bool:
+    """Check if the browser view's CDP WebSocket is still connected.
+
+    Returns False if no view exists or the WebSocket is not OPEN.
+    O(1) non-blocking — checks in-memory state only.
+    """
+    view = _active_views.get(session_id)
+    if view is None:
+        return False
+    return view.cdp_ws.state is WsState.OPEN
+
+
+async def cleanup_stale_view(session_id: str) -> bool:
+    """Remove a dead browser view from the registry and clean up resources.
+
+    Returns True if a stale view was found and cleaned up.
+    Returns False if no view exists or the view is still alive.
+    """
+    view = _active_views.get(session_id)
+    if view is None:
+        return False
+    if view.cdp_ws.state is WsState.OPEN:
+        return False
+
+    # View is dead — remove from registry and clean up
+    _active_views.pop(session_id, None)
+    view.status = "closed"
+
+    # Best-effort WebSocket close
+    try:
+        await view.cdp_ws.close()
+    except Exception:
+        pass
+
+    # Close SSH tunnel
+    try:
+        close_tunnel(view.tunnel_local_port, view.host)
+    except Exception:
+        pass
+
+    logger.info("Cleaned up stale browser view for session %s", session_id)
+    return True
+
+
 async def discover_browser_targets(
     cdp_port: int, retries: int = 5, delay: float = 1.0
 ) -> list[dict]:
@@ -110,6 +155,30 @@ async def _cdp_send(
         msg["params"] = params
     await cdp_ws.send(json.dumps(msg))
     return msg_id
+
+
+async def _cdp_send_and_wait(
+    cdp_ws: Any,
+    method: str,
+    params: dict | None = None,
+    timeout: float = 5.0,
+) -> dict:
+    """Send a CDP command and wait for its response.
+
+    Used during startup before the relay loop exists.  Reads messages
+    directly from the WebSocket, discarding events and responses to
+    earlier fire-and-forget sends until the matching response arrives.
+    """
+    msg_id = await _cdp_send(cdp_ws, method, params)
+    deadline = asyncio.get_event_loop().time() + timeout
+    while True:
+        remaining = deadline - asyncio.get_event_loop().time()
+        if remaining <= 0:
+            raise TimeoutError(f"CDP response timeout for {method}")
+        raw = await asyncio.wait_for(cdp_ws.recv(), timeout=remaining)
+        msg = json.loads(raw)
+        if msg.get("id") == msg_id:
+            return msg
 
 
 async def _cdp_call(
@@ -217,7 +286,7 @@ async def start_browser_view(
             "Emulation.setDefaultBackgroundColorOverride",
             {"color": {"r": 30, "g": 30, "b": 30, "a": 1}},
         )
-        await _cdp_send(
+        await _cdp_send_and_wait(
             cdp_ws,
             "Emulation.setDeviceMetricsOverride",
             {
@@ -351,6 +420,39 @@ async def dispatch_mouse_event(
     await _cdp_send(view.cdp_ws, "Input.dispatchMouseEvent", params)
 
 
+# Special key definitions for CDP Input.dispatchKeyEvent.
+# CDP requires windowsVirtualKeyCode for non-printable keys, and text
+# for keys that generate character input (e.g. Enter -> "\r").
+_SPECIAL_KEYS: dict[str, dict[str, Any]] = {
+    "Backspace": {"keyCode": 8},
+    "Tab": {"keyCode": 9, "text": "\t"},
+    "Enter": {"keyCode": 13, "text": "\r"},
+    "Escape": {"keyCode": 27},
+    "Delete": {"keyCode": 46},
+    "ArrowDown": {"keyCode": 40},
+    "ArrowLeft": {"keyCode": 37},
+    "ArrowRight": {"keyCode": 39},
+    "ArrowUp": {"keyCode": 38},
+    "End": {"keyCode": 35},
+    "Home": {"keyCode": 36},
+    "PageDown": {"keyCode": 34},
+    "PageUp": {"keyCode": 33},
+    "Insert": {"keyCode": 45},
+    "F1": {"keyCode": 112},
+    "F2": {"keyCode": 113},
+    "F3": {"keyCode": 114},
+    "F4": {"keyCode": 115},
+    "F5": {"keyCode": 116},
+    "F6": {"keyCode": 117},
+    "F7": {"keyCode": 118},
+    "F8": {"keyCode": 119},
+    "F9": {"keyCode": 120},
+    "F10": {"keyCode": 121},
+    "F11": {"keyCode": 122},
+    "F12": {"keyCode": 123},
+}
+
+
 async def dispatch_key_event(
     view: BrowserViewSession,
     event_type: str,
@@ -368,8 +470,23 @@ async def dispatch_key_event(
         params["key"] = key
     if code:
         params["code"] = code
+
+    # Look up special key definition for virtual key code and text
+    key_def = _SPECIAL_KEYS.get(key, {})
+    if "keyCode" in key_def:
+        params["windowsVirtualKeyCode"] = key_def["keyCode"]
+        params["nativeVirtualKeyCode"] = key_def["keyCode"]
+    elif len(key) == 1:
+        # Printable character — derive virtual key code from uppercase ASCII
+        params["windowsVirtualKeyCode"] = ord(key.upper())
+        params["nativeVirtualKeyCode"] = ord(key.upper())
+
+    # Set text: use explicit text from caller, fall back to special key text
     if text:
         params["text"] = text
+    elif event_type == "keyDown" and "text" in key_def:
+        params["text"] = key_def["text"]
+
     await _cdp_send(view.cdp_ws, "Input.dispatchKeyEvent", params)
 
 

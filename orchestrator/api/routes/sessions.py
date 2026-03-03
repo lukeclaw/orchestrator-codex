@@ -485,6 +485,37 @@ def _delete_session_inner(s, session_id: str, request: Request, db):
                 "Could not remove local worker directory %s", worker_scripts_dir, exc_info=True
             )
 
+    # Close interactive CLI if active (before tunnel cleanup)
+    try:
+        from orchestrator.terminal.interactive import close_interactive_cli
+
+        close_interactive_cli(session_id, tmux_sess)
+    except Exception:
+        logger.warning("Could not close interactive CLI for session %s", s.name, exc_info=True)
+
+    # Close browser view if active (before tunnel cleanup)
+    try:
+        from orchestrator.browser.cdp_proxy import stop_browser_view_sync
+
+        stop_browser_view_sync(session_id)
+    except Exception:
+        logger.warning("Could not close browser view for session %s", s.name, exc_info=True)
+
+    # Stop remote browser process via RWS daemon (before tunnel cleanup,
+    # while the RWS command tunnel is still alive)
+    if is_remote:
+        try:
+            from orchestrator.terminal.remote_worker_server import get_remote_worker_server
+
+            rws = get_remote_worker_server(s.host)
+            rws.stop_browser(session_id)
+            logger.info("Stopped remote browser for session %s", s.name)
+        except Exception:
+            logger.debug(
+                "Could not stop remote browser for session %s (daemon may be unavailable)",
+                s.name,
+            )
+
     # Clean up any SSH port-forward tunnels for this remote host
     if is_remote:
         from orchestrator.session.tunnel import cleanup_tunnels_for_host
@@ -495,22 +526,6 @@ def _delete_session_inner(s, session_id: str, request: Request, db):
                 logger.info("Cleaned up %d tunnel(s) for session %s", closed, s.name)
         except Exception:
             logger.warning("Could not clean up tunnels for session %s", s.name, exc_info=True)
-
-    # Close interactive CLI if active
-    try:
-        from orchestrator.terminal.interactive import close_interactive_cli
-
-        close_interactive_cli(session_id, tmux_sess)
-    except Exception:
-        logger.warning("Could not close interactive CLI for session %s", s.name, exc_info=True)
-
-    # Close browser view if active
-    try:
-        from orchestrator.browser.cdp_proxy import stop_browser_view_sync
-
-        stop_browser_view_sync(session_id)
-    except Exception:
-        logger.warning("Could not close browser view for session %s", s.name, exc_info=True)
 
     # Note: work_dir is NOT cleaned up - it's the user's working directory
     # Only tmp_dir (worker_scripts_dir) is cleaned up above

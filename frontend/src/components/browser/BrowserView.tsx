@@ -39,8 +39,14 @@ export default function BrowserView({ sessionId, minimized = false, onMinimizedC
   const [urlFocused, setUrlFocused] = useState(false)
   // Track actual frame dimensions for coordinate scaling
   const frameSizeRef = useRef({ width: 1280, height: 960 })
+  // Reconnection state
+  const [reconnecting, setReconnecting] = useState(false)
+  const [reconnectAttempt, setReconnectAttempt] = useState(0)
+  const closedIntentionallyRef = useRef(false)
+  const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const handleClose = async () => {
+    closedIntentionallyRef.current = true
     try {
       await api(`/api/sessions/${sessionId}/browser-view`, { method: 'DELETE' })
     } catch {
@@ -53,8 +59,8 @@ export default function BrowserView({ sessionId, minimized = false, onMinimizedC
     onMinimizedChange?.(!minimized)
   }
 
-  // Connect WebSocket on mount
-  useEffect(() => {
+  // Connect WebSocket and wire up handlers. Returns cleanup function.
+  const connectWs = useCallback(() => {
     const proto = location.protocol === 'https:' ? 'wss:' : 'ws:'
     const ws = new WebSocket(`${proto}//${location.host}/ws/browser-view/${sessionId}`)
     ws.binaryType = 'arraybuffer'
@@ -62,6 +68,8 @@ export default function BrowserView({ sessionId, minimized = false, onMinimizedC
 
     ws.onopen = () => {
       setConnected(true)
+      setReconnecting(false)
+      setReconnectAttempt(0)
       setError('')
     }
 
@@ -96,16 +104,67 @@ export default function BrowserView({ sessionId, minimized = false, onMinimizedC
 
     ws.onclose = () => {
       setConnected(false)
+      if (!closedIntentionallyRef.current) {
+        scheduleReconnect()
+      }
     }
 
     ws.onerror = () => {
-      setError('WebSocket connection failed')
+      // onclose fires after onerror, reconnect happens there
     }
 
+    return ws
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionId])
+
+  // Reconnect: re-POST to start endpoint (handles stale view cleanup),
+  // then open a new WebSocket.
+  const attemptReconnect = useCallback(async (attempt: number) => {
+    if (closedIntentionallyRef.current) return
+    setReconnecting(true)
+    setReconnectAttempt(attempt)
+
+    try {
+      // Re-create the backend browser view (cleans up stale entries)
+      await api(`/api/sessions/${sessionId}/browser-view`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ cdp_port: 9222 }),
+      })
+    } catch {
+      // POST failed (server still down, session gone, etc.) — retry later
+      if (!closedIntentionallyRef.current) {
+        const delay = Math.min(2000 * Math.pow(1.5, attempt), 10000)
+        reconnectTimerRef.current = setTimeout(() => attemptReconnect(attempt + 1), delay)
+      }
+      return
+    }
+
+    // Backend view is ready — connect WebSocket
+    if (!closedIntentionallyRef.current) {
+      connectWs()
+    }
+  }, [sessionId, connectWs])
+
+  const scheduleReconnect = useCallback(() => {
+    // Small initial delay to avoid hammering on rapid close
+    reconnectTimerRef.current = setTimeout(() => attemptReconnect(0), 1000)
+  }, [attemptReconnect])
+
+  // Connect on mount, clean up on unmount
+  useEffect(() => {
+    closedIntentionallyRef.current = false
+    const ws = connectWs()
+
     return () => {
+      closedIntentionallyRef.current = true
+      if (reconnectTimerRef.current) {
+        clearTimeout(reconnectTimerRef.current)
+        reconnectTimerRef.current = null
+      }
       ws.close()
     }
-  }, [sessionId])
+  }, [connectWs])
 
   // Auto-focus canvas when connected
   useEffect(() => {
@@ -447,7 +506,11 @@ export default function BrowserView({ sessionId, minimized = false, onMinimizedC
             <button className="bv-error-close" onClick={handleClose}>Close</button>
           </div>
         ) : !connected ? (
-          <div className="bv-connecting">Connecting to browser...</div>
+          <div className="bv-connecting">
+            {reconnecting
+              ? `Reconnecting${reconnectAttempt > 0 ? ` (attempt ${reconnectAttempt + 1})` : ''}...`
+              : 'Connecting to browser...'}
+          </div>
         ) : (
           <canvas
             ref={canvasRef}

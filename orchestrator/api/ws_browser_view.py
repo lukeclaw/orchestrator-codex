@@ -25,7 +25,9 @@ from orchestrator.browser.cdp_proxy import (
     handle_client_input,
     poll_url,
     relay_cdp_to_client,
+    stop_browser_view,
 )
+from orchestrator.core.events import Event, publish
 
 logger = logging.getLogger(__name__)
 
@@ -118,6 +120,19 @@ async def ws_browser_view(websocket: WebSocket, session_id: str):
                     await task
                 except (asyncio.CancelledError, Exception):
                     pass
+
+        # Clean up the browser view (closes CDP WebSocket + tunnel, keeps Chromium running)
+        try:
+            stopped = await stop_browser_view(session_id)
+            if stopped:
+                publish(
+                    Event(
+                        type="browser_view_closed",
+                        data={"session_id": session_id},
+                    )
+                )
+        except Exception:
+            logger.debug("View cleanup in WS handler for session %s failed", session_id)
 
 
 async def _relay_client_input(websocket: WebSocket, view) -> None:

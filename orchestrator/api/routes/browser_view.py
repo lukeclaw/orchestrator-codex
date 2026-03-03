@@ -8,8 +8,10 @@ from pydantic import BaseModel, Field
 
 from orchestrator.api.deps import get_db
 from orchestrator.browser.cdp_proxy import (
+    cleanup_stale_view,
     discover_browser_targets,
     get_active_view,
+    is_view_alive,
     start_browser_view,
     stop_browser_view,
 )
@@ -112,7 +114,11 @@ async def start_browser_view_endpoint(
 
     existing = get_active_view(session_id)
     if existing:
-        raise HTTPException(409, "Browser view already active for this session")
+        if is_view_alive(session_id):
+            raise HTTPException(409, "Browser view already active for this session")
+        # Stale view (CDP WebSocket dead) — clean up and proceed
+        logger.info("Cleaning up stale browser view for session %s", session_id)
+        await cleanup_stale_view(session_id)
 
     try:
         view = await start_browser_view(

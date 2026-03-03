@@ -4,15 +4,18 @@ import json
 from unittest.mock import AsyncMock, patch
 
 import pytest
+from websockets.protocol import State as WsState
 
 from orchestrator.browser.cdp_proxy import (
     BrowserViewSession,
     _active_views,
+    cleanup_stale_view,
     dispatch_key_event,
     dispatch_mouse_event,
     dispatch_scroll_event,
     get_active_view,
     handle_client_input,
+    is_view_alive,
     relay_cdp_to_client,
     start_browser_view,
     stop_browser_view,
@@ -28,11 +31,14 @@ def clear_registry():
     _active_views.clear()
 
 
-def _make_view(session_id: str = "test-session") -> BrowserViewSession:
+def _make_view(
+    session_id: str = "test-session", ws_state: WsState = WsState.OPEN
+) -> BrowserViewSession:
     """Create a BrowserViewSession with a mock CDP WebSocket."""
     mock_ws = AsyncMock()
     mock_ws.send = AsyncMock()
     mock_ws.close = AsyncMock()
+    mock_ws.state = ws_state
 
     return BrowserViewSession(
         session_id=session_id,
@@ -54,6 +60,51 @@ class TestViewRegistry:
         assert get_active_view("test-session") is view
 
 
+class TestIsViewAlive:
+    def test_alive_when_open(self):
+        view = _make_view("s1", ws_state=WsState.OPEN)
+        _active_views["s1"] = view
+        assert is_view_alive("s1") is True
+
+    def test_dead_when_closed(self):
+        view = _make_view("s1", ws_state=WsState.CLOSED)
+        _active_views["s1"] = view
+        assert is_view_alive("s1") is False
+
+    def test_false_when_no_view(self):
+        assert is_view_alive("nonexistent") is False
+
+
+class TestCleanupStaleView:
+    @patch("orchestrator.browser.cdp_proxy.close_tunnel")
+    @pytest.mark.asyncio
+    async def test_cleanup_dead_view(self, mock_close_tunnel):
+        view = _make_view("s1", ws_state=WsState.CLOSED)
+        _active_views["s1"] = view
+
+        result = await cleanup_stale_view("s1")
+
+        assert result is True
+        assert "s1" not in _active_views
+        assert view.status == "closed"
+        mock_close_tunnel.assert_called_once_with(9222, "user/rdev-vm")
+
+    @pytest.mark.asyncio
+    async def test_no_cleanup_when_alive(self):
+        view = _make_view("s1", ws_state=WsState.OPEN)
+        _active_views["s1"] = view
+
+        result = await cleanup_stale_view("s1")
+
+        assert result is False
+        assert "s1" in _active_views
+
+    @pytest.mark.asyncio
+    async def test_no_cleanup_when_no_view(self):
+        result = await cleanup_stale_view("nonexistent")
+        assert result is False
+
+
 class TestStartBrowserView:
     @patch("orchestrator.browser.cdp_proxy.websockets.asyncio.client.connect")
     @patch("orchestrator.browser.cdp_proxy.discover_browser_targets")
@@ -73,6 +124,16 @@ class TestStartBrowserView:
         mock_ws = AsyncMock()
         mock_ws.send = AsyncMock()
 
+        # _cdp_send_and_wait reads the response via recv(). Return a JSON
+        # response whose "id" matches the last sent message so the wait
+        # resolves immediately.
+        async def fake_recv():
+            last_call = mock_ws.send.call_args
+            sent_msg = json.loads(last_call[0][0])
+            return json.dumps({"id": sent_msg["id"], "result": {}})
+
+        mock_ws.recv = fake_recv
+
         # websockets.connect() returns a dual-use object (awaitable + context manager).
         # When awaited, it returns the connection. AsyncMock.__await__ works fine,
         # but the return_value must be awaitable too — wrap in a coroutine.
@@ -87,15 +148,19 @@ class TestStartBrowserView:
         assert view.page_url == "https://sso.example.com"
         assert view.tunnel_local_port == 9222
         assert "session-1" in _active_views
-        # Verify: Page.enable, viewport override, then screencast start
-        assert mock_ws.send.call_count == 3
+        # Verify CDP setup: Page.enable, dark mode (media + bg), viewport, screencast
+        assert mock_ws.send.call_count == 5
         sent_enable = json.loads(mock_ws.send.call_args_list[0][0][0])
         assert sent_enable["method"] == "Page.enable"
-        sent_viewport = json.loads(mock_ws.send.call_args_list[1][0][0])
+        sent_media = json.loads(mock_ws.send.call_args_list[1][0][0])
+        assert sent_media["method"] == "Emulation.setEmulatedMedia"
+        sent_bg = json.loads(mock_ws.send.call_args_list[2][0][0])
+        assert sent_bg["method"] == "Emulation.setDefaultBackgroundColorOverride"
+        sent_viewport = json.loads(mock_ws.send.call_args_list[3][0][0])
         assert sent_viewport["method"] == "Emulation.setDeviceMetricsOverride"
         assert sent_viewport["params"]["width"] == 1280
         assert sent_viewport["params"]["height"] == 960
-        sent_screencast = json.loads(mock_ws.send.call_args_list[2][0][0])
+        sent_screencast = json.loads(mock_ws.send.call_args_list[4][0][0])
         assert sent_screencast["method"] == "Page.startScreencast"
 
     @pytest.mark.asyncio
@@ -207,6 +272,40 @@ class TestInputDispatch:
         assert sent["params"]["type"] == "keyDown"
         assert sent["params"]["key"] == "a"
         assert sent["params"]["text"] == "a"
+        assert sent["params"]["windowsVirtualKeyCode"] == ord("A")
+
+    @pytest.mark.asyncio
+    async def test_dispatch_enter_key(self):
+        """Enter key must include windowsVirtualKeyCode and text='\\r'."""
+        view = _make_view()
+
+        await dispatch_key_event(view, "keyDown", key="Enter", code="Enter")
+
+        sent = json.loads(view.cdp_ws.send.call_args[0][0])
+        assert sent["params"]["windowsVirtualKeyCode"] == 13
+        assert sent["params"]["text"] == "\r"
+
+    @pytest.mark.asyncio
+    async def test_dispatch_backspace_key(self):
+        """Backspace key must include windowsVirtualKeyCode."""
+        view = _make_view()
+
+        await dispatch_key_event(view, "keyDown", key="Backspace", code="Backspace")
+
+        sent = json.loads(view.cdp_ws.send.call_args[0][0])
+        assert sent["params"]["windowsVirtualKeyCode"] == 8
+        assert "text" not in sent["params"]  # Backspace has no text
+
+    @pytest.mark.asyncio
+    async def test_special_key_no_text_on_keyup(self):
+        """Enter keyUp should NOT include text (only keyDown generates input)."""
+        view = _make_view()
+
+        await dispatch_key_event(view, "keyUp", key="Enter", code="Enter")
+
+        sent = json.loads(view.cdp_ws.send.call_args[0][0])
+        assert sent["params"]["windowsVirtualKeyCode"] == 13
+        assert "text" not in sent["params"]
 
     @pytest.mark.asyncio
     async def test_dispatch_scroll_event(self):

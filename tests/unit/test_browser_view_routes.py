@@ -4,6 +4,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
+from websockets.protocol import State as WsState
 
 from orchestrator.api.app import create_app
 from orchestrator.browser.cdp_proxy import _active_views
@@ -56,12 +57,13 @@ def clear_registry():
     _active_views.clear()
 
 
-def _make_fake_view(session_id: str, host: str = "user/rdev-vm"):
+def _make_fake_view(session_id: str, host: str = "user/rdev-vm", ws_state=WsState.OPEN):
     """Create a fake BrowserViewSession for testing."""
     from orchestrator.browser.cdp_proxy import BrowserViewSession
 
     mock_ws = MagicMock()
     mock_ws.close = AsyncMock()
+    mock_ws.state = ws_state
 
     return BrowserViewSession(
         session_id=session_id,
@@ -150,6 +152,25 @@ class TestStartEndpoint:
         data = response.json()
         assert data["ok"] is True
         mock_server.start_browser.assert_called_once_with(rdev_session.id, port=9222)
+
+    @patch("orchestrator.api.routes.browser_view.start_browser_view")
+    def test_stale_view_cleaned_on_start(self, mock_start, client, rdev_session):
+        """When existing view has a dead WebSocket, clean it up and proceed."""
+        # Pre-register a stale view (WebSocket CLOSED)
+        _active_views[rdev_session.id] = _make_fake_view(rdev_session.id, ws_state=WsState.CLOSED)
+
+        fake_view = _make_fake_view(rdev_session.id)
+        mock_start.return_value = fake_view
+
+        response = client.post(
+            f"/api/sessions/{rdev_session.id}/browser-view",
+            json={"cdp_port": 9222},
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["ok"] is True
+        mock_start.assert_called_once()
 
     def test_404_session_not_found(self, client):
         response = client.post(
@@ -369,3 +390,31 @@ class TestBrowserStopEndpoint:
     def test_404_session_not_found(self, client):
         response = client.post("/api/sessions/nonexistent-id/browser-stop")
         assert response.status_code == 404
+
+
+class TestSessionDeleteStopsBrowser:
+    """Test that session delete stops the remote browser process."""
+
+    @patch("orchestrator.api.routes.sessions.kill_window")
+    @patch("orchestrator.terminal.remote_worker_server.get_remote_worker_server")
+    def test_session_delete_stops_browser(self, mock_get_rws, mock_kill, client, rdev_session):
+        """Deleting an rdev session calls rws.stop_browser()."""
+        mock_server = MagicMock()
+        mock_get_rws.return_value = mock_server
+
+        response = client.delete(f"/api/sessions/{rdev_session.id}")
+
+        assert response.status_code == 200
+        mock_server.stop_browser.assert_called_once_with(rdev_session.id)
+
+    @patch("orchestrator.api.routes.sessions.kill_window")
+    @patch("orchestrator.terminal.remote_worker_server.get_remote_worker_server")
+    def test_session_delete_survives_rws_failure(
+        self, mock_get_rws, mock_kill, client, rdev_session
+    ):
+        """Session delete succeeds even if RWS daemon is unavailable."""
+        mock_get_rws.side_effect = RuntimeError("Daemon not available")
+
+        response = client.delete(f"/api/sessions/{rdev_session.id}")
+
+        assert response.status_code == 200
