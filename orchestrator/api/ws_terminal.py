@@ -352,7 +352,22 @@ async def stream_pane(
                     record_user_input(session_id)
 
                 async def _send_input(data: str):
-                    ok = await send_keys_async(tmux_sess, tmux_win, data)
+                    # When Enter (\r) follows other characters in the
+                    # same chunk, split it out with a small delay so it
+                    # arrives in a separate PTY read.  Claude Code (Ink
+                    # TUI) treats \r bundled with other chars as a
+                    # literal newline instead of submit.
+                    # Bracketed paste (ESC[200~) is sent as-is.
+                    cr_idx = data.find("\r")
+                    if cr_idx > 0 and "\x1b[200~" not in data:
+                        before = data[:cr_idx]
+                        after = data[cr_idx:]
+                        ok = await send_keys_async(tmux_sess, tmux_win, before)
+                        if ok:
+                            await asyncio.sleep(0.015)
+                            ok = await send_keys_async(tmux_sess, tmux_win, after)
+                    else:
+                        ok = await send_keys_async(tmux_sess, tmux_win, data)
                     if not ok:
                         logger.error(
                             "send_keys failed for %s:%s (data_len=%d)",
