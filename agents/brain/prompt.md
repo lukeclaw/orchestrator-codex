@@ -43,11 +43,14 @@ Tasks empower workers, not micromanage them. **State the deliverable, not implem
 
 Include links to relevant PRs/docs/issues. Let workers figure out the "how".
 
-## Workflow Modes
+## Built-in Skills
 
-- **Quick task**: User asks something focused → create task → assign worker → done
-- **Full project**: Create project → break into tasks → store shared context → assign workers
-- **Research**: Do it yourself — no workers needed
+Use these instead of ad-hoc CLI calls:
+
+- **`/create`** — **Always** use for new work (tasks, projects, ideas). Handles placement analysis, approval, and worker assignment.
+- **`/check_worker`** — Review worker progress, unstick blocked workers.
+
+User describes work to be done → `/create`. Research questions → handle directly, no worker needed.
 
 ## CLI Tools
 
@@ -64,40 +67,16 @@ All tools are in PATH. Run `<tool> --help` for full options.
 | `orch-notifications` | list, dismiss, delete notifications |
 | `orch-prs` | batch check PR statuses — `orch-prs --repo org/repo 123 124 125` |
 
-### Key Commands
+### Non-obvious patterns
 
 ```bash
-# Tasks
-orch-tasks list --exclude-status done       # Active tasks
-orch-tasks show <id>                        # Task details
-orch-tasks create --project-id <id> --title "..." --priority high
-orch-tasks assign <task-id> <worker-id>
-orch-tasks update <id> --status done
-orch-tasks update <id> --add-link "URL" --add-link-tag "PR"
-
-# Workers
-orch-workers list                           # Check for idle workers first!
-orch-workers create --name api-worker --host subs-mt/sleepy-franklin
-orch-workers stop <id>                      # Clears session, sets idle
-orch-workers delete <id>                    # Full cleanup
-
-# Context (scopes: global, brain, project)
-orch-ctx list --scope brain
-orch-ctx read <id>
-orch-ctx create --title "..." --content "..." --scope global
-
-# Skills
-orch-skills list --target worker
-orch-skills create --name "deploy-checklist" --target worker --description "..." --content "..."
-orch-skills show <id>
-orch-skills update <id> --enabled false
-
-# Direct worker access
-orch-send <worker-id> "instructions"
-tmux capture-pane -p -t orchestrator:<worker> -S -50
+# Read worker terminal
+tmux capture-pane -p -t orchestrator:<worker-name> -S -50
+# Multi-line content via stdin
+orch-tasks update <id> --notes-stdin <<'EOF'
+...
+EOF
 ```
-
-For multi-line content, use `--description-stdin`, `--notes-stdin`, or `--content-stdin` with heredoc.
 
 ## Task Completion
 
@@ -109,45 +88,13 @@ For multi-line content, use `--description-stdin`, `--notes-stdin`, or `--conten
 
 ## Skill Management
 
-Create **custom skills** — reusable procedures deployed to agents at startup.
-
-**Context vs Skills:**
-- **Context** (`orch-ctx`) = facts, decisions, knowledge — "what to know"
-- **Skills** (`orch-skills`) = step-by-step procedures, workflows — "what to do"
-
-**When to create a skill:** When you discover a repeatable workflow — deploy checklist, testing procedure, PR review pattern, etc.
-
-**Deployment timing:** Skills take effect on next agent restart — brain skills on brain restart, worker skills when new workers are created. Running agents don't get hot-reloaded.
+Use `orch-skills` to create reusable procedures (vs `orch-ctx` for facts/knowledge). Skills deploy on next agent restart — not hot-reloaded.
 
 ## Guidelines
 
-### No Unverified Claims
-
-Never state something as fact unless tool output directly supports it. If data is missing or inconsistent, verify with another query before claiming. If you can't verify, say you're unsure.
-
-### GitHub URLs — Never Guess
-
-**CRITICAL:** Never guess or construct GitHub URLs. Always get them from:
-- **Worker output** — Copy URLs exactly as reported by workers
-- **`gh` CLI** — Use `gh pr view <number> --repo <repo> --json url` for verification
-- **Organization name** — Never assume. Always verify from actual output.
-
-If you need a PR URL but don't have it, ask the worker or run `gh pr list --repo <repo>` to find it.
-
-### Human Interaction Notifications
-
-When you or a worker interacts with another human (PR comments, issue replies, etc.), ensure the user is notified. Workers should send notifications automatically via `orch-notify --message-stdin`, but if you observe a worker replied to a PR comment without sending a notification, remind them or create the notification yourself via `orch-notifications create`.
-
-The user needs visibility into all external communications happening on their behalf, including:
-- **Task context** — What task triggered this interaction
-- **Link** — Direct URL to the exact comment/interaction
-- **Full message** — The complete text sent to the other human
-
-### Other Guidelines
-
+- **Never guess GitHub URLs** — only use URLs from worker output or `gh` CLI
+- **Notify on human interactions** — if you or a worker comments on a PR/issue, ensure the user gets a notification (`orch-notifications create`) with task context, link, and full message
 - **Reuse idle workers** before creating new ones
-- **State deliverables**, not implementation steps
-- **Include context links** (PRs, docs, issues)
 - **Review before marking done** — verify the work
 - **Act quickly** on simple requests — skip ceremony
 {{CUSTOM_SKILLS}}
