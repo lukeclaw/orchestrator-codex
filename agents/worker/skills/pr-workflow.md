@@ -26,7 +26,7 @@ Check each open draft (`gh pr view`, `gh pr checks`, `gh pr view --json reviews,
 
 - **CI failing** — Fix code, commit, push (always rebase before pushing).
 - **Has review comments** — Read with `gh api repos/OWNER/REPO/pulls/N/comments` and `issues/N/comments`. Address in code, then push.
-- **Clean (checks pass, no comments)** — Mark ready with `gh pr ready` but **only during working hours (9 AM–6 PM Mon–Fri)**. Otherwise leave as draft and note in subtask.
+- **Clean (checks pass, no comments)** — Mark ready with `gh pr ready` but **only during working hours (8 AM–6 PM Mon–Fri)**. Otherwise leave as draft and note in subtask.
 - **Too stale / conflicts** — `git fetch origin master && git rebase origin/master && git push --force-with-lease`. If conflicts are unclear: **STOP and wait for help.**
 - **Chained PR (targets another PR's branch)** — Keep as draft. After upstream merges, GitHub retargets to `master`; then treat as clean.
 
