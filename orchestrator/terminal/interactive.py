@@ -40,6 +40,11 @@ def open_interactive_cli(
 
     icli_window = f"{window_name}-icli"
 
+    # Kill any orphaned tmux windows with the same name (duplicates can
+    # accumulate if the server restarted while a window was alive).
+    while tmux.window_exists(tmux_session, icli_window):
+        tmux.kill_window(tmux_session, icli_window)
+
     # Create a new tmux window
     tmux.create_window(tmux_session, icli_window, cwd=cwd)
 
@@ -333,24 +338,41 @@ def restore_icli_windows(
     windows = tmux.list_windows(tmux_session)
     restored = 0
     killed = 0
+    # Group -icli windows by worker name to detect duplicates
+    icli_by_worker: dict[str, list[tmux.TmuxWindow]] = {}
     for w in windows:
         if not w.name.endswith("-icli"):
             continue
-
         worker_name = w.name[: -len("-icli")]
+        icli_by_worker.setdefault(worker_name, []).append(w)
+
+    for worker_name, icli_windows in icli_by_worker.items():
         session = repo.get_session_by_name(conn, worker_name)
         if session is None:
-            # No matching session — truly orphaned, kill it
-            tmux.kill_window(tmux_session, w.name)
-            killed += 1
+            # No matching session — truly orphaned, kill all (by index to
+            # handle duplicate window names safely)
+            for w in icli_windows:
+                tmux.kill_window(tmux_session, str(w.index))
+                killed += 1
             continue
+
+        # Kill duplicates — keep only the first, kill the rest by index
+        if len(icli_windows) > 1:
+            for w in icli_windows[1:]:
+                tmux.kill_window(tmux_session, str(w.index))
+                killed += 1
+            logger.info(
+                "Killed %d duplicate -icli windows for worker %s",
+                len(icli_windows) - 1,
+                worker_name,
+            )
 
         if session.id in _active_clis:
             continue  # Already registered
 
         cli = InteractiveCLI(
             session_id=session.id,
-            window_name=w.name,
+            window_name=icli_windows[0].name,
             status="active",
             created_at=datetime.now(UTC).isoformat(),
         )

@@ -60,9 +60,10 @@ def clear_registry():
 class TestOpenEndpoint:
     """Tests for POST /api/sessions/{id}/interactive-cli."""
 
+    @patch("orchestrator.terminal.interactive.tmux.window_exists", return_value=False)
     @patch("orchestrator.terminal.interactive.tmux.create_window")
     @patch("orchestrator.terminal.interactive.tmux.send_keys")
-    def test_opens_local_cli(self, mock_send, mock_create, client, local_session):
+    def test_opens_local_cli(self, mock_send, mock_create, mock_exists, client, local_session):
         response = client.post(
             f"/api/sessions/{local_session.id}/interactive-cli",
             json={"command": "bash"},
@@ -95,8 +96,9 @@ class TestOpenEndpoint:
         assert data["window_name"] == "rws-pty-1"
         mock_rws_open.assert_called_once()
 
+    @patch("orchestrator.terminal.interactive.tmux.window_exists", return_value=False)
     @patch("orchestrator.terminal.interactive.tmux.create_window")
-    def test_409_duplicate(self, mock_create, client, local_session):
+    def test_409_duplicate(self, mock_create, mock_exists, client, local_session):
         # First open succeeds
         response = client.post(
             f"/api/sessions/{local_session.id}/interactive-cli",
@@ -122,9 +124,10 @@ class TestOpenEndpoint:
 class TestCloseEndpoint:
     """Tests for DELETE /api/sessions/{id}/interactive-cli."""
 
+    @patch("orchestrator.terminal.interactive.tmux.window_exists", return_value=False)
     @patch("orchestrator.terminal.interactive.tmux.kill_window")
     @patch("orchestrator.terminal.interactive.tmux.create_window")
-    def test_closes_active_cli(self, mock_create, mock_kill, client, local_session):
+    def test_closes_active_cli(self, mock_create, mock_kill, mock_exists, client, local_session):
         # Open first
         client.post(
             f"/api/sessions/{local_session.id}/interactive-cli",
@@ -144,9 +147,11 @@ class TestCloseEndpoint:
 class TestStatusEndpoint:
     """Tests for GET /api/sessions/{id}/interactive-cli."""
 
-    @patch("orchestrator.terminal.interactive.tmux.window_exists", return_value=True)
+    @patch("orchestrator.terminal.interactive.tmux.window_exists")
     @patch("orchestrator.terminal.interactive.tmux.create_window")
     def test_returns_active_status(self, mock_create, mock_exists, client, local_session):
+        # First call: orphan check (no orphan), second call: alive check (alive)
+        mock_exists.side_effect = [False, True]
         client.post(
             f"/api/sessions/{local_session.id}/interactive-cli",
             json={"command": "bash"},
@@ -170,9 +175,10 @@ class TestStatusEndpoint:
 class TestSendEndpoint:
     """Tests for POST /api/sessions/{id}/interactive-cli/send."""
 
+    @patch("orchestrator.terminal.interactive.tmux.window_exists", return_value=False)
     @patch("orchestrator.terminal.interactive.tmux.send_keys", return_value=True)
     @patch("orchestrator.terminal.interactive.tmux.create_window")
-    def test_sends_message(self, mock_create, mock_send, client, local_session):
+    def test_sends_message(self, mock_create, mock_send, mock_exists, client, local_session):
         client.post(
             f"/api/sessions/{local_session.id}/interactive-cli",
             json={},
@@ -186,9 +192,10 @@ class TestSendEndpoint:
         assert response.status_code == 200
         assert response.json()["ok"] is True
 
+    @patch("orchestrator.terminal.interactive.tmux.window_exists", return_value=False)
     @patch("orchestrator.terminal.interactive.tmux.send_keys", return_value=True)
     @patch("orchestrator.terminal.interactive.tmux.create_window")
-    def test_sends_keys(self, mock_create, mock_send, client, local_session):
+    def test_sends_keys(self, mock_create, mock_send, mock_exists, client, local_session):
         client.post(
             f"/api/sessions/{local_session.id}/interactive-cli",
             json={},
@@ -209,8 +216,9 @@ class TestSendEndpoint:
         )
         assert response.status_code == 404
 
+    @patch("orchestrator.terminal.interactive.tmux.window_exists", return_value=False)
     @patch("orchestrator.terminal.interactive.tmux.create_window")
-    def test_400_no_message_or_keys(self, mock_create, client, local_session):
+    def test_400_no_message_or_keys(self, mock_create, mock_exists, client, local_session):
         client.post(
             f"/api/sessions/{local_session.id}/interactive-cli",
             json={},
@@ -226,12 +234,13 @@ class TestSendEndpoint:
 class TestCaptureEndpoint:
     """Tests for POST /api/sessions/{id}/interactive-cli/capture."""
 
+    @patch("orchestrator.terminal.interactive.tmux.window_exists", return_value=False)
     @patch(
         "orchestrator.terminal.interactive.tmux.capture_output",
         return_value="$ whoami\nroot\n",
     )
     @patch("orchestrator.terminal.interactive.tmux.create_window")
-    def test_captures_output(self, mock_create, mock_capture, client, local_session):
+    def test_captures_output(self, mock_create, mock_capture, mock_exists, client, local_session):
         client.post(
             f"/api/sessions/{local_session.id}/interactive-cli",
             json={},

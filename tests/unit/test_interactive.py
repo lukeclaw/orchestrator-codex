@@ -29,9 +29,10 @@ def clear_registry():
 class TestOpenInteractiveCLI:
     """Tests for open_interactive_cli (local)."""
 
+    @patch("orchestrator.terminal.interactive.tmux.window_exists", return_value=False)
     @patch("orchestrator.terminal.interactive.tmux.create_window")
     @patch("orchestrator.terminal.interactive.tmux.send_keys")
-    def test_creates_tmux_window(self, mock_send, mock_create):
+    def test_creates_tmux_window(self, mock_send, mock_create, mock_exists):
         cli = open_interactive_cli("orchestrator", "worker1", "sess-1")
 
         mock_create.assert_called_once_with("orchestrator", "worker1-icli", cwd=None)
@@ -41,9 +42,10 @@ class TestOpenInteractiveCLI:
         assert cli.initial_command is None
         mock_send.assert_not_called()
 
+    @patch("orchestrator.terminal.interactive.tmux.window_exists", return_value=False)
     @patch("orchestrator.terminal.interactive.tmux.create_window")
     @patch("orchestrator.terminal.interactive.tmux.send_keys")
-    def test_sends_command(self, mock_send, mock_create):
+    def test_sends_command(self, mock_send, mock_create, mock_exists):
         cli = open_interactive_cli(
             "orchestrator", "worker1", "sess-1", command="sudo yum install screen"
         )
@@ -53,34 +55,49 @@ class TestOpenInteractiveCLI:
         )
         assert cli.initial_command == "sudo yum install screen"
 
+    @patch("orchestrator.terminal.interactive.tmux.window_exists", return_value=False)
     @patch("orchestrator.terminal.interactive.tmux.create_window")
     @patch("orchestrator.terminal.interactive.tmux.send_keys")
-    def test_passes_cwd(self, mock_send, mock_create):
+    def test_passes_cwd(self, mock_send, mock_create, mock_exists):
         open_interactive_cli("orchestrator", "worker1", "sess-1", cwd="/home/user")
 
         mock_create.assert_called_once_with("orchestrator", "worker1-icli", cwd="/home/user")
 
+    @patch("orchestrator.terminal.interactive.tmux.window_exists", return_value=False)
     @patch("orchestrator.terminal.interactive.tmux.create_window")
-    def test_rejects_duplicate(self, mock_create):
+    def test_rejects_duplicate(self, mock_create, mock_exists):
         open_interactive_cli("orchestrator", "worker1", "sess-1")
 
         with pytest.raises(ValueError, match="already active"):
             open_interactive_cli("orchestrator", "worker1", "sess-1")
 
+    @patch("orchestrator.terminal.interactive.tmux.window_exists", return_value=False)
     @patch("orchestrator.terminal.interactive.tmux.create_window")
-    def test_registers_in_memory(self, mock_create):
+    def test_registers_in_memory(self, mock_create, mock_exists):
         cli = open_interactive_cli("orchestrator", "worker1", "sess-1")
 
         assert get_active_cli("sess-1") is cli
         assert get_active_cli("nonexistent") is None
+
+    @patch("orchestrator.terminal.interactive.tmux.kill_window")
+    @patch("orchestrator.terminal.interactive.tmux.window_exists", side_effect=[True, False])
+    @patch("orchestrator.terminal.interactive.tmux.create_window")
+    def test_cleans_orphaned_window(self, mock_create, mock_exists, mock_kill):
+        """If an orphaned tmux window exists, it's killed before creating a new one."""
+        cli = open_interactive_cli("orchestrator", "worker1", "sess-1")
+
+        mock_kill.assert_called_once_with("orchestrator", "worker1-icli")
+        mock_create.assert_called_once_with("orchestrator", "worker1-icli", cwd=None)
+        assert cli.window_name == "worker1-icli"
 
 
 class TestCloseInteractiveCLI:
     """Tests for close_interactive_cli."""
 
     @patch("orchestrator.terminal.interactive.tmux.kill_window")
+    @patch("orchestrator.terminal.interactive.tmux.window_exists", return_value=False)
     @patch("orchestrator.terminal.interactive.tmux.create_window")
-    def test_closes_and_removes(self, mock_create, mock_kill):
+    def test_closes_and_removes(self, mock_create, mock_exists, mock_kill):
         open_interactive_cli("orchestrator", "worker1", "sess-1")
 
         result = close_interactive_cli("sess-1", "orchestrator")
@@ -98,8 +115,9 @@ class TestCaptureInteractiveCLI:
     """Tests for capture_interactive_cli."""
 
     @patch("orchestrator.terminal.interactive.tmux.capture_output", return_value="$ hello\n")
+    @patch("orchestrator.terminal.interactive.tmux.window_exists", return_value=False)
     @patch("orchestrator.terminal.interactive.tmux.create_window")
-    def test_captures_output(self, mock_create, mock_capture):
+    def test_captures_output(self, mock_create, mock_exists, mock_capture):
         open_interactive_cli("orchestrator", "worker1", "sess-1")
 
         output = capture_interactive_cli("sess-1", "orchestrator", lines=20)
@@ -115,8 +133,9 @@ class TestSendToInteractiveCLI:
     """Tests for send_to_interactive_cli."""
 
     @patch("orchestrator.terminal.interactive.tmux.send_keys", return_value=True)
+    @patch("orchestrator.terminal.interactive.tmux.window_exists", return_value=False)
     @patch("orchestrator.terminal.interactive.tmux.create_window")
-    def test_sends_with_enter(self, mock_create, mock_send):
+    def test_sends_with_enter(self, mock_create, mock_exists, mock_send):
         open_interactive_cli("orchestrator", "worker1", "sess-1")
 
         result = send_to_interactive_cli("sess-1", "orchestrator", "yes", enter=True)
@@ -125,8 +144,9 @@ class TestSendToInteractiveCLI:
         mock_send.assert_called_once_with("orchestrator", "worker1-icli", "yes", enter=True)
 
     @patch("orchestrator.terminal.interactive.tmux.send_keys", return_value=True)
+    @patch("orchestrator.terminal.interactive.tmux.window_exists", return_value=False)
     @patch("orchestrator.terminal.interactive.tmux.create_window")
-    def test_sends_without_enter(self, mock_create, mock_send):
+    def test_sends_without_enter(self, mock_create, mock_exists, mock_send):
         open_interactive_cli("orchestrator", "worker1", "sess-1")
 
         result = send_to_interactive_cli("sess-1", "orchestrator", "C-c", enter=False)
@@ -142,16 +162,21 @@ class TestSendToInteractiveCLI:
 class TestCheckInteractiveCLIAlive:
     """Tests for check_interactive_cli_alive."""
 
-    @patch("orchestrator.terminal.interactive.tmux.window_exists", return_value=True)
+    @patch("orchestrator.terminal.interactive.tmux.window_exists")
     @patch("orchestrator.terminal.interactive.tmux.create_window")
     def test_alive_returns_true(self, mock_create, mock_exists):
+        # First call: orphan check in open_interactive_cli (no orphan)
+        # Second call: alive check in check_interactive_cli_alive (alive)
+        mock_exists.side_effect = [False, True]
         open_interactive_cli("orchestrator", "worker1", "sess-1")
 
         assert check_interactive_cli_alive("sess-1", "orchestrator") is True
 
-    @patch("orchestrator.terminal.interactive.tmux.window_exists", return_value=False)
+    @patch("orchestrator.terminal.interactive.tmux.window_exists")
     @patch("orchestrator.terminal.interactive.tmux.create_window")
     def test_dead_removes_from_registry(self, mock_create, mock_exists):
+        # First call: orphan check (no orphan), second call: alive check (dead)
+        mock_exists.side_effect = [False, False]
         open_interactive_cli("orchestrator", "worker1", "sess-1")
 
         result = check_interactive_cli_alive("sess-1", "orchestrator")
@@ -221,7 +246,7 @@ class TestRestoreICLIWindows:
             restored = restore_icli_windows(mock_conn, "orchestrator")
 
         assert restored == 0
-        mock_kill.assert_called_once_with("orchestrator", "worker1-icli")
+        mock_kill.assert_called_once_with("orchestrator", "1")
 
     @patch("orchestrator.terminal.interactive.tmux.kill_window")
     @patch("orchestrator.terminal.interactive.tmux.list_windows")

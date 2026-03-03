@@ -713,10 +713,14 @@ async def ws_interactive_cli(websocket: WebSocket, session_id: str):
         try:
             await stream_pane(websocket, tmux_sess, cli.window_name)
         finally:
-            window_gone.set()
             watcher.cancel()
             try:
                 await watcher
             except asyncio.CancelledError:
                 pass
-            _active_clis.pop(session_id, None)
+            # Only remove from registry if the tmux window is actually dead.
+            # If the user just navigated away (WS disconnect), the window is
+            # still alive and should remain registered so it isn't orphaned.
+            if window_gone.is_set() or not window_exists(tmux_sess, cli.window_name):
+                _active_clis.pop(session_id, None)
+            window_gone.set()
