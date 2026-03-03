@@ -766,10 +766,8 @@ def setup_local_worker(
         os.makedirs(local_tmp_dir, exist_ok=True)
         api_base = f"http://127.0.0.1:{api_port}"
 
-        # 1. Deploy CLI scripts with a unique CDP port for this worker
-        from orchestrator.session.tunnel import find_available_port
-
-        cdp_port = find_available_port(9222) or 9222
+        # 1. Deploy CLI scripts — all local workers share Chrome on port 9222
+        cdp_port = 9222  # Shared Chrome instance — each worker gets its own tab
         bin_dir = deploy_worker_scripts(
             worker_dir=local_tmp_dir,
             session_id=session_id,
@@ -842,10 +840,18 @@ def setup_local_worker(
             cmd_parts.append(f"cd {work_dir}")
 
         cmd_parts.append("volta install node@24")  # Ensure Node 24 for npx
+        cmd_parts.append("claude plugin install playwright")  # Ensure Playwright plugin
 
-        # Configure built-in Playwright plugin to connect to orch-browser's CDP endpoint.
-        # Replaces the old `claude mcp add` approach (npx blocked by company policy locally).
-        cmd_parts.append(f"export PLAYWRIGHT_MCP_CDP_ENDPOINT=http://localhost:{cdp_port}")
+        # Configure Playwright plugin to connect via per-worker CDP proxy.
+        # Each worker gets its own proxy port so Playwright only sees its tab.
+        from orchestrator.browser.cdp_worker_proxy import start_cdp_proxy
+
+        try:
+            proxy_port = start_cdp_proxy(session_id, chrome_port=cdp_port)
+        except Exception:
+            logger.warning("CDP proxy failed for %s, falling back to direct", name)
+            proxy_port = cdp_port
+        cmd_parts.append(f"export PLAYWRIGHT_MCP_CDP_ENDPOINT=http://localhost:{proxy_port}")
 
         path_export = get_path_export_command(os.path.join(local_tmp_dir, "bin"))
         cmd_parts.append(path_export)

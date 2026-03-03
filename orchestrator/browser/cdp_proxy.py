@@ -48,6 +48,7 @@ class BrowserViewSession:
     host: str  # rdev host for tunnel cleanup
     cdp_ws: Any  # websockets client connection
     tunnel_local_port: int  # SSH tunnel local port
+    target_id: str = ""  # CDP target ID for this worker's tab
     page_url: str = ""  # Current page URL
     page_title: str = ""  # Current page title
     viewport_width: int = 1280
@@ -61,6 +62,10 @@ class BrowserViewSession:
 
 # In-memory registry: session_id -> BrowserViewSession
 _active_views: dict[str, BrowserViewSession] = {}
+
+# Persistent mapping: session_id -> target_id for local workers.
+# Survives browser view stop/start cycles so we reconnect to the same tab.
+_session_tab_targets: dict[str, str] = {}
 
 
 def get_active_view(session_id: str) -> BrowserViewSession | None:
@@ -107,7 +112,7 @@ async def cleanup_stale_view(session_id: str) -> bool:
     except Exception:
         pass
 
-    # Close SSH tunnel (only if remote)
+    # Close SSH tunnel (remote only); keep local tabs alive for reconnection
     if is_remote_host(view.host):
         try:
             close_tunnel(view.tunnel_local_port, view.host)
@@ -143,6 +148,35 @@ async def discover_browser_targets(
                 logger.debug("CDP discovery attempt %d/%d failed: %s", attempt + 1, retries, e)
                 await asyncio.sleep(delay)
     raise last_exc  # type: ignore[misc]
+
+
+async def _find_target_by_id(cdp_port: int, target_id: str) -> dict | None:
+    """Find an existing browser target by its ID. Returns None if not found."""
+    try:
+        targets = await discover_browser_targets(cdp_port, retries=1)
+        for t in targets:
+            if t.get("id") == target_id:
+                return t
+    except Exception:
+        pass
+    return None
+
+
+async def create_browser_tab(cdp_port: int, url: str = "about:blank") -> dict:
+    """Create a new browser tab via CDP HTTP API.
+
+    Returns the target info dict including webSocketDebuggerUrl and id.
+    """
+    async with httpx.AsyncClient(timeout=5.0) as client:
+        resp = await client.put(f"http://localhost:{cdp_port}/json/new?{url}")
+        resp.raise_for_status()
+        return resp.json()
+
+
+async def close_browser_tab(cdp_port: int, target_id: str) -> None:
+    """Close a browser tab via CDP HTTP API."""
+    async with httpx.AsyncClient(timeout=5.0) as client:
+        await client.get(f"http://localhost:{cdp_port}/json/close/{target_id}")
 
 
 async def _cdp_send(
@@ -238,25 +272,44 @@ async def start_browser_view(
         # Local: connect directly, no tunnel needed
         local_port = cdp_port
 
-    # Step 2: Discover page targets
-    try:
-        targets = await discover_browser_targets(local_port)
-    except Exception as e:
-        if is_remote_host(host):
+    # Step 2: Get a target — create a new tab for local, discover for remote
+    if is_remote_host(host):
+        try:
+            targets = await discover_browser_targets(local_port)
+        except Exception as e:
             close_tunnel(local_port, host)
-        raise RuntimeError(
-            f"No browser found on CDP port {cdp_port}. "
-            f"Ensure Chromium is running with --remote-debugging-port={cdp_port}: {e}"
-        ) from e
+            raise RuntimeError(
+                f"No browser found on CDP port {cdp_port}. "
+                f"Ensure Chromium is running with --remote-debugging-port={cdp_port}: {e}"
+            ) from e
 
-    if not targets:
-        if is_remote_host(host):
+        if not targets:
             close_tunnel(local_port, host)
-        raise RuntimeError(
-            f"No debuggable pages found on CDP port {cdp_port}. The browser may have no open tabs."
-        )
-
-    target = targets[0]
+            raise RuntimeError(
+                f"No debuggable pages found on CDP port {cdp_port}. "
+                f"The browser may have no open tabs."
+            )
+        target = targets[0]
+    else:
+        # Local: reconnect to existing tab or create a new one
+        target = None
+        prev_target_id = _session_tab_targets.get(session_id)
+        if prev_target_id:
+            target = await _find_target_by_id(local_port, prev_target_id)
+            if target:
+                logger.info(
+                    "Reconnecting to existing tab %s for session %s",
+                    prev_target_id,
+                    session_id,
+                )
+        if target is None:
+            try:
+                target = await create_browser_tab(local_port)
+            except Exception as e:
+                raise RuntimeError(
+                    f"No browser found on CDP port {cdp_port}. "
+                    f"Ensure Chromium is running with --remote-debugging-port={cdp_port}: {e}"
+                ) from e
     ws_url = target.get("webSocketDebuggerUrl", "")
     if not ws_url:
         if is_remote_host(host):
@@ -322,11 +375,13 @@ async def start_browser_view(
             close_tunnel(local_port, host)
         raise RuntimeError(f"Failed to start screencast: {e}") from e
 
+    target_id = target.get("id", "")
     view = BrowserViewSession(
         session_id=session_id,
         host=host,
         cdp_ws=cdp_ws,
         tunnel_local_port=local_port,
+        target_id=target_id,
         page_url=target.get("url", ""),
         page_title=target.get("title", ""),
         viewport_width=max_width,
@@ -334,6 +389,10 @@ async def start_browser_view(
         quality=quality,
     )
     _active_views[session_id] = view
+
+    # Remember which tab belongs to this session for reconnection
+    if not is_remote_host(host) and target_id:
+        _session_tab_targets[session_id] = target_id
 
     logger.info(
         "Started browser view for session %s: %s (%s)",
@@ -345,8 +404,14 @@ async def start_browser_view(
     return view
 
 
-async def stop_browser_view(session_id: str) -> bool:
+async def stop_browser_view(session_id: str, close_tab: bool = False) -> bool:
     """Stop the browser view and clean up resources.
+
+    Args:
+        session_id: The worker session ID.
+        close_tab: If True, close the browser tab (local workers only).
+            False by default so that navigating away from a worker keeps
+            its tab alive for later reconnection.
 
     Returns True if a view was stopped, False if none was active.
     """
@@ -368,10 +433,16 @@ async def stop_browser_view(session_id: str) -> bool:
     except Exception:
         pass
 
-    # Close SSH tunnel (only if remote)
+    # Close the tab (local, only on explicit close) or the tunnel (remote)
     if is_remote_host(view.host):
         try:
             close_tunnel(view.tunnel_local_port, view.host)
+        except Exception:
+            pass
+    elif close_tab and view.target_id:
+        _session_tab_targets.pop(session_id, None)
+        try:
+            await close_browser_tab(view.tunnel_local_port, view.target_id)
         except Exception:
             pass
 
@@ -379,11 +450,14 @@ async def stop_browser_view(session_id: str) -> bool:
     return True
 
 
-def stop_browser_view_sync(session_id: str) -> bool:
+def stop_browser_view_sync(session_id: str, close_tab: bool = False) -> bool:
     """Synchronous version of stop_browser_view for cleanup hooks.
 
     Removes the session from the registry and cleans up the tunnel.
     The CDP WebSocket close is best-effort (may already be dead).
+
+    Args:
+        close_tab: If True, close the browser tab (local workers only).
     """
     view = _active_views.pop(session_id, None)
     if view is None:
@@ -400,12 +474,19 @@ def stop_browser_view_sync(session_id: str) -> bool:
         # No event loop — just close the tunnel, WS will die eventually
         pass
 
-    # Close SSH tunnel (only if remote)
+    # Close the tab (local, only on explicit close) or the tunnel (remote)
     if is_remote_host(view.host):
         try:
             close_tunnel(view.tunnel_local_port, view.host)
         except Exception:
             pass
+    elif close_tab and view.target_id:
+        _session_tab_targets.pop(session_id, None)
+        try:
+            loop = asyncio.get_running_loop()
+            loop.create_task(close_browser_tab(view.tunnel_local_port, view.target_id))
+        except RuntimeError:
+            pass  # No event loop — tab will remain until Chrome is closed
 
     logger.info("Stopped browser view (sync) for session %s", session_id)
     return True

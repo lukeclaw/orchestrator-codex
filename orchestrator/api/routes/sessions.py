@@ -497,9 +497,17 @@ def _delete_session_inner(s, session_id: str, request: Request, db):
     try:
         from orchestrator.browser.cdp_proxy import stop_browser_view_sync
 
-        stop_browser_view_sync(session_id)
+        stop_browser_view_sync(session_id, close_tab=True)
     except Exception:
         logger.warning("Could not close browser view for session %s", s.name, exc_info=True)
+
+    # Stop per-worker CDP proxy if running
+    try:
+        from orchestrator.browser.cdp_worker_proxy import stop_cdp_proxy
+
+        stop_cdp_proxy(session_id)
+    except Exception:
+        logger.warning("Could not stop CDP proxy for %s", s.name, exc_info=True)
 
     # Stop remote browser process via RWS daemon (before tunnel cleanup,
     # while the RWS command tunnel is still alive)

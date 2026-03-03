@@ -7,7 +7,7 @@ from fastapi.testclient import TestClient
 from websockets.protocol import State as WsState
 
 from orchestrator.api.app import create_app
-from orchestrator.browser.cdp_proxy import _active_views
+from orchestrator.browser.cdp_proxy import _active_views, _session_tab_targets
 from orchestrator.state.db import get_connection
 from orchestrator.state.migrations.runner import apply_migrations
 
@@ -53,8 +53,10 @@ def local_session(db):
 def clear_registry():
     """Clear in-memory registry before each test."""
     _active_views.clear()
+    _session_tab_targets.clear()
     yield
     _active_views.clear()
+    _session_tab_targets.clear()
 
 
 def _make_fake_view(session_id: str, host: str = "user/rdev-vm", ws_state=WsState.OPEN):
@@ -399,6 +401,42 @@ class TestBrowserStopEndpoint:
     def test_404_session_not_found(self, client):
         response = client.post("/api/sessions/nonexistent-id/browser-stop")
         assert response.status_code == 404
+
+
+class TestSharedChromeInstance:
+    """Tests for shared Chrome instance (idempotent launch, no port collision)."""
+
+    @patch("orchestrator.api.routes.browser_view.httpx")
+    def test_auto_start_skips_launch_when_running(self, mock_httpx):
+        """If Chrome is already running on the port, _auto_start_browser_local returns immediately."""
+        from orchestrator.api.routes.browser_view import _auto_start_browser_local
+
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_httpx.get.return_value = mock_resp
+
+        result = _auto_start_browser_local("session-1", 9222)
+        assert result == 9222
+        mock_httpx.get.assert_called_once_with("http://localhost:9222/json/version", timeout=2)
+
+    @patch("orchestrator.api.routes.browser_view._read_cdp_port_for_session")
+    @patch("orchestrator.api.routes.browser_view._auto_start_browser_local")
+    def test_browser_start_uses_shared_port(
+        self, mock_auto_start, mock_read_port, client, local_session
+    ):
+        """start_browser_endpoint passes port directly without collision check."""
+        mock_read_port.return_value = 9222
+        mock_auto_start.return_value = 9222
+
+        response = client.post(
+            f"/api/sessions/{local_session.id}/browser-start",
+            json={"port": 9222},
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["port"] == 9222
+        mock_auto_start.assert_called_once_with(local_session.id, 9222)
 
 
 class TestSessionDeleteStopsBrowser:

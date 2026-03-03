@@ -6,6 +6,7 @@ import logging
 import os
 import subprocess
 
+import httpx
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
@@ -62,13 +63,25 @@ def _read_cdp_port_for_session(session_name: str) -> int | None:
     return None
 
 
-def _auto_start_browser_local(session_id: str, cdp_port: int) -> None:
+def _auto_start_browser_local(session_id: str, cdp_port: int) -> int:
     """Launch Chrome/Chromium locally for a local worker session.
 
+    Idempotent — if Chrome is already running on the port, returns immediately.
     Search order: Playwright cache, system apps (macOS), PATH.
     Launches headed with CDP enabled, stores PID for cleanup.
+
+    Returns the actual CDP port used.
     """
     import platform
+
+    # Check if Chrome is already running on this port
+    try:
+        resp = httpx.get(f"http://localhost:{cdp_port}/json/version", timeout=2)
+        if resp.status_code == 200:
+            logger.info("Chrome already running on port %d, reusing", cdp_port)
+            return cdp_port
+    except Exception:
+        pass  # Not running, proceed to launch
 
     chromium_bin = None
 
@@ -130,7 +143,8 @@ def _auto_start_browser_local(session_id: str, cdp_port: int) -> None:
     os.makedirs(pid_dir, exist_ok=True)
 
     # Local/headed: normal browser window with URL bar (no sandbox/gpu flags)
-    log_file = open(f"{pid_dir}/browser-{session_id}.log", "w")
+    # Shared PID file — all local workers share one Chrome instance
+    log_file = open(f"{pid_dir}/browser-local.log", "w")
     proc = subprocess.Popen(
         [
             chromium_bin,
@@ -142,9 +156,11 @@ def _auto_start_browser_local(session_id: str, cdp_port: int) -> None:
         stdout=log_file,
         stderr=subprocess.STDOUT,
     )
-    # Store PID for cleanup
-    with open(f"{pid_dir}/browser-{session_id}.pid", "w") as f:
+    # Store PID for cleanup (shared across all local workers)
+    with open(f"{pid_dir}/browser-local.pid", "w") as f:
         f.write(str(proc.pid))
+
+    return cdp_port
 
 
 async def _auto_start_browser_and_retry(
@@ -218,7 +234,6 @@ async def start_browser_view_endpoint(
         raise HTTPException(404, "Session not found")
 
     # For local workers, read the actual CDP port from deployed lib.sh
-    # (each local worker gets a unique port to avoid collisions).
     cdp_port = body.cdp_port
     if not is_remote_host(s.host):
         cdp_port = _read_cdp_port_for_session(s.name) or body.cdp_port
@@ -294,7 +309,7 @@ async def stop_browser_view_endpoint(session_id: str, db=Depends(get_db)):
     if s is None:
         raise HTTPException(404, "Session not found")
 
-    stopped = await stop_browser_view(session_id)
+    stopped = await stop_browser_view(session_id, close_tab=True)
     if not stopped:
         raise HTTPException(404, "No active browser view for this session")
 
@@ -463,8 +478,8 @@ def start_browser_endpoint(
     else:
         # Local: launch Chromium directly
         try:
-            _auto_start_browser_local(session_id, port)
-            return {"ok": True, "pid": None, "port": port, "already_running": False}
+            actual_port = _auto_start_browser_local(session_id, port)
+            return {"ok": True, "pid": None, "port": actual_port, "already_running": False}
         except RuntimeError as e:
             raise HTTPException(500, str(e))
 

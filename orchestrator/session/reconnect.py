@@ -1232,16 +1232,37 @@ def reconnect_local_worker(
         api_base = f"http://127.0.0.1:{api_port}"
         _ensure_local_configs_exist(tmp_dir, session.id, api_base)
 
+        # Ensure Node 24 is the volta default (needed for Playwright plugin's npx)
+        safe_send_keys(tmux_sess, tmux_win, "volta install node@24", enter=True)
+        time.sleep(3)
+
+        # Ensure the official Playwright plugin is installed
+        safe_send_keys(
+            tmux_sess, tmux_win, "claude plugin install playwright", enter=True
+        )
+        time.sleep(2)
+
         path_export = get_path_export_command(os.path.join(tmp_dir, "bin"))
         safe_send_keys(tmux_sess, tmux_win, path_export, enter=True)
         time.sleep(0.3)
 
-        # Configure Playwright MCP via env var (read port from lib.sh)
+        # Configure Playwright MCP via per-worker CDP proxy
         cdp_port = _read_cdp_port_from_lib(tmp_dir)
+        from orchestrator.browser.cdp_worker_proxy import get_proxy_port, start_cdp_proxy
+
+        proxy_port = get_proxy_port(session.id)
+        if proxy_port is None:
+            try:
+                proxy_port = start_cdp_proxy(session.id, chrome_port=cdp_port)
+            except Exception:
+                logger.warning(
+                    "CDP proxy failed for %s, falling back to direct", session.name
+                )
+                proxy_port = cdp_port
         safe_send_keys(
             tmux_sess,
             tmux_win,
-            f"export PLAYWRIGHT_MCP_CDP_ENDPOINT=http://localhost:{cdp_port}",
+            f"export PLAYWRIGHT_MCP_CDP_ENDPOINT=http://localhost:{proxy_port}",
             enter=True,
         )
         time.sleep(0.3)

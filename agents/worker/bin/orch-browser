@@ -214,6 +214,12 @@ launch_browser() {
 
 # Kill the browser process if running (fallback cleanup)
 kill_browser() {
+    # In local/headed mode, Chrome is shared across workers — don't kill it
+    if [[ "${ORCH_BROWSER_HEADLESS:-true}" != "true" ]]; then
+        echo "Browser is shared across workers. Use dashboard to manage." >&2
+        return 0
+    fi
+
     local pf
     pf="$(pidfile)"
     if [ -f "$pf" ]; then
@@ -292,8 +298,11 @@ do_start() {
         esac
     done
 
-    # Step 0: Ensure system fonts are available for Chromium
-    ensure_fonts
+    # Step 0: Ensure system fonts are available for Chromium (remote only —
+    # headless Linux servers often lack font packages; local macOS has them)
+    if [[ "${ORCH_BROWSER_HEADLESS:-true}" == "true" ]]; then
+        ensure_fonts
+    fi
 
     # Step 1: Check/launch browser
     if curl -sf "http://localhost:$port/json/version" &>/dev/null; then
