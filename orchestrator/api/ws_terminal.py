@@ -654,11 +654,21 @@ def _blocking_recv(sock, bufsize: int = 65536, timeout: float = 1.0) -> bytes | 
 
 async def ws_interactive_cli(websocket: WebSocket, session_id: str):
     """Stream the interactive CLI terminal for a session."""
-    from orchestrator.terminal.interactive import _active_clis, get_active_cli
+    from orchestrator.terminal.interactive import _active_clis, get_active_cli, recover_cli
 
     await websocket.accept()
 
     cli = get_active_cli(session_id)
+    if not cli:
+        # Try inline recovery from surviving tmux window or remote PTY
+        db_conn = _get_conn(websocket)
+        try:
+            cli = await asyncio.get_running_loop().run_in_executor(
+                None, recover_cli, session_id, db_conn
+            )
+        finally:
+            if getattr(websocket.app.state, "conn_factory", None) is not None:
+                db_conn.close()
     if not cli:
         await websocket.send_json(
             {

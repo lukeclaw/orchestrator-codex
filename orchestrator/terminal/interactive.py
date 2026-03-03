@@ -143,6 +143,82 @@ def get_active_cli(session_id: str) -> InteractiveCLI | None:
     return _active_clis.get(session_id)
 
 
+def recover_cli(
+    session_id: str,
+    db_conn: sqlite3.Connection,
+    tmux_session: str = "orchestrator",
+) -> InteractiveCLI | None:
+    """Recover a single interactive CLI from a surviving tmux window or remote PTY.
+
+    After a server restart the in-memory ``_active_clis`` registry is empty,
+    but the underlying terminal (tmux window or daemon PTY) may still be alive.
+    This function checks for a surviving backend and re-registers it so the
+    frontend can reconnect without seeing "No active interactive CLI".
+
+    Returns the recovered ``InteractiveCLI``, or ``None`` if nothing to recover.
+    """
+    from orchestrator.state.repositories import sessions as repo
+
+    # Already registered — nothing to do
+    if session_id in _active_clis:
+        return _active_clis[session_id]
+
+    session = repo.get_session(db_conn, session_id)
+    if session is None:
+        return None
+
+    # --- Local (tmux) recovery ---
+    if session.host == "localhost":
+        icli_window = f"{session.name}-icli"
+        if not tmux.window_exists(tmux_session, icli_window):
+            return None
+        cli = InteractiveCLI(
+            session_id=session_id,
+            window_name=icli_window,
+            status="active",
+            created_at=datetime.now(UTC).isoformat(),
+        )
+        _active_clis[session_id] = cli
+        logger.info("Recovered local interactive CLI for session %s", session_id)
+        return cli
+
+    # --- Remote (RWS PTY) recovery ---
+    try:
+        from orchestrator.terminal.remote_worker_server import get_remote_worker_server
+
+        rws = get_remote_worker_server(session.host)
+        ptys = rws.list_ptys()
+    except Exception:
+        logger.debug(
+            "Cannot reach RWS daemon on %s for session %s recovery",
+            session.host,
+            session_id,
+            exc_info=True,
+        )
+        return None
+
+    for pty in ptys:
+        if pty.get("session_id") == session_id and pty.get("alive"):
+            cli = InteractiveCLI(
+                session_id=session_id,
+                window_name=f"rws-{pty['pty_id']}",
+                status="active",
+                created_at=pty.get("created_at", datetime.now(UTC).isoformat()),
+                remote_pty_id=pty["pty_id"],
+                rws_host=session.host,
+            )
+            _active_clis[session_id] = cli
+            logger.info(
+                "Recovered remote interactive CLI for session %s (pty_id=%s, host=%s)",
+                session_id,
+                pty["pty_id"],
+                session.host,
+            )
+            return cli
+
+    return None
+
+
 def capture_interactive_cli(
     session_id: str, tmux_session: str = "orchestrator", lines: int = 30
 ) -> str | None:

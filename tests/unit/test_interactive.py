@@ -12,6 +12,7 @@ from orchestrator.terminal.interactive import (
     close_interactive_cli,
     get_active_cli,
     open_interactive_cli,
+    recover_cli,
     restore_icli_windows,
     send_to_interactive_cli,
 )
@@ -408,3 +409,133 @@ class TestRestoreRemoteICLIs:
         mock_get_rws.assert_called_once_with("remote-host")
         assert get_active_cli("sess-1") is not None
         assert get_active_cli("sess-2") is not None
+
+
+class TestRecoverCLI:
+    """Tests for recover_cli (single-session inline recovery)."""
+
+    def test_already_registered(self):
+        """If session is already in the registry, return it immediately."""
+        from unittest.mock import MagicMock
+
+        existing = MagicMock(session_id="sess-1")
+        _active_clis["sess-1"] = existing
+        mock_conn = MagicMock()
+
+        result = recover_cli("sess-1", mock_conn)
+
+        assert result is existing
+        # Should not touch the DB at all
+        mock_conn.execute.assert_not_called()
+
+    def test_session_not_found(self):
+        """If session doesn't exist in DB, return None."""
+        from unittest.mock import MagicMock
+
+        mock_conn = MagicMock()
+
+        with patch(
+            "orchestrator.state.repositories.sessions.get_session",
+            return_value=None,
+        ):
+            result = recover_cli("sess-missing", mock_conn)
+
+        assert result is None
+
+    @patch("orchestrator.terminal.interactive.tmux.window_exists", return_value=True)
+    def test_local_window_exists(self, mock_exists):
+        """Local session with surviving tmux window → recovers and registers."""
+        from unittest.mock import MagicMock
+
+        mock_conn = MagicMock()
+        mock_session = MagicMock(id="sess-1", host="localhost")
+        mock_session.name = "worker1"
+
+        with patch(
+            "orchestrator.state.repositories.sessions.get_session",
+            return_value=mock_session,
+        ):
+            result = recover_cli("sess-1", mock_conn)
+
+        assert result is not None
+        assert result.session_id == "sess-1"
+        assert result.window_name == "worker1-icli"
+        assert result.status == "active"
+        assert result.remote_pty_id is None
+        assert get_active_cli("sess-1") is result
+        mock_exists.assert_called_once_with("orchestrator", "worker1-icli")
+
+    @patch("orchestrator.terminal.interactive.tmux.window_exists", return_value=False)
+    def test_local_window_gone(self, mock_exists):
+        """Local session with dead tmux window → returns None."""
+        from unittest.mock import MagicMock
+
+        mock_conn = MagicMock()
+        mock_session = MagicMock(id="sess-1", host="localhost")
+        mock_session.name = "worker1"
+
+        with patch(
+            "orchestrator.state.repositories.sessions.get_session",
+            return_value=mock_session,
+        ):
+            result = recover_cli("sess-1", mock_conn)
+
+        assert result is None
+        assert get_active_cli("sess-1") is None
+
+    @patch("orchestrator.terminal.remote_worker_server.get_remote_worker_server")
+    def test_remote_pty_alive(self, mock_get_rws):
+        """Remote session with alive PTY on daemon → recovers and registers."""
+        from unittest.mock import MagicMock
+
+        mock_rws = MagicMock()
+        mock_rws.list_ptys.return_value = [
+            {
+                "pty_id": "pty-abc",
+                "alive": True,
+                "session_id": "sess-1",
+                "created_at": "2026-01-01T00:00:00",
+            },
+            {
+                "pty_id": "pty-other",
+                "alive": True,
+                "session_id": "sess-other",
+                "created_at": "2026-01-01T00:00:00",
+            },
+        ]
+        mock_get_rws.return_value = mock_rws
+        mock_conn = MagicMock()
+        mock_session = MagicMock(id="sess-1", host="remote-host")
+        mock_session.name = "worker1"
+
+        with patch(
+            "orchestrator.state.repositories.sessions.get_session",
+            return_value=mock_session,
+        ):
+            result = recover_cli("sess-1", mock_conn)
+
+        assert result is not None
+        assert result.session_id == "sess-1"
+        assert result.remote_pty_id == "pty-abc"
+        assert result.rws_host == "remote-host"
+        assert result.window_name == "rws-pty-abc"
+        assert get_active_cli("sess-1") is result
+
+    @patch("orchestrator.terminal.remote_worker_server.get_remote_worker_server")
+    def test_remote_daemon_unavailable(self, mock_get_rws):
+        """Remote session but daemon unreachable → returns None."""
+        from unittest.mock import MagicMock
+
+        mock_get_rws.side_effect = RuntimeError("connection refused")
+        mock_conn = MagicMock()
+        mock_session = MagicMock(id="sess-1", host="remote-host")
+        mock_session.name = "worker1"
+
+        with patch(
+            "orchestrator.state.repositories.sessions.get_session",
+            return_value=mock_session,
+        ):
+            result = recover_cli("sess-1", mock_conn)
+
+        assert result is None
+        assert get_active_cli("sess-1") is None
