@@ -189,7 +189,7 @@ def capture_output(session_name: str, window_name: str, lines: int = 50) -> str:
 def send_keys(session_name: str, window_name: str, text: str, enter: bool = True) -> bool:
     """Send keystrokes to a tmux window."""
     target = f"{session_name}:{window_name}"
-    args = ["send-keys", "-t", target, text]
+    args = ["send-keys", "-t", target, "--", text]
     if enter:
         args.append("Enter")
     result = _run_tmux(*args, check=False)
@@ -203,7 +203,7 @@ def send_keys(session_name: str, window_name: str, text: str, enter: bool = True
 def send_keys_literal(session_name: str, window_name: str, text: str) -> bool:
     """Send literal keystrokes to a tmux window (no special key handling)."""
     target = f"{session_name}:{window_name}"
-    result = _run_tmux("send-keys", "-l", "-t", target, text, check=False)
+    result = _run_tmux("send-keys", "-l", "-t", target, "--", text, check=False)
     if result.returncode == 0:
         return True
     logger.warning("Failed to send literal keys to %s: %s", target, result.stderr)

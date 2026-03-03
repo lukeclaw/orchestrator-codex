@@ -58,6 +58,30 @@ class TestTmuxManager:
         assert tmux.kill_session(tmux_session_name) is True
         assert tmux.session_exists(tmux_session_name) is False
 
+    def test_send_keys_dash_prefix(self, tmux_session_name):
+        """Text starting with '-' must not be misinterpreted as tmux flags."""
+        tmux.create_session(tmux_session_name)
+        tmux.create_window(tmux_session_name, "dash-test")
+
+        # This text starts with '-' which previously caused tmux to parse it
+        # as option flags (missing '--' end-of-options separator).
+        assert tmux.send_keys(tmux_session_name, "dash-test", 'echo "-logging-level debug"') is True
+
+        time.sleep(0.5)
+        output = tmux.capture_output(tmux_session_name, "dash-test", lines=10)
+        assert "-logging-level debug" in output
+
+    def test_send_keys_literal_dash_prefix(self, tmux_session_name):
+        """send_keys_literal must handle text starting with '-'."""
+        tmux.create_session(tmux_session_name)
+        tmux.create_window(tmux_session_name, "dash-lit")
+
+        assert tmux.send_keys_literal(tmux_session_name, "dash-lit", "-logging-level debug") is True
+
+        time.sleep(0.5)
+        output = tmux.capture_output(tmux_session_name, "dash-lit", lines=10)
+        assert "-logging-level" in output
+
     def test_capture_nonexistent_window(self, tmux_session_name):
         output = tmux.capture_output(tmux_session_name, "nonexistent", lines=10)
         assert output == ""
