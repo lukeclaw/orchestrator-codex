@@ -348,11 +348,10 @@ class TestSetupRemoteWorkerRetry:
             ),
             patch("orchestrator.terminal.session._kill_orphaned_screen"),
             patch("orchestrator.terminal.session._copy_dir_to_remote_ssh", return_value=True),
-            patch("orchestrator.terminal.session.deploy_worker_scripts", return_value="/tmp/bin"),
-            patch("orchestrator.terminal.session.generate_worker_hooks"),
-            patch("orchestrator.terminal.session.get_worker_prompt", return_value=None),
-            patch("orchestrator.terminal.session.format_custom_skills_for_prompt", return_value=""),
-            patch("orchestrator.terminal.session.get_worker_skills_dir", return_value=None),
+            patch(
+                "orchestrator.agents.deploy.deploy_worker_tmp_contents",
+                return_value=["bin/lib.sh"],
+            ),
             patch("orchestrator.terminal.session.get_path_export_command", return_value=""),
             patch("orchestrator.terminal.session.time"),
         ):

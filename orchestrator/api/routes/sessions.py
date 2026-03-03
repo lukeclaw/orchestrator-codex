@@ -958,13 +958,30 @@ def health_check_all_sessions(request: Request, db=Depends(get_db)):
     db_path = getattr(request.app.state, "db_path", None)
     tunnel_manager = getattr(request.app.state, "tunnel_manager", None)
 
-    return check_all_workers_health(
+    result = check_all_workers_health(
         db,
         sessions,
         db_path=db_path,
         api_port=api_port,
         tunnel_manager=tunnel_manager,
     )
+
+    # --- Brain tmp dir health check ---
+    try:
+        from orchestrator.session.health import ensure_brain_tmp_health
+
+        brain_session = repo.get_session_by_name(db, "brain")
+        if brain_session and brain_session.status not in ("disconnected",):
+            brain_dir = "/tmp/orchestrator/brain"
+            api_base = f"http://127.0.0.1:{api_port}"
+            brain_health = ensure_brain_tmp_health(brain_dir, api_base=api_base, conn=db)
+            result["brain_tmp_health"] = brain_health
+            if brain_health.get("regenerated"):
+                logger.warning("Health check: brain tmp dir regenerated")
+    except Exception:
+        logger.debug("Health check: brain tmp check failed", exc_info=True)
+
+    return result
 
 
 # =============================================================================

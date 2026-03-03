@@ -605,72 +605,21 @@ def _ensure_local_configs_exist(
 ):
     """Regenerate local configs from templates.
 
-    Always regenerates to ensure configs match current templates, even if files exist.
-    This handles both missing files (orchestrator restart) and stale files (template updates).
+    Delegates to the SOT function ``deploy_worker_tmp_contents`` which handles
+    hooks, settings, bin scripts, skills, and prompt.md in a single call.
     """
-    import shutil
+    from orchestrator.agents.deploy import deploy_worker_tmp_contents
 
-    from orchestrator.agents.deploy import (
-        deploy_custom_skills,
-        deploy_worker_scripts,
-        generate_worker_hooks,
-        get_worker_skills_dir,
-    )
-
-    configs_dir = os.path.join(tmp_dir, "configs")
-    os.makedirs(configs_dir, exist_ok=True)
-
-    # Always regenerate configs from templates
-    logger.info("Regenerating local configs at %s from templates", configs_dir)
-    generate_worker_hooks(configs_dir, session_id, api_base)
-
-    # Always regenerate bin scripts from templates (preserve CDP port from existing lib.sh)
-    logger.info("Regenerating local bin scripts at %s", tmp_dir)
     cdp_port = _read_cdp_port_from_lib(tmp_dir)
-    deploy_worker_scripts(tmp_dir, session_id, api_base, cdp_port=cdp_port, browser_headless=False)
-
-    # Always regenerate skills to .claude/commands/ (skip disabled built-ins)
-    disabled_builtin_names: set[str] = set()
-    if conn is not None:
-        try:
-            rows = conn.execute(
-                "SELECT name FROM skill_overrides WHERE enabled = 0 AND target = 'worker'",
-            ).fetchall()
-            disabled_builtin_names = {r["name"] for r in rows}
-        except Exception:
-            pass  # Table may not exist yet
-
-    skills_src = get_worker_skills_dir()
-    local_skills_dir = os.path.join(tmp_dir, ".claude", "commands")
-    # Clear stale skill files before repopulating
-    if os.path.isdir(local_skills_dir):
-        for f in os.listdir(local_skills_dir):
-            if f.endswith(".md"):
-                os.remove(os.path.join(local_skills_dir, f))
-    if skills_src and os.path.isdir(skills_src):
-        os.makedirs(local_skills_dir, exist_ok=True)
-        for skill_file in os.listdir(skills_src):
-            if skill_file.endswith(".md"):
-                skill_name = os.path.splitext(skill_file)[0]
-                if skill_name in disabled_builtin_names:
-                    continue
-                shutil.copy2(
-                    os.path.join(skills_src, skill_file),
-                    os.path.join(local_skills_dir, skill_file),
-                )
-        logger.info(
-            "Regenerated %d built-in skills at %s",
-            len(os.listdir(local_skills_dir)),
-            local_skills_dir,
-        )
-
-    # Deploy custom skills from DB
-    if conn is not None:
-        custom_skills = _get_custom_skills_from_conn(conn, "worker")
-        if custom_skills:
-            os.makedirs(local_skills_dir, exist_ok=True)
-            deploy_custom_skills(local_skills_dir, custom_skills)
-            logger.info("Regenerated %d custom skills at %s", len(custom_skills), local_skills_dir)
+    deploy_worker_tmp_contents(
+        tmp_dir,
+        session_id,
+        api_base=api_base,
+        cdp_port=cdp_port,
+        browser_headless=False,
+        conn=conn,
+    )
+    logger.info("Regenerated local configs at %s via SOT", tmp_dir)
 
 
 def _copy_configs_to_remote(host: str, tmp_dir: str, remote_tmp_dir: str, session_name: str):
@@ -1186,11 +1135,16 @@ def reconnect_local_worker(
     tmux_win: str,
     api_port: int,
     tmp_dir: str,
+    conn=None,
 ) -> bool:
     """Reconnect a local worker with TUI guard.
 
     Local workers have no SSH/screen/tunnel.  The main concern is avoiding
     sending commands into a running Claude TUI.
+
+    Args:
+        conn: Optional DB connection for reading skills during config regeneration.
+            When provided, custom skills and disabled overrides are read from DB.
 
     Returns:
         True if Claude was successfully (re)started, False otherwise.
@@ -1230,7 +1184,7 @@ def reconnect_local_worker(
 
         # Now at shell prompt — safe to send commands via safe_send_keys
         api_base = f"http://127.0.0.1:{api_port}"
-        _ensure_local_configs_exist(tmp_dir, session.id, api_base)
+        _ensure_local_configs_exist(tmp_dir, session.id, api_base, conn=conn)
 
         # Ensure Node 24 is the volta default (needed for Playwright plugin's npx)
         safe_send_keys(tmux_sess, tmux_win, "volta install node@24", enter=True)
@@ -1287,12 +1241,9 @@ def reconnect_local_worker(
             f"--settings {shlex.quote(settings_file)}",
         ]
 
-        # Write prompt to file and load via $(cat) to avoid pasting large content through tmux
-        prompt = get_worker_prompt(session.id)
+        # Read prompt from SOT-deployed file (includes custom skills)
         prompt_file = os.path.join(tmp_dir, "prompt.md")
-        if prompt:
-            with open(prompt_file, "w") as f:
-                f.write(prompt)
+        if os.path.exists(prompt_file):
             claude_args.append(f'--append-system-prompt "$(cat {shlex.quote(prompt_file)})"')
 
         claude_cmd = f"claude {' '.join(claude_args)}"
@@ -1326,7 +1277,7 @@ def reconnect_local_worker(
                 "--dangerously-skip-permissions",
                 f"--settings {shlex.quote(settings_file)}",
             ]
-            if prompt:
+            if os.path.exists(prompt_file):
                 claude_args_retry.append(
                     f'--append-system-prompt "$(cat {shlex.quote(prompt_file)})"'
                 )
@@ -1446,7 +1397,9 @@ def trigger_reconnect(
     else:
         # Local worker — reconnect synchronously
         try:
-            success = reconnect_local_worker(session, tmux_sess, tmux_win, api_port, tmp_dir)
+            success = reconnect_local_worker(
+                session, tmux_sess, tmux_win, api_port, tmp_dir, conn=db
+            )
             if success:
                 repo.update_session(db, session.id, status="waiting")
             else:

@@ -11,13 +11,7 @@ from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-from orchestrator.agents import deploy_brain_scripts, generate_brain_hooks, get_path_export_command
-from orchestrator.agents.deploy import (
-    deploy_custom_skills,
-    format_custom_skills_for_prompt,
-    get_brain_prompt,
-    get_brain_skills_dir,
-)
+from orchestrator.agents import get_path_export_command
 from orchestrator.api.deps import get_db
 from orchestrator.state.repositories import sessions as sessions_repo
 from orchestrator.terminal import manager as tmux
@@ -99,56 +93,17 @@ def start_brain(db=Depends(get_db)):
 
     # Brain runs in /tmp/orchestrator/brain, decoupled from the git repo
     brain_dir = "/tmp/orchestrator/brain"
-    os.makedirs(brain_dir, exist_ok=True)
 
-    # Fetch custom brain skills from DB (enabled only)
-    from orchestrator.state.repositories import skills as skills_repo
+    # Deploy all brain tmp dir contents via SOT function
+    from orchestrator.agents.deploy import deploy_brain_tmp_contents
 
-    custom_skills = skills_repo.list_skills(db, target="brain", enabled_only=True)
-    custom_skills_dicts = [
-        {"name": s.name, "description": s.description, "content": s.content} for s in custom_skills
-    ]
-    custom_skills_section = format_custom_skills_for_prompt(custom_skills_dicts)
+    deploy_brain_tmp_contents(brain_dir, conn=db)
+    logger.info("Deployed brain tmp contents via SOT")
 
-    # Copy brain prompt as CLAUDE.md into the working directory
-    brain_prompt = get_brain_prompt(custom_skills_section=custom_skills_section)
-    if brain_prompt:
-        with open(os.path.join(brain_dir, "CLAUDE.md"), "w") as f:
-            f.write(brain_prompt)
-
-    # Deploy pre-built skills to .claude/commands/ (skip disabled)
-    disabled_builtins = skills_repo.list_disabled_builtin_skills(db, "brain")
-    skills_src = get_brain_skills_dir()
-    skills_dest = os.path.join(brain_dir, ".claude", "commands")
-    # Clear stale skill files before repopulating
-    if os.path.isdir(skills_dest):
-        for f in os.listdir(skills_dest):
-            if f.endswith(".md"):
-                os.remove(os.path.join(skills_dest, f))
-    if skills_src and os.path.isdir(skills_src):
-        os.makedirs(skills_dest, exist_ok=True)
-        for skill_file in os.listdir(skills_src):
-            if skill_file.endswith(".md"):
-                skill_name = os.path.splitext(skill_file)[0]
-                if (skill_name, "brain") in disabled_builtins:
-                    continue
-                shutil.copy2(
-                    os.path.join(skills_src, skill_file),
-                    os.path.join(skills_dest, skill_file),
-                )
-        logger.info("Deployed %d built-in skills to %s", len(os.listdir(skills_dest)), skills_dest)
-
-    # Deploy custom brain skills from DB
-    if custom_skills_dicts:
-        deploy_custom_skills(skills_dest, custom_skills_dicts)
-        logger.info("Deployed %d custom brain skills to %s", len(custom_skills_dicts), skills_dest)
-
-    # Deploy brain CLI scripts
-    bin_dir = deploy_brain_scripts(brain_dir)
+    # Read back paths needed for the launch command
+    bin_dir = os.path.join(brain_dir, "bin")
     path_export = get_path_export_command(bin_dir)
-
-    # Generate brain hooks (injects dashboard focus context into prompts)
-    settings_path = generate_brain_hooks(brain_dir)
+    settings_path = os.path.join(brain_dir, ".claude", "settings.json")
 
     try:
         # Create tmux window for the brain

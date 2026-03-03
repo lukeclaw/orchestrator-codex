@@ -622,6 +622,116 @@ def check_claude_running_local(
 
 
 # =============================================================================
+# Tmp Directory Health — manifest-based verification and recovery
+# =============================================================================
+
+
+def ensure_tmp_dir_health(
+    tmp_dir: str,
+    session_id: str,
+    api_base: str = "http://127.0.0.1:8093",
+    cdp_port: int = 9222,
+    browser_headless: bool = False,
+    conn=None,
+) -> dict:
+    """Check if the local tmp dir has all required files; regenerate if any missing.
+
+    Verification strategy (ordered by cost):
+    1. Manifest missing → full regeneration (covers complete /tmp wipe)
+    2. Any file in manifest missing → full regeneration (covers partial wipe)
+    3. All files present → no-op
+
+    Args:
+        tmp_dir: Worker's tmp directory
+        session_id: Worker's session ID
+        api_base: API base URL
+        cdp_port: CDP port for browser debugging
+        browser_headless: Whether browser runs headless
+        conn: Optional DB connection for reading skills when regenerating
+
+    Returns:
+        {"healthy": bool, "regenerated": bool, "missing": list[str]}
+    """
+    from orchestrator.agents.deploy import _read_manifest, deploy_worker_tmp_contents
+
+    manifest = _read_manifest(tmp_dir)
+
+    if manifest is None:
+        # Manifest missing — whole dir was likely wiped
+        logger.warning("Tmp dir manifest missing: %s — regenerating", tmp_dir)
+        deploy_worker_tmp_contents(
+            tmp_dir,
+            session_id,
+            api_base=api_base,
+            cdp_port=cdp_port,
+            browser_headless=browser_headless,
+            conn=conn,
+        )
+        return {"healthy": False, "regenerated": True, "missing": ["<manifest>"]}
+
+    # Check every file listed in the manifest
+    missing = [p for p in manifest if not os.path.exists(os.path.join(tmp_dir, p))]
+    if not missing:
+        return {"healthy": True, "regenerated": False, "missing": []}
+
+    logger.warning(
+        "Tmp dir %s has %d missing file(s): %s — regenerating",
+        tmp_dir,
+        len(missing),
+        ", ".join(missing[:5]),
+    )
+    deploy_worker_tmp_contents(
+        tmp_dir,
+        session_id,
+        api_base=api_base,
+        cdp_port=cdp_port,
+        browser_headless=browser_headless,
+        conn=conn,
+    )
+    return {"healthy": False, "regenerated": True, "missing": missing}
+
+
+def ensure_brain_tmp_health(
+    brain_dir: str,
+    api_base: str = "http://127.0.0.1:8093",
+    conn=None,
+) -> dict:
+    """Check if the brain tmp dir has all required files; regenerate if any missing.
+
+    Same manifest-based verification as workers.
+
+    Args:
+        brain_dir: Brain's working directory (e.g., /tmp/orchestrator/brain)
+        api_base: API base URL
+        conn: Optional DB connection for reading skills when regenerating
+
+    Returns:
+        {"healthy": bool, "regenerated": bool, "missing": list[str]}
+    """
+    from orchestrator.agents.deploy import _read_manifest, deploy_brain_tmp_contents
+
+    manifest = _read_manifest(brain_dir)
+
+    if manifest is None:
+        logger.warning("Brain tmp dir manifest missing: %s — regenerating", brain_dir)
+        deploy_brain_tmp_contents(brain_dir, api_base=api_base, conn=conn)
+        return {"healthy": False, "regenerated": True, "missing": ["<manifest>"]}
+
+    missing = [p for p in manifest if not os.path.exists(os.path.join(brain_dir, p))]
+    if not missing:
+        return {"healthy": True, "regenerated": False, "missing": []}
+
+    logger.warning(
+        "Brain tmp dir %s has %d missing file(s): %s — regenerating",
+        brain_dir,
+        len(missing),
+        ", ".join(missing[:5]),
+    )
+    deploy_brain_tmp_contents(brain_dir, api_base=api_base, conn=conn)
+    return {"healthy": False, "regenerated": True, "missing": missing}
+
+
+# =============================================================================
 # High-Level Health Check Orchestration
 # =============================================================================
 
@@ -727,6 +837,77 @@ def check_and_update_worker_health(db, session, tunnel_manager=None) -> dict:
                         "Health check: %s detected missing work_dir: %s", session.name, detected
                     )
 
+            # --- Ensure local tmp dir is healthy (manifest-based) ---
+            tmp_dir = f"/tmp/orchestrator/workers/{session.name}"
+            api_base = f"http://127.0.0.1:{DEFAULT_API_PORT}"
+            try:
+                tmp_result = ensure_tmp_dir_health(
+                    tmp_dir,
+                    session.id,
+                    api_base=api_base,
+                    cdp_port=9222,
+                    browser_headless=True,
+                    conn=db,
+                )
+                if tmp_result.get("regenerated"):
+                    logger.warning("Health check: %s regenerated local tmp dir", session.name)
+                    # Re-push to remote after local regeneration
+                    from orchestrator.session.reconnect import _copy_configs_to_remote
+
+                    remote_tmp_dir = f"/tmp/orchestrator/workers/{session.name}"
+                    try:
+                        _copy_configs_to_remote(session.host, tmp_dir, remote_tmp_dir, session.name)
+                    except Exception:
+                        logger.warning(
+                            "Health check: %s failed to re-push configs to remote",
+                            session.name,
+                            exc_info=True,
+                        )
+            except Exception:
+                logger.debug(
+                    "Health check: %s tmp dir check failed",
+                    session.name,
+                    exc_info=True,
+                )
+
+            # --- Check remote-side tmp via RWS check_path ---
+            try:
+                from orchestrator.terminal.remote_worker_server import _server_pool
+
+                rws = _server_pool.get(session.host)
+                if rws is not None:
+                    remote_sentinel = (
+                        f"/tmp/orchestrator/workers/{session.name}/configs/settings.json"
+                    )
+                    resp = rws.execute(
+                        {"action": "check_path", "paths": [remote_sentinel]},
+                        timeout=5,
+                    )
+                    if resp.get("missing_count", 0) > 0:
+                        logger.warning(
+                            "Health check: %s remote tmp missing, re-pushing",
+                            session.name,
+                        )
+                        # Ensure local side is fresh, then push
+                        ensure_tmp_dir_health(
+                            tmp_dir,
+                            session.id,
+                            api_base=api_base,
+                            cdp_port=9222,
+                            browser_headless=True,
+                            conn=db,
+                        )
+                        from orchestrator.session.reconnect import _copy_configs_to_remote
+
+                        remote_tmp_dir = f"/tmp/orchestrator/workers/{session.name}"
+                        _copy_configs_to_remote(session.host, tmp_dir, remote_tmp_dir, session.name)
+            except Exception:
+                logger.debug(
+                    "Health check: %s remote tmp check failed",
+                    session.name,
+                    exc_info=True,
+                )
+
             current_status = session.status
             if current_status in ("screen_detached", "error", "disconnected"):
                 repo.update_session(db, session.id, status="waiting")
@@ -807,6 +988,26 @@ def check_and_update_worker_health(db, session, tunnel_manager=None) -> dict:
                 "reason": reason,
                 "needs_reconnect": True,
             }
+
+        # --- Local alive: ensure tmp dir is healthy ---
+        tmp_dir = f"/tmp/orchestrator/workers/{session.name}"
+        try:
+            tmp_result = ensure_tmp_dir_health(
+                tmp_dir,
+                session.id,
+                api_base=f"http://127.0.0.1:{DEFAULT_API_PORT}",
+                browser_headless=False,
+                conn=db,
+            )
+            if tmp_result.get("regenerated"):
+                logger.warning("Health check: %s regenerated local tmp dir", session.name)
+        except Exception:
+            logger.debug(
+                "Health check: %s tmp dir check failed",
+                session.name,
+                exc_info=True,
+            )
+
         if session.status in ("disconnected", "error"):
             repo.update_session(db, session.id, status="waiting")
             logger.info(

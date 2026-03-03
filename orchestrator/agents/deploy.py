@@ -2,13 +2,21 @@
 
 This module handles copying static scripts from agents/ to worker/brain tmp directories
 and generating dynamic configuration (hooks, settings) with session-specific values.
+
+It also provides Single Source of Truth (SOT) functions for deploying complete
+worker and brain tmp directories, and manifest-based health verification.
 """
 
+import json
+import logging
 import os
 import shutil
+import sqlite3
 import stat
 
 from orchestrator import paths
+
+logger = logging.getLogger(__name__)
 
 # Path to the agents directory (resolved via paths module for dev/packaged compat)
 _AGENTS_DIR = str(paths.agents_dir())
@@ -457,3 +465,318 @@ def generate_brain_hooks(
         f.write(settings_content)
 
     return settings_path
+
+
+# =============================================================================
+# Manifest I/O — used by SOT deploy functions and health checks
+# =============================================================================
+
+MANIFEST_FILENAME = ".manifest.json"
+
+
+def _write_manifest(base_dir: str, paths_list: list[str]) -> None:
+    """Write a manifest file listing all deployed paths.
+
+    The manifest is a JSON file with a version number and sorted list of
+    relative paths. Health checks read this to verify completeness.
+    """
+    manifest_path = os.path.join(base_dir, MANIFEST_FILENAME)
+    manifest = {
+        "version": 1,
+        "paths": sorted(set(paths_list)),
+    }
+    with open(manifest_path, "w") as f:
+        json.dump(manifest, f, indent=2)
+        f.write("\n")
+
+
+def _read_manifest(base_dir: str) -> list[str] | None:
+    """Read the manifest file and return list of relative paths.
+
+    Returns None if the manifest is missing or corrupt.
+    """
+    manifest_path = os.path.join(base_dir, MANIFEST_FILENAME)
+    try:
+        with open(manifest_path) as f:
+            data = json.load(f)
+        if isinstance(data, dict) and "paths" in data:
+            return data["paths"]
+        return None
+    except (FileNotFoundError, json.JSONDecodeError, OSError):
+        return None
+
+
+# =============================================================================
+# DB Helpers — shared by SOT functions and health checks
+# =============================================================================
+
+
+def _get_custom_skills_from_db(conn: sqlite3.Connection, target: str) -> list[dict]:
+    """Read enabled custom skills from a DB connection.
+
+    Args:
+        conn: SQLite connection
+        target: "worker" or "brain"
+
+    Returns:
+        List of dicts with 'name', 'description', 'content' keys.
+    """
+    try:
+        rows = conn.execute(
+            "SELECT name, description, content FROM skills WHERE target = ? AND enabled = 1",
+            (target,),
+        ).fetchall()
+        return [dict(r) for r in rows]
+    except Exception:
+        # Table may not exist if migration hasn't run yet
+        return []
+
+
+def _get_disabled_builtins_from_db(conn: sqlite3.Connection, target: str = "worker") -> set[str]:
+    """Read disabled built-in skill names from a DB connection.
+
+    Args:
+        conn: SQLite connection
+        target: "worker" or "brain"
+
+    Returns:
+        Set of skill names that are disabled.
+    """
+    try:
+        rows = conn.execute(
+            "SELECT name FROM skill_overrides WHERE enabled = 0 AND target = ?",
+            (target,),
+        ).fetchall()
+        return {r["name"] for r in rows}
+    except Exception:
+        # Table may not exist yet
+        return set()
+
+
+def _deploy_builtin_skills(
+    skills_src: str | None, skills_dest: str, disabled_names: set[str] | None = None
+) -> list[str]:
+    """Copy built-in skill .md files, skipping disabled ones.
+
+    Clears existing .md files in skills_dest before copying to avoid stale files.
+
+    Args:
+        skills_src: Path to source skills directory (e.g., agents/worker/skills/).
+            If None or not a directory, no files are copied.
+        skills_dest: Destination directory for skill .md files.
+        disabled_names: Set of skill names to skip.
+
+    Returns:
+        List of filenames copied (e.g., ["deploy.md", "check-worker.md"]).
+    """
+    disabled = disabled_names or set()
+    copied = []
+
+    # Clear stale skill files before repopulating
+    if os.path.isdir(skills_dest):
+        for f in os.listdir(skills_dest):
+            if f.endswith(".md"):
+                os.remove(os.path.join(skills_dest, f))
+
+    if not skills_src or not os.path.isdir(skills_src):
+        return copied
+
+    os.makedirs(skills_dest, exist_ok=True)
+    for skill_file in os.listdir(skills_src):
+        if skill_file.endswith(".md"):
+            skill_name = os.path.splitext(skill_file)[0]
+            if skill_name in disabled:
+                continue
+            shutil.copy2(
+                os.path.join(skills_src, skill_file),
+                os.path.join(skills_dest, skill_file),
+            )
+            copied.append(skill_file)
+
+    return copied
+
+
+# =============================================================================
+# SOT Deploy Functions — Single Source of Truth for tmp dir contents
+# =============================================================================
+
+
+def deploy_worker_tmp_contents(
+    tmp_dir: str,
+    session_id: str,
+    api_base: str = "http://127.0.0.1:8093",
+    cdp_port: int = 9222,
+    browser_headless: bool = False,
+    conn: sqlite3.Connection | None = None,
+    custom_skills: list[dict] | None = None,
+    disabled_builtin_names: set[str] | None = None,
+) -> list[str]:
+    """Deploy all worker files to tmp_dir. SINGLE SOURCE OF TRUTH.
+
+    THIS IS THE SINGLE SOURCE OF TRUTH for what the worker tmp directory
+    should contain. All callers that need to create or regenerate the tmp
+    dir must use this function.
+
+    Called by:
+    - Initial worker launch (session.py — both local and remote)
+    - Reconnect regeneration (reconnect.py — replaces _ensure_local_configs_exist)
+    - Health-check recovery (health.py — via ensure_tmp_dir_health)
+
+    When ``conn`` is provided, skills and disabled overrides are read from
+    the DB (takes precedence over explicit ``custom_skills``/``disabled_builtin_names``).
+
+    Args:
+        tmp_dir: Worker's tmp directory (e.g., /tmp/orchestrator/workers/worker1)
+        session_id: Worker's session ID
+        api_base: API base URL
+        cdp_port: CDP port for browser debugging
+        browser_headless: Whether browser runs headless
+        conn: Optional DB connection for reading skills/overrides
+        custom_skills: Explicit custom skills (used when conn is None)
+        disabled_builtin_names: Explicit disabled builtins (used when conn is None)
+
+    Returns:
+        List of relative paths (from tmp_dir) of all files created.
+        Also writes .manifest.json for health-check verification.
+    """
+    created: list[str] = []
+    os.makedirs(tmp_dir, exist_ok=True)
+
+    # 1. Hooks + settings.json
+    configs_dir = os.path.join(tmp_dir, "configs")
+    os.makedirs(configs_dir, exist_ok=True)
+    generate_worker_hooks(configs_dir, session_id, api_base)
+    created += [
+        "configs/settings.json",
+        "configs/hooks/update-status.sh",
+        "configs/hooks/check-command.sh",
+    ]
+
+    # 2. Bin scripts (CLI tools like orch-browser, orch-status)
+    deploy_worker_scripts(
+        tmp_dir, session_id, api_base, cdp_port=cdp_port, browser_headless=browser_headless
+    )
+    created.append("bin/lib.sh")
+    created += [f"bin/{name}" for name in WORKER_SCRIPT_NAMES]
+
+    # 3. Resolve skills parameters from DB or explicit args
+    if conn is not None:
+        resolved_disabled = _get_disabled_builtins_from_db(conn, "worker")
+        resolved_custom = _get_custom_skills_from_db(conn, "worker")
+    else:
+        resolved_disabled = disabled_builtin_names or set()
+        resolved_custom = custom_skills or []
+
+    # 4. Built-in skills → .claude/commands/
+    skills_src = get_worker_skills_dir()
+    local_skills_dir = os.path.join(tmp_dir, ".claude", "commands")
+    copied_builtins = _deploy_builtin_skills(skills_src, local_skills_dir, resolved_disabled)
+    created += [f".claude/commands/{f}" for f in copied_builtins]
+    logger.info(
+        "Deployed %d built-in skills to %s",
+        len(copied_builtins),
+        local_skills_dir,
+    )
+
+    # 5. Custom skills from DB → .claude/commands/
+    if resolved_custom:
+        deploy_custom_skills(local_skills_dir, resolved_custom)
+        created += [f".claude/commands/{s['name']}.md" for s in resolved_custom]
+        logger.info("Deployed %d custom skills to %s", len(resolved_custom), local_skills_dir)
+
+    # 6. prompt.md (worker system prompt)
+    custom_skills_section = format_custom_skills_for_prompt(resolved_custom)
+    prompt = get_worker_prompt(session_id, custom_skills_section=custom_skills_section)
+    if prompt:
+        with open(os.path.join(tmp_dir, "prompt.md"), "w") as f:
+            f.write(prompt)
+        created.append("prompt.md")
+
+    # Write manifest — the health check uses this to verify completeness
+    _write_manifest(tmp_dir, created)
+    logger.info("deploy_worker_tmp_contents: deployed %d files to %s", len(created), tmp_dir)
+
+    return created
+
+
+def deploy_brain_tmp_contents(
+    brain_dir: str,
+    api_base: str = "http://127.0.0.1:8093",
+    conn: sqlite3.Connection | None = None,
+    custom_skills: list[dict] | None = None,
+    disabled_builtin_names: set[str] | None = None,
+) -> list[str]:
+    """Deploy all brain files to brain_dir. SINGLE SOURCE OF TRUTH.
+
+    THIS IS THE SINGLE SOURCE OF TRUTH for what the brain tmp directory
+    should contain. All callers that need to create or regenerate the brain
+    dir must use this function.
+
+    Called by:
+    - Brain start (brain.py)
+    - Health-check recovery (brain.py — via _ensure_brain_tmp_health)
+
+    When ``conn`` is provided, skills and disabled overrides are read from
+    the DB (takes precedence over explicit params).
+
+    Args:
+        brain_dir: Brain's working directory (e.g., /tmp/orchestrator/brain)
+        api_base: API base URL
+        conn: Optional DB connection for reading skills/overrides
+        custom_skills: Explicit custom skills (used when conn is None)
+        disabled_builtin_names: Explicit disabled builtins (used when conn is None)
+
+    Returns:
+        List of relative paths (from brain_dir) of all files created.
+        Also writes .manifest.json for health-check verification.
+    """
+    created: list[str] = []
+    os.makedirs(brain_dir, exist_ok=True)
+
+    # 1. Resolve skills parameters from DB or explicit args
+    if conn is not None:
+        resolved_disabled = _get_disabled_builtins_from_db(conn, "brain")
+        resolved_custom = _get_custom_skills_from_db(conn, "brain")
+    else:
+        resolved_disabled = disabled_builtin_names or set()
+        resolved_custom = custom_skills or []
+
+    # 2. CLAUDE.md (brain prompt)
+    custom_skills_section = format_custom_skills_for_prompt(resolved_custom)
+    brain_prompt = get_brain_prompt(custom_skills_section=custom_skills_section)
+    if brain_prompt:
+        with open(os.path.join(brain_dir, "CLAUDE.md"), "w") as f:
+            f.write(brain_prompt)
+        created.append("CLAUDE.md")
+
+    # 3. Hooks + settings
+    settings_path = generate_brain_hooks(brain_dir, api_base)
+    created += [
+        "hooks/inject-focus.sh",
+        "hooks/check-command.sh",
+        ".claude/settings.json",
+    ]
+
+    # 4. Bin scripts
+    deploy_brain_scripts(brain_dir, api_base)
+    created.append("bin/lib.sh")
+    created += [f"bin/{name}" for name in BRAIN_SCRIPT_NAMES]
+
+    # 5. Built-in skills → .claude/commands/
+    skills_src = get_brain_skills_dir()
+    skills_dest = os.path.join(brain_dir, ".claude", "commands")
+    copied_builtins = _deploy_builtin_skills(skills_src, skills_dest, resolved_disabled)
+    created += [f".claude/commands/{f}" for f in copied_builtins]
+    logger.info("Deployed %d built-in brain skills to %s", len(copied_builtins), skills_dest)
+
+    # 6. Custom skills from DB → .claude/commands/
+    if resolved_custom:
+        deploy_custom_skills(skills_dest, resolved_custom)
+        created += [f".claude/commands/{s['name']}.md" for s in resolved_custom]
+        logger.info("Deployed %d custom brain skills to %s", len(resolved_custom), skills_dest)
+
+    # Write manifest
+    _write_manifest(brain_dir, created)
+    logger.info("deploy_brain_tmp_contents: deployed %d files to %s", len(created), brain_dir)
+
+    return created

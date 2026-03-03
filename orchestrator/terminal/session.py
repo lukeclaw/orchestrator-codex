@@ -7,21 +7,15 @@ import logging
 import os
 import random
 import shlex
-import shutil
 import sqlite3
 import subprocess
 import time
 
 from orchestrator.agents import (
-    deploy_worker_scripts,
-    generate_worker_hooks,
     get_path_export_command,
-    get_worker_prompt,
 )
 from orchestrator.agents.deploy import (
     deploy_custom_skills,
-    format_custom_skills_for_prompt,
-    get_worker_skills_dir,
 )
 from orchestrator.state.models import Session
 from orchestrator.state.repositories import sessions as sessions_repo
@@ -580,64 +574,21 @@ def setup_remote_worker(
         time.sleep(1)  # Wait for screen to start
         logger.info("Entered screen session '%s' for worker %s", screen_name, name)
 
-        # 5. Deploy all files locally (scripts, configs, prompt)
-        os.makedirs(local_tmp_dir, exist_ok=True)
-        bin_dir = deploy_worker_scripts(
-            worker_dir=local_tmp_dir,
-            session_id=session_id,
+        # 5. Deploy all files locally via SOT function
+        from orchestrator.agents.deploy import deploy_worker_tmp_contents
+
+        deploy_worker_tmp_contents(
+            local_tmp_dir,
+            session_id,
             api_base=f"http://127.0.0.1:{api_port}",
             cdp_port=9222,
             browser_headless=True,  # Remote: headless (no display)
+            custom_skills=custom_skills,
+            disabled_builtin_names=disabled_builtin_names,
         )
-        logger.info("Deployed CLI scripts in %s", bin_dir)
-
-        # Generate hooks/settings in local tmp dir
-        local_configs_dir = os.path.join(local_tmp_dir, "configs")
-        os.makedirs(local_configs_dir, exist_ok=True)
-        generate_worker_hooks(
-            worker_dir=local_configs_dir,
-            session_id=session_id,
-            api_base=f"http://127.0.0.1:{api_port}",
-        )
-        logger.info("Generated hooks settings in %s", local_configs_dir)
-
-        # Write prompt.md to local tmp dir
-        custom_skills_section = format_custom_skills_for_prompt(custom_skills or [])
-        worker_prompt = get_worker_prompt(session_id, custom_skills_section=custom_skills_section)
+        logger.info("Deployed worker tmp contents for remote worker %s", name)
         remote_prompt_path = f"{remote_tmp_dir}/prompt.md"
-        if worker_prompt:
-            with open(os.path.join(local_tmp_dir, "prompt.md"), "w") as f:
-                f.write(worker_prompt)
-
-        # Copy worker skills to local tmp dir for transfer (inside .claude/commands/)
-        skills_src = get_worker_skills_dir()
-        local_skills_dir = os.path.join(local_tmp_dir, ".claude", "commands")
-        # Clear stale skill files before repopulating
-        if os.path.isdir(local_skills_dir):
-            for f in os.listdir(local_skills_dir):
-                if f.endswith(".md"):
-                    os.remove(os.path.join(local_skills_dir, f))
-        if skills_src and os.path.isdir(skills_src):
-            import shutil
-
-            os.makedirs(local_skills_dir, exist_ok=True)
-            for skill_file in os.listdir(skills_src):
-                if skill_file.endswith(".md"):
-                    skill_name = os.path.splitext(skill_file)[0]
-                    if disabled_builtin_names and skill_name in disabled_builtin_names:
-                        continue
-                    shutil.copy2(
-                        os.path.join(skills_src, skill_file),
-                        os.path.join(local_skills_dir, skill_file),
-                    )
-            logger.info(
-                "Prepared %d built-in skills for transfer", len(os.listdir(local_skills_dir))
-            )
-
-        # Deploy custom skills from DB
-        if custom_skills:
-            deploy_custom_skills(local_skills_dir, custom_skills)
-            logger.info("Prepared %d custom skills for transfer", len(custom_skills))
+        worker_prompt = os.path.exists(os.path.join(local_tmp_dir, "prompt.md"))
 
         # 6. Copy entire directory to remote via direct SSH (bypasses tmux/screen)
         if not _copy_dir_to_remote_ssh(local_tmp_dir, host, remote_tmp_dir):
@@ -677,7 +628,8 @@ def setup_remote_worker(
         # NOTE: --add-dir flag doesn't work reliably in recent Claude Code versions,
         # so we copy skills directly to the user's global ~/.claude/commands/ folder
         # which Claude always loads regardless of working directory.
-        if skills_src and os.path.isdir(skills_src):
+        remote_skills_dir = f"{remote_tmp_dir}/.claude/commands"
+        if os.path.isdir(os.path.join(local_tmp_dir, ".claude", "commands")):
             global_skills_dest = "~/.claude/commands"
             # Clear stale skills, then copy current set
             tmux.send_keys(
@@ -760,63 +712,37 @@ def setup_local_worker(
 
     Returns {"ok": True} on success, or {"ok": False, "error": "..."} on failure.
     """
+    from orchestrator.agents.deploy import (
+        _deploy_builtin_skills,
+        deploy_worker_tmp_contents,
+        get_worker_skills_dir,
+    )
+
     local_tmp_dir = tmp_dir or f"/tmp/orchestrator/workers/{name}"
 
     try:
-        os.makedirs(local_tmp_dir, exist_ok=True)
         api_base = f"http://127.0.0.1:{api_port}"
-
-        # 1. Deploy CLI scripts — all local workers share Chrome on port 9222
         cdp_port = 9222  # Shared Chrome instance — each worker gets its own tab
-        bin_dir = deploy_worker_scripts(
-            worker_dir=local_tmp_dir,
-            session_id=session_id,
+
+        # 1. Deploy all tmp dir contents via SOT function
+        deploy_worker_tmp_contents(
+            local_tmp_dir,
+            session_id,
             api_base=api_base,
             cdp_port=cdp_port,
             browser_headless=False,  # Local: headed for Touch ID / passkeys
+            custom_skills=custom_skills,
+            disabled_builtin_names=disabled_builtin_names,
         )
-        logger.info(
-            "Deployed CLI scripts for local worker %s in %s (cdp_port=%d)",
-            name,
-            bin_dir,
-            cdp_port,
-        )
+        logger.info("Deployed worker tmp contents for local worker %s", name)
 
-        # 2. Generate Claude Code hooks
-        configs_dir = os.path.join(local_tmp_dir, "configs")
-        os.makedirs(configs_dir, exist_ok=True)
-        generate_worker_hooks(
-            worker_dir=configs_dir,
-            session_id=session_id,
-            api_base=api_base,
-        )
-        logger.info("Generated hooks settings for local worker %s", name)
-
-        # 3. Deploy skills (built-in + custom)
+        # 2. Deploy skills to work_dir/.claude/commands/ (separate from tmp dir)
+        # Local workers need skills in the project directory for Claude to discover them.
         skills_src = get_worker_skills_dir()
         if skills_src and os.path.isdir(skills_src) and work_dir:
             skills_dest = os.path.join(work_dir, ".claude", "commands")
-            # Clear stale skill files before repopulating
-            if os.path.isdir(skills_dest):
-                for f in os.listdir(skills_dest):
-                    if f.endswith(".md"):
-                        os.remove(os.path.join(skills_dest, f))
-            os.makedirs(skills_dest, exist_ok=True)
-            for skill_file in os.listdir(skills_src):
-                if skill_file.endswith(".md"):
-                    skill_name = os.path.splitext(skill_file)[0]
-                    if disabled_builtin_names and skill_name in disabled_builtin_names:
-                        continue
-                    shutil.copy2(
-                        os.path.join(skills_src, skill_file),
-                        os.path.join(skills_dest, skill_file),
-                    )
-            logger.info(
-                "Deployed %d built-in skills to %s for local worker %s",
-                len([f for f in os.listdir(skills_dest) if f.endswith(".md")]),
-                skills_dest,
-                name,
-            )
+            _deploy_builtin_skills(skills_src, skills_dest, disabled_builtin_names)
+            logger.info("Deployed built-in skills to %s for local worker %s", skills_dest, name)
 
         if custom_skills and work_dir:
             skills_dest = os.path.join(work_dir, ".claude", "commands")
@@ -825,16 +751,9 @@ def setup_local_worker(
                 "Deployed %d custom worker skills for local worker %s", len(custom_skills), name
             )
 
-        # 4. Write worker prompt to file
-        custom_skills_section = format_custom_skills_for_prompt(custom_skills or [])
-        worker_prompt = get_worker_prompt(session_id, custom_skills_section=custom_skills_section)
+        # 3. Build and send claude command
         prompt_file = os.path.join(local_tmp_dir, "prompt.md")
-        if worker_prompt:
-            with open(prompt_file, "w") as f:
-                f.write(worker_prompt)
-            logger.info("Wrote worker prompt to %s", prompt_file)
 
-        # 5. Build and send claude command
         cmd_parts = []
         if work_dir:
             cmd_parts.append(f"cd {work_dir}")
@@ -862,7 +781,7 @@ def setup_local_worker(
             f"--settings {shlex.quote(settings_file)}",
             f"--session-id {session_id}",
         ]
-        if worker_prompt:
+        if os.path.exists(prompt_file):
             claude_args.append(f'--append-system-prompt "$(cat {shlex.quote(prompt_file)})"')
 
         cmd_parts.append(f"claude {' '.join(claude_args)}")

@@ -74,6 +74,16 @@ _REMOTE_WORKER_SERVER_SCRIPT = textwrap.dedent("""\
             "version": SCRIPT_VERSION,
         }
 
+    def handle_check_path(cmd):
+        # Check if paths exist on the remote host.
+        # NOT restricted to work_dir -- only returns booleans (no data leak).
+        # Used by health check to detect /tmp wipes on the remote side.
+        paths = cmd.get("paths", [])
+        if not paths:
+            return {"error": "paths is required and must be a non-empty list"}
+        missing = [p for p in paths if not os.path.exists(p)]
+        return {"missing": missing, "missing_count": len(missing)}
+
     def handle_list_dir(cmd):
         work_dir = cmd["work_dir"]
         rel_path = cmd["path"]
@@ -814,6 +824,7 @@ _REMOTE_WORKER_SERVER_SCRIPT = textwrap.dedent("""\
     COMMAND_HANDLERS = {
         "ping": handle_ping,
         "server_info": handle_server_info,
+        "check_path": handle_check_path,
         "list_dir": handle_list_dir,
         "read_file": handle_read_file,
         "read_file_raw": handle_read_file_raw,
