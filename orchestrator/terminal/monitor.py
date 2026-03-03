@@ -35,7 +35,10 @@ async def poll_session(
     (PR created, tests passed, etc.) but does NOT guess worker status.
     Worker status is managed by Claude Code hooks.
     """
-    output = tmux.capture_output(tmux_session, session_name, lines=50)
+    # Run the blocking tmux subprocess in a thread to avoid blocking the
+    # event loop (each capture-pane call takes ~10-30ms and serializes on
+    # the single-threaded tmux server).
+    output = await asyncio.to_thread(tmux.capture_output, tmux_session, session_name, lines=50)
 
     # Skip if output hasn't changed
     prev = _previous_output.get(session_name, "")
@@ -73,6 +76,15 @@ async def monitor_loop(
 
     while True:
         try:
+            # Skip polling entirely while user is actively typing in any
+            # terminal — avoids tmux subprocess contention that causes
+            # typing latency spikes.
+            from orchestrator.api.ws_terminal import is_any_session_active
+
+            if is_any_session_active():
+                await asyncio.sleep(active_interval)
+                continue
+
             sessions = sessions_repo.list_sessions(conn)
 
             for session in sessions:
