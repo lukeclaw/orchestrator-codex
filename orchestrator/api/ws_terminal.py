@@ -340,8 +340,6 @@ async def stream_pane(
             if stream_healthy and not sync_requested:
                 continue
 
-            loop_t0 = time.monotonic()
-
             # Immediate sync requested by snapshot recovery
             if sync_requested:
                 sync_requested = False
@@ -377,14 +375,6 @@ async def stream_pane(
             except Exception:
                 pass
 
-            loop_ms = (time.monotonic() - loop_t0) * 1000
-            if loop_ms > 100:
-                logger.warning(
-                    "drift[%s:%s] full loop took %.0fms",
-                    tmux_sess,
-                    tmux_win,
-                    loop_ms,
-                )
 
     # --- Start drift correction (streaming is deferred until after history) ----
     flush_task: asyncio.Task | None = None
