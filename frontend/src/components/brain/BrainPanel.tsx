@@ -52,6 +52,33 @@ export default function BrainPanel({
     return () => clearInterval(interval)
   }, [fetchStatus])
 
+  // Auto-start brain once on mount if not already running
+  useEffect(() => {
+    let cancelled = false
+    let timer: ReturnType<typeof setTimeout> | undefined
+
+    async function checkAndAutoStart() {
+      try {
+        const status = await api<BrainStatus>('/api/brain/status')
+        if (!cancelled && !status.running) {
+          timer = setTimeout(() => {
+            if (!cancelled) handleStart()
+          }, 3000)
+        }
+      } catch {
+        // Ignore — don't auto-start if status check fails
+      }
+    }
+
+    checkAndAutoStart()
+
+    return () => {
+      cancelled = true
+      if (timer) clearTimeout(timer)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   async function handleStart() {
     setStarting(true)
     try {

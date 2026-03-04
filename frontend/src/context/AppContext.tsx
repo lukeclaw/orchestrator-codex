@@ -17,6 +17,7 @@ interface AppState {
   tasks: Task[]
   rdevs: Rdev[]
   notificationCount: number
+  updateAvailable: boolean
   connected: boolean
   loading: boolean
   smartPastePayload: SmartPastePayload | null
@@ -40,6 +41,7 @@ const AppContext = createContext<AppState>({
   tasks: [],
   rdevs: [],
   notificationCount: 0,
+  updateAvailable: false,
   connected: false,
   loading: true,
   smartPastePayload: null,
@@ -73,6 +75,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [interactiveCliMinimized, setInteractiveCliMinimized] = useState<Set<string>>(new Set())
   const [browserViewSessions, setBrowserViewSessions] = useState<Set<string>>(new Set())
   const [browserViewMinimized, setBrowserViewMinimized] = useState<Set<string>>(new Set())
+  const [updateAvailable, setUpdateAvailable] = useState(false)
 
   const fetchAll = useCallback(async () => {
     try {
@@ -240,6 +243,21 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
   }, [fetchAll])
 
+  // Global update check — runs once on load and every 30 minutes
+  useEffect(() => {
+    const checkUpdate = async () => {
+      try {
+        const data = await api<{ update_available: boolean }>('/api/updates/check')
+        setUpdateAvailable(data.update_available)
+      } catch {
+        // Ignore update check errors
+      }
+    }
+    checkUpdate()
+    const interval = setInterval(checkUpdate, 30 * 60 * 1000)
+    return () => clearInterval(interval)
+  }, [])
+
   // sessions already filtered by session_type=worker from API
   const workers = sessions
 
@@ -276,7 +294,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   // Focus tracking now handled via WebSocket (see above)
 
   return (
-    <AppContext.Provider value={{ sessions, workers, projects, tasks, rdevs, notificationCount, connected, loading, smartPastePayload, interactiveCliSessions, interactiveCliMinimized, browserViewSessions, browserViewMinimized, setSmartPastePayload, refresh: fetchAll, refreshRdevs, refreshNotificationCount, removeSession, closeInteractiveCli, closeBrowserView }}>
+    <AppContext.Provider value={{ sessions, workers, projects, tasks, rdevs, notificationCount, updateAvailable, connected, loading, smartPastePayload, interactiveCliSessions, interactiveCliMinimized, browserViewSessions, browserViewMinimized, setSmartPastePayload, refresh: fetchAll, refreshRdevs, refreshNotificationCount, removeSession, closeInteractiveCli, closeBrowserView }}>
       {children}
     </AppContext.Provider>
   )

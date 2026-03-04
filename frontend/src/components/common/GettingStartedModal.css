@@ -1,0 +1,102 @@
+.getting-started-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  background: rgba(0, 0, 0, 0.15);
+  backdrop-filter: blur(2px);
+  opacity: 0;
+  transition: opacity 0.25s ease;
+  pointer-events: none;
+}
+
+.getting-started-overlay.visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.getting-started-card {
+  position: absolute;
+  right: 420px;
+  top: 50%;
+  transform: translateY(-50%) translateX(12px);
+  width: 340px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 24px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.25), 0 0 0 1px rgba(255, 255, 255, 0.05);
+  transition: transform 0.3s ease, opacity 0.3s ease;
+  opacity: 0;
+}
+
+.getting-started-overlay.visible .getting-started-card {
+  transform: translateY(-50%) translateX(0);
+  opacity: 1;
+}
+
+/* Arrow pointing right toward Brain panel */
+.getting-started-arrow {
+  position: absolute;
+  right: -8px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 16px;
+  height: 16px;
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+  border-top: 1px solid var(--border);
+  rotate: 45deg;
+  box-shadow: 4px -2px 6px rgba(0, 0, 0, 0.08);
+}
+
+.getting-started-title {
+  margin: 0 0 8px;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.getting-started-desc {
+  margin: 0 0 16px;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--text-secondary);
+}
+
+.getting-started-hint {
+  background: var(--accent-muted);
+  border-radius: 8px;
+  padding: 12px 14px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-primary);
+  margin-bottom: 20px;
+}
+
+.getting-started-hint code {
+  background: var(--surface);
+  color: var(--accent);
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 12.5px;
+  font-weight: 600;
+  border: 1px solid var(--border);
+}
+
+.getting-started-btn {
+  display: block;
+  width: 100%;
+  padding: 8px 0;
+  border: none;
+  border-radius: 8px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity 0.15s ease;
+}
+
+.getting-started-btn:hover {
+  opacity: 0.9;
+}

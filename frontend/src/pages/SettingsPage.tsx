@@ -69,9 +69,9 @@ export default function SettingsPage() {
     }
   }, [settings, getValue])
 
-  // Auto-check for updates on mount
+  // Fetch detailed update info on mount (global context only tracks the boolean)
   useEffect(() => {
-    if (!loading && autoUpdateCheck) {
+    if (!loading) {
       checkUpdate()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps

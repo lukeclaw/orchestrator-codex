@@ -21,7 +21,7 @@ interface Props {
 }
 
 export default function Sidebar({ collapsed, onToggle }: Props) {
-  const { workers, notificationCount, interactiveCliSessions } = useApp()
+  const { workers, notificationCount, updateAvailable, interactiveCliSessions } = useApp()
 
   const waitingWorkers = workers.filter(
     s => s.status === 'waiting'
@@ -60,7 +60,7 @@ export default function Sidebar({ collapsed, onToggle }: Props) {
       </nav>
 
       <div className="sidebar-footer">
-        <SidebarItem to="/settings" icon={<IconSettings size={18} />} label="Settings" collapsed={collapsed} />
+        <SidebarItem to="/settings" icon={<IconSettings size={18} />} label="Settings" badge={updateAvailable ? 1 : undefined} badgeVariant="default" collapsed={collapsed} />
       </div>
     </aside>
   )
