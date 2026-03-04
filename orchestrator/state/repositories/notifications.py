@@ -119,6 +119,29 @@ def delete_notification(conn: sqlite3.Connection, id: str) -> bool:
     return cursor.rowcount > 0
 
 
+def delete_notifications_by_ids(conn: sqlite3.Connection, ids: list[str]) -> int:
+    """Delete notifications by a list of IDs. Returns count deleted."""
+    if not ids:
+        return 0
+    placeholders = ",".join("?" for _ in ids)
+    cursor = conn.execute(
+        f"DELETE FROM notifications WHERE id IN ({placeholders})",
+        ids,
+    )
+    conn.commit()
+    return cursor.rowcount
+
+
+def undismiss_notification(conn: sqlite3.Connection, id: str) -> Notification | None:
+    """Restore a dismissed notification back to active."""
+    conn.execute(
+        "UPDATE notifications SET dismissed = 0, dismissed_at = NULL WHERE id = ?",
+        (id,),
+    )
+    conn.commit()
+    return get_notification(conn, id)
+
+
 def delete_dismissed_notifications(conn: sqlite3.Connection) -> int:
     """Delete all dismissed notifications. Returns count deleted."""
     cursor = conn.execute("DELETE FROM notifications WHERE dismissed = 1")

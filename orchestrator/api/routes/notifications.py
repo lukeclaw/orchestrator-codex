@@ -25,6 +25,10 @@ class DismissAllRequest(BaseModel):
     session_id: str | None = None
 
 
+class BatchDeleteRequest(BaseModel):
+    ids: list[str]
+
+
 def _serialize(n):
     metadata = None
     if n.metadata:
@@ -129,6 +133,23 @@ def delete_notification(notification_id: str, db=Depends(get_db)):
     if not repo.delete_notification(db, notification_id):
         raise HTTPException(404, "Notification not found")
     return {"ok": True}
+
+
+@router.delete("/notifications/batch")
+def batch_delete_notifications(body: BatchDeleteRequest, db=Depends(get_db)):
+    """Delete multiple notifications by IDs."""
+    count = repo.delete_notifications_by_ids(db, body.ids)
+    return {"deleted": count}
+
+
+@router.post("/notifications/{notification_id}/undismiss")
+def undismiss_notification(notification_id: str, db=Depends(get_db)):
+    """Restore a dismissed notification back to active."""
+    n = repo.get_notification(db, notification_id)
+    if n is None:
+        raise HTTPException(404, "Notification not found")
+    updated = repo.undismiss_notification(db, notification_id)
+    return _serialize(updated)
 
 
 @router.delete("/notifications/dismissed/all")

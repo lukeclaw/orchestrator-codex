@@ -9,8 +9,12 @@
 .notifications-page .page-header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  gap: 12px;
   min-height: 40px;
+}
+
+.notifications-page .page-header .np-tabs {
+  margin-left: auto;
 }
 
 .notifications-page .page-header h1 {
@@ -52,10 +56,10 @@
   align-items: center;
   gap: 8px;
   padding: 10px 16px;
-  background: rgba(239, 68, 68, 0.1);
-  border: 1px solid rgba(239, 68, 68, 0.3);
+  background: var(--surface);
+  border: 1px solid var(--border);
   border-radius: 8px;
-  color: #ef4444;
+  color: var(--text-secondary);
   font-size: 14px;
   font-weight: 500;
   cursor: pointer;
@@ -63,8 +67,9 @@
 }
 
 .np-delete-all-btn:hover {
-  background: rgba(239, 68, 68, 0.2);
-  border-color: rgba(239, 68, 68, 0.5);
+  background: var(--surface-hover);
+  color: var(--text-primary);
+  border-color: var(--border-hover);
 }
 
 /* Tabs */
@@ -166,12 +171,38 @@
 }
 
 .np-date-group-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   font-size: 12px;
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.5px;
   color: var(--text-muted);
   padding: 0 4px;
+}
+
+.np-group-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.np-group-clear-btn {
+  font-size: 11px;
+  font-weight: 500;
+  text-transform: none;
+  letter-spacing: 0;
+  padding: 2px 4px;
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: color 0.15s;
+}
+
+.np-group-clear-btn:hover {
+  color: var(--text-secondary);
 }
 
 .np-card {
@@ -346,14 +377,21 @@
   -webkit-line-clamp: unset;
 }
 
-/* Chevron expand indicator */
+/* Icon column — icon stacked above chevron */
+.np-card-icon-col {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+  padding-top: 2px;
+}
+
+/* Chevron expand indicator — below icon */
 .np-card-chevron {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 20px;
-  height: 20px;
-  flex-shrink: 0;
   color: var(--text-muted);
   transition: transform 150ms ease;
 }
@@ -370,39 +408,26 @@
   flex-shrink: 0;
 }
 
-/* Hover-only action buttons */
-.np-hoverable-action {
-  opacity: 0;
-  transition: opacity 0.15s ease;
-}
-
-.np-card:hover .np-hoverable-action,
-.np-card.focused .np-hoverable-action,
-.np-card.expanded .np-hoverable-action {
-  opacity: 1;
-}
+/* Action buttons — always visible */
 
 .np-link-btn {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  padding: 5px 10px;
+  padding: 4px 6px;
   background: transparent;
-  border: 1px solid var(--border);
-  border-radius: 5px;
-  color: var(--text-secondary);
+  border: none;
+  color: var(--text-muted);
   font-size: 12px;
   font-weight: 500;
   text-decoration: none;
   cursor: pointer;
-  transition: all 0.2s;
+  transition: color 0.15s;
   white-space: nowrap;
 }
 
 .np-link-btn:hover {
-  background: var(--surface-hover);
   color: var(--accent);
-  border-color: var(--accent);
 }
 
 .np-action-btn {
@@ -496,4 +521,78 @@
   line-height: 1.5;
   color: var(--text-primary);
   white-space: pre-wrap;
+}
+
+/* Type filter chips — matches tk-status-pill pattern */
+.np-type-filters {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.np-type-chip {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 13px;
+  font-weight: 500;
+  padding: 4px 10px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.np-type-chip:hover {
+  background: var(--surface-hover);
+}
+
+.np-type-chip.active {
+  background: var(--surface);
+  border-color: var(--border);
+}
+
+.np-type-chip-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.np-type-chip-count {
+  font-weight: 600;
+  font-size: 12px;
+  color: var(--text-primary);
+}
+
+.np-type-chip-dot.purple {
+  background: #8b5cf6;
+}
+
+.np-type-chip-dot.amber {
+  background: #f59e0b;
+}
+
+.np-type-chip-dot.blue {
+  background: #3b82f6;
+}
+
+/* Restore button */
+.np-action-btn.restore:hover {
+  background: rgba(59, 130, 246, 0.1);
+  border-color: rgba(59, 130, 246, 0.3);
+  color: #3b82f6;
+}
+
+/* Non-expandable card */
+.np-card.non-expandable {
+  cursor: default;
+}
+
+.np-card.non-expandable:hover {
+  border-color: var(--border);
+  box-shadow: none;
 }

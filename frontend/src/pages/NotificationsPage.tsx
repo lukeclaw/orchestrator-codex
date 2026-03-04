@@ -13,12 +13,14 @@ import {
   IconChevronRight,
   IconBell,
   IconFolder,
+  IconUndo,
 } from '../components/common/Icons'
 import ConfirmPopover from '../components/common/ConfirmPopover'
 import { parseDate } from '../components/common/TimeAgo'
 import './NotificationsPage.css'
 
 type DateGroup = { label: string; notifications: Notification[] }
+type TypeFilter = 'all' | 'info' | 'pr_comment' | 'warning'
 
 function groupByDate(notifications: Notification[]): DateGroup[] {
   const now = new Date()
@@ -58,12 +60,21 @@ export default function NotificationsPage() {
   const navigate = useNavigate()
   const { refreshNotificationCount } = useApp()
   const [notifications, setNotifications] = useState<Notification[]>([])
+  const [activeCount, setActiveCount] = useState(0)
   const [loading, setLoading] = useState(true)
   const [filter, setFilter] = useState<'active' | 'archived'>('active')
+  const [typeFilter, setTypeFilter] = useState<TypeFilter>('all')
   const [dismissing, setDismissing] = useState<Set<string>>(new Set())
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
+  const [overflowIds, setOverflowIds] = useState<Set<string>>(new Set())
   const [focusIndex, setFocusIndex] = useState(-1)
   const listRef = useRef<HTMLDivElement>(null)
+  const expandedRef = useRef<Set<string>>(new Set())
+
+  // Keep expandedRef in sync
+  useEffect(() => {
+    expandedRef.current = expanded
+  }, [expanded])
 
   // 7 days ago for default time filter
   const sevenDaysAgo = new Date()
@@ -71,17 +82,55 @@ export default function NotificationsPage() {
 
   useEffect(() => {
     fetchNotifications()
+    setTypeFilter('all')
   }, [filter])
+
+  // Overflow detection: measure which messages are clamped
+  const checkOverflows = useCallback(() => {
+    if (!listRef.current) return
+    const cards = listRef.current.querySelectorAll<HTMLElement>('[data-notification-id]')
+    const newOverflowIds = new Set<string>()
+    cards.forEach(card => {
+      const id = card.getAttribute('data-notification-id')!
+      // Skip cards that are currently expanded — unclamped text reads as no overflow
+      if (expandedRef.current.has(id)) {
+        // Preserve their overflow status if they had it before expanding
+        if (overflowIds.has(id)) newOverflowIds.add(id)
+        return
+      }
+      const msgEl = card.querySelector<HTMLElement>('.np-message')
+      if (msgEl && msgEl.scrollHeight > msgEl.clientHeight) {
+        newOverflowIds.add(id)
+      }
+    })
+    setOverflowIds(newOverflowIds)
+  }, [overflowIds])
+
+  useEffect(() => {
+    checkOverflows()
+  }, [notifications])
+
+  // ResizeObserver to re-check on container resize
+  useEffect(() => {
+    if (!listRef.current) return
+    const observer = new ResizeObserver(() => checkOverflows())
+    observer.observe(listRef.current)
+    return () => observer.disconnect()
+  }, [checkOverflows])
 
   async function fetchNotifications() {
     setLoading(true)
     try {
       // Active: non-dismissed from past 7 days
       // Archived: dismissed only
-      const url = filter === 'archived'
-        ? '/api/notifications?dismissed=true'
-        : '/api/notifications?dismissed=false'
-      const data = await api<Notification[]>(url)
+      const [data, countData] = await Promise.all([
+        api<Notification[]>(
+          filter === 'archived'
+            ? '/api/notifications?dismissed=true'
+            : '/api/notifications?dismissed=false'
+        ),
+        api<{ count: number }>('/api/notifications/count'),
+      ])
 
       // For active tab, filter to past 7 days only
       const filtered = filter === 'active'
@@ -89,6 +138,7 @@ export default function NotificationsPage() {
         : data
 
       setNotifications(filtered)
+      setActiveCount(countData.count)
     } catch (err) {
       console.error('Failed to fetch notifications:', err)
     } finally {
@@ -116,25 +166,36 @@ export default function NotificationsPage() {
     }
   }
 
-  async function handleDismissAll() {
-    try {
-      await api('/api/notifications/dismiss-all', {
-        method: 'POST',
-        body: JSON.stringify({})
-      })
-      refreshNotificationCount()
-      setNotifications(prev => prev.map(n => ({ ...n, dismissed: true })))
-    } catch (err) {
-      console.error('Failed to dismiss all notifications:', err)
-    }
-  }
-
   async function handleDelete(id: string) {
     try {
       await api(`/api/notifications/${id}`, { method: 'DELETE' })
       setNotifications(prev => prev.filter(n => n.id !== id))
     } catch (err) {
       console.error('Failed to delete notification:', err)
+    }
+  }
+
+  async function handleDeleteGroup(groupNotifications: Notification[]) {
+    const ids = groupNotifications.map(n => n.id)
+    try {
+      await api('/api/notifications/batch', {
+        method: 'DELETE',
+        body: JSON.stringify({ ids })
+      })
+      const idSet = new Set(ids)
+      setNotifications(prev => prev.filter(n => !idSet.has(n.id)))
+    } catch (err) {
+      console.error('Failed to delete group:', err)
+    }
+  }
+
+  async function handleRestore(id: string) {
+    try {
+      await api(`/api/notifications/${id}/undismiss`, { method: 'POST' })
+      refreshNotificationCount()
+      setNotifications(prev => prev.filter(n => n.id !== id))
+    } catch (err) {
+      console.error('Failed to restore notification:', err)
     }
   }
 
@@ -163,9 +224,12 @@ export default function NotificationsPage() {
     }
   }
 
-  const activeCount = notifications.filter(n => !n.dismissed).length
+  // Apply type filter
+  const filteredNotifications = typeFilter === 'all'
+    ? notifications
+    : notifications.filter(n => n.notification_type === typeFilter)
 
-  const dateGroups = groupByDate(notifications)
+  const dateGroups = groupByDate(filteredNotifications)
 
   // Flat ordered list matching render order (date-grouped), not API order
   const flatNotifications = dateGroups.flatMap(g => g.notifications)
@@ -195,12 +259,16 @@ export default function NotificationsPage() {
       case 'Enter': {
         e.preventDefault()
         if (focusIndex >= 0 && focusIndex < flatNotifications.length) {
-          const id = flatNotifications[focusIndex].id
-          setExpanded(prev => {
-            const next = new Set(prev)
-            if (next.has(id)) next.delete(id); else next.add(id)
-            return next
-          })
+          const n = flatNotifications[focusIndex]
+          const isPrComment = n.notification_type === 'pr_comment'
+          const isExpandable = isPrComment || overflowIds.has(n.id)
+          if (isExpandable) {
+            setExpanded(prev => {
+              const next = new Set(prev)
+              if (next.has(n.id)) next.delete(n.id); else next.add(n.id)
+              return next
+            })
+          }
         }
         break
       }
@@ -218,7 +286,7 @@ export default function NotificationsPage() {
         break
       }
     }
-  }, [flatNotifications, focusIndex])
+  }, [flatNotifications, focusIndex, overflowIds])
 
   function scrollCardIntoView(index: number) {
     if (!listRef.current) return
@@ -231,19 +299,32 @@ export default function NotificationsPage() {
   function renderCard(n: Notification, flatIndex: number) {
     const typeConfig = getTypeConfig(n.notification_type)
     const isFocused = focusIndex === flatIndex
+    const isPrComment = n.notification_type === 'pr_comment'
+    const isExpandable = isPrComment || overflowIds.has(n.id)
+
+    const toggleExpand = isExpandable ? () => setExpanded(prev => {
+      const next = new Set(prev)
+      if (next.has(n.id)) next.delete(n.id); else next.add(n.id)
+      return next
+    }) : undefined
+
     return (
       <article
         key={n.id}
-        className={`np-card ${n.dismissed ? 'dismissed' : ''} ${dismissing.has(n.id) ? 'dismissing' : ''} ${expanded.has(n.id) ? 'expanded' : ''} ${isFocused ? 'focused' : ''} ${typeConfig.color}`}
-        onClick={() => setExpanded(prev => {
-          const next = new Set(prev)
-          if (next.has(n.id)) next.delete(n.id); else next.add(n.id)
-          return next
-        })}
-        style={{ cursor: 'pointer' }}
+        data-notification-id={n.id}
+        className={`np-card ${n.dismissed ? 'dismissed' : ''} ${dismissing.has(n.id) ? 'dismissing' : ''} ${expanded.has(n.id) ? 'expanded' : ''} ${isFocused ? 'focused' : ''} ${typeConfig.color} ${!isExpandable ? 'non-expandable' : ''}`}
+        onClick={toggleExpand}
+        style={{ cursor: isExpandable ? 'pointer' : 'default' }}
       >
         <div className="np-card-indicator" />
-        <div className={`np-card-icon-wrap ${typeConfig.color}`}>{typeConfig.icon}</div>
+        <div className="np-card-icon-col">
+          <div className={`np-card-icon-wrap ${typeConfig.color}`}>{typeConfig.icon}</div>
+          {isExpandable && (
+            <div className={`np-card-chevron ${expanded.has(n.id) ? 'expanded' : ''}`}>
+              <IconChevronRight size={12} />
+            </div>
+          )}
+        </div>
         <div className="np-card-body">
           <div className="np-card-top">
             <div className="np-card-header">
@@ -256,21 +337,21 @@ export default function NotificationsPage() {
               )}
             </div>
             <div className="np-card-actions" onClick={e => e.stopPropagation()}>
-              {n.task_id && (
-                <button
-                  className="np-link-btn np-hoverable-action"
-                  onClick={() => navigate(`/tasks/${n.task_id}`)}
-                >
-                  View Task
-                </button>
-              )}
               {n.link_url && (
                 <button
-                  className="np-link-btn np-hoverable-action"
+                  className="np-link-btn"
                   onClick={() => openUrl(n.link_url!)}
                 >
                   <IconExternalLink size={12} />
                   Link
+                </button>
+              )}
+              {n.task_id && (
+                <button
+                  className="np-link-btn"
+                  onClick={() => navigate(`/tasks/${n.task_id}`)}
+                >
+                  View Task
                 </button>
               )}
               {!n.dismissed && (
@@ -283,17 +364,23 @@ export default function NotificationsPage() {
                 </button>
               )}
               {n.dismissed && (
-                <button
-                  className="np-action-btn delete"
-                  onClick={() => handleDelete(n.id)}
-                  title="Delete"
-                >
-                  <IconTrash size={14} />
-                </button>
+                <>
+                  <button
+                    className="np-action-btn restore"
+                    onClick={() => handleRestore(n.id)}
+                    title="Restore"
+                  >
+                    <IconUndo size={14} />
+                  </button>
+                  <button
+                    className="np-action-btn delete"
+                    onClick={() => handleDelete(n.id)}
+                    title="Delete"
+                  >
+                    <IconTrash size={14} />
+                  </button>
+                </>
               )}
-            </div>
-            <div className={`np-card-chevron ${expanded.has(n.id) ? 'expanded' : ''}`}>
-              <IconChevronRight size={14} />
             </div>
           </div>
           <div className="np-card-content">
@@ -344,48 +431,53 @@ export default function NotificationsPage() {
   // Build flat index map for keyboard navigation across date groups
   let flatIndex = 0
 
+  const typeCounts = {
+    pr_comment: notifications.filter(n => n.notification_type === 'pr_comment').length,
+    warning: notifications.filter(n => n.notification_type === 'warning').length,
+    info: notifications.filter(n => n.notification_type === 'info').length,
+  }
+
+  const typeChips: { value: 'pr_comment' | 'warning' | 'info'; label: string; dotColor: string }[] = [
+    { value: 'pr_comment', label: 'PR Comment', dotColor: 'purple' },
+    { value: 'warning', label: 'Warning', dotColor: 'amber' },
+    { value: 'info', label: 'Info', dotColor: 'blue' },
+  ]
+
   return (
     <div className="notifications-page">
-      {/* Header */}
+      {/* Header with tabs */}
       <div className="page-header">
         <h1>Notifications</h1>
-        <div className="page-header-actions">
-          <span className="ctx-count">
-            {activeCount} notification{activeCount === 1 ? '' : 's'}
-          </span>
-          {filter === 'active' && activeCount > 0 && (
-            <ConfirmPopover
-              onConfirm={handleDismissAll}
-              message="Dismiss all notifications?"
-              confirmLabel="Dismiss All"
-              variant="warning"
-            >
-              {({ onClick }) => (
-                <button className="np-dismiss-all-btn" onClick={onClick}>
-                  <IconCheck size={16} />
-                  Dismiss All
-                </button>
-              )}
-            </ConfirmPopover>
-          )}
+        <div className="np-tabs">
+          <button
+            className={`np-tab ${filter === 'active' ? 'active' : ''}`}
+            onClick={() => setFilter('active')}
+          >
+            Active
+            {activeCount > 0 && <span className="np-tab-badge active">{activeCount}</span>}
+          </button>
+          <button
+            className={`np-tab ${filter === 'archived' ? 'active' : ''}`}
+            onClick={() => setFilter('archived')}
+          >
+            Archived
+          </button>
         </div>
       </div>
 
-      {/* Filter Tabs */}
-      <div className="np-tabs">
-        <button
-          className={`np-tab ${filter === 'active' ? 'active' : ''}`}
-          onClick={() => setFilter('active')}
-        >
-          Active
-          {activeCount > 0 && <span className="np-tab-badge active">{activeCount}</span>}
-        </button>
-        <button
-          className={`np-tab ${filter === 'archived' ? 'active' : ''}`}
-          onClick={() => setFilter('archived')}
-        >
-          Archived
-        </button>
+      {/* Type filter chips */}
+      <div className="np-type-filters">
+        {typeChips.map(chip => (
+          <button
+            key={chip.value}
+            className={`np-type-chip ${typeFilter === chip.value ? 'active' : ''}`}
+            onClick={() => setTypeFilter(typeFilter === chip.value ? 'all' : chip.value)}
+          >
+            <span className={`np-type-chip-dot ${chip.dotColor}`} />
+            <span className="np-type-chip-count">{typeCounts[chip.value]}</span>
+            <span className="np-type-chip-label">{chip.label}</span>
+          </button>
+        ))}
       </div>
 
       {/* Content */}
@@ -397,16 +489,18 @@ export default function NotificationsPage() {
             </div>
             <p>Loading notifications...</p>
           </div>
-        ) : notifications.length === 0 ? (
+        ) : filteredNotifications.length === 0 ? (
           <div className="np-empty">
             <div className="np-empty-icon">
               {filter === 'archived' ? <IconFolder size={32} /> : <IconBell size={32} />}
             </div>
             <h3>{filter === 'archived' ? 'No archived notifications' : 'All caught up!'}</h3>
             <p>
-              {filter === 'archived'
-                ? 'Dismissed notifications will appear here'
-                : 'No pending notifications from the past 7 days'}
+              {typeFilter !== 'all'
+                ? 'No notifications match this filter'
+                : filter === 'archived'
+                  ? 'Dismissed notifications will appear here'
+                  : 'No pending notifications from the past 7 days'}
             </p>
           </div>
         ) : (
@@ -424,7 +518,41 @@ export default function NotificationsPage() {
               })
               return (
                 <div key={group.label} className="np-date-group">
-                  <div className="np-date-group-header">{group.label}</div>
+                  <div className="np-date-group-header">
+                    <span>{group.label}</span>
+                    <div className="np-group-actions">
+                      {filter === 'active' && (
+                        <ConfirmPopover
+                          onConfirm={() => {
+                            group.notifications.forEach(n => handleDismiss(n.id))
+                          }}
+                          message={`Dismiss ${group.notifications.length} notification${group.notifications.length === 1 ? '' : 's'} from "${group.label}"?`}
+                          confirmLabel="Dismiss All"
+                          variant="warning"
+                        >
+                          {({ onClick }) => (
+                            <button className="np-group-clear-btn" onClick={onClick}>
+                              Dismiss All
+                            </button>
+                          )}
+                        </ConfirmPopover>
+                      )}
+                      {filter === 'archived' && (
+                        <ConfirmPopover
+                          onConfirm={() => handleDeleteGroup(group.notifications)}
+                          message={`Delete ${group.notifications.length} notification${group.notifications.length === 1 ? '' : 's'} from "${group.label}"?`}
+                          confirmLabel="Delete"
+                          variant="danger"
+                        >
+                          {({ onClick }) => (
+                            <button className="np-group-clear-btn" onClick={onClick}>
+                              Clear
+                            </button>
+                          )}
+                        </ConfirmPopover>
+                      )}
+                    </div>
+                  </div>
                   {groupCards}
                 </div>
               )
