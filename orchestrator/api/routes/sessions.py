@@ -35,6 +35,18 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
+def _resolve_session(db, id_or_name: str):
+    """Look up a session by ID first, then fall back to name.
+
+    This allows CLI commands like ``orch-workers show api-worker``
+    to work with human-readable names instead of UUIDs.
+    """
+    s = repo.get_session(db, id_or_name)
+    if s is not None:
+        return s
+    return repo.get_session_by_name(db, id_or_name)
+
+
 class SessionCreate(BaseModel):
     name: str
     host: str = "localhost"
@@ -158,7 +170,7 @@ def list_sessions(
 
 @router.get("/sessions/{session_id}")
 def get_session(session_id: str, db=Depends(get_db)):
-    s = repo.get_session(db, session_id)
+    s = _resolve_session(db, session_id)
     if s is None:
         raise HTTPException(404, "Session not found")
 
@@ -176,9 +188,10 @@ def record_session_viewed(session_id: str, db=Depends(get_db)):
     """Record that the user viewed this session's detail page."""
     from datetime import datetime
 
-    s = repo.get_session(db, session_id)
+    s = _resolve_session(db, session_id)
     if s is None:
         raise HTTPException(404, "Session not found")
+    session_id = s.id
     repo.update_session(db, session_id, last_viewed_at=datetime.now(UTC).isoformat())
 
     # Pre-start RWS daemon for remote sessions so it's ready when user clicks Terminal
@@ -197,9 +210,10 @@ def toggle_auto_reconnect(session_id: str, request: Request, db=Depends(get_db))
     When enabled, immediately triggers reconnect if the worker is currently
     disconnected. Future disconnects are handled by the periodic health check.
     """
-    s = repo.get_session(db, session_id)
+    s = _resolve_session(db, session_id)
     if s is None:
         raise HTTPException(404, "Session not found")
+    session_id = s.id
     new_value = not s.auto_reconnect
     repo.update_session(db, session_id, auto_reconnect=new_value)
 
@@ -378,9 +392,10 @@ def create_session(body: SessionCreate, request: Request, db=Depends(get_db)):
 
 @router.patch("/sessions/{session_id}")
 def update_session(session_id: str, body: SessionUpdate, db=Depends(get_db)):
-    s = repo.get_session(db, session_id)
+    s = _resolve_session(db, session_id)
     if s is None:
         raise HTTPException(404, "Session not found")
+    session_id = s.id
 
     old_status = s.status
     updated = repo.update_session(
@@ -414,9 +429,10 @@ def update_session(session_id: str, body: SessionUpdate, db=Depends(get_db)):
 def delete_session(session_id: str, request: Request, db=Depends(get_db)):
     from orchestrator.session.reconnect import get_reconnect_lock
 
-    s = repo.get_session(db, session_id)
+    s = _resolve_session(db, session_id)
     if s is None:
         raise HTTPException(404, "Session not found")
+    session_id = s.id
 
     # Acquire reconnect lock first to prevent concurrent reconnect from
     # recreating resources we're about to tear down (RC-03).
@@ -560,7 +576,7 @@ def _delete_session_inner(s, session_id: str, request: Request, db):
 
 @router.post("/sessions/{session_id}/send")
 def send_message(session_id: str, body: SendMessage, request: Request, db=Depends(get_db)):
-    s = repo.get_session(db, session_id)
+    s = _resolve_session(db, session_id)
     if s is None:
         raise HTTPException(404, "Session not found")
 
@@ -587,7 +603,7 @@ def type_text(session_id: str, body: TypeText, request: Request, db=Depends(get_
     the text into the terminal buffer — matching the brain's WebSocket-based
     paste behaviour so that images can be inserted mid-message.
     """
-    s = repo.get_session(db, session_id)
+    s = _resolve_session(db, session_id)
     if s is None:
         raise HTTPException(404, "Session not found")
 
@@ -619,7 +635,7 @@ def paste_image_to_session(session_id: str, body: PasteImageBody, db=Depends(get
 
     from orchestrator.terminal.file_sync import get_worker_tmp_dir, sync_file_to_remote
 
-    s = repo.get_session(db, session_id)
+    s = _resolve_session(db, session_id)
     if s is None:
         raise HTTPException(404, "Session not found")
 
@@ -693,7 +709,7 @@ def paste_text_to_session(session_id: str, body: PasteTextBody, db=Depends(get_d
 
     from orchestrator.terminal.file_sync import get_worker_tmp_dir, sync_file_to_remote
 
-    s = repo.get_session(db, session_id)
+    s = _resolve_session(db, session_id)
     if s is None:
         raise HTTPException(404, "Session not found")
 
@@ -734,7 +750,7 @@ def paste_text_to_session(session_id: str, body: PasteTextBody, db=Depends(get_d
 @router.get("/sessions/{session_id}/preview")
 def session_preview(session_id: str, db=Depends(get_db)):
     """Return a plain-text terminal snapshot for a worker session."""
-    s = repo.get_session(db, session_id)
+    s = _resolve_session(db, session_id)
     if s is None:
         raise HTTPException(404, "Session not found")
     return {"content": _capture_preview(s), "status": s.status}
@@ -743,9 +759,10 @@ def session_preview(session_id: str, db=Depends(get_db)):
 @router.post("/sessions/{session_id}/pause")
 def pause_session(session_id: str, db=Depends(get_db)):
     """Pause a worker session (send Escape to claude code, mark as paused)."""
-    s = repo.get_session(db, session_id)
+    s = _resolve_session(db, session_id)
     if s is None:
         raise HTTPException(404, "Session not found")
+    session_id = s.id
 
     tmux_sess, tmux_win = tmux_target(s.name)
 
@@ -762,9 +779,10 @@ def pause_session(session_id: str, db=Depends(get_db)):
 @router.post("/sessions/{session_id}/continue")
 def continue_session(session_id: str, db=Depends(get_db)):
     """Continue a paused worker session (send 'continue' message)."""
-    s = repo.get_session(db, session_id)
+    s = _resolve_session(db, session_id)
     if s is None:
         raise HTTPException(404, "Session not found")
+    session_id = s.id
 
     tmux_sess, tmux_win = tmux_target(s.name)
 
@@ -784,9 +802,10 @@ def continue_session(session_id: str, db=Depends(get_db)):
 @router.post("/sessions/{session_id}/stop")
 def stop_session(session_id: str, db=Depends(get_db)):
     """Stop a worker session: send Escape, then /clear, unassign task, go to idle."""
-    s = repo.get_session(db, session_id)
+    s = _resolve_session(db, session_id)
     if s is None:
         raise HTTPException(404, "Session not found")
+    session_id = s.id
 
     tmux_sess, tmux_win = tmux_target(s.name)
 
@@ -834,7 +853,7 @@ def prepare_session_for_task(session_id: str, db=Depends(get_db)):
 
     This should be called before reassigning a worker to a different task.
     """
-    s = repo.get_session(db, session_id)
+    s = _resolve_session(db, session_id)
     if s is None:
         raise HTTPException(404, "Session not found")
 
@@ -892,7 +911,7 @@ def reconnect_session(session_id: str, request: Request, db=Depends(get_db)):
     Reconnect is always a manual action triggered by user clicking a button,
     so it should never be skipped due to user activity.
     """
-    s = repo.get_session(db, session_id)
+    s = _resolve_session(db, session_id)
     if s is None:
         raise HTTPException(404, "Session not found")
 
@@ -939,7 +958,7 @@ def health_check_session(session_id: str, request: Request, db=Depends(get_db)):
     Returns:
         {"alive": bool, "status": str, "reason": str, "screen_status": str (rdev only)}
     """
-    s = repo.get_session(db, session_id)
+    s = _resolve_session(db, session_id)
     if s is None:
         raise HTTPException(404, "Session not found")
 
@@ -1019,7 +1038,7 @@ def create_session_tunnel(session_id: str, body: TunnelRequest, db=Depends(get_d
     """
     from orchestrator.session.tunnel import create_tunnel
 
-    s = repo.get_session(db, session_id)
+    s = _resolve_session(db, session_id)
     if s is None:
         raise HTTPException(404, "Session not found")
     if not is_remote_host(s.host):
@@ -1044,7 +1063,7 @@ def close_session_tunnel(session_id: str, port: int, db=Depends(get_db)):
     """Close a specific port tunnel for this session."""
     from orchestrator.session.tunnel import close_tunnel
 
-    s = repo.get_session(db, session_id)
+    s = _resolve_session(db, session_id)
     if s is None:
         raise HTTPException(404, "Session not found")
 
@@ -1059,7 +1078,7 @@ def list_session_tunnels(session_id: str, db=Depends(get_db)):
     """List active tunnels for a session (real-time via process scan)."""
     from orchestrator.session.tunnel import get_tunnels_for_host
 
-    s = repo.get_session(db, session_id)
+    s = _resolve_session(db, session_id)
     if s is None:
         raise HTTPException(404, "Session not found")
 
