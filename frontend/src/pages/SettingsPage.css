@@ -4,11 +4,74 @@
   gap: 16px;
 }
 
+.settings-page .page-header {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  min-height: 40px;
+}
+
 .settings-page .page-header h1 {
   font-size: 20px;
   font-weight: 600;
+  margin: 0;
+  line-height: 1;
 }
 
+/* Tab bar — matches NotificationsPage pattern */
+.settings-tabs {
+  display: flex;
+  gap: 4px;
+  background: var(--surface);
+  padding: 4px;
+  border-radius: 10px;
+  width: fit-content;
+}
+
+.settings-tab {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  color: var(--text-secondary);
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.settings-tab:hover {
+  color: var(--text-primary);
+}
+
+.settings-tab.active {
+  background: var(--bg);
+  color: var(--text-primary);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.settings-tab-icon {
+  width: 16px;
+  height: 16px;
+  opacity: 0.7;
+}
+
+.settings-tab.active .settings-tab-icon {
+  opacity: 1;
+}
+
+.settings-tab-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent);
+  flex-shrink: 0;
+}
+
+/* Content area */
 .settings-content {
   max-width: 700px;
 }
@@ -20,18 +83,461 @@
 }
 
 .settings-hint {
-  font-size: 13px;
+  font-size: 14px;
   color: var(--text-secondary);
   margin-bottom: 16px;
+  line-height: 1.5;
 }
 
 .form-hint {
   font-size: 12px;
-  color: var(--text-secondary);
+  color: var(--text-muted);
   margin-top: 4px;
   display: block;
 }
 
+/* ── Update section (macOS-style) ── */
+
+/* Spinner for checking state */
+@keyframes update-spin {
+  to { transform: rotate(360deg); }
+}
+
+.update-spinner {
+  animation: update-spin 1s linear infinite;
+}
+
+/* Update available — card layout */
+.update-card {
+  display: flex;
+  gap: 16px;
+  padding: 16px;
+  background: var(--bg);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius);
+}
+
+.update-card-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  height: 48px;
+  border-radius: 12px;
+  background: rgba(56, 139, 253, 0.1);
+  color: var(--accent);
+  flex-shrink: 0;
+}
+
+.update-card-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.update-card-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 2px;
+}
+
+.update-card-meta {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-bottom: 8px;
+}
+
+.update-card-notes {
+  font-size: 13px;
+  color: var(--text-secondary);
+  margin: 0 0 12px;
+  white-space: pre-line;
+  line-height: 1.5;
+}
+
+.update-card-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.update-card-actions .btn {
+  margin-top: 0;
+}
+
+/* Up to date — centered state */
+.update-up-to-date {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 32px 16px;
+  text-align: center;
+}
+
+.update-check-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: rgba(63,185,80,0.12);
+  color: var(--green);
+  margin-bottom: 12px;
+}
+
+.update-error-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: rgba(210,153,34,0.12);
+  color: var(--yellow);
+  margin-bottom: 12px;
+}
+
+.update-up-to-date-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 4px;
+}
+
+.update-up-to-date-version {
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+/* Error inline (install failure) */
+.update-error {
+  font-size: 13px;
+  color: var(--text-secondary);
+  margin-top: 10px;
+}
+
+/* ── Backup two-column layout ── */
+.backup-layout {
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
+}
+
+.backup-config {
+  flex: 1;
+  min-width: 280px;
+}
+
+.backup-history {
+  flex: 1;
+  min-width: 280px;
+}
+
+.backup-config .panel-body .form-group {
+  margin-bottom: 12px;
+}
+
+/* Inline fields: Keep + Schedule side by side */
+.backup-inline-fields {
+  display: flex;
+  gap: 12px;
+}
+
+.backup-inline-fields .form-group {
+  flex: 1;
+}
+
+/* Actions row */
+.backup-form-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.backup-form-actions .btn {
+  margin-top: 0;
+}
+
+/* Password field with toggle */
+.password-input-wrap {
+  position: relative;
+}
+
+.password-input-wrap input {
+  padding-right: 40px;
+}
+
+.password-toggle-btn {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  padding: 4px;
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+  transition: color 0.15s;
+}
+
+.password-toggle-btn:hover {
+  color: var(--text-primary);
+}
+
+.backup-password-set {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  background: rgba(63,185,80,0.1);
+  padding: 1px 6px;
+  border-radius: 10px;
+  margin-left: 6px;
+}
+
+.backup-password-set svg {
+  color: var(--green);
+}
+
+.backup-result {
+  margin-top: 10px;
+  padding: 8px 12px;
+  border-radius: var(--radius);
+  font-size: 12px;
+}
+
+.backup-result.success {
+  background: rgba(63,185,80,0.1);
+  color: var(--green);
+  border: 1px solid rgba(63,185,80,0.3);
+}
+
+.backup-result.error {
+  background: rgba(248,81,73,0.1);
+  color: var(--red);
+  border: 1px solid rgba(248,81,73,0.3);
+}
+
+.backup-status-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.backup-status {
+  font-size: 11px;
+  padding: 1px 8px;
+  border-radius: 10px;
+  font-weight: 500;
+}
+
+.backup-status.success {
+  background: rgba(63,185,80,0.12);
+  color: var(--green);
+}
+
+.backup-status.error {
+  background: rgba(248,81,73,0.12);
+  color: var(--red);
+}
+
+.backup-schedule-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 10px;
+  background: rgba(88,166,255,0.12);
+  color: var(--accent);
+  font-weight: 500;
+}
+
+.backup-count {
+  font-size: 12px;
+  color: var(--text-muted);
+  font-weight: 400;
+}
+
+/* ── Backup History list ── */
+.backup-history-body {
+  padding: 0 !important;
+}
+
+.backup-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.backup-entry {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 18px;
+  border-bottom: 1px solid var(--border-subtle);
+  transition: background 0.15s;
+}
+
+.backup-entry:last-child {
+  border-bottom: none;
+}
+
+.backup-entry:hover {
+  background: var(--surface-hover);
+}
+
+.backup-entry-latest {
+  background: rgba(56, 139, 253, 0.04);
+}
+
+.backup-entry-latest:hover {
+  background: rgba(56, 139, 253, 0.08);
+}
+
+.backup-entry-date {
+  font-size: 14px;
+  color: var(--text-primary);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+}
+
+.backup-entry-size {
+  font-size: 12px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  min-width: 60px;
+  text-align: right;
+}
+
+.backup-latest-badge {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: rgba(56, 139, 253, 0.12);
+  color: var(--accent);
+}
+
+.backup-restore-btn {
+  padding: 3px 12px;
+  font-size: 12px;
+  border-radius: 6px;
+  border: 1px solid var(--border-subtle);
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  font-weight: 500;
+  white-space: nowrap;
+  flex-shrink: 0;
+  opacity: 0;
+}
+
+.backup-entry:hover .backup-restore-btn {
+  opacity: 1;
+}
+
+.backup-restore-btn:hover:not(:disabled) {
+  border-color: var(--orange, #d29922);
+  color: var(--orange, #d29922);
+  background: rgba(210, 153, 34, 0.08);
+}
+
+.backup-restore-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Pagination */
+.backup-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 10px 18px;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.backup-pagination-controls {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.backup-page-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 28px;
+  height: 28px;
+  padding: 0 6px;
+  background: transparent;
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.backup-page-btn:hover:not(:disabled):not(.active) {
+  background: var(--surface-hover);
+  border-color: var(--border);
+  color: var(--text-primary);
+}
+
+.backup-page-btn.active {
+  background: var(--accent-muted);
+  border-color: rgba(88,166,255,0.3);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.backup-page-btn:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+/* Empty state */
+.backup-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 32px 16px;
+  text-align: center;
+  color: var(--text-muted);
+}
+
+.backup-empty-icon {
+  margin-bottom: 8px;
+  opacity: 0.5;
+}
+
+.backup-empty p {
+  font-size: 13px;
+  margin: 0;
+}
+
+/* ── Save button fix ── */
+.settings-page .btn {
+  margin-top: 12px;
+}
+
+/* Legacy (approval rules) */
 .approval-rules {
   display: flex;
   flex-direction: column;
@@ -64,7 +570,6 @@
   color: var(--text-secondary);
 }
 
-/* Toggle button */
 .toggle {
   padding: 4px 14px;
   border-radius: 10px;
@@ -91,213 +596,6 @@
 }
 
 .toggle:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-/* Update section */
-.update-version-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 12px;
-  font-size: 14px;
-}
-
-.update-version-label {
-  color: var(--text-secondary);
-}
-
-.update-version-value {
-  font-family: var(--font-mono, monospace);
-  font-weight: 600;
-}
-
-.update-banner {
-  padding: 12px 14px;
-  background: rgba(56, 139, 253, 0.08);
-  border: 1px solid rgba(56, 139, 253, 0.3);
-  border-radius: var(--radius);
-  margin-bottom: 12px;
-}
-
-.update-banner-text {
-  font-size: 14px;
-  color: var(--text-primary);
-}
-
-.update-pub-date {
-  color: var(--text-secondary);
-  font-size: 13px;
-}
-
-.update-notes {
-  font-size: 13px;
-  color: var(--text-secondary);
-  margin: 6px 0 10px;
-  white-space: pre-line;
-}
-
-.update-banner-actions {
-  display: flex;
-  gap: 8px;
-}
-
-.update-banner-actions .btn {
-  margin-top: 0;
-}
-
-.update-up-to-date {
-  font-size: 13px;
-  color: var(--green);
-  margin-bottom: 12px;
-}
-
-.update-error {
-  font-size: 13px;
-  color: var(--text-secondary);
-  margin-bottom: 12px;
-}
-
-.update-actions {
-  margin-bottom: 4px;
-}
-
-.update-actions .btn {
-  margin-top: 0;
-}
-
-/* Save button */
-.settings-page .btn {
-  margin-top: 12px;
-}
-
-/* Backup section */
-.backup-actions {
-  display: flex;
-  gap: 8px;
-  margin-top: 4px;
-}
-
-.backup-actions .btn {
-  margin-top: 0;
-}
-
-.backup-password-set {
-  color: var(--green);
-  font-size: 12px;
-  font-weight: 400;
-}
-
-.backup-result {
-  margin-top: 12px;
-  padding: 10px 14px;
-  border-radius: var(--radius);
-  font-size: 13px;
-}
-
-.backup-result.success {
-  background: rgba(63,185,80,0.1);
-  color: var(--green);
-  border: 1px solid rgba(63,185,80,0.3);
-}
-
-.backup-result.error {
-  background: rgba(248,81,73,0.1);
-  color: var(--red);
-  border: 1px solid rgba(248,81,73,0.3);
-}
-
-.backup-last-run {
-  margin-top: 10px;
-  font-size: 12px;
-  color: var(--text-secondary);
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.backup-status {
-  font-size: 11px;
-  padding: 1px 8px;
-  border-radius: 10px;
-  font-weight: 500;
-}
-
-.backup-status.success {
-  background: rgba(63,185,80,0.12);
-  color: var(--green);
-}
-
-.backup-status.error {
-  background: rgba(248,81,73,0.12);
-  color: var(--red);
-}
-
-.backup-list-section {
-  margin-top: 20px;
-  padding-top: 16px;
-  border-top: 1px solid var(--border-subtle);
-}
-
-.backup-list {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.backup-entry {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 8px 12px;
-  background: var(--bg);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius);
-  font-size: 13px;
-}
-
-.backup-filename {
-  font-family: var(--font-mono, monospace);
-  font-size: 12px;
-  color: var(--text-primary);
-}
-
-.backup-meta {
-  display: flex;
-  gap: 12px;
-  color: var(--text-secondary);
-  font-size: 12px;
-}
-
-.backup-size {
-  color: var(--text-muted);
-}
-
-.backup-schedule-info {
-  margin-top: 10px;
-  font-size: 12px;
-  color: var(--green);
-  font-weight: 500;
-}
-
-.backup-restore-btn {
-  padding: 2px 10px;
-  font-size: 11px;
-  border-radius: 6px;
-  border: 1px solid var(--border-subtle);
-  background: var(--bg-secondary);
-  color: var(--text-secondary);
-  cursor: pointer;
-  transition: all 0.15s ease;
-}
-
-.backup-restore-btn:hover:not(:disabled) {
-  border-color: var(--orange, #d29922);
-  color: var(--orange, #d29922);
-}
-
-.backup-restore-btn:disabled {
   opacity: 0.5;
   cursor: not-allowed;
 }

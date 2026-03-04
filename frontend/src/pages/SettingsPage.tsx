@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { useSettings } from '../hooks/useSettings'
 import { useBackup } from '../hooks/useBackup'
 import { useUpdate } from '../hooks/useUpdate'
@@ -13,8 +13,14 @@ function formatBytes(bytes: number): string {
 }
 
 function formatTimestamp(ts: string): string {
-  // Filename timestamp like "2026-02-19T17-00-00Z" → readable
-  return ts.replace(/T/, ' ').replace(/-(\d{2})-(\d{2})Z$/, ':$1:$2 UTC')
+  // Parse "2026-03-04T06-58-35Z" → Date → local string
+  const iso = ts.replace(/T(\d{2})-(\d{2})-(\d{2})Z$/, 'T$1:$2:$3Z')
+  const d = new Date(iso)
+  if (isNaN(d.getTime())) return ts
+  return d.toLocaleString(undefined, {
+    year: 'numeric', month: 'short', day: 'numeric',
+    hour: '2-digit', minute: '2-digit',
+  })
 }
 
 const SCHEDULE_OPTIONS = [
@@ -25,9 +31,14 @@ const SCHEDULE_OPTIONS = [
   { value: 48, label: 'Every 48 hours' },
 ]
 
+const BACKUPS_PER_PAGE = 10
+
+type SettingsTab = 'updates' | 'backup'
+
 export default function SettingsPage() {
   const { loading } = useSettings()
   const notify = useNotify()
+  const [activeTab, setActiveTab] = useState<SettingsTab>('updates')
   const {
     info: updateInfo,
     checking: updateChecking,
@@ -38,7 +49,6 @@ export default function SettingsPage() {
     installUpdate,
   } = useUpdate()
 
-  // Backup state
   const {
     settings: backupSettings,
     backups,
@@ -54,11 +64,12 @@ export default function SettingsPage() {
 
   const [backupDir, setBackupDir] = useState('')
   const [backupPassword, setBackupPassword] = useState('')
+  const [showPassword, setShowPassword] = useState(false)
   const [retentionCount, setRetentionCount] = useState(5)
   const [scheduleHours, setScheduleHours] = useState(0)
   const [backupDirty, setBackupDirty] = useState(false)
+  const [backupPage, setBackupPage] = useState(0)
 
-  // Fetch detailed update info on mount (global context only tracks the boolean)
   useEffect(() => {
     if (!loading) {
       checkUpdate()
@@ -66,7 +77,6 @@ export default function SettingsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loading])
 
-  // Sync backup settings
   useEffect(() => {
     if (backupSettings) {
       setBackupDir(backupSettings.directory || '')
@@ -99,238 +109,392 @@ export default function SettingsPage() {
 
   const isBackupConfigured = backupSettings?.directory && backupSettings?.has_password
 
+  // Pagination
+  const totalPages = Math.max(1, Math.ceil(backups.length / BACKUPS_PER_PAGE))
+  const paginatedBackups = useMemo(() => {
+    const start = backupPage * BACKUPS_PER_PAGE
+    return backups.slice(start, start + BACKUPS_PER_PAGE)
+  }, [backups, backupPage])
+
+  // Reset page if backups change
+  useEffect(() => {
+    if (backupPage >= totalPages) setBackupPage(0)
+  }, [backups.length, totalPages, backupPage])
+
   return (
     <div className="settings-page">
       <div className="page-header">
         <h1>Settings</h1>
       </div>
 
-      <div className="settings-content panel">
-        <div className="panel-body">
-          <div className="settings-section">
-            <h3>App Updates</h3>
+      {/* Tab bar */}
+      <div className="settings-tabs">
+        <button
+          className={`settings-tab ${activeTab === 'updates' ? 'active' : ''}`}
+          onClick={() => setActiveTab('updates')}
+        >
+          <svg className="settings-tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+            <polyline points="7 10 12 15 17 10" />
+            <line x1="12" y1="15" x2="12" y2="3" />
+          </svg>
+          Updates
+          {updateInfo?.update_available && <span className="settings-tab-dot" />}
+        </button>
+        <button
+          className={`settings-tab ${activeTab === 'backup' ? 'active' : ''}`}
+          onClick={() => setActiveTab('backup')}
+        >
+          <svg className="settings-tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />
+            <polyline points="17 21 17 13 7 13 7 21" />
+            <polyline points="7 3 7 8 15 8" />
+          </svg>
+          Backup
+        </button>
+      </div>
 
-            <div className="update-version-row">
-              <span className="update-version-label">Current version</span>
-              <span className="update-version-value">{updateInfo?.current_version ?? '...'}</span>
-            </div>
+      {/* ── Updates Tab ── */}
+      {activeTab === 'updates' && (
+        <div className="settings-content panel">
+          <div className="panel-header">
+            <h2>Software Update</h2>
+            <button
+              className="btn btn-secondary btn-sm"
+              onClick={() => checkUpdate(true)}
+              disabled={updateChecking}
+            >
+              {updateChecking ? (
+                <>
+                  <svg className="update-spinner" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M21 12a9 9 0 1 1-6.219-8.56" />
+                  </svg>
+                  Checking…
+                </>
+              ) : 'Check for Updates'}
+            </button>
+          </div>
 
-            <div className="update-version-row">
-              <span className="update-version-label">Latest version</span>
-              <span className="update-version-value">{updateInfo?.latest_version ?? '...'}</span>
-            </div>
-
+          <div className="panel-body">
+            {/* Update available */}
             {updateInfo?.update_available && (
-              <div className="update-banner">
-                <div className="update-banner-text">
-                  <strong>v{updateInfo.latest_version}</strong> is available
-                  {updateInfo.pub_date && (
-                    <span className="update-pub-date">
-                      {' '}— {new Date(updateInfo.pub_date).toLocaleDateString()}
-                    </span>
-                  )}
+              <div className="update-card">
+                <div className="update-card-icon">
+                  <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                    <polyline points="7 10 12 15 17 10" />
+                    <line x1="12" y1="15" x2="12" y2="3" />
+                  </svg>
                 </div>
-                {updateInfo.release_notes && (
-                  <p className="update-notes">{updateInfo.release_notes}</p>
-                )}
-                <div className="update-banner-actions">
-                  <button
-                    className="btn btn-primary"
-                    onClick={installUpdate}
-                    disabled={installStatus === 'downloading' || installStatus === 'installing'}
-                  >
-                    {installStatus === 'downloading' ? 'Downloading...'
-                      : installStatus === 'installing' ? 'Installing...'
-                      : 'Install Update'}
-                  </button>
-                  {updateInfo.release_url && (
+                <div className="update-card-body">
+                  <div className="update-card-title">
+                    Orchestrator v{updateInfo.latest_version}
+                  </div>
+                  <div className="update-card-meta">
+                    Current: v{updateInfo.current_version}
+                    {updateInfo.pub_date && (
+                      <> · {new Date(updateInfo.pub_date).toLocaleDateString()}</>
+                    )}
+                  </div>
+                  {updateInfo.release_notes && (
+                    <p className="update-card-notes">{updateInfo.release_notes}</p>
+                  )}
+                  <div className="update-card-actions">
                     <button
-                      className="btn btn-secondary"
-                      onClick={() => openRelease(updateInfo.release_url!)}
+                      className="btn btn-primary"
+                      onClick={installUpdate}
+                      disabled={installStatus === 'downloading' || installStatus === 'installing'}
                     >
-                      Release Notes
+                      {installStatus === 'downloading' ? 'Downloading…'
+                        : installStatus === 'installing' ? 'Installing…'
+                        : 'Update Now'}
                     </button>
-                  )}
-                </div>
-                {installError && (
-                  <div className="update-error" style={{ marginTop: 8 }}>
-                    <span>Auto-install failed: {installError}</span>
-                    {updateInfo.dmg_url && (
+                    {updateInfo.release_url && (
                       <button
-                        className="btn btn-secondary btn-sm"
-                        style={{ marginLeft: 8 }}
-                        onClick={() => openRelease(updateInfo.dmg_url!)}
+                        className="btn btn-secondary"
+                        onClick={() => openRelease(updateInfo.release_url!)}
                       >
-                        Download DMG
+                        Release Notes
                       </button>
                     )}
                   </div>
-                )}
+                  {installError && (
+                    <div className="update-error">
+                      Auto-install failed: {installError}
+                      {updateInfo.dmg_url && (
+                        <button
+                          className="btn btn-secondary btn-sm"
+                          style={{ marginLeft: 8 }}
+                          onClick={() => openRelease(updateInfo.dmg_url!)}
+                        >
+                          Download DMG
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </div>
               </div>
             )}
 
+            {/* Up to date */}
             {updateInfo && !updateInfo.update_available && !updateInfo.error && (
-              <div className="update-up-to-date">You're on the latest version.</div>
+              <div className="update-up-to-date">
+                <div className="update-check-icon">
+                  <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M20 6L9 17l-5-5" />
+                  </svg>
+                </div>
+                <div className="update-up-to-date-title">Orchestrator is up to date</div>
+                <div className="update-up-to-date-version">Version {updateInfo.current_version}</div>
+              </div>
             )}
 
+            {/* Error */}
             {updateInfo?.error && (
-              <div className="update-error">Could not reach update server.</div>
+              <div className="update-up-to-date">
+                <div className="update-error-icon">
+                  <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <circle cx="12" cy="12" r="10" />
+                    <line x1="12" y1="8" x2="12" y2="12" />
+                    <line x1="12" y1="16" x2="12.01" y2="16" />
+                  </svg>
+                </div>
+                <div className="update-up-to-date-title">Unable to check for updates</div>
+                <div className="update-up-to-date-version">Version {updateInfo.current_version} · Could not reach update server</div>
+              </div>
             )}
 
-            <div className="update-actions">
-              <button
-                className="btn btn-secondary"
-                onClick={() => checkUpdate(true)}
-                disabled={updateChecking}
-              >
-                {updateChecking ? 'Checking...' : 'Check for Updates'}
-              </button>
-            </div>
-
+            {/* Loading / initial */}
+            {!updateInfo && !updateChecking && (
+              <div className="update-up-to-date">
+                <div className="update-up-to-date-version">Checking for updates…</div>
+              </div>
+            )}
           </div>
         </div>
-      </div>
+      )}
 
-      <div className="settings-content panel">
-        <div className="panel-body">
+      {/* ── Backup Tab ── */}
+      {activeTab === 'backup' && (
+        <div className="backup-layout">
           {backupLoading && <p className="settings-hint">Loading backup settings...</p>}
 
           {!backupLoading && (
             <>
-              <div className="settings-section">
-                <h3>Database Backup</h3>
-                <p className="settings-hint">
-                  Create encrypted snapshots of the database. Use a cloud-synced folder (Dropbox, iCloud, Google Drive) for automatic offsite backup.
-                </p>
-
-                <div className="form-group">
-                  <label>Backup Directory</label>
-                  <input
-                    type="text"
-                    value={backupDir}
-                    onChange={e => { setBackupDir(e.target.value); setBackupDirty(true) }}
-                    placeholder="/Users/you/Dropbox/orchestrator-backups"
-                  />
-                  <span className="form-hint">Absolute path to the folder where encrypted backups are stored</span>
+              {/* Left — Configuration */}
+              <div className="backup-config panel">
+                <div className="panel-header">
+                  <h2>Configuration</h2>
+                  {scheduleHours > 0 && isBackupConfigured && (
+                    <span className="backup-schedule-badge">
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <circle cx="12" cy="12" r="10" />
+                        <polyline points="12 6 12 12 16 14" />
+                      </svg>
+                      every {scheduleHours}h
+                    </span>
+                  )}
                 </div>
-
-                <div className="form-group">
-                  <label>Encryption Password {backupSettings?.has_password && <span className="backup-password-set">(set)</span>}</label>
-                  <input
-                    type="password"
-                    value={backupPassword}
-                    onChange={e => { setBackupPassword(e.target.value); setBackupDirty(true) }}
-                    placeholder={backupSettings?.has_password ? '••••••••' : 'Enter password'}
-                  />
-                  <span className="form-hint">AES-256 encryption password for backup zip files</span>
-                </div>
-
-                <div className="form-group">
-                  <label>Retention Count</label>
-                  <input
-                    type="number"
-                    value={retentionCount}
-                    onChange={e => { setRetentionCount(Number(e.target.value)); setBackupDirty(true) }}
-                    min={1}
-                    max={100}
-                  />
-                  <span className="form-hint">Number of backup files to keep (oldest are auto-deleted)</span>
-                </div>
-
-                <div className="form-group">
-                  <label>Automatic Backup Schedule</label>
-                  <select
-                    value={scheduleHours}
-                    onChange={e => { setScheduleHours(Number(e.target.value)); setBackupDirty(true) }}
-                  >
-                    {SCHEDULE_OPTIONS.map(opt => (
-                      <option key={opt.value} value={opt.value}>{opt.label}</option>
-                    ))}
-                  </select>
-                  <span className="form-hint">Automatically run backups at a regular interval</span>
-                </div>
-
-                <div className="backup-actions">
-                  <button
-                    className="btn btn-primary"
-                    onClick={handleBackupSave}
-                    disabled={backupSaving || !backupDirty}
-                  >
-                    {backupSaving ? 'Saving...' : 'Save Settings'}
-                  </button>
-                  <button
-                    className="btn btn-secondary"
-                    onClick={runBackup}
-                    disabled={backupRunning || !isBackupConfigured}
-                    title={!isBackupConfigured ? 'Configure directory and password first' : ''}
-                  >
-                    {backupRunning ? 'Backing up...' : 'Backup Now'}
-                  </button>
-                </div>
-
-                {lastResult && (
-                  <div className={`backup-result ${lastResult.ok ? 'success' : 'error'}`}>
-                    {lastResult.ok
-                      ? <>Backup saved: <strong>{lastResult.filename}</strong> ({formatBytes(lastResult.size_bytes)})</>
-                      : <>Backup failed: {lastResult.error}</>
-                    }
+                <div className="panel-body">
+                  <div className="form-group">
+                    <label>Directory</label>
+                    <input
+                      type="text"
+                      value={backupDir}
+                      onChange={e => { setBackupDir(e.target.value); setBackupDirty(true) }}
+                      placeholder="/path/to/backups"
+                    />
                   </div>
-                )}
 
-                {backupSettings?.last_run && (
-                  <div className="backup-last-run">
-                    Last backup: {new Date(backupSettings.last_run).toLocaleString()}
-                    {backupSettings.last_status && (
-                      <span className={`backup-status ${backupSettings.last_status === 'success' ? 'success' : 'error'}`}>
-                        {backupSettings.last_status}
-                      </span>
-                    )}
+                  <div className="form-group">
+                    <label>
+                      Password
+                      {backupSettings?.has_password && (
+                        <span className="backup-password-set">
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M20 6L9 17l-5-5" />
+                          </svg>
+                          saved
+                        </span>
+                      )}
+                    </label>
+                    <div className="password-input-wrap">
+                      <input
+                        type={showPassword ? 'text' : 'password'}
+                        value={backupPassword}
+                        onChange={e => { setBackupPassword(e.target.value); setBackupDirty(true) }}
+                        placeholder={backupSettings?.has_password ? '••••••••' : 'Enter password'}
+                      />
+                      <button
+                        type="button"
+                        className="password-toggle-btn"
+                        onClick={() => setShowPassword(v => !v)}
+                        tabIndex={-1}
+                        title={showPassword ? 'Hide password' : 'Show password'}
+                      >
+                        {showPassword ? (
+                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94" />
+                            <path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19" />
+                            <line x1="1" y1="1" x2="23" y2="23" />
+                          </svg>
+                        ) : (
+                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+                            <circle cx="12" cy="12" r="3" />
+                          </svg>
+                        )}
+                      </button>
+                    </div>
                   </div>
-                )}
 
-                {scheduleHours > 0 && isBackupConfigured && (
-                  <div className="backup-schedule-info">
-                    Automatic backup active: every {scheduleHours}h
+                  <div className="backup-inline-fields">
+                    <div className="form-group">
+                      <label>Keep</label>
+                      <input
+                        type="number"
+                        value={retentionCount}
+                        onChange={e => { setRetentionCount(Number(e.target.value)); setBackupDirty(true) }}
+                        min={1}
+                        max={100}
+                      />
+                    </div>
+                    <div className="form-group">
+                      <label>Schedule</label>
+                      <select
+                        value={scheduleHours}
+                        onChange={e => { setScheduleHours(Number(e.target.value)); setBackupDirty(true) }}
+                      >
+                        {SCHEDULE_OPTIONS.map(opt => (
+                          <option key={opt.value} value={opt.value}>{opt.label}</option>
+                        ))}
+                      </select>
+                    </div>
                   </div>
-                )}
+
+                  <div className="backup-form-actions">
+                    <button
+                      className="btn btn-primary"
+                      onClick={handleBackupSave}
+                      disabled={backupSaving || !backupDirty}
+                    >
+                      {backupSaving ? 'Saving...' : 'Save Settings'}
+                    </button>
+                    <button
+                      className="btn btn-secondary"
+                      onClick={runBackup}
+                      disabled={backupRunning || !isBackupConfigured}
+                      title={!isBackupConfigured ? 'Configure directory and password first' : ''}
+                    >
+                      {backupRunning ? 'Backing up...' : 'Backup Now'}
+                    </button>
+                  </div>
+
+                  {lastResult && (
+                    <div className={`backup-result ${lastResult.ok ? 'success' : 'error'}`}>
+                      {lastResult.ok
+                        ? <>Saved: <strong>{lastResult.filename}</strong> ({formatBytes(lastResult.size_bytes)})</>
+                        : <>Failed: {lastResult.error}</>
+                      }
+                    </div>
+                  )}
+                </div>
               </div>
 
-              {backups.length > 0 && (
-                <div className="settings-section backup-list-section">
-                  <h3>Backup History</h3>
-                  <div className="backup-list">
-                    {backups.map(b => (
-                      <div key={b.filename} className="backup-entry">
-                        <span className="backup-filename">{b.filename}</span>
-                        <span className="backup-meta">
-                          <span>{formatTimestamp(b.timestamp)}</span>
-                          <span className="backup-size">{formatBytes(b.size_bytes)}</span>
-                          <ConfirmPopover
-                            message={`Restore database from this backup? Current data will be replaced.`}
-                            confirmLabel="Restore"
-                            onConfirm={() => handleRestore(b.filename)}
-                            variant="warning"
-                          >
-                            {({ onClick }) => (
-                              <button
-                                className="btn btn-sm backup-restore-btn"
-                                onClick={onClick}
-                                disabled={restoring}
-                              >
-                                {restoring ? 'Restoring...' : 'Restore'}
-                              </button>
-                            )}
-                          </ConfirmPopover>
-                        </span>
-                      </div>
-                    ))}
-                  </div>
+              {/* Right — History */}
+              <div className="backup-history panel">
+                <div className="panel-header">
+                  <h2>History</h2>
+                  {backups.length > 0 && (
+                    <span className="backup-count">{backups.length} backups</span>
+                  )}
                 </div>
-              )}
+                <div className="panel-body backup-history-body">
+                  {backups.length === 0 ? (
+                    <div className="backup-empty">
+                      <svg className="backup-empty-icon" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />
+                        <polyline points="17 21 17 13 7 13 7 21" />
+                        <polyline points="7 3 7 8 15 8" />
+                      </svg>
+                      <p>No backups yet</p>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="backup-list">
+                        {paginatedBackups.map((b, i) => (
+                          <div
+                            key={b.filename}
+                            className={`backup-entry ${backupPage === 0 && i === 0 ? 'backup-entry-latest' : ''}`}
+                          >
+                            <span className="backup-entry-date">
+                              {formatTimestamp(b.timestamp)}
+                              {backupPage === 0 && i === 0 && (
+                                <span className="backup-latest-badge">Latest</span>
+                              )}
+                            </span>
+                            <span className="backup-entry-size">{formatBytes(b.size_bytes)}</span>
+                            <ConfirmPopover
+                              message="Restore database from this backup? Current data will be replaced."
+                              confirmLabel="Restore"
+                              onConfirm={() => handleRestore(b.filename)}
+                              variant="warning"
+                            >
+                              {({ onClick }) => (
+                                <button
+                                  className="backup-restore-btn"
+                                  onClick={onClick}
+                                  disabled={restoring}
+                                >
+                                  Restore
+                                </button>
+                              )}
+                            </ConfirmPopover>
+                          </div>
+                        ))}
+                      </div>
+
+                      {totalPages > 1 && (
+                        <div className="backup-pagination">
+                          <div className="backup-pagination-controls">
+                            <button
+                              className="backup-page-btn"
+                              onClick={() => setBackupPage(p => p - 1)}
+                              disabled={backupPage === 0}
+                            >
+                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                <polyline points="15 18 9 12 15 6" />
+                              </svg>
+                            </button>
+                            {Array.from({ length: totalPages }, (_, i) => (
+                              <button
+                                key={i}
+                                className={`backup-page-btn ${i === backupPage ? 'active' : ''}`}
+                                onClick={() => setBackupPage(i)}
+                              >
+                                {i + 1}
+                              </button>
+                            ))}
+                            <button
+                              className="backup-page-btn"
+                              onClick={() => setBackupPage(p => p + 1)}
+                              disabled={backupPage === totalPages - 1}
+                            >
+                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                <polyline points="9 18 15 12 9 6" />
+                              </svg>
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </>
+                  )}
+                </div>
+              </div>
             </>
           )}
         </div>
-      </div>
+      )}
     </div>
   )
 }
