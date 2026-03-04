@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import Modal from '../common/Modal'
 import { api } from '../../api/client'
+import { pickFolder } from '../../api/pickFolder'
 import { useApp } from '../../context/AppContext'
 import { IconRefresh, IconServer, IconSessions, IconLaptop } from '../common/Icons'
 import './AddSessionModal.css'
@@ -423,13 +424,28 @@ export default function AddSessionModal({ open, onClose }: Props) {
             <>
               <div className="form-group">
                 <label>Working Directory <span className="field-optional">(optional)</span></label>
-                <input
-                  type="text"
-                  data-testid="session-path-input"
-                  value={mpPath}
-                  onChange={e => setMpPath(e.target.value)}
-                  placeholder="e.g. /src/my-project"
-                />
+                <div className="input-with-browse">
+                  <input
+                    type="text"
+                    data-testid="session-path-input"
+                    value={mpPath}
+                    onChange={e => setMpPath(e.target.value)}
+                    placeholder="e.g. /src/my-project"
+                  />
+                  <button
+                    type="button"
+                    className="browse-btn"
+                    title="Browse for folder"
+                    onClick={async () => {
+                      const path = await pickFolder()
+                      if (path) setMpPath(path)
+                    }}
+                  >
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+                    </svg>
+                  </button>
+                </div>
                 <div className="field-hint">Auto-generated from worker name</div>
               </div>
             </>

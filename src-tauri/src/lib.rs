@@ -150,6 +150,14 @@ fn kill_process(pid: u32) -> bool {
     matches!(status, Ok(s) if !s.success())
 }
 
+#[tauri::command]
+fn pick_folder() -> Option<String> {
+    rfd::FileDialog::new()
+        .set_title("Select folder")
+        .pick_folder()
+        .map(|p| p.to_string_lossy().into_owned())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -157,6 +165,7 @@ pub fn run() {
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
+        .invoke_handler(tauri::generate_handler![pick_folder])
         .manage(SidecarState {
             child: Mutex::new(None),
         })

@@ -2,6 +2,9 @@
   "identifier": "default",
   "description": "Default capabilities for Orchestrator",
   "windows": ["main"],
+  "remote": {
+    "urls": ["http://127.0.0.1:8093/*", "http://localhost:8093/*"]
+  },
   "permissions": [
     "core:default",
     {

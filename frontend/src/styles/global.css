@@ -456,6 +456,37 @@ select:focus {
   color: var(--text-muted);
 }
 
+/* Input with browse button */
+.input-with-browse {
+  display: flex;
+  gap: 6px;
+}
+
+.input-with-browse input {
+  flex: 1;
+  min-width: 0;
+}
+
+.browse-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 10px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: all 0.15s;
+  flex-shrink: 0;
+}
+
+.browse-btn:hover {
+  background: var(--surface-hover);
+  border-color: var(--accent);
+  color: var(--text-primary);
+}
+
 /* Urgency tags */
 .urgency-tag {
   font-size: 11px;

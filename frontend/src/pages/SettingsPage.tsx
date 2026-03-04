@@ -3,6 +3,7 @@ import { useSettings } from '../hooks/useSettings'
 import { useBackup } from '../hooks/useBackup'
 import { useUpdate } from '../hooks/useUpdate'
 import { useNotify } from '../context/NotificationContext'
+import { pickFolder } from '../api/pickFolder'
 import ConfirmPopover from '../components/common/ConfirmPopover'
 import './SettingsPage.css'
 
@@ -298,12 +299,27 @@ export default function SettingsPage() {
                 <div className="panel-body">
                   <div className="form-group">
                     <label>Directory</label>
-                    <input
-                      type="text"
-                      value={backupDir}
-                      onChange={e => { setBackupDir(e.target.value); setBackupDirty(true) }}
-                      placeholder="/path/to/backups"
-                    />
+                    <div className="input-with-browse">
+                      <input
+                        type="text"
+                        value={backupDir}
+                        onChange={e => { setBackupDir(e.target.value); setBackupDirty(true) }}
+                        placeholder="/path/to/backups"
+                      />
+                      <button
+                        type="button"
+                        className="browse-btn"
+                        title="Browse for folder"
+                        onClick={async () => {
+                          const path = await pickFolder()
+                          if (path) { setBackupDir(path); setBackupDirty(true) }
+                        }}
+                      >
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+                        </svg>
+                      </button>
+                    </div>
                   </div>
 
                   <div className="form-group">
