@@ -58,8 +58,9 @@ Two paths based on terminal output:
 | Waiting 2m-2h, at Claude prompt | Send "continue" |
 | Waiting, at interactive prompt | Describe prompt; suggest input or "Needs human" |
 | Context exhaustion (0%) | Send "continue" (triggers auto-compact) |
-| PR review wait >2h | Nudge: "Check PR status, address comments if any, merge if approved" |
+| PR review wait >2h | Nudge: "Use /pr-workflow to check PR status, address comments if any, merge if approved" |
 | PR review wait <2h | — (reviews take time) |
+| Worker needs to create/update/follow-up on PR | Include `/pr-workflow` in the message so worker uses it |
 | Needs info you can look up | Look it up and relay |
 | Blocked by auth / needs human decision | — (leave for user) |
 
@@ -75,10 +76,10 @@ Map `orch-prs` action field to suggested action:
 | PR action | Suggested Action |
 |-----------|-----------------|
 | merged | Mark done + stop |
-| ready_to_merge | Tell worker to merge |
-| ci_failing / changes_requested / merge_conflicts | Tell worker to fix |
+| ready_to_merge | Tell worker: "Use /pr-workflow to merge" |
+| ci_failing / changes_requested / merge_conflicts | Tell worker: "Use /pr-workflow to fix" |
 | review_pending, <2h | — (wait for review) |
-| review_pending, >2h | Nudge: "Check PR status, address comments if any, merge if approved" |
+| review_pending, >2h | Nudge: "Use /pr-workflow to check PR status, address comments if any, merge if approved" |
 | draft | — (still working) |
 | closed | Investigate |
 
@@ -132,6 +133,7 @@ orch-workers stop <worker-id>
 - **Verify prompt state** — only send "continue" when at a Claude `>` prompt, not interactive prompts
 - **Never stop a worker waiting for PR review** — must stay alive for the review cycle
 - **PR created is not done** — worker stays alive until PR is MERGED
+- **Always mention `/pr-workflow`** — when sending any PR-related message (create, fix, review, merge), explicitly include `/pr-workflow` so the worker invokes the skill
 - **Always notify before marking done** — completion notification with verification details
 - **Never suggest "stop" for idle workers** — idle workers with no task are already stopped; skip them and let the user decide
 - **Act on facts only** — if unsure, put "Needs human" rather than guessing
