@@ -227,7 +227,9 @@ export default function NotificationsPage() {
   // Apply type filter
   const filteredNotifications = typeFilter === 'all'
     ? notifications
-    : notifications.filter(n => n.notification_type === typeFilter)
+    : typeFilter === 'info'
+      ? notifications.filter(n => n.notification_type !== 'pr_comment' && n.notification_type !== 'warning')
+      : notifications.filter(n => n.notification_type === typeFilter)
 
   const dateGroups = groupByDate(filteredNotifications)
 
@@ -434,7 +436,7 @@ export default function NotificationsPage() {
   const typeCounts = {
     pr_comment: notifications.filter(n => n.notification_type === 'pr_comment').length,
     warning: notifications.filter(n => n.notification_type === 'warning').length,
-    info: notifications.filter(n => n.notification_type === 'info').length,
+    info: notifications.filter(n => n.notification_type !== 'pr_comment' && n.notification_type !== 'warning').length,
   }
 
   const typeChips: { value: 'pr_comment' | 'warning' | 'info'; label: string; dotColor: string }[] = [
