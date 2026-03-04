@@ -58,6 +58,10 @@ class BrowserViewSession:
     created_at: str = field(default_factory=lambda: datetime.now(UTC).isoformat())
     # Pending CDP responses: msg_id -> Future[dict]
     _pending: dict[int, asyncio.Future] = field(default_factory=dict, repr=False)
+    # Tasks that read from the CDP WebSocket (relay + url poll).
+    # Tracked so a new client connection can cancel them before starting
+    # its own recv() loop — websockets forbids concurrent recv() calls.
+    _cdp_reader_tasks: list = field(default_factory=list, repr=False)
 
 
 # In-memory registry: session_id -> BrowserViewSession
@@ -66,6 +70,10 @@ _active_views: dict[str, BrowserViewSession] = {}
 # Persistent mapping: session_id -> target_id for local workers.
 # Survives browser view stop/start cycles so we reconnect to the same tab.
 _session_tab_targets: dict[str, str] = {}
+
+# Track which target is currently the active (foreground) tab per CDP port.
+# Used to skip redundant Target.activateTarget calls.
+_active_tab_target: dict[int, str] = {}
 
 
 def get_active_view(session_id: str) -> BrowserViewSession | None:
@@ -166,17 +174,77 @@ async def create_browser_tab(cdp_port: int, url: str = "about:blank") -> dict:
     """Create a new browser tab via CDP HTTP API.
 
     Returns the target info dict including webSocketDebuggerUrl and id.
+    New tabs are automatically the active tab in Chrome.
     """
     async with httpx.AsyncClient(timeout=5.0) as client:
         resp = await client.put(f"http://localhost:{cdp_port}/json/new?{url}")
         resp.raise_for_status()
-        return resp.json()
+        result = resp.json()
+        # New tabs are the active tab — track so we can skip redundant activation
+        tab_id = result.get("id", "")
+        if tab_id:
+            _active_tab_target[cdp_port] = tab_id
+        return result
+
+
+async def activate_browser_tab(cdp_port: int, target_id: str) -> None:
+    """Switch the active tab within Chrome without stealing OS-level focus.
+
+    Inactive tabs don't render, which causes black screencast frames.
+    Uses Target.activateTarget via the browser-level CDP WebSocket, which
+    switches tabs inside Chrome without bringing the Chrome window to the
+    front on macOS.  The HTTP /json/activate endpoint and Page.bringToFront
+    both trigger OS-level focus stealing, so we avoid them.
+
+    Skips the call entirely if the target is already the active tab.
+    """
+    if _active_tab_target.get(cdp_port) == target_id:
+        logger.debug("Tab %s already active on port %d, skipping activation", target_id, cdp_port)
+        return
+
+    # Get the browser-level WebSocket URL from /json/version
+    async with httpx.AsyncClient(timeout=5.0) as client:
+        resp = await client.get(f"http://localhost:{cdp_port}/json/version")
+        resp.raise_for_status()
+        browser_ws_url = resp.json().get("webSocketDebuggerUrl", "")
+    if not browser_ws_url:
+        raise RuntimeError("No browser WebSocket URL found in /json/version")
+
+    # Rewrite the host/port in case it differs (e.g. 0.0.0.0 vs localhost)
+    browser_ws_url = re.sub(r"://[^/]+", f"://127.0.0.1:{cdp_port}", browser_ws_url)
+
+    async with websockets.asyncio.client.connect(browser_ws_url, open_timeout=5) as ws:
+        msg_id = _next_id()
+        await ws.send(
+            json.dumps(
+                {
+                    "id": msg_id,
+                    "method": "Target.activateTarget",
+                    "params": {"targetId": target_id},
+                }
+            )
+        )
+        # Wait for the response to confirm it was processed
+        deadline = asyncio.get_event_loop().time() + 3.0
+        while True:
+            remaining = deadline - asyncio.get_event_loop().time()
+            if remaining <= 0:
+                break
+            raw = await asyncio.wait_for(ws.recv(), timeout=remaining)
+            resp_msg = json.loads(raw)
+            if resp_msg.get("id") == msg_id:
+                break
+
+    _active_tab_target[cdp_port] = target_id
 
 
 async def close_browser_tab(cdp_port: int, target_id: str) -> None:
     """Close a browser tab via CDP HTTP API."""
     async with httpx.AsyncClient(timeout=5.0) as client:
         await client.get(f"http://localhost:{cdp_port}/json/close/{target_id}")
+    # If this was the active tab, clear tracking so the next activation isn't skipped
+    if _active_tab_target.get(cdp_port) == target_id:
+        _active_tab_target.pop(cdp_port, None)
 
 
 async def _cdp_send(
@@ -291,17 +359,36 @@ async def start_browser_view(
             )
         target = targets[0]
     else:
-        # Local: reconnect to existing tab or create a new one
+        # Local: reuse the tab Playwright MCP is already using (via CDP proxy),
+        # fall back to a remembered tab, then create a new one as last resort.
         target = None
-        prev_target_id = _session_tab_targets.get(session_id)
-        if prev_target_id:
-            target = await _find_target_by_id(local_port, prev_target_id)
+
+        # Priority 1: Use the CDP worker proxy's tab (what Playwright sees)
+        from orchestrator.browser.cdp_worker_proxy import _worker_proxies
+
+        proxy_info = _worker_proxies.get(session_id)
+        if proxy_info and proxy_info.target_id:
+            target = await _find_target_by_id(local_port, proxy_info.target_id)
             if target:
                 logger.info(
-                    "Reconnecting to existing tab %s for session %s",
-                    prev_target_id,
+                    "Using CDP proxy tab %s for session %s",
+                    proxy_info.target_id,
                     session_id,
                 )
+
+        # Priority 2: Remembered tab from a previous browser view
+        if target is None:
+            prev_target_id = _session_tab_targets.get(session_id)
+            if prev_target_id:
+                target = await _find_target_by_id(local_port, prev_target_id)
+                if target:
+                    logger.info(
+                        "Reconnecting to existing tab %s for session %s",
+                        prev_target_id,
+                        session_id,
+                    )
+
+        # Priority 3: Create a new tab
         if target is None:
             try:
                 target = await create_browser_tab(local_port)
@@ -316,6 +403,16 @@ async def start_browser_view(
             close_tunnel(local_port, host)
         raise RuntimeError("Target has no webSocketDebuggerUrl")
 
+    # Activate the tab so Chrome renders it — inactive tabs produce black
+    # screencast frames.  The HTTP /json/activate endpoint reliably switches
+    # the foreground tab (Page.bringToFront via WebSocket does not).
+    target_id_val = target.get("id", "")
+    if target_id_val:
+        try:
+            await activate_browser_tab(local_port, target_id_val)
+        except Exception:
+            pass  # Best-effort; screencast may still work
+
     # The CDP WebSocket URL from the browser uses the original port.
     # Replace it with our tunneled local port.
     # e.g., ws://127.0.0.1:9222/devtools/page/ABC -> ws://127.0.0.1:{local_port}/devtools/page/ABC
@@ -327,6 +424,13 @@ async def start_browser_view(
             ws_url,
             max_size=16 * 1024 * 1024,  # 16 MB max message (for large frames)
             open_timeout=10,
+            # Disable websockets' built-in ping/pong.  When nobody is reading
+            # from the CDP WS (between client disconnects), screencast frames
+            # pile up, triggering pause_reading() which blocks pong processing.
+            # This causes a false ping timeout after ~40s, killing the CDP
+            # connection.  We detect liveness through the relay read loop and
+            # reconnect_cdp() instead.
+            ping_interval=None,
         )
     except Exception as e:
         if is_remote_host(host):
@@ -390,9 +494,17 @@ async def start_browser_view(
     )
     _active_views[session_id] = view
 
-    # Remember which tab belongs to this session for reconnection
+    # Remember which tab belongs to this session for reconnection,
+    # and sync to the CDP worker proxy so Playwright MCP uses the same tab.
     if not is_remote_host(host) and target_id:
         _session_tab_targets[session_id] = target_id
+        if proxy_info and proxy_info.target_id != target_id:
+            proxy_info.target_id = target_id
+            logger.info(
+                "Synced CDP proxy target to %s for session %s",
+                target_id,
+                session_id,
+            )
 
     logger.info(
         "Started browser view for session %s: %s (%s)",
@@ -601,6 +713,92 @@ async def dispatch_scroll_event(
         "modifiers": modifiers,
     }
     await _cdp_send(view.cdp_ws, "Input.dispatchMouseEvent", params)
+
+
+async def restart_screencast(view: BrowserViewSession) -> None:
+    """Stop and restart the CDP screencast.
+
+    Called when a new client WebSocket connects to an existing view whose
+    screencast may be stalled (Chrome pauses frame delivery when acks stop).
+    """
+    try:
+        await _cdp_send(view.cdp_ws, "Page.stopScreencast")
+    except Exception:
+        pass  # May already be stopped
+    await _cdp_send(
+        view.cdp_ws,
+        "Page.startScreencast",
+        {
+            "format": "jpeg",
+            "quality": view.quality,
+            "maxWidth": view.viewport_width,
+            "maxHeight": view.viewport_height,
+            "everyNthFrame": 1,
+        },
+    )
+
+
+async def reconnect_cdp(view: BrowserViewSession) -> None:
+    """Close and reopen the CDP WebSocket, re-enabling events and screencast.
+
+    Provides a clean WebSocket with no shared state from the previous
+    client session (stale recv locks, flow control backpressure, etc.).
+    Called when a new dashboard client reattaches to an existing view.
+    """
+    # Close old CDP WebSocket (best-effort, may already be dead)
+    old_ws = view.cdp_ws
+    try:
+        await old_ws.close()
+    except Exception:
+        pass
+
+    # Open fresh CDP WebSocket to the same target
+    ws_url = f"ws://127.0.0.1:{view.tunnel_local_port}/devtools/page/{view.target_id}"
+    cdp_ws = await websockets.asyncio.client.connect(
+        ws_url,
+        max_size=16 * 1024 * 1024,
+        open_timeout=10,
+        ping_interval=None,
+    )
+    view.cdp_ws = cdp_ws
+
+    # Re-enable page events and dark theme
+    await _cdp_send(cdp_ws, "Page.enable")
+    await _cdp_send(
+        cdp_ws,
+        "Emulation.setEmulatedMedia",
+        {"features": [{"name": "prefers-color-scheme", "value": "dark"}]},
+    )
+    await _cdp_send(
+        cdp_ws,
+        "Emulation.setDefaultBackgroundColorOverride",
+        {"color": {"r": 30, "g": 30, "b": 30, "a": 1}},
+    )
+
+    # Restore viewport (must be set before screencast for correct zoom)
+    await _cdp_send_and_wait(
+        cdp_ws,
+        "Emulation.setDeviceMetricsOverride",
+        {
+            "width": view.viewport_width,
+            "height": view.viewport_height,
+            "deviceScaleFactor": 1,
+            "mobile": False,
+        },
+    )
+
+    # Start screencast
+    await _cdp_send(
+        cdp_ws,
+        "Page.startScreencast",
+        {
+            "format": "jpeg",
+            "quality": view.quality,
+            "maxWidth": view.viewport_width,
+            "maxHeight": view.viewport_height,
+            "everyNthFrame": 1,
+        },
+    )
 
 
 async def set_screencast_quality(view: BrowserViewSession, quality: int) -> None:

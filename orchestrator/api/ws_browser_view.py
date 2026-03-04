@@ -8,7 +8,7 @@ Two frame types coexist on the same WebSocket:
 * **Text frames** carry JSON messages for control and input events.
 
 Server → Client binary:  raw JPEG frame bytes (draw on canvas)
-Server → Client JSON:    {"type": "navigate"|"visibility"|"closed"|"error", ...}
+Server → Client JSON:    {"type": "navigate"|"visibility"|"closed"|"error"|"ping", ...}
 Client → Server JSON:    {"type": "mouse"|"key"|"scroll"|"quality", ...}
 """
 
@@ -21,15 +21,20 @@ import logging
 from fastapi import WebSocket, WebSocketDisconnect
 
 from orchestrator.browser.cdp_proxy import (
+    cleanup_stale_view,
     get_active_view,
     handle_client_input,
+    is_view_alive,
     poll_url,
+    reconnect_cdp,
     relay_cdp_to_client,
-    stop_browser_view,
+    restart_screencast,
 )
-from orchestrator.core.events import Event, publish
 
 logger = logging.getLogger(__name__)
+
+# Interval for server-side keepalive pings (seconds)
+_KEEPALIVE_INTERVAL = 30
 
 
 async def ws_browser_view(websocket: WebSocket, session_id: str):
@@ -38,6 +43,9 @@ async def ws_browser_view(websocket: WebSocket, session_id: str):
     Binary frames (server → client): JPEG screencast frames from CDP.
     JSON frames (client → server): Mouse, keyboard, scroll input events.
     JSON frames (server → client): Navigation, visibility, error, close events.
+
+    The server-side CDP connection survives client WebSocket disconnects.
+    New clients reattach to the existing view and restart the screencast.
     """
     await websocket.accept()
 
@@ -46,6 +54,55 @@ async def ws_browser_view(websocket: WebSocket, session_id: str):
         await websocket.send_json({"type": "error", "message": "No active browser view"})
         await websocket.close(code=4004)
         return
+
+    # If the view exists but the CDP WebSocket is dead, clean it up
+    if not is_view_alive(session_id):
+        await cleanup_stale_view(session_id)
+        await websocket.send_json({"type": "error", "message": "Browser view CDP connection lost"})
+        await websocket.close(code=4004)
+        return
+
+    # If a previous client was connected, cancel its CDP reader tasks and
+    # open a fresh CDP WebSocket.  This avoids all shared-state issues:
+    # - Stale recv() locks from websockets (concurrent recv crashes)
+    # - Flow control backpressure (pause_reading blocks pong processing)
+    # - Buffered frames from the old session
+    is_reattach = bool(view._cdp_reader_tasks)
+    if is_reattach:
+        for task in view._cdp_reader_tasks:
+            if not task.done():
+                task.cancel()
+        for task in view._cdp_reader_tasks:
+            if not task.done():
+                try:
+                    await task
+                except (asyncio.CancelledError, Exception):
+                    pass
+
+        view._cdp_reader_tasks = []
+        view._pending.clear()  # Drop unresolved CDP response futures
+
+        try:
+            await reconnect_cdp(view)
+        except Exception as e:
+            logger.warning("CDP reconnect failed for session %s: %s", session_id, e)
+            await websocket.send_json(
+                {"type": "error", "message": "Failed to reconnect to browser"}
+            )
+            await websocket.close(code=4004)
+            return
+    else:
+        # First client connection — screencast was started by start_browser_view(),
+        # but restart it in case Chrome paused delivery (e.g. rapid connect/disconnect).
+        try:
+            await restart_screencast(view)
+        except Exception:
+            logger.debug("Failed to restart screencast for session %s", session_id)
+
+    # NOTE: We intentionally do NOT call activate_browser_tab() here.
+    # Tab activation is done once during start_browser_view() (the POST).
+    # Calling it on every WS reconnect would bring Chrome to the foreground
+    # on macOS, stealing focus from the user's app.
 
     # Send initial metadata
     await websocket.send_json(
@@ -82,7 +139,14 @@ async def ws_browser_view(websocket: WebSocket, session_id: str):
     # Task 3: Poll browser URL to keep the address bar in sync
     url_poll_task = asyncio.create_task(poll_url(view, send_json))
 
-    tasks = [cdp_relay_task, client_input_task, url_poll_task]
+    # Task 4: Send keepalive pings to prevent idle WS drops
+    keepalive_task = asyncio.create_task(_keepalive(websocket))
+
+    # Track tasks that read from the CDP WebSocket so the next client
+    # connection can cancel them before starting its own recv() loop.
+    view._cdp_reader_tasks = [cdp_relay_task, url_poll_task]
+
+    tasks = [cdp_relay_task, client_input_task, url_poll_task, keepalive_task]
 
     try:
         # Wait for any task to complete (first one wins)
@@ -112,7 +176,7 @@ async def ws_browser_view(websocket: WebSocket, session_id: str):
     except Exception as e:
         logger.error("Browser view WebSocket error for session %s: %s", session_id, e)
     finally:
-        # Clean up: cancel any remaining tasks
+        # Clean up: cancel any remaining local tasks
         for task in tasks:
             if not task.done():
                 task.cancel()
@@ -121,18 +185,21 @@ async def ws_browser_view(websocket: WebSocket, session_id: str):
                 except (asyncio.CancelledError, Exception):
                     pass
 
-        # Clean up the browser view (closes CDP WebSocket + tunnel, keeps Chromium running)
-        try:
-            stopped = await stop_browser_view(session_id)
-            if stopped:
-                publish(
-                    Event(
-                        type="browser_view_closed",
-                        data={"session_id": session_id},
-                    )
-                )
-        except Exception:
-            logger.debug("View cleanup in WS handler for session %s failed", session_id)
+        # NOTE: We intentionally do NOT call stop_browser_view() here.
+        # The CDP connection to Chrome survives client WS disconnects so
+        # new clients can reattach without re-creating the view.
+        # We also do NOT clear view._cdp_reader_tasks — if a new client
+        # is already connecting, it needs to see and cancel these tasks.
+
+
+async def _keepalive(websocket: WebSocket) -> None:
+    """Send periodic pings to prevent idle WebSocket drops."""
+    try:
+        while True:
+            await asyncio.sleep(_KEEPALIVE_INTERVAL)
+            await websocket.send_json({"type": "ping"})
+    except (WebSocketDisconnect, Exception):
+        pass
 
 
 async def _relay_client_input(websocket: WebSocket, view) -> None:

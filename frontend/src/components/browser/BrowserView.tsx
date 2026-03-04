@@ -1,6 +1,8 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
-import { api } from '../../api/client'
+import { api, ApiError } from '../../api/client'
 import './BrowserView.css'
+
+const MAX_RECONNECT_ATTEMPTS = 5
 
 interface Props {
   sessionId: string
@@ -44,6 +46,11 @@ export default function BrowserView({ sessionId, minimized = false, onMinimizedC
   const [reconnectAttempt, setReconnectAttempt] = useState(0)
   const closedIntentionallyRef = useRef(false)
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  // Generation counter to prevent stale onclose handlers from triggering reconnects.
+  // Each connectWs() call increments this; onclose only acts if its generation is current.
+  const wsGenerationRef = useRef(0)
+  // Track reconnect attempts across cycles (scheduleReconnect no longer resets to 0)
+  const reconnectAttemptsRef = useRef(0)
 
   const handleClose = async () => {
     closedIntentionallyRef.current = true
@@ -61,6 +68,24 @@ export default function BrowserView({ sessionId, minimized = false, onMinimizedC
 
   // Connect WebSocket and wire up handlers. Returns cleanup function.
   const connectWs = useCallback(() => {
+    // Cancel any pending reconnect timer
+    if (reconnectTimerRef.current) {
+      clearTimeout(reconnectTimerRef.current)
+      reconnectTimerRef.current = null
+    }
+
+    // Close previous WS to prevent overlapping connections that cause
+    // cascading eviction on the server (each new WS cancels the previous
+    // one's relay tasks, whose onclose triggers yet another reconnect).
+    const oldWs = wsRef.current
+    if (oldWs && (oldWs.readyState === WebSocket.CONNECTING || oldWs.readyState === WebSocket.OPEN)) {
+      oldWs.onclose = null  // Detach handler so close doesn't trigger reconnect
+      oldWs.close()
+    }
+
+    // Increment generation so stale onclose handlers become no-ops
+    const generation = ++wsGenerationRef.current
+
     const proto = location.protocol === 'https:' ? 'wss:' : 'ws:'
     const ws = new WebSocket(`${proto}//${location.host}/ws/browser-view/${sessionId}`)
     ws.binaryType = 'arraybuffer'
@@ -70,6 +95,7 @@ export default function BrowserView({ sessionId, minimized = false, onMinimizedC
       setConnected(true)
       setReconnecting(false)
       setReconnectAttempt(0)
+      reconnectAttemptsRef.current = 0
       setError('')
     }
 
@@ -103,6 +129,11 @@ export default function BrowserView({ sessionId, minimized = false, onMinimizedC
     }
 
     ws.onclose = () => {
+      // Only act if this WS is still the current one.
+      // Stale onclose from a superseded WS must not trigger reconnects,
+      // otherwise each reconnect evicts the current connection server-side,
+      // creating an infinite cascade.
+      if (generation !== wsGenerationRef.current) return
       setConnected(false)
       if (!closedIntentionallyRef.current) {
         scheduleReconnect()
@@ -119,8 +150,14 @@ export default function BrowserView({ sessionId, minimized = false, onMinimizedC
 
   // Reconnect: re-POST to start endpoint (handles stale view cleanup),
   // then open a new WebSocket.
-  const attemptReconnect = useCallback(async (attempt: number) => {
+  const attemptReconnect = useCallback(async () => {
     if (closedIntentionallyRef.current) return
+    const attempt = reconnectAttemptsRef.current++
+    if (attempt >= MAX_RECONNECT_ATTEMPTS) {
+      setReconnecting(false)
+      setError('Unable to connect to browser view after multiple attempts')
+      return
+    }
     setReconnecting(true)
     setReconnectAttempt(attempt)
 
@@ -131,13 +168,18 @@ export default function BrowserView({ sessionId, minimized = false, onMinimizedC
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ cdp_port: 9222 }),
       })
-    } catch {
-      // POST failed (server still down, session gone, etc.) — retry later
-      if (!closedIntentionallyRef.current) {
-        const delay = Math.min(2000 * Math.pow(1.5, attempt), 10000)
-        reconnectTimerRef.current = setTimeout(() => attemptReconnect(attempt + 1), delay)
+    } catch (err) {
+      // 409 means the view already exists (CDP connection survived) — treat as success
+      if (err instanceof ApiError && err.status === 409) {
+        // View is alive, proceed to connect WebSocket
+      } else {
+        // POST failed (server still down, session gone, etc.) — retry later
+        if (!closedIntentionallyRef.current) {
+          const delay = Math.min(2000 * Math.pow(1.5, attempt), 10000)
+          reconnectTimerRef.current = setTimeout(() => attemptReconnect(), delay)
+        }
+        return
       }
-      return
     }
 
     // Backend view is ready — connect WebSocket
@@ -147,17 +189,22 @@ export default function BrowserView({ sessionId, minimized = false, onMinimizedC
   }, [sessionId, connectWs])
 
   const scheduleReconnect = useCallback(() => {
-    // Small initial delay to avoid hammering on rapid close
-    reconnectTimerRef.current = setTimeout(() => attemptReconnect(0), 1000)
+    // Small delay to avoid hammering on rapid close
+    if (reconnectTimerRef.current) {
+      clearTimeout(reconnectTimerRef.current)
+    }
+    reconnectTimerRef.current = setTimeout(() => attemptReconnect(), 1000)
   }, [attemptReconnect])
 
   // Connect on mount, clean up on unmount
   useEffect(() => {
     closedIntentionallyRef.current = false
+    reconnectAttemptsRef.current = 0
     const ws = connectWs()
 
     return () => {
       closedIntentionallyRef.current = true
+      wsGenerationRef.current++  // Invalidate any pending onclose handlers
       if (reconnectTimerRef.current) {
         clearTimeout(reconnectTimerRef.current)
         reconnectTimerRef.current = null

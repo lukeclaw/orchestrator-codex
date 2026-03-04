@@ -1,14 +1,18 @@
 """Unit tests for CDP proxy module."""
 
+import asyncio
 import json
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from websockets.protocol import State as WsState
 
 from orchestrator.browser.cdp_proxy import (
     BrowserViewSession,
+    _active_tab_target,
     _active_views,
+    _session_tab_targets,
+    activate_browser_tab,
     cleanup_stale_view,
     dispatch_key_event,
     dispatch_mouse_event,
@@ -16,7 +20,9 @@ from orchestrator.browser.cdp_proxy import (
     get_active_view,
     handle_client_input,
     is_view_alive,
+    reconnect_cdp,
     relay_cdp_to_client,
+    restart_screencast,
     start_browser_view,
     stop_browser_view,
     stop_browser_view_sync,
@@ -27,8 +33,12 @@ from orchestrator.browser.cdp_proxy import (
 def clear_registry():
     """Clear in-memory registry before each test."""
     _active_views.clear()
+    _session_tab_targets.clear()
+    _active_tab_target.clear()
     yield
     _active_views.clear()
+    _session_tab_targets.clear()
+    _active_tab_target.clear()
 
 
 def _make_view(
@@ -48,6 +58,50 @@ def _make_view(
         page_url="https://sso.example.com/login",
         page_title="Sign In",
     )
+
+
+class TestCdpReaderTasksField:
+    """Regression: _cdp_reader_tasks must be tracked on the view so a new
+    client connection can cancel an old relay's recv() before starting its own.
+    Without this, two concurrent recv() calls crash the websockets library."""
+
+    def test_initialized_empty(self):
+        view = _make_view()
+        assert view._cdp_reader_tasks == []
+
+    @pytest.mark.asyncio
+    async def test_old_reader_tasks_can_be_cancelled(self):
+        """Simulate the pattern used by ws_browser_view: cancel+await old tasks."""
+        view = _make_view()
+
+        # Simulate a long-running relay task (like async for ws.recv())
+        stalled = asyncio.Event()
+
+        async def fake_relay():
+            stalled.set()
+            await asyncio.sleep(3600)  # "blocked" in recv
+
+        task = asyncio.create_task(fake_relay())
+        view._cdp_reader_tasks = [task]
+
+        # Wait until the task is actually running
+        await stalled.wait()
+
+        # New client connection cancels old tasks (the pattern from ws_browser_view)
+        for t in view._cdp_reader_tasks:
+            if not t.done():
+                t.cancel()
+        for t in view._cdp_reader_tasks:
+            if not t.done():
+                try:
+                    await t
+                except (asyncio.CancelledError, Exception):
+                    pass
+
+        assert task.cancelled()
+
+        # Now a new relay can safely start its own recv()
+        view._cdp_reader_tasks = []
 
 
 class TestViewRegistry:
@@ -106,11 +160,14 @@ class TestCleanupStaleView:
 
 
 class TestStartBrowserView:
+    @patch("orchestrator.browser.cdp_proxy.activate_browser_tab", new_callable=AsyncMock)
     @patch("orchestrator.browser.cdp_proxy.websockets.asyncio.client.connect")
     @patch("orchestrator.browser.cdp_proxy.discover_browser_targets")
     @patch("orchestrator.browser.cdp_proxy.create_tunnel")
     @pytest.mark.asyncio
-    async def test_start_browser_view_success(self, mock_tunnel, mock_discover, mock_connect):
+    async def test_start_browser_view_success(
+        self, mock_tunnel, mock_discover, mock_connect, mock_activate
+    ):
         mock_tunnel.return_value = (True, {"local_port": 9222})
         mock_discover.return_value = [
             {
@@ -205,6 +262,400 @@ class TestStartBrowserView:
             await start_browser_view("session-1", "user/rdev-vm")
 
         mock_close.assert_called_once()
+
+
+class TestActivateTabOnConnect:
+    """Test that start_browser_view activates the tab via HTTP to avoid black frames."""
+
+    @patch("orchestrator.browser.cdp_proxy.activate_browser_tab")
+    @patch("orchestrator.browser.cdp_proxy.websockets.asyncio.client.connect")
+    @patch("orchestrator.browser.cdp_proxy.discover_browser_targets")
+    @patch("orchestrator.browser.cdp_proxy.create_tunnel")
+    @pytest.mark.asyncio
+    async def test_activates_tab_for_remote(
+        self, mock_tunnel, mock_discover, mock_connect, mock_activate
+    ):
+        """Remote targets get activated before screencast starts."""
+        mock_tunnel.return_value = (True, {"local_port": 9222})
+        mock_discover.return_value = [
+            {
+                "id": "page1",
+                "type": "page",
+                "title": "Login",
+                "url": "https://example.com",
+                "webSocketDebuggerUrl": "ws://127.0.0.1:9222/devtools/page/page1",
+            }
+        ]
+        mock_ws = AsyncMock()
+        mock_ws.send = AsyncMock()
+
+        async def fake_recv():
+            last_call = mock_ws.send.call_args
+            sent_msg = json.loads(last_call[0][0])
+            return json.dumps({"id": sent_msg["id"], "result": {}})
+
+        mock_ws.recv = fake_recv
+
+        async def fake_connect(*args, **kwargs):
+            return mock_ws
+
+        mock_connect.side_effect = fake_connect
+
+        await start_browser_view("sess-activate", "user/rdev-vm", cdp_port=9222)
+
+        mock_activate.assert_awaited_once_with(9222, "page1")
+        _active_views.pop("sess-activate", None)
+
+    @patch("orchestrator.browser.cdp_proxy.activate_browser_tab")
+    @patch("orchestrator.browser.cdp_proxy.websockets.asyncio.client.connect")
+    @patch("orchestrator.browser.cdp_proxy.create_browser_tab")
+    @pytest.mark.asyncio
+    async def test_activates_tab_for_local_new_tab(
+        self, mock_create_tab, mock_connect, mock_activate
+    ):
+        """Local workers also activate newly created tabs."""
+        mock_create_tab.return_value = {
+            "id": "new-tab-1",
+            "type": "page",
+            "title": "",
+            "url": "about:blank",
+            "webSocketDebuggerUrl": "ws://127.0.0.1:9222/devtools/page/new-tab-1",
+        }
+        mock_ws = AsyncMock()
+        mock_ws.send = AsyncMock()
+
+        async def fake_recv():
+            last_call = mock_ws.send.call_args
+            sent_msg = json.loads(last_call[0][0])
+            return json.dumps({"id": sent_msg["id"], "result": {}})
+
+        mock_ws.recv = fake_recv
+
+        async def fake_connect(*args, **kwargs):
+            return mock_ws
+
+        mock_connect.side_effect = fake_connect
+
+        await start_browser_view("sess-local-act", "localhost", cdp_port=9222)
+
+        mock_activate.assert_awaited_once_with(9222, "new-tab-1")
+        _active_views.pop("sess-local-act", None)
+
+    @patch(
+        "orchestrator.browser.cdp_proxy.activate_browser_tab",
+        side_effect=Exception("fail"),
+    )
+    @patch("orchestrator.browser.cdp_proxy.websockets.asyncio.client.connect")
+    @patch("orchestrator.browser.cdp_proxy.create_browser_tab")
+    @pytest.mark.asyncio
+    async def test_activation_failure_is_non_fatal(
+        self, mock_create_tab, mock_connect, mock_activate
+    ):
+        """If activate fails, screencast still proceeds (best-effort)."""
+        mock_create_tab.return_value = {
+            "id": "tab-x",
+            "type": "page",
+            "title": "",
+            "url": "about:blank",
+            "webSocketDebuggerUrl": "ws://127.0.0.1:9222/devtools/page/tab-x",
+        }
+        mock_ws = AsyncMock()
+        mock_ws.send = AsyncMock()
+
+        async def fake_recv():
+            last_call = mock_ws.send.call_args
+            sent_msg = json.loads(last_call[0][0])
+            return json.dumps({"id": sent_msg["id"], "result": {}})
+
+        mock_ws.recv = fake_recv
+
+        async def fake_connect(*args, **kwargs):
+            return mock_ws
+
+        mock_connect.side_effect = fake_connect
+
+        # Should NOT raise — activation failure is swallowed
+        view = await start_browser_view("sess-fail-act", "localhost", cdp_port=9222)
+        assert view.session_id == "sess-fail-act"
+        _active_views.pop("sess-fail-act", None)
+
+
+class TestActivateTabSkipsRedundant:
+    """activate_browser_tab skips the CDP call when the target is already active."""
+
+    @patch("orchestrator.browser.cdp_proxy.websockets.asyncio.client.connect")
+    @patch("orchestrator.browser.cdp_proxy.httpx.AsyncClient")
+    @pytest.mark.asyncio
+    async def test_skips_when_already_active(self, mock_http_cls, mock_ws_connect):
+        """No CDP call if the target is already the active tab."""
+        _active_tab_target[9222] = "tab-already"
+
+        await activate_browser_tab(9222, "tab-already")
+
+        # Should not have made any HTTP or WebSocket calls
+        mock_http_cls.assert_not_called()
+        mock_ws_connect.assert_not_called()
+
+    @patch("orchestrator.browser.cdp_proxy.websockets.asyncio.client.connect")
+    @patch("orchestrator.browser.cdp_proxy.httpx.AsyncClient")
+    @pytest.mark.asyncio
+    async def test_activates_different_tab(self, mock_http_cls, mock_ws_connect):
+        """CDP call happens when switching to a different tab."""
+        _active_tab_target[9222] = "tab-old"
+
+        # Mock the HTTP client for /json/version
+        # httpx.Response.json() and .raise_for_status() are sync methods
+        mock_http = AsyncMock()
+        mock_http.__aenter__ = AsyncMock(return_value=mock_http)
+        mock_http.__aexit__ = AsyncMock(return_value=False)
+        mock_resp = MagicMock()
+        mock_resp.json.return_value = {
+            "webSocketDebuggerUrl": "ws://127.0.0.1:9222/devtools/browser/abc"
+        }
+        mock_resp.raise_for_status = MagicMock()
+        mock_http.get = AsyncMock(return_value=mock_resp)
+        mock_http_cls.return_value = mock_http
+
+        # Mock the WebSocket connection
+        mock_ws = AsyncMock()
+        mock_ws.send = AsyncMock()
+        mock_ws.recv = AsyncMock(return_value=json.dumps({"id": 1, "result": {}}))
+        mock_ws.__aenter__ = AsyncMock(return_value=mock_ws)
+        mock_ws.__aexit__ = AsyncMock(return_value=False)
+        mock_ws_connect.return_value = mock_ws
+
+        await activate_browser_tab(9222, "tab-new")
+
+        # Should have made the CDP call
+        mock_ws.send.assert_called_once()
+        sent = json.loads(mock_ws.send.call_args[0][0])
+        assert sent["method"] == "Target.activateTarget"
+        assert sent["params"]["targetId"] == "tab-new"
+
+        # Should have updated tracking
+        assert _active_tab_target[9222] == "tab-new"
+
+
+class TestLocalTabSync:
+    """Browser view should sync its tab with the CDP worker proxy so
+    Playwright MCP and the dashboard view show the same page."""
+
+    @patch("orchestrator.browser.cdp_proxy.activate_browser_tab", new_callable=AsyncMock)
+    @patch("orchestrator.browser.cdp_proxy.websockets.asyncio.client.connect")
+    @patch("orchestrator.browser.cdp_proxy._find_target_by_id")
+    @pytest.mark.asyncio
+    async def test_browser_view_uses_proxy_tab(self, mock_find, mock_connect, mock_activate):
+        """When the CDP proxy already has a tab, browser view should use it."""
+        from orchestrator.browser.cdp_worker_proxy import CDPProxyInfo, _worker_proxies
+
+        # Set up a CDP proxy with an existing tab
+        proxy = CDPProxyInfo(
+            session_id="sess-sync",
+            target_id="proxy-tab-1",
+            proxy_port=19222,
+            chrome_port=9222,
+        )
+        _worker_proxies["sess-sync"] = proxy
+
+        # _find_target_by_id returns the proxy's tab
+        mock_find.return_value = {
+            "id": "proxy-tab-1",
+            "type": "page",
+            "title": "Test",
+            "url": "https://example.com",
+            "webSocketDebuggerUrl": "ws://127.0.0.1:9222/devtools/page/proxy-tab-1",
+        }
+
+        mock_ws = AsyncMock()
+        mock_ws.send = AsyncMock()
+
+        async def fake_recv():
+            last_call = mock_ws.send.call_args
+            sent_msg = json.loads(last_call[0][0])
+            return json.dumps({"id": sent_msg["id"], "result": {}})
+
+        mock_ws.recv = fake_recv
+
+        async def fake_connect(*args, **kwargs):
+            return mock_ws
+
+        mock_connect.side_effect = fake_connect
+
+        view = await start_browser_view("sess-sync", "localhost", cdp_port=9222)
+
+        assert view.target_id == "proxy-tab-1"
+        assert _session_tab_targets["sess-sync"] == "proxy-tab-1"
+
+        _active_views.pop("sess-sync", None)
+        _worker_proxies.pop("sess-sync", None)
+
+    @patch("orchestrator.browser.cdp_proxy.activate_browser_tab", new_callable=AsyncMock)
+    @patch("orchestrator.browser.cdp_proxy.websockets.asyncio.client.connect")
+    @patch("orchestrator.browser.cdp_proxy.create_browser_tab")
+    @pytest.mark.asyncio
+    async def test_new_tab_syncs_to_proxy(self, mock_create_tab, mock_connect, mock_activate):
+        """When browser view creates a new tab, it syncs the ID to the CDP proxy."""
+        from orchestrator.browser.cdp_worker_proxy import CDPProxyInfo, _worker_proxies
+
+        # Proxy exists but has no tab yet
+        proxy = CDPProxyInfo(
+            session_id="sess-sync2",
+            target_id="",
+            proxy_port=19222,
+            chrome_port=9222,
+        )
+        _worker_proxies["sess-sync2"] = proxy
+
+        mock_create_tab.return_value = {
+            "id": "new-tab-99",
+            "type": "page",
+            "title": "",
+            "url": "about:blank",
+            "webSocketDebuggerUrl": "ws://127.0.0.1:9222/devtools/page/new-tab-99",
+        }
+
+        mock_ws = AsyncMock()
+        mock_ws.send = AsyncMock()
+
+        async def fake_recv():
+            last_call = mock_ws.send.call_args
+            sent_msg = json.loads(last_call[0][0])
+            return json.dumps({"id": sent_msg["id"], "result": {}})
+
+        mock_ws.recv = fake_recv
+
+        async def fake_connect(*args, **kwargs):
+            return mock_ws
+
+        mock_connect.side_effect = fake_connect
+
+        view = await start_browser_view("sess-sync2", "localhost", cdp_port=9222)
+
+        assert view.target_id == "new-tab-99"
+        assert proxy.target_id == "new-tab-99"
+        assert _session_tab_targets["sess-sync2"] == "new-tab-99"
+
+        _active_views.pop("sess-sync2", None)
+        _worker_proxies.pop("sess-sync2", None)
+
+
+class TestRestartScreencast:
+    @pytest.mark.asyncio
+    async def test_restart_sends_stop_then_start(self):
+        """restart_screencast stops and restarts the screencast."""
+        view = _make_view()
+
+        await restart_screencast(view)
+
+        assert view.cdp_ws.send.call_count == 2
+        sent_stop = json.loads(view.cdp_ws.send.call_args_list[0][0][0])
+        assert sent_stop["method"] == "Page.stopScreencast"
+        sent_start = json.loads(view.cdp_ws.send.call_args_list[1][0][0])
+        assert sent_start["method"] == "Page.startScreencast"
+        assert sent_start["params"]["quality"] == 60
+        assert sent_start["params"]["maxWidth"] == 1280
+        assert sent_start["params"]["maxHeight"] == 960
+
+    @pytest.mark.asyncio
+    async def test_restart_survives_stop_failure(self):
+        """If stopScreencast fails, startScreencast still runs."""
+        view = _make_view()
+        call_count = 0
+
+        async def fail_on_first(*args):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                raise Exception("stop failed")
+
+        view.cdp_ws.send = fail_on_first
+
+        # Should not raise — stop failure is swallowed
+        await restart_screencast(view)
+        assert call_count == 2  # stop (failed) + start
+
+
+class TestReconnectCdp:
+    """Test reconnect_cdp closes old WS and opens a fresh one."""
+
+    @patch("orchestrator.browser.cdp_proxy.websockets.asyncio.client.connect")
+    @pytest.mark.asyncio
+    async def test_reconnect_replaces_ws_and_restarts_screencast(self, mock_connect):
+        """reconnect_cdp closes old WS, opens new one, re-enables events."""
+        old_ws = AsyncMock()
+        old_ws.state = WsState.OPEN
+        view = _make_view()
+        view.cdp_ws = old_ws
+        view.target_id = "ABC123"
+
+        new_ws = AsyncMock()
+        new_ws.send = AsyncMock()
+
+        # _cdp_send_and_wait reads via recv(), return matching response
+        async def fake_recv():
+            last_call = new_ws.send.call_args
+            sent_msg = json.loads(last_call[0][0])
+            return json.dumps({"id": sent_msg["id"], "result": {}})
+
+        new_ws.recv = fake_recv
+
+        async def fake_connect(*args, **kwargs):
+            return new_ws
+
+        mock_connect.side_effect = fake_connect
+
+        await reconnect_cdp(view)
+
+        # Old WS was closed
+        old_ws.close.assert_called_once()
+
+        # view.cdp_ws now points to the new WS
+        assert view.cdp_ws is new_ws
+
+        # Verify CDP setup calls on new WS
+        sent_methods = [json.loads(call[0][0])["method"] for call in new_ws.send.call_args_list]
+        assert "Page.enable" in sent_methods
+        assert "Emulation.setEmulatedMedia" in sent_methods
+        assert "Emulation.setDefaultBackgroundColorOverride" in sent_methods
+        assert "Emulation.setDeviceMetricsOverride" in sent_methods
+        assert "Page.startScreencast" in sent_methods
+
+        # Verify correct WS URL was used
+        connect_url = mock_connect.call_args[0][0]
+        assert "devtools/page/ABC123" in connect_url
+        assert "127.0.0.1:9222" in connect_url
+
+        # Verify ping_interval=None was passed
+        assert mock_connect.call_args[1].get("ping_interval") is None
+
+    @patch("orchestrator.browser.cdp_proxy.websockets.asyncio.client.connect")
+    @pytest.mark.asyncio
+    async def test_reconnect_survives_old_ws_close_failure(self, mock_connect):
+        """If closing the old WS fails, reconnect still proceeds."""
+        old_ws = AsyncMock()
+        old_ws.close = AsyncMock(side_effect=Exception("already closed"))
+        view = _make_view()
+        view.cdp_ws = old_ws
+        view.target_id = "DEF456"
+
+        new_ws = AsyncMock()
+        new_ws.send = AsyncMock()
+
+        async def fake_recv():
+            last_call = new_ws.send.call_args
+            sent_msg = json.loads(last_call[0][0])
+            return json.dumps({"id": sent_msg["id"], "result": {}})
+
+        new_ws.recv = fake_recv
+
+        async def fake_connect(*args, **kwargs):
+            return new_ws
+
+        mock_connect.side_effect = fake_connect
+
+        # Should not raise
+        await reconnect_cdp(view)
+        assert view.cdp_ws is new_ws
 
 
 class TestStopBrowserView:

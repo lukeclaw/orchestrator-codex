@@ -150,6 +150,7 @@ def _auto_start_browser_local(session_id: str, cdp_port: int) -> int:
             chromium_bin,
             f"--remote-debugging-port={cdp_port}",
             "--remote-debugging-address=127.0.0.1",
+            "--disable-infobars",
             "--window-size=1280,960",
             "about:blank",
         ],
@@ -161,6 +162,21 @@ def _auto_start_browser_local(session_id: str, cdp_port: int) -> int:
         f.write(str(proc.pid))
 
     return cdp_port
+
+
+async def _wait_for_cdp_ready(port: int, timeout: float = 8.0, interval: float = 0.3):
+    """Poll the CDP /json/version endpoint until Chrome is listening."""
+    deadline = asyncio.get_event_loop().time() + timeout
+    async with httpx.AsyncClient(timeout=2.0) as client:
+        while asyncio.get_event_loop().time() < deadline:
+            try:
+                resp = await client.get(f"http://localhost:{port}/json/version")
+                if resp.status_code == 200:
+                    return
+            except Exception:
+                pass
+            await asyncio.sleep(interval)
+    raise RuntimeError(f"Chrome did not become ready on port {port} within {timeout}s")
 
 
 async def _auto_start_browser_and_retry(
@@ -182,10 +198,16 @@ async def _auto_start_browser_and_retry(
         if is_remote_host(host):
             rws = await _wait_for_rws(host)
             rws.start_browser(session_id, port=cdp_port)
+            # Remote: tunnel doesn't exist yet, so we can't poll localhost.
+            # start_browser_view() will create the tunnel and discover_browser_targets
+            # has its own retries (5 attempts, 1s delay).
+            await asyncio.sleep(1)
         else:
             _auto_start_browser_local(session_id, cdp_port)
+            # Local: poll until Chrome's CDP port is accepting connections.
+            # Chrome can take several seconds to start on first launch.
+            await _wait_for_cdp_ready(cdp_port)
 
-        await asyncio.sleep(1)  # Let CDP fully initialize
         return await start_browser_view(
             session_id=session_id,
             host=host,
@@ -332,6 +354,11 @@ async def get_browser_view_status(session_id: str, db=Depends(get_db)):
 
     view = get_active_view(session_id)
     if not view:
+        return {"active": False}
+
+    # If the CDP WebSocket is dead, clean up and report inactive
+    if not is_view_alive(session_id):
+        await cleanup_stale_view(session_id)
         return {"active": False}
 
     return {

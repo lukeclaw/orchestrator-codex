@@ -101,10 +101,11 @@ class TestStartEndpoint:
         assert data["viewport"]["width"] == 1280
         assert data["viewport"]["height"] == 960
 
+    @patch("orchestrator.api.routes.browser_view._wait_for_cdp_ready", new_callable=AsyncMock)
     @patch("orchestrator.api.routes.browser_view._auto_start_browser_local")
     @patch("orchestrator.api.routes.browser_view.start_browser_view")
     def test_local_session_auto_starts_browser(
-        self, mock_start, mock_auto_start, client, local_session
+        self, mock_start, mock_auto_start, mock_wait_cdp, client, local_session
     ):
         """Local sessions are supported — auto-start launches headed Chromium."""
         mock_start.side_effect = RuntimeError("No browser found on CDP port 9222")
@@ -255,6 +256,17 @@ class TestStatusEndpoint:
 
         assert response.status_code == 200
         assert response.json()["active"] is False
+
+    def test_stale_view_cleaned_up_returns_inactive(self, client, rdev_session):
+        """GET returns inactive and cleans up when CDP WebSocket is dead."""
+        _active_views[rdev_session.id] = _make_fake_view(rdev_session.id, ws_state=WsState.CLOSED)
+
+        response = client.get(f"/api/sessions/{rdev_session.id}/browser-view")
+
+        assert response.status_code == 200
+        assert response.json()["active"] is False
+        # View should have been removed from registry
+        assert rdev_session.id not in _active_views
 
     def test_404_session_not_found(self, client):
         response = client.get("/api/sessions/nonexistent-id/browser-view")
@@ -437,6 +449,81 @@ class TestSharedChromeInstance:
         data = response.json()
         assert data["port"] == 9222
         mock_auto_start.assert_called_once_with(local_session.id, 9222)
+
+
+class TestWaitForCdpReady:
+    """Tests for _wait_for_cdp_ready polling logic."""
+
+    @pytest.mark.asyncio
+    @patch("orchestrator.api.routes.browser_view.httpx.AsyncClient")
+    async def test_returns_immediately_when_ready(self, mock_client_cls):
+        from orchestrator.api.routes.browser_view import _wait_for_cdp_ready
+
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_client = AsyncMock()
+        mock_client.get.return_value = mock_resp
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+        mock_client_cls.return_value = mock_client
+
+        await _wait_for_cdp_ready(9222, timeout=2.0)
+        mock_client.get.assert_called_with("http://localhost:9222/json/version")
+
+    @pytest.mark.asyncio
+    @patch("orchestrator.api.routes.browser_view.httpx.AsyncClient")
+    async def test_polls_until_ready(self, mock_client_cls):
+        from orchestrator.api.routes.browser_view import _wait_for_cdp_ready
+
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_client = AsyncMock()
+        # Fail twice, then succeed
+        mock_client.get.side_effect = [
+            ConnectionError("refused"),
+            ConnectionError("refused"),
+            mock_resp,
+        ]
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+        mock_client_cls.return_value = mock_client
+
+        await _wait_for_cdp_ready(9222, timeout=5.0, interval=0.01)
+        assert mock_client.get.call_count == 3
+
+    @pytest.mark.asyncio
+    @patch("orchestrator.api.routes.browser_view.httpx.AsyncClient")
+    async def test_raises_on_timeout(self, mock_client_cls):
+        from orchestrator.api.routes.browser_view import _wait_for_cdp_ready
+
+        mock_client = AsyncMock()
+        mock_client.get.side_effect = ConnectionError("refused")
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+        mock_client_cls.return_value = mock_client
+
+        with pytest.raises(RuntimeError, match="Chrome did not become ready"):
+            await _wait_for_cdp_ready(9222, timeout=0.1, interval=0.02)
+
+    @patch("orchestrator.api.routes.browser_view._wait_for_cdp_ready", new_callable=AsyncMock)
+    @patch("orchestrator.api.routes.browser_view._auto_start_browser_local")
+    @patch("orchestrator.api.routes.browser_view.start_browser_view")
+    def test_local_auto_start_polls_cdp(
+        self, mock_start, mock_auto_start, mock_wait_cdp, client, local_session
+    ):
+        """Local auto-start polls CDP before retrying start_browser_view."""
+        fake_view = _make_fake_view(local_session.id, host="localhost")
+        mock_start.side_effect = [RuntimeError("No browser found on CDP port 9222"), fake_view]
+        mock_auto_start.return_value = 9222
+
+        response = client.post(
+            f"/api/sessions/{local_session.id}/browser-view",
+            json={"cdp_port": 9222},
+        )
+
+        assert response.status_code == 200
+        mock_auto_start.assert_called_once()
+        mock_wait_cdp.assert_awaited_once_with(9222)
 
 
 class TestSessionDeleteStopsBrowser:
