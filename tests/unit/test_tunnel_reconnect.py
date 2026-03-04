@@ -5,9 +5,13 @@ When SSH/screen/Claude are all running fine but the tunnel disconnects,
 we should only reconnect the tunnel without typing into the Claude console.
 """
 
+import subprocess
 from unittest.mock import MagicMock, patch
 
 import pytest
+
+# Default return value for mocked subprocess.run — tmux commands succeed.
+_TMUX_OK = subprocess.CompletedProcess(args=["tmux"], returncode=0, stdout="", stderr="")
 
 
 class TestReconnectTunnelOnly:
@@ -100,17 +104,18 @@ class TestReconnectRemoteWorkerTunnelOnlyPath:
     non-intrusively and returns early if everything is alive.
     """
 
-    @patch("orchestrator.terminal.manager.subprocess")
+    @patch("orchestrator.terminal.manager.subprocess.run")
     @patch("orchestrator.session.reconnect.check_tui_running_in_pane", return_value=True)
     @patch("orchestrator.session.health.check_worker_ssh_alive", return_value=True)
     @patch("orchestrator.session.health.check_screen_and_claude_remote")
     @patch("orchestrator.session.reconnect.time.sleep")
     def test_tunnel_only_path_when_claude_running(
-        self, mock_sleep, mock_screen_claude, mock_ssh_alive, mock_tui, mock_tmux_subprocess, db
+        self, mock_sleep, mock_screen_claude, mock_ssh_alive, mock_tui, mock_tmux_run, db
     ):
         """When TUI active + SSH alive + remote alive, only fix tunnel and return."""
         from orchestrator.session.reconnect import reconnect_remote_worker
 
+        mock_tmux_run.return_value = _TMUX_OK
         mock_screen_claude.return_value = ("alive", "Screen session exists and Claude is running")
 
         mock_session = MagicMock()
@@ -138,7 +143,7 @@ class TestReconnectRemoteWorkerTunnelOnlyPath:
         mock_tm.restart_tunnel.assert_called_once()
         mock_repo.update_session.assert_any_call(db, "test-session-id", status="waiting")
 
-    @patch("orchestrator.terminal.manager.subprocess")
+    @patch("orchestrator.terminal.manager.subprocess.run")
     @patch("orchestrator.session.reconnect.check_tui_running_in_pane", return_value=False)
     @patch("orchestrator.session.reconnect.send_keys")
     @patch("orchestrator.session.reconnect.kill_window")
@@ -155,12 +160,13 @@ class TestReconnectRemoteWorkerTunnelOnlyPath:
         mock_kill_window,
         mock_send_keys,
         mock_tui,
-        mock_tmux_subprocess,
+        mock_tmux_run,
         db,
     ):
         """When SSH process is dead (no TUI), should go through full pipeline."""
         from orchestrator.session.reconnect import reconnect_remote_worker
 
+        mock_tmux_run.return_value = _TMUX_OK
         mock_session = MagicMock()
         mock_session.name = "test-worker"
         mock_session.host = "subs-mt/test-vm"
