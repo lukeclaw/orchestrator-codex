@@ -6,6 +6,18 @@ import { openUrl } from './api/client'
 import './styles/variables.css'
 import './styles/global.css'
 
+// Prevent Backspace from triggering browser/webview "navigate back".
+// Allow it through only for elements that actually accept text input.
+document.addEventListener('keydown', (e) => {
+  if (e.key !== 'Backspace') return
+  const target = e.target as HTMLElement
+  const tag = target.tagName
+  if (tag === 'INPUT' || tag === 'TEXTAREA' || target.isContentEditable) return
+  // xterm terminals handle Backspace themselves via the WebSocket stream
+  if (target.classList.contains('xterm-helper-textarea')) return
+  e.preventDefault()
+})
+
 // Block the default browser context menu globally.
 // Components that need a custom context menu should call e.preventDefault()
 // themselves (e.g. FileExplorerPanel) — that fires before this handler.
