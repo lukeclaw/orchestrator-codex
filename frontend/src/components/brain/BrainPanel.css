@@ -181,7 +181,7 @@
 .bp-footer {
   display: flex;
   align-items: center;
-  justify-content: flex-end;
+  justify-content: space-between;
   min-height: 44px;
   box-sizing: border-box;
   padding: 8px 12px;
@@ -189,6 +189,43 @@
   border-top: 1px solid var(--border);
   box-shadow: 0 -1px 4px rgba(0,0,0,0.4);
   flex-shrink: 0;
+}
+
+.bp-footer-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.bp-footer-action-btn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: none;
+  border: 1px solid transparent;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 500;
+  padding: 3px 8px;
+  border-radius: var(--radius);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+
+.bp-footer-action-btn:hover {
+  background: var(--surface-hover);
+  color: var(--text-primary);
+  border-color: var(--border);
+}
+
+.bp-footer-action-btn:active {
+  background: var(--border-subtle);
+}
+
+.bp-footer-action-create:hover {
+  color: var(--green);
+  border-color: var(--green-muted);
+  background: rgba(63, 185, 80, 0.08);
 }
 
 .bp-footer-paste-btn {

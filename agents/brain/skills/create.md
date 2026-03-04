@@ -10,7 +10,19 @@ Analyze input, match against existing projects/tasks, propose placement, create 
 ## Usage
 - `/create <text or idea>` — Analyze and propose placement
 - `/create <file-path>` — Read file/image, then analyze
-- `/create` — Prompt user for input
+- `/create` — Show welcome prompt, then wait for user input
+
+### Empty Input Handling
+
+When invoked with no arguments (`/create` or `/create ` with only whitespace), respond with a brief, friendly welcome message instead of immediately prompting for input. Example:
+
+```
+What would you like to create? Share your idea, feature request, bug report, or any task — I'll figure out where it fits and set things up.
+
+You can describe it in plain text, or paste a file path / screenshot.
+```
+
+Then wait for the user to type their request. Do NOT run any commands or gather state until the user provides input.
 
 ---
 

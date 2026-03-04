@@ -353,6 +353,25 @@ export function IconX(props: IconProps) {
   )
 }
 
+export function IconPlus(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <line x1="12" y1="5" x2="12" y2="19" />
+      <line x1="5" y1="12" x2="19" y2="12" />
+    </Icon>
+  )
+}
+
+export function IconEraser(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="m7 21-4.3-4.3c-1-1-1-2.5 0-3.4l9.6-9.6c1-1 2.5-1 3.4 0l5.6 5.6c1 1 1 2.5 0 3.4L13 21" />
+      <path d="M22 21H7" />
+      <path d="m5 11 9 9" />
+    </Icon>
+  )
+}
+
 export function IconPin(props: IconProps) {
   return (
     <Icon {...props}>

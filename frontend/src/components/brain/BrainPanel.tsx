@@ -4,7 +4,7 @@ import { useNotify } from '../../context/NotificationContext'
 import { useSmartPaste } from '../../hooks/useSmartPaste'
 import BrainTerminal from './BrainTerminal'
 import type { BrainStatus } from './BrainTerminal'
-import { IconChevronLeft, IconChevronRight, IconClipboard, IconStop } from '../common/Icons'
+import { IconChevronLeft, IconChevronRight, IconClipboard, IconEraser, IconPlus, IconStop, IconSync } from '../common/Icons'
 import ConfirmPopover from '../common/ConfirmPopover'
 import './BrainPanel.css'
 
@@ -179,6 +179,20 @@ export default function BrainPanel({
     }
   }, [notify])
 
+  // Send a quick command to the brain (interrupt first, then type + optionally enter)
+  async function sendBrainCommand(command: string, enter: boolean = true) {
+    try {
+      await api('/api/brain/command', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ command, enter }),
+      })
+    } catch (e) {
+      notify(e instanceof Error ? e.message : 'Failed to send command', 'error')
+    }
+    terminalFocusRef.current?.()
+  }
+
   // Handle image paste from Cmd+V in terminal
   const handleImagePaste = useCallback(async (file: File) => {
     const base64 = await new Promise<string>((resolve, reject) => {
@@ -320,6 +334,32 @@ export default function BrainPanel({
 
       {isRunning && (
         <div className="bp-footer">
+          <div className="bp-footer-actions">
+            <button
+              className="bp-footer-action-btn"
+              onClick={() => sendBrainCommand('/clear')}
+              title="Clear brain context"
+            >
+              <IconEraser size={12} />
+              <span>Clear</span>
+            </button>
+            <button
+              className="bp-footer-action-btn"
+              onClick={() => sendBrainCommand('/check_worker')}
+              title="Check all workers"
+            >
+              <IconSync size={12} />
+              <span>Check</span>
+            </button>
+            <button
+              className="bp-footer-action-btn bp-footer-action-create"
+              onClick={() => sendBrainCommand('/create ', false)}
+              title="Create a new work item"
+            >
+              <IconPlus size={12} />
+              <span>Create</span>
+            </button>
+          </div>
           <button
             className={`bp-footer-paste-btn${pasting || ctxPasting ? ' pasting' : ''}`}
             onClick={handlePaste}

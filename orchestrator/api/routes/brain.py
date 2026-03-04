@@ -372,3 +372,49 @@ def paste_text(req: PasteTextRequest, db=Depends(get_db)):
         "filename": filename,
         "size": len(text_bytes),
     }
+
+
+class BrainCommandRequest(BaseModel):
+    """Request body for sending a command to the brain terminal."""
+
+    command: str  # The command text to type (e.g. "/clear", "/check_worker")
+    enter: bool = True  # Whether to press Enter after typing the command
+
+
+@router.post("/brain/command")
+def brain_command(req: BrainCommandRequest, db=Depends(get_db)):
+    """Interrupt the brain terminal, then type a command.
+
+    Sequence: Ctrl-C → Escape → type command → optionally Enter.
+    Used by the UI quick-action buttons (Clear, Check Workers, Create).
+    """
+    session = _get_brain_session(db)
+    if session is None or session.status in ("disconnected",):
+        raise HTTPException(400, "Brain is not running")
+
+    try:
+        # 1. Send Ctrl-C to cancel any running operation
+        tmux.send_keys(TMUX_SESSION, BRAIN_SESSION_NAME, "C-c", enter=False)
+        time.sleep(0.15)
+
+        # 2. Send Escape to exit any mode / dismiss prompts
+        tmux.send_keys(TMUX_SESSION, BRAIN_SESSION_NAME, "Escape", enter=False)
+        time.sleep(0.15)
+
+        # 3. Clear any leftover input on the line (Ctrl-U)
+        tmux.send_keys(TMUX_SESSION, BRAIN_SESSION_NAME, "C-u", enter=False)
+        time.sleep(0.1)
+
+        # 4. Type the command using literal mode (safe for special chars)
+        tmux.send_keys_literal(TMUX_SESSION, BRAIN_SESSION_NAME, req.command)
+
+        # 5. Optionally press Enter
+        if req.enter:
+            time.sleep(0.1)
+            tmux.send_keys(TMUX_SESSION, BRAIN_SESSION_NAME, "", enter=True)
+
+        return {"ok": True, "command": req.command, "entered": req.enter}
+
+    except Exception as e:
+        logger.exception("Failed to send command to brain")
+        raise HTTPException(500, f"Failed to send command: {e}")
