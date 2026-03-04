@@ -21,6 +21,7 @@ Request flow:
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import logging
 import re
@@ -57,6 +58,19 @@ class CDPProxyInfo:
 _worker_proxies: dict[str, CDPProxyInfo] = {}
 
 PROXY_PORT_BASE = 19222
+PROXY_PORT_RANGE = 10000  # Hash into 19222–29221
+
+
+def _session_preferred_port(session_id: str) -> int:
+    """Derive a deterministic preferred port from a session ID.
+
+    Hashing makes the port stable across orchestrator restarts (same
+    session_id → same preferred port) without needing persistent storage.
+    If the port is occupied, ``find_available_port`` probes upward.
+    """
+    h = hashlib.sha256(session_id.encode()).digest()
+    offset = int.from_bytes(h[:4], "big") % PROXY_PORT_RANGE
+    return PROXY_PORT_BASE + offset
 
 
 async def _proxy_http_to_chrome(chrome_port: int, path: str) -> bytes:
@@ -270,7 +284,7 @@ async def _run_proxy_server(info: CDPProxyInfo, ready: threading.Event) -> None:
     try:
         async with websockets.asyncio.server.serve(
             handler,
-            "localhost",  # Bind IPv4 + IPv6 loopback so clients using either work
+            "",  # Bind all interfaces (IPv4 + IPv6) so ::1 and 127.0.0.1 both work
             info.proxy_port,
             process_request=process_request,
         ) as server:
@@ -314,7 +328,8 @@ def start_cdp_proxy(session_id: str, target_id: str = "", chrome_port: int = 922
     if existing is not None:
         return existing.proxy_port
 
-    port = find_available_port(PROXY_PORT_BASE)
+    preferred = _session_preferred_port(session_id)
+    port = find_available_port(preferred)
     if port is None:
         raise RuntimeError("No available port for CDP proxy")
 

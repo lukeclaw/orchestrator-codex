@@ -6,8 +6,11 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from orchestrator.browser.cdp_worker_proxy import (
+    PROXY_PORT_BASE,
+    PROXY_PORT_RANGE,
     CDPProxyInfo,
     _build_process_request,
+    _session_preferred_port,
     _worker_proxies,
     get_proxy_port,
     start_cdp_proxy,
@@ -27,6 +30,25 @@ def clear_registry():
         except Exception:
             pass
     _worker_proxies.clear()
+
+
+class TestSessionPreferredPort:
+    def test_deterministic(self):
+        """Same session_id always produces the same port."""
+        assert _session_preferred_port("sess-abc") == _session_preferred_port("sess-abc")
+
+    def test_in_range(self):
+        """Returned port falls within [PROXY_PORT_BASE, PROXY_PORT_BASE + PROXY_PORT_RANGE)."""
+        for sid in ["a", "b", "sess-1", "sess-2", "x" * 200]:
+            port = _session_preferred_port(sid)
+            assert PROXY_PORT_BASE <= port < PROXY_PORT_BASE + PROXY_PORT_RANGE
+
+    def test_different_sessions_differ(self):
+        """Different session IDs (usually) produce different ports."""
+        ports = {_session_preferred_port(f"sess-{i}") for i in range(50)}
+        # With 50 sessions over a 10k range, collisions are possible but
+        # we should get at least 40 distinct ports.
+        assert len(ports) > 40
 
 
 class TestStartStopProxy:
@@ -103,6 +125,26 @@ class TestStartStopProxy:
         """start_cdp_proxy raises RuntimeError when no port available."""
         with pytest.raises(RuntimeError, match="No available port"):
             start_cdp_proxy("sess-1", chrome_port=9222)
+
+    @patch("orchestrator.browser.cdp_worker_proxy.threading.Thread")
+    @patch("orchestrator.browser.cdp_worker_proxy.find_available_port", return_value=25000)
+    def test_start_uses_session_derived_port(self, mock_find_port, mock_thread_cls):
+        """start_cdp_proxy passes the session-derived preferred port, not the base."""
+        mock_thread = MagicMock()
+        mock_thread.is_alive.return_value = False
+        mock_thread_cls.return_value = mock_thread
+
+        def fake_start():
+            info = mock_thread_cls.call_args[1]["args"][0]
+            ready = mock_thread_cls.call_args[1]["args"][1]
+            info._thread = mock_thread
+            ready.set()
+
+        mock_thread.start.side_effect = fake_start
+
+        start_cdp_proxy("sess-xyz", chrome_port=9222)
+        expected_preferred = _session_preferred_port("sess-xyz")
+        mock_find_port.assert_called_once_with(expected_preferred)
 
 
 class TestGetProxyPort:
