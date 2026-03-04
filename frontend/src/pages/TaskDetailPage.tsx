@@ -5,12 +5,24 @@ import { useNotify } from '../context/NotificationContext'
 import { api, openUrl } from '../api/client'
 import { useSmartPaste } from '../hooks/useSmartPaste'
 import type { Task, TaskLink, Notification } from '../api/types'
-import { IconPause, IconPlay, IconStop, IconRefresh } from '../components/common/Icons'
+import {
+  IconPause,
+  IconPlay,
+  IconStop,
+  IconRefresh,
+  IconChat,
+  IconInfo,
+  IconAlertTriangle,
+  IconChevronRight,
+  IconCheck,
+  IconExternalLink,
+} from '../components/common/Icons'
 import { timeAgo, parseDate } from '../components/common/TimeAgo'
 import ConfirmPopover from '../components/common/ConfirmPopover'
 import TagDropdown from '../components/common/TagDropdown'
 import Markdown from '../components/common/Markdown'
 import './TaskDetailPage.css'
+import './NotificationsPage.css'
 
 const STATUS_OPTIONS = [
   { value: 'todo', label: 'To Do', className: 'status-todo' },
@@ -63,6 +75,8 @@ export default function TaskDetailPage() {
   const [creatingSubtask, setCreatingSubtask] = useState(false)
   const [notifications, setNotifications] = useState<Notification[]>([])
   const [notificationsExpanded, setNotificationsExpanded] = useState(true)
+  const [dismissingNotifications, setDismissingNotifications] = useState<Set<string>>(new Set())
+  const [expandedNotifications, setExpandedNotifications] = useState<Set<string>>(new Set())
   const [showAssignModal, setShowAssignModal] = useState(false)
   const [workerPreview, setWorkerPreview] = useState('')
   const [workerActionPending, setWorkerActionPending] = useState(false)
@@ -342,7 +356,15 @@ export default function TaskDetailPage() {
   const handleDismissNotification = async (notificationId: string) => {
     try {
       await api(`/api/notifications/${notificationId}/dismiss`, { method: 'POST' })
-      setNotifications(prev => prev.filter(n => n.id !== notificationId))
+      setDismissingNotifications(prev => new Set(prev).add(notificationId))
+      setTimeout(() => {
+        setNotifications(prev => prev.filter(n => n.id !== notificationId))
+        setDismissingNotifications(prev => {
+          const next = new Set(prev)
+          next.delete(notificationId)
+          return next
+        })
+      }, 300)
     } catch (err) {
       console.error('Failed to dismiss notification:', err)
     }
@@ -430,15 +452,27 @@ export default function TaskDetailPage() {
   }
 
   const formatNotificationTime = (dateStr: string) => {
-    const d = new Date(dateStr)
-    return d.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+    const d = parseDate(dateStr)
+    const diffMs = Date.now() - d.getTime()
+    const diffMins = Math.floor(diffMs / 60000)
+    const diffHours = Math.floor(diffMs / 3600000)
+    const diffDays = Math.floor(diffMs / 86400000)
+
+    if (diffMins < 1) return 'Just now'
+    if (diffMins < 60) return `${diffMins}m ago`
+    if (diffHours < 24) return `${diffHours}h ago`
+    if (diffDays < 7) return `${diffDays}d ago`
+    return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
   }
 
-  const getNotificationTypeIcon = (type: string) => {
+  const getNotificationTypeConfig = (type: string) => {
     switch (type) {
-      case 'pr_comment': return '💬'
-      case 'warning': return '⚠️'
-      default: return 'ℹ️'
+      case 'pr_comment':
+        return { icon: <IconChat size={18} />, label: 'PR Comment', color: 'purple' }
+      case 'warning':
+        return { icon: <IconAlertTriangle size={18} />, label: 'Warning', color: 'amber' }
+      default:
+        return { icon: <IconInfo size={18} />, label: 'Info', color: 'blue' }
     }
   }
 
@@ -931,28 +965,101 @@ export default function TaskDetailPage() {
               </div>
               {notificationsExpanded && (
                 <div className="tdp-notifications-list">
-                  {notifications.map(n => (
-                    <div key={n.id} className={`tdp-notification-item ${n.notification_type}`}>
-                      <span className="notification-icon">{getNotificationTypeIcon(n.notification_type)}</span>
-                      <div className="notification-content">
-                        <div className="notification-header">
-                          <span className={`notification-type ${n.notification_type}`}>{n.notification_type}</span>
-                          <span className="notification-time">{formatNotificationTime(n.created_at)}</span>
-                        </div>
-                        <p className="notification-message">{n.message}</p>
-                        <div className="notification-actions">
-                          {n.link_url && (
-                            <button className="btn btn-link btn-sm" onClick={() => openUrl(n.link_url!)}>
-                              Open Link ↗
-                            </button>
+                  {notifications.map(n => {
+                    const typeConfig = getNotificationTypeConfig(n.notification_type)
+                    const isPrComment = n.notification_type === 'pr_comment'
+                    const isExpanded = expandedNotifications.has(n.id)
+                    const isExpandable = isPrComment && !!n.metadata
+                    const toggleExpand = isExpandable ? () => setExpandedNotifications(prev => {
+                      const next = new Set(prev)
+                      if (next.has(n.id)) next.delete(n.id); else next.add(n.id)
+                      return next
+                    }) : undefined
+                    return (
+                      <article
+                        key={n.id}
+                        className={`np-card ${dismissingNotifications.has(n.id) ? 'dismissing' : ''} ${isExpanded ? 'expanded' : ''} ${typeConfig.color} ${!isExpandable ? 'non-expandable' : ''}`}
+                        onClick={toggleExpand}
+                        style={{ cursor: isExpandable ? 'pointer' : 'default' }}
+                      >
+                        <div className="np-card-indicator" />
+                        <div className="np-card-icon-col">
+                          <div className={`np-card-icon-wrap ${typeConfig.color}`}>{typeConfig.icon}</div>
+                          {isExpandable && (
+                            <div className={`np-card-chevron ${isExpanded ? 'expanded' : ''}`}>
+                              <IconChevronRight size={12} />
+                            </div>
                           )}
-                          <button className="btn btn-secondary btn-sm" onClick={() => handleDismissNotification(n.id)}>
-                            Dismiss
-                          </button>
                         </div>
-                      </div>
-                    </div>
-                  ))}
+                        <div className="np-card-body">
+                          <div className="np-card-top">
+                            <div className="np-card-header">
+                              <span className={`np-badge ${typeConfig.color}`}>{typeConfig.label}</span>
+                              <time className="np-time">{formatNotificationTime(n.created_at)}</time>
+                              {n.metadata?.pr_title && (
+                                <span className="np-pr-title">{n.metadata.pr_title}</span>
+                              )}
+                            </div>
+                            <div className="np-card-actions" onClick={e => e.stopPropagation()}>
+                              {n.link_url && (
+                                <button className="np-link-btn" onClick={() => openUrl(n.link_url!)}>
+                                  <IconExternalLink size={12} />
+                                  Link
+                                </button>
+                              )}
+                              <button
+                                className="np-action-btn"
+                                onClick={() => handleDismissNotification(n.id)}
+                                title="Dismiss"
+                              >
+                                <IconCheck size={14} />
+                              </button>
+                            </div>
+                          </div>
+                          <div className="np-card-content">
+                            {isExpanded && isPrComment && n.metadata ? (
+                              <div className="np-pr-thread">
+                                {n.metadata.pr_title && n.link_url && (
+                                  <a href={n.link_url} className="np-pr-thread-title" onClick={e => e.stopPropagation()}>
+                                    {n.metadata.pr_title}
+                                  </a>
+                                )}
+                                {n.metadata.reviewer_comment && (
+                                  <div className="np-comment-bubble reviewer">
+                                    <div className="np-comment-author reviewer">
+                                      <span>{n.metadata.reviewer_name || 'Reviewer'}</span>
+                                      {n.metadata.reviewer_commented_at && (
+                                        <time className="np-comment-time">{formatNotificationTime(n.metadata.reviewer_commented_at)}</time>
+                                      )}
+                                    </div>
+                                    <div className="np-comment-body">{n.metadata.reviewer_comment}</div>
+                                  </div>
+                                )}
+                                {n.metadata.reply && (
+                                  <div className="np-comment-bubble reply">
+                                    <div className="np-comment-author reply">
+                                      <span>{n.metadata.reply_author || 'Your Reply'}</span>
+                                      {n.metadata.reply_commented_at && (
+                                        <time className="np-comment-time">{formatNotificationTime(n.metadata.reply_commented_at)}</time>
+                                      )}
+                                    </div>
+                                    <div className="np-comment-body">{n.metadata.reply}</div>
+                                  </div>
+                                )}
+                                {!n.metadata.reviewer_comment && !n.metadata.reply && (
+                                  <p className="np-message" style={{ whiteSpace: 'pre-wrap' }}>{n.message}</p>
+                                )}
+                              </div>
+                            ) : (
+                              <p className="np-message" title={n.metadata?.reply || n.message}>
+                                {n.metadata?.reply ? n.metadata.reply : n.message}
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                      </article>
+                    )
+                  })}
                 </div>
               )}
             </div>
