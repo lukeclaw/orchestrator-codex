@@ -375,7 +375,6 @@ async def stream_pane(
             except Exception:
                 pass
 
-
     # --- Start drift correction (streaming is deferred until after history) ----
     flush_task: asyncio.Task | None = None
 

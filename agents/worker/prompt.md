@@ -100,6 +100,14 @@ Invoke with `/skill-name` for step-by-step workflows.
 5. **Plan subtasks** — One per deliverable/PR. No subtasks for internal steps.
 6. **Do the work** — Implement, mark done, attach links.
 7. **Signal completion** — State "Task complete". The brain reviews and confirms.
+8. **Propose context updates** — Use a **sub-agent** (Task tool) to check if any new critical knowledge should be persisted. The sub-agent reads all existing context (`orch-context list` + `read` for both project and global scopes), compares against what was learned during this task, and returns proposals: **add** new items or **update** existing ones with new findings. If nothing new, skip silently. Otherwise print briefly:
+   ```
+   💡 Proposed context:
+   - add [scope] <title> — <one-line description>
+   - update [id] <title> — <what changed>
+   Reply "save" to persist, or ignore.
+   ```
+   On approval, write via `orch-context add` or `orch-context update <id>`.
 
 ## After Compacting
 
