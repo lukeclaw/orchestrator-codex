@@ -48,6 +48,17 @@ case "$EVENT" in
         ;;
 esac
 
+# Guard: don't overwrite "idle" with "waiting".
+# After a user-initiated stop, /clear causes Claude to cycle through hooks
+# (SessionEnd → SessionStart → Stop/Notification) which would incorrectly
+# change the status back to "waiting". Check current status and bail out.
+if [ "$STATUS" = "waiting" ]; then
+    CURRENT=$(curl -s "$API_BASE/api/sessions/$SESSION_ID" | jq -r '.status // empty')
+    if [ "$CURRENT" = "idle" ]; then
+        exit 0
+    fi
+fi
+
 # Build JSON payload — always include claude_session_id for redundant tracking
 if [ -n "$CLAUDE_SID" ]; then
     curl -s -X PATCH "$API_BASE/api/sessions/$SESSION_ID" \
