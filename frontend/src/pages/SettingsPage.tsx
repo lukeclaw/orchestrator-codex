@@ -26,7 +26,7 @@ const SCHEDULE_OPTIONS = [
 ]
 
 export default function SettingsPage() {
-  const { settings, loading, saving, save, getValue } = useSettings()
+  const { loading } = useSettings()
   const notify = useNotify()
   const {
     info: updateInfo,
@@ -37,9 +37,6 @@ export default function SettingsPage() {
     openRelease,
     installUpdate,
   } = useUpdate()
-
-  // Local state for general settings
-  const [autoUpdateCheck, setAutoUpdateCheck] = useState(true)
 
   // Backup state
   const {
@@ -61,14 +58,6 @@ export default function SettingsPage() {
   const [scheduleHours, setScheduleHours] = useState(0)
   const [backupDirty, setBackupDirty] = useState(false)
 
-  // Sync local state when settings load
-  useEffect(() => {
-    if (settings.length > 0) {
-      const auc = getValue('general.auto_update_check')
-      if (auc != null) setAutoUpdateCheck(Boolean(auc))
-    }
-  }, [settings, getValue])
-
   // Fetch detailed update info on mount (global context only tracks the boolean)
   useEffect(() => {
     if (!loading) {
@@ -86,12 +75,6 @@ export default function SettingsPage() {
       setBackupDirty(false)
     }
   }, [backupSettings])
-
-  const handleToggleAutoUpdate = () => {
-    const next = !autoUpdateCheck
-    setAutoUpdateCheck(next)
-    save({ 'general.auto_update_check': next })
-  }
 
   const handleBackupSave = async () => {
     const updates: Record<string, unknown> = {}
@@ -130,6 +113,11 @@ export default function SettingsPage() {
             <div className="update-version-row">
               <span className="update-version-label">Current version</span>
               <span className="update-version-value">{updateInfo?.current_version ?? '...'}</span>
+            </div>
+
+            <div className="update-version-row">
+              <span className="update-version-label">Latest version</span>
+              <span className="update-version-value">{updateInfo?.latest_version ?? '...'}</span>
             </div>
 
             {updateInfo?.update_available && (
@@ -199,19 +187,6 @@ export default function SettingsPage() {
               </button>
             </div>
 
-            <div className="approval-rule" style={{ marginTop: 16 }}>
-              <div className="rule-info">
-                <span className="rule-label">Check automatically on launch</span>
-                <span className="rule-hint">Checks GitHub for new releases when the app starts</span>
-              </div>
-              <button
-                className={`toggle ${autoUpdateCheck ? 'on' : 'off'}`}
-                onClick={handleToggleAutoUpdate}
-                disabled={saving}
-              >
-                {autoUpdateCheck ? 'ON' : 'OFF'}
-              </button>
-            </div>
           </div>
         </div>
       </div>

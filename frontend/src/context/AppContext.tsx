@@ -243,7 +243,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
   }, [fetchAll])
 
-  // Global update check — runs once on load and every 30 minutes
+  // Global update check — runs once on load and every 24 hours
   useEffect(() => {
     const checkUpdate = async () => {
       try {
@@ -254,7 +254,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       }
     }
     checkUpdate()
-    const interval = setInterval(checkUpdate, 30 * 60 * 1000)
+    const interval = setInterval(checkUpdate, 24 * 60 * 60 * 1000)
     return () => clearInterval(interval)
   }, [])
 
