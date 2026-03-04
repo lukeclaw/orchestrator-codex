@@ -245,7 +245,7 @@ export default function NotificationsPage() {
         <div className="np-card-indicator" />
         <div className={`np-card-icon-wrap ${typeConfig.color}`}>{typeConfig.icon}</div>
         <div className="np-card-body">
-          <div className="np-card-main">
+          <div className="np-card-top">
             <div className="np-card-header">
               <span className={`np-badge ${typeConfig.color}`}>
                 {typeConfig.label}
@@ -255,6 +255,48 @@ export default function NotificationsPage() {
                 <span className="np-pr-title">{n.metadata.pr_title}</span>
               )}
             </div>
+            <div className="np-card-actions" onClick={e => e.stopPropagation()}>
+              {n.task_id && (
+                <button
+                  className="np-link-btn np-hoverable-action"
+                  onClick={() => navigate(`/tasks/${n.task_id}`)}
+                >
+                  View Task
+                </button>
+              )}
+              {n.link_url && (
+                <button
+                  className="np-link-btn np-hoverable-action"
+                  onClick={() => openUrl(n.link_url!)}
+                >
+                  <IconExternalLink size={12} />
+                  Link
+                </button>
+              )}
+              {!n.dismissed && (
+                <button
+                  className="np-action-btn"
+                  onClick={() => handleDismiss(n.id)}
+                  title="Dismiss"
+                >
+                  <IconCheck size={14} />
+                </button>
+              )}
+              {n.dismissed && (
+                <button
+                  className="np-action-btn delete"
+                  onClick={() => handleDelete(n.id)}
+                  title="Delete"
+                >
+                  <IconTrash size={14} />
+                </button>
+              )}
+            </div>
+            <div className={`np-card-chevron ${expanded.has(n.id) ? 'expanded' : ''}`}>
+              <IconChevronRight size={14} />
+            </div>
+          </div>
+          <div className="np-card-content">
             {expanded.has(n.id) && n.notification_type === 'pr_comment' && n.metadata ? (
               <div className="np-pr-thread">
                 {n.metadata.pr_title && n.link_url && (
@@ -293,46 +335,6 @@ export default function NotificationsPage() {
                 {!expanded.has(n.id) && n.metadata?.reply ? n.metadata.reply : n.message}
               </p>
             )}
-          </div>
-          <div className="np-card-actions" onClick={e => e.stopPropagation()}>
-            {n.task_id && (
-              <button
-                className="np-link-btn np-hoverable-action"
-                onClick={() => navigate(`/tasks/${n.task_id}`)}
-              >
-                View Task
-              </button>
-            )}
-            {n.link_url && (
-              <button
-                className="np-link-btn np-hoverable-action"
-                onClick={() => openUrl(n.link_url!)}
-              >
-                <IconExternalLink size={12} />
-                Link
-              </button>
-            )}
-            {!n.dismissed && (
-              <button
-                className="np-action-btn"
-                onClick={() => handleDismiss(n.id)}
-                title="Dismiss"
-              >
-                <IconCheck size={14} />
-              </button>
-            )}
-            {n.dismissed && (
-              <button
-                className="np-action-btn delete"
-                onClick={() => handleDelete(n.id)}
-                title="Delete"
-              >
-                <IconTrash size={14} />
-              </button>
-            )}
-          </div>
-          <div className={`np-card-chevron ${expanded.has(n.id) ? 'expanded' : ''}`}>
-            <IconChevronRight size={14} />
           </div>
         </div>
       </article>

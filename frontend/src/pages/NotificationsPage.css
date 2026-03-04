@@ -277,12 +277,17 @@
   flex: 1;
   min-width: 0;
   display: flex;
-  align-items: center;
-  gap: 16px;
+  flex-direction: column;
+  gap: 4px;
 }
 
-.np-card-main {
-  flex: 1;
+.np-card-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.np-card-content {
   min-width: 0;
 }
 
@@ -290,7 +295,8 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  margin-bottom: 4px;
+  flex: 1;
+  min-width: 0;
 }
 
 .np-badge {
