@@ -39,9 +39,12 @@ def health_check(session_name: str, window_name: str) -> bool:
 # --- remote host helpers ---
 
 
+_LOCAL_HOSTS = {"localhost", "local", "127.0.0.1", "::1"}
+
+
 def is_remote_host(host: str) -> bool:
     """Return True for any remote host (rdev or generic SSH)."""
-    return host != "localhost"
+    return host.lower() not in _LOCAL_HOSTS
 
 
 def is_rdev_host(host: str) -> bool:

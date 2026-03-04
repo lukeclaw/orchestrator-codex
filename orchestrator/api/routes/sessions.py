@@ -37,7 +37,7 @@ router = APIRouter()
 
 class SessionCreate(BaseModel):
     name: str
-    host: str
+    host: str = "localhost"
     work_dir: str | None = None
     task_id: str | None = None
 

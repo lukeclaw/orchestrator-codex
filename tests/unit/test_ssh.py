@@ -58,6 +58,19 @@ class TestIsRemoteHost:
     def test_simple_hostname_is_remote(self):
         assert is_remote_host("myserver") is True
 
+    def test_local_is_not_remote(self):
+        assert is_remote_host("local") is False
+
+    def test_loopback_ipv4_is_not_remote(self):
+        assert is_remote_host("127.0.0.1") is False
+
+    def test_loopback_ipv6_is_not_remote(self):
+        assert is_remote_host("::1") is False
+
+    def test_localhost_case_insensitive(self):
+        assert is_remote_host("Localhost") is False
+        assert is_remote_host("LOCAL") is False
+
     def test_empty_string_is_remote(self):
         # Empty string is not "localhost" so it's treated as remote
         assert is_remote_host("") is True

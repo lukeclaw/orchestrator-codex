@@ -19,7 +19,8 @@ show_help() {
     echo ""
     echo "Create Options:"
     echo "  --name NAME                   Worker name (required)"
-    echo "  --host HOST                   Host: 'localhost' or rdev path like 'subs-mt/name' (default: localhost)"
+    echo "  --remote HOST                 Create on a remote host (rdev path like 'subs-mt/name' or SSH host)"
+    echo "                                Omit for a local worker (default)"
     echo "  --work-dir DIR                Working directory for the worker"
     echo "  --task-id ID                  Task ID to assign to the worker"
     echo ""
@@ -30,8 +31,8 @@ show_help() {
     echo "  orch-workers rdevs --refresh     # Force refresh rdev list"
     echo "  orch-workers show abc123"
     echo "  orch-workers create --name api-worker"
-    echo "  orch-workers create --name ui-worker --host localhost --work-dir /path/to/repo"
-    echo "  orch-workers create --name rdev-worker --host subs-mt/sleepy-franklin"
+    echo "  orch-workers create --name ui-worker --work-dir /path/to/repo"
+    echo "  orch-workers create --name rdev-worker --remote subs-mt/sleepy-franklin"
     echo "  orch-workers delete abc123"
 }
 
@@ -78,18 +79,30 @@ cmd_create() {
     while [[ $# -gt 0 ]]; do
         case "$1" in
             --name) name="$2"; shift 2 ;;
-            --host) host="$2"; shift 2 ;;
+            --remote) host="$2"; shift 2 ;;
             --work-dir) work_dir="$2"; shift 2 ;;
             --task-id) task_id="$2"; shift 2 ;;
+            --host)
+                echo "Error: --host is removed. Use --remote <host> for remote workers, or omit for local." >&2
+                exit 1 ;;
             *) echo "Unknown option: $1" >&2; exit 1 ;;
         esac
     done
-    
+
     if [[ -z "$name" ]]; then
         echo "Error: --name is required" >&2
         exit 1
     fi
-    
+
+    # Validate: --remote must be a real remote host, not a local alias
+    if [[ "$host" != "localhost" ]]; then
+        local lower_host=$(echo "$host" | tr '[:upper:]' '[:lower:]')
+        if [[ "$lower_host" == "local" || "$lower_host" == "localhost" || "$lower_host" == "127.0.0.1" || "$lower_host" == "::1" ]]; then
+            echo "Error: --remote does not accept local addresses. Omit --remote for a local worker." >&2
+            exit 1
+        fi
+    fi
+
     local escaped_name=$(json_encode "$name")
     local escaped_host=$(json_encode "$host")
     local json="{\"name\": \"$escaped_name\", \"host\": \"$escaped_host\""
@@ -102,7 +115,7 @@ cmd_create() {
         json="$json, \"task_id\": \"$escaped_task_id\""
     fi
     json="$json}"
-    
+
     curl -s -X POST "$API_BASE/api/sessions" \
         -H 'Content-Type: application/json' \
         -d "$json" | pp

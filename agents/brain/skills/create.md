@@ -89,7 +89,10 @@ Present assignment plan and wait for approval (yes / no).
 orch-tasks assign <task-id> <worker-id>
 
 # Or create new worker + assign in one step
-orch-workers create --name <name> --host <host> --task-id <task-id>
+# Local worker (default):
+orch-workers create --name <name> --task-id <task-id>
+# Remote worker (rdev or SSH):
+orch-workers create --name <name> --remote <host> --task-id <task-id>
 ```
 
 Print recap of what was created and assigned.
