@@ -413,7 +413,7 @@ class TestSessionStop:
     def test_stop_session_unassigns_non_done_tasks(
         self, mock_repo, mock_list_tasks, mock_update_task, db
     ):
-        """Stopping a session should unassign tasks that are not done."""
+        """Stopping a session should unassign tasks without changing status."""
         from orchestrator.api.routes.sessions import stop_session
 
         mock_session = MagicMock()
@@ -434,8 +434,11 @@ class TestSessionStop:
             with patch("orchestrator.terminal.manager.send_keys_literal"):
                 stop_session("test-session-id", db=db)
 
-        # Task should be unassigned
+        # Task should be unassigned but status left unchanged
         mock_update_task.assert_called()
+        call_kwargs = mock_update_task.call_args[1]
+        assert call_kwargs.get("assigned_session_id") is None
+        assert "status" not in call_kwargs
 
     @patch("orchestrator.state.repositories.tasks.update_task")
     @patch("orchestrator.state.repositories.tasks.list_tasks")
@@ -443,7 +446,7 @@ class TestSessionStop:
     def test_stop_session_preserves_done_task_status(
         self, mock_repo, mock_list_tasks, mock_update_task, db
     ):
-        """Stopping a session should NOT reset tasks that are already done."""
+        """Stopping a session should unassign done tasks without changing status."""
         from orchestrator.api.routes.sessions import stop_session
 
         mock_session = MagicMock()
@@ -464,10 +467,11 @@ class TestSessionStop:
             with patch("orchestrator.terminal.manager.send_keys_literal"):
                 stop_session("test-session-id", db=db)
 
-        # Task status should remain done (None means don't change)
-        if mock_update_task.called:
-            call_kwargs = mock_update_task.call_args[1]
-            assert call_kwargs.get("status") is None or call_kwargs.get("status") == "done"
+        # Task should be unassigned but status left unchanged
+        mock_update_task.assert_called()
+        call_kwargs = mock_update_task.call_args[1]
+        assert call_kwargs.get("assigned_session_id") is None
+        assert "status" not in call_kwargs
 
 
 if __name__ == "__main__":

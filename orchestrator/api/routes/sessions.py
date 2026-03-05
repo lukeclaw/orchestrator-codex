@@ -775,7 +775,7 @@ def continue_session(session_id: str, db=Depends(get_db)):
 
 @router.post("/sessions/{session_id}/stop")
 def stop_session(session_id: str, db=Depends(get_db)):
-    """Stop a worker session: send Escape, then /clear, unassign task, go to idle."""
+    """Stop a worker session: send Escape, then /clear, unassign task (leave status unchanged), go to idle."""
     s = _resolve_session(db, session_id)
     if s is None:
         raise HTTPException(404, "Session not found")
@@ -802,9 +802,7 @@ def stop_session(session_id: str, db=Depends(get_db)):
 
     assigned_tasks = tasks_repo.list_tasks(db, assigned_session_id=session_id)
     for task in assigned_tasks:
-        # Only reset status to todo if task is not already done
-        new_status = None if task.status == "done" else "todo"
-        tasks_repo.update_task(db, task.id, assigned_session_id=None, status=new_status)
+        tasks_repo.update_task(db, task.id, assigned_session_id=None)
 
     # Close interactive CLI if active
     try:
