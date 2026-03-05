@@ -9,7 +9,7 @@ import TaskForm from '../components/tasks/TaskForm'
 import ContextModal from '../components/context/ContextModal'
 import ProjectEditModal from '../components/projects/ProjectEditModal'
 import WorkerCard from '../components/workers/WorkerCard'
-import { parseDate } from '../components/common/TimeAgo'
+import { parseDate, parseLocalDate } from '../components/common/TimeAgo'
 import './ProjectDetailPage.css'
 
 export default function ProjectDetailPage() {
@@ -131,7 +131,7 @@ export default function ProjectDetailPage() {
 
       {project.target_date && (
         <div className="pd-meta">
-          <span className="pd-date">Target: {new Date(project.target_date).toLocaleDateString()}</span>
+          <span className="pd-date">Target: {parseLocalDate(project.target_date).toLocaleDateString()}</span>
         </div>
       )}
 

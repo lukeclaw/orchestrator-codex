@@ -45,6 +45,15 @@ Use Playwright MCP tools to verify frontend changes visually. The dev server run
 - **Tabs**: Use the pill-style tab bar pattern (`.settings-tabs` / `.settings-tab` in SettingsPage, or `.np-tabs` / `.np-tab` in NotificationsPage).
 - **Confirmations**: Use `<ConfirmPopover>` — never `window.confirm()`.
 
+## Frontend — Timezone Handling
+
+When working with dates and times in the frontend, always be aware of timezone implications:
+
+- **Date-only strings** (e.g. `"2026-03-09"` from `target_date`): `new Date("2026-03-09")` parses as **UTC midnight**, which shifts to the previous day in negative-offset timezones (e.g. US Pacific). Always use `parseLocalDate()` from `components/common/TimeAgo.tsx` to parse these as local midnight.
+- **Datetime strings** (e.g. `created_at`, `updated_at`): These are UTC timestamps. Use `parseDate()` from `TimeAgo.tsx` which appends `Z` to timezone-naive datetime strings.
+- **`<input type="date">`**: Returns `YYYY-MM-DD` strings in local timezone — no conversion needed for form values.
+- **General rule**: Whenever you display or compare a date/time, verify whether it should be local or UTC and use the appropriate parser.
+
 ## Design Docs
 
 The design documents are at `docs/` folder. Keep it updated for relavent topics, and add new topics for major changes or feature additions.

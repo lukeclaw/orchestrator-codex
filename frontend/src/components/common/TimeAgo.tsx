@@ -1,3 +1,12 @@
+/**
+ * Parse a date-only string (YYYY-MM-DD) as local midnight.
+ * Without 'T00:00:00', `new Date("2026-03-09")` is parsed as UTC midnight,
+ * which shifts to the previous day in negative-offset timezones (e.g. US).
+ */
+export function parseLocalDate(dateStr: string): Date {
+  return new Date(dateStr + 'T00:00:00')
+}
+
 /** Parse a date string, treating timezone-naive strings as UTC */
 export function parseDate(dateStr: string | null | undefined): Date {
   if (!dateStr) return new Date()
