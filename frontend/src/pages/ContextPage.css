@@ -25,12 +25,6 @@
   flex-shrink: 0;
 }
 
-.ctx-count {
-  font-size: 13px;
-  color: var(--text-secondary);
-  white-space: nowrap;
-}
-
 /* Scope summary bar */
 .ctx-scope-bar {
   display: flex;

@@ -220,7 +220,6 @@ export default function TasksPage() {
       <div className="page-header">
         <h1>Tasks</h1>
         <div className="page-header-actions">
-          <span className="tasks-count">{filteredTasks.length} tasks</span>
           <button className="btn btn-primary btn-sm" onClick={() => setShowAddTask(true)}>
             + Add Task
           </button>

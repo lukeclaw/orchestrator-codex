@@ -214,7 +214,6 @@ export default function ContextPage() {
       <div className="page-header">
         <h1>Context</h1>
         <div className="page-header-actions">
-          <span className="ctx-count">{sortedItems.length} items</span>
           <button className="btn btn-primary btn-sm" onClick={() => setShowNewContext(true)}>
             + Add Context
           </button>
