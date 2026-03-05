@@ -478,7 +478,10 @@ def _launch_claude_in_screen(
         session_arg,
     )
 
-    # Configure Playwright MCP via env var (replaces old `claude mcp add` approach)
+    # Install Playwright plugin and configure CDP endpoint
+    send_keys(tmux_sess, tmux_win, "claude plugin install playwright", enter=True)
+    time.sleep(3)
+
     send_keys(
         tmux_sess,
         tmux_win,

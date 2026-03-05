@@ -648,8 +648,11 @@ def setup_remote_worker(
             time.sleep(0.3)
             logger.info("Deployed skills to %s for rdev worker %s", global_skills_dest, name)
 
-        # 8. Configure Playwright MCP via env var and launch Claude (inside screen)
-        # Replaces the old `claude mcp add` approach — the built-in Playwright plugin
+        # 8. Install Playwright plugin and configure CDP endpoint (inside screen)
+        tmux.send_keys(tmux_session, name, "claude plugin install playwright", enter=True)
+        time.sleep(3)  # Wait for plugin install
+
+        # Configure Playwright MCP via env var — the built-in Playwright plugin
         # reads PLAYWRIGHT_MCP_CDP_ENDPOINT from its environment.
         tmux.send_keys(
             tmux_session,
