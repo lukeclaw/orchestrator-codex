@@ -71,7 +71,7 @@ class TestBrainCliScripts:
         with tempfile.TemporaryDirectory() as tmpdir:
             bin_dir = deploy_brain_scripts(tmpdir)
             content = _read_script(bin_dir, "orch-workers")
-            assert "stop <id>" in content
+            assert "stop <name-or-id>" in content
             assert "cmd_stop()" in content
 
     def test_brain_workers_script_has_reconnect_command(self):
@@ -79,7 +79,7 @@ class TestBrainCliScripts:
         with tempfile.TemporaryDirectory() as tmpdir:
             bin_dir = deploy_brain_scripts(tmpdir)
             content = _read_script(bin_dir, "orch-workers")
-            assert "reconnect <id>" in content
+            assert "reconnect <name-or-id>" in content
             assert "cmd_reconnect()" in content
 
     def test_brain_skills_script_has_all_commands(self):
