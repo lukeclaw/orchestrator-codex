@@ -80,8 +80,6 @@ def set_focus(focus: FocusUpdate):
 @router.post("/brain/start", status_code=200)
 def start_brain(db=Depends(get_db)):
     """Start the orchestrator brain — a Claude Code process with project management tools."""
-    import os
-
     session = _get_brain_session(db)
     if session and session.status not in ("disconnected",):
         return {
@@ -106,25 +104,19 @@ def start_brain(db=Depends(get_db)):
     settings_path = os.path.join(brain_dir, ".claude", "settings.json")
 
     try:
-        # Create tmux window for the brain
+        # Idempotency: if the tmux window already exists, the brain (or
+        # its shell) is still alive from a previous run.  Just reconcile
+        # the DB record — never send commands into an existing pane.
+        pane_existed = tmux.window_exists(TMUX_SESSION, BRAIN_SESSION_NAME)
+
+        # ensure_window is itself idempotent (no-op when window exists)
         target = tmux.ensure_window(TMUX_SESSION, BRAIN_SESSION_NAME)
 
-        # cd to the brain working directory so Claude Code picks up CLAUDE.md
-        tmux.send_keys(TMUX_SESSION, BRAIN_SESSION_NAME, f"cd {brain_dir}")
-
-        # Add brain CLI tools to PATH
-        tmux.send_keys(TMUX_SESSION, BRAIN_SESSION_NAME, path_export)
-
+        # Reconcile DB record
         if session:
-            # Reuse existing DB record
-            sessions_repo.update_session(
-                db,
-                session.id,
-                status="idle",
-            )
+            sessions_repo.update_session(db, session.id, status="working")
             session_id = session.id
         else:
-            # Create new session record
             s = sessions_repo.create_session(
                 db,
                 name=BRAIN_SESSION_NAME,
@@ -133,9 +125,20 @@ def start_brain(db=Depends(get_db)):
                 session_type="brain",
             )
             session_id = s.id
+            sessions_repo.update_session(db, session_id, status="working")
 
-        # Launch Claude Code with hooks settings
-        import time
+        if pane_existed:
+            logger.info("Brain pane already exists; skipping launch")
+            return {
+                "ok": True,
+                "session_id": session_id,
+                "status": "working",
+                "message": "Brain already running (reconnected)",
+            }
+
+        # Fresh pane — set up working directory, PATH, then launch Claude
+        tmux.send_keys(TMUX_SESSION, BRAIN_SESSION_NAME, f"cd {brain_dir}")
+        tmux.send_keys(TMUX_SESSION, BRAIN_SESSION_NAME, path_export)
 
         time.sleep(0.5)
         tmux.send_keys(
@@ -143,7 +146,6 @@ def start_brain(db=Depends(get_db)):
             BRAIN_SESSION_NAME,
             f"claude --dangerously-skip-permissions --settings {settings_path}",
         )
-        sessions_repo.update_session(db, session_id, status="working")
 
         logger.info("Orchestrator brain started in %s", target)
         return {
