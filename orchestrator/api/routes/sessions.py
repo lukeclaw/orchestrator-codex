@@ -387,9 +387,7 @@ def create_session(body: SessionCreate, request: Request, db=Depends(get_db)):
             if body.task_id:
                 from orchestrator.state.repositories import tasks
 
-                tasks.update_task(
-                    db, body.task_id, assigned_session_id=s.id, status="in_progress"
-                )
+                tasks.update_task(db, body.task_id, assigned_session_id=s.id, status="in_progress")
         except Exception:
             logger.warning("Could not deploy/launch local worker %s", sanitized_name, exc_info=True)
 
@@ -625,9 +623,7 @@ def type_text(session_id: str, body: TypeText, request: Request, db=Depends(get_
 
 
 @router.post("/sessions/{session_id}/paste-to-pane")
-def paste_to_pane_endpoint(
-    session_id: str, body: TypeText, request: Request, db=Depends(get_db)
-):
+def paste_to_pane_endpoint(session_id: str, body: TypeText, request: Request, db=Depends(get_db)):
     """Paste text into the terminal using bracketed paste mode.
 
     Uses tmux ``paste-buffer -p`` which wraps text in ``ESC[200~`` …

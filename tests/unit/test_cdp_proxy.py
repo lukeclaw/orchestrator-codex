@@ -764,9 +764,7 @@ class TestInputDispatch:
         which collides with VK_DELETE and causes the character to be dropped."""
         view = _make_view()
 
-        await dispatch_key_event(
-            view, "keyDown", key=".", code="Period", text=".", key_code=190
-        )
+        await dispatch_key_event(view, "keyDown", key=".", code="Period", text=".", key_code=190)
 
         sent = json.loads(view.cdp_ws.send.call_args[0][0])
         assert sent["params"]["windowsVirtualKeyCode"] == 190
@@ -778,9 +776,7 @@ class TestInputDispatch:
         """Various punctuation keys should use browser keyCode, not ASCII."""
         view = _make_view()
         # comma: ASCII 44, correct VK = 188
-        await dispatch_key_event(
-            view, "keyDown", key=",", code="Comma", text=",", key_code=188
-        )
+        await dispatch_key_event(view, "keyDown", key=",", code="Comma", text=",", key_code=188)
         sent = json.loads(view.cdp_ws.send.call_args[0][0])
         assert sent["params"]["windowsVirtualKeyCode"] == 188
 
