@@ -331,6 +331,15 @@ export default function WorkersPage() {
           {/* Status summary bar */}
           {workers.length > 0 && (
             <div className="status-summary-bar">
+              <button
+                className={`status-summary-item${!statusFilter ? ' active' : ''}`}
+                onClick={() => setStatusFilter('')}
+                type="button"
+              >
+                <span className="status-summary-dot" style={{ background: 'var(--text-muted)' }} />
+                <span className="status-summary-count">{workers.length}</span>
+                <span className="status-summary-label">All</span>
+              </button>
               {STATUS_ORDER.filter(s => statusCounts[s]).map(status => (
                 <button
                   key={status}
