@@ -459,20 +459,15 @@ export default function SessionDetailPage() {
     }
   }, [id, bvActive, bvStarting, notify])
 
-  // Handle long text paste from Cmd+V in terminal (no permission popup)
+  // Handle long text paste from Cmd+V in terminal — uses bracketed paste so
+  // Claude Code shows the compact "[xx lines of text]" indicator.
   const handleTextPaste = useCallback(async (text: string) => {
     if (!id) return
     try {
-      const res = await api<{ ok: boolean; file_path: string; filename: string }>(
-        `/api/sessions/${id}/paste-text`,
-        { method: 'POST', body: JSON.stringify({ text }) },
-      )
-      if (res.ok) {
-        await api(`/api/sessions/${id}/type`, {
-          method: 'POST',
-          body: JSON.stringify({ text: res.file_path }),
-        })
-      }
+      await api(`/api/sessions/${id}/paste-to-pane`, {
+        method: 'POST',
+        body: JSON.stringify({ text }),
+      })
     } catch (e) {
       notify(e instanceof Error ? e.message : 'Failed to paste text', 'error')
     }
@@ -520,17 +515,11 @@ export default function SessionDetailPage() {
           })
         }
       } else if (result.text && result.text.length > 1000) {
-        // Long text: save to file and inject path
-        const res = await api<{ ok: boolean; file_path: string; filename: string }>(
-          `/api/sessions/${id}/paste-text`,
-          { method: 'POST', body: JSON.stringify({ text: result.text }) },
-        )
-        if (res.ok) {
-          await api(`/api/sessions/${id}/type`, {
-            method: 'POST',
-            body: JSON.stringify({ text: res.file_path }),
-          })
-        }
+        // Long text: bracketed paste so Claude Code shows "[xx lines of text]"
+        await api(`/api/sessions/${id}/paste-to-pane`, {
+          method: 'POST',
+          body: JSON.stringify({ text: result.text }),
+        })
       } else {
         await api(`/api/sessions/${id}/send`, {
           method: 'POST',

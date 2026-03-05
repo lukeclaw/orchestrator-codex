@@ -126,20 +126,12 @@ export default function BrainPanel({
           }
         }
       } else if (clip.text && clip.text.length > 1000) {
-        // Long text: save to file and inject path
-        const result = await api<{ ok: boolean; file_path: string; filename: string }>(
-          '/api/brain/paste-text',
-          {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ text: clip.text }),
-          }
-        )
-        if (result.ok && result.file_path) {
-          if (terminalInputRef.current) {
-            terminalInputRef.current(result.file_path)
-          }
-        }
+        // Long text: bracketed paste so Claude Code shows "[xx lines of text]"
+        await api('/api/brain/paste-to-pane', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text: clip.text }),
+        })
       } else if (clip.text) {
         // Short text: inject directly into terminal
         if (terminalInputRef.current) {
@@ -158,22 +150,15 @@ export default function BrainPanel({
     }
   }
 
-  // Handle long text paste from Cmd+V in terminal
+  // Handle long text paste from Cmd+V in terminal — uses bracketed paste so
+  // Claude Code shows the compact "[xx lines of text]" indicator.
   const handleTextPaste = useCallback(async (text: string) => {
     try {
-      const result = await api<{ ok: boolean; file_path: string; filename: string }>(
-        '/api/brain/paste-text',
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ text }),
-        }
-      )
-      if (result.ok && result.file_path) {
-        if (terminalInputRef.current) {
-          terminalInputRef.current(result.file_path)
-        }
-      }
+      await api('/api/brain/paste-to-pane', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text }),
+      })
     } catch (e) {
       notify(e instanceof Error ? e.message : 'Failed to paste text', 'error')
     }

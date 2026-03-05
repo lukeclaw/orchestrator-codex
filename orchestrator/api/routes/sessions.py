@@ -618,6 +618,32 @@ def type_text(session_id: str, body: TypeText, request: Request, db=Depends(get_
     return {"ok": True, "session": s.name}
 
 
+@router.post("/sessions/{session_id}/paste-to-pane")
+def paste_to_pane_endpoint(
+    session_id: str, body: TypeText, request: Request, db=Depends(get_db)
+):
+    """Paste text into the terminal using bracketed paste mode.
+
+    Uses tmux ``paste-buffer -p`` which wraps text in ``ESC[200~`` …
+    ``ESC[201~`` sequences.  TUI apps like Claude Code detect this and
+    display the pasted content compactly (e.g. ``[42 lines of text]``)
+    instead of echoing every line.
+    """
+    s = _resolve_session(db, session_id)
+    if s is None:
+        raise HTTPException(404, "Session not found")
+
+    from orchestrator.terminal.manager import paste_to_pane
+
+    config = getattr(request.app.state, "config", {})
+    tmux_session = config.get("tmux", {}).get("session_name", "orchestrator")
+
+    success = paste_to_pane(tmux_session, s.name, body.text)
+    if not success:
+        raise HTTPException(500, "Failed to paste text")
+    return {"ok": True, "session": s.name}
+
+
 class PasteImageBody(BaseModel):
     image_data: str  # base64-encoded image (with or without data URL prefix)
 
@@ -690,60 +716,6 @@ def paste_image_to_session(session_id: str, body: PasteImageBody, db=Depends(get
         "file_path": local_path,
         "filename": fname,
         "size": len(image_bytes),
-    }
-
-
-class PasteTextBody(BaseModel):
-    text: str
-
-
-@router.post("/sessions/{session_id}/paste-text")
-def paste_text_to_session(session_id: str, body: PasteTextBody, db=Depends(get_db)):
-    """Save long clipboard text to the worker's tmp dir and return the file path.
-
-    For rdev workers the file is also scp'd to the remote host so Claude Code
-    on the remote machine can read it as a local file.
-    """
-    import uuid
-    from datetime import datetime
-
-    from orchestrator.terminal.file_sync import get_worker_tmp_dir, sync_file_to_remote
-
-    s = _resolve_session(db, session_id)
-    if s is None:
-        raise HTTPException(404, "Session not found")
-
-    text_bytes = body.text.encode("utf-8")
-
-    # --- save locally --------------------------------------------------
-    tmp_dir = get_worker_tmp_dir(s.name)
-    os.makedirs(tmp_dir, exist_ok=True)
-
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    short_id = uuid.uuid4().hex[:6]
-    fname = f"clipboard_{timestamp}_{short_id}.txt"
-    local_path = os.path.join(tmp_dir, fname)
-
-    try:
-        with open(local_path, "w", encoding="utf-8") as f:
-            f.write(body.text)
-        logger.info("Saved worker text to %s (%d bytes)", local_path, len(text_bytes))
-    except Exception as e:
-        logger.exception("Failed to save worker text")
-        raise HTTPException(500, f"Failed to save text: {e}")
-
-    # --- sync to remote if needed ----------------------------------------
-    if is_remote_host(s.host):
-        remote_path = local_path
-        ok = sync_file_to_remote(local_path, s.host, remote_path)
-        if not ok:
-            raise HTTPException(502, "Failed to sync text to remote worker")
-
-    return {
-        "ok": True,
-        "file_path": local_path,
-        "filename": fname,
-        "size": len(text_bytes),
     }
 
 
