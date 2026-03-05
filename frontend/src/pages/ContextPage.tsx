@@ -224,6 +224,14 @@ export default function ContextPage() {
       {/* Scope pills + inline search */}
       {items.length > 0 && (
         <div className="ctx-scope-bar">
+          <button
+            className={`ctx-scope-pill${!scopeFilter ? ' active' : ''}`}
+            onClick={() => setScopeFilter('')}
+            type="button"
+          >
+            <span className="ctx-scope-pill-count">{items.length}</span>
+            <span className="ctx-scope-pill-label">All</span>
+          </button>
           {SCOPES.filter(s => scopeCounts[s]).map(scope => (
             <button
               key={scope}

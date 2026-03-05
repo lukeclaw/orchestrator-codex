@@ -469,6 +469,13 @@ export default function NotificationsPage() {
 
       {/* Type filter chips */}
       <div className="np-type-filters">
+        <button
+          className={`np-type-chip ${typeFilter === 'all' ? 'active' : ''}`}
+          onClick={() => setTypeFilter('all')}
+        >
+          <span className="np-type-chip-count">{notifications.length}</span>
+          <span className="np-type-chip-label">All</span>
+        </button>
         {typeChips.map(chip => (
           <button
             key={chip.value}

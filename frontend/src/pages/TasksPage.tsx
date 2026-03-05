@@ -230,6 +230,14 @@ export default function TasksPage() {
       {/* Status pills + inline search */}
       {topLevelTasks.length > 0 && (
         <div className="tk-status-bar">
+          <button
+            className={`tk-status-pill${!statusFilter ? ' active' : ''}`}
+            onClick={() => updateFilter('status', '')}
+            type="button"
+          >
+            <span className="tk-status-pill-count">{Object.values(statusCounts).reduce((a, b) => a + b, 0)}</span>
+            <span className="tk-status-pill-label">All</span>
+          </button>
           {STATUSES.filter(s => statusCounts[s]).map(status => (
             <button
               key={status}

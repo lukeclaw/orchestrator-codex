@@ -18,7 +18,7 @@ export default function ProjectsPage() {
   const { projects, loading, create, fetch: refreshProjects } = useProjects()
   const { refresh: refreshApp } = useApp()
   const [showForm, setShowForm] = useState(false)
-  const [statusFilter, setStatusFilter] = useState('')
+  const [statusFilter, setStatusFilter] = useState('active')
   const [searchQuery, setSearchQuery] = useState('')
   const [editingProject, setEditingProject] = useState<Project | null>(null)
   const [viewMode, setViewMode] = useState<'table' | 'cards'>('cards')
@@ -141,6 +141,14 @@ export default function ProjectsPage() {
       {/* Status pills + inline search */}
       {projects.length > 0 && (
         <div className="pp-filter-bar">
+          <button
+            className={`pp-filter-pill${!statusFilter ? ' active' : ''}`}
+            onClick={() => setStatusFilter('')}
+            type="button"
+          >
+            <span className="pp-filter-pill-count">{projects.length}</span>
+            <span className="pp-filter-pill-label">All</span>
+          </button>
           {STATUSES.filter(s => statusCounts[s]).map(status => (
             <button
               key={status}

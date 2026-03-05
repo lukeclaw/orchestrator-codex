@@ -575,7 +575,7 @@
 }
 
 .tdp-subtask-filter-pill.active {
-  background: var(--surface-raised);
+  background: var(--accent-muted);
   color: var(--text-primary);
 }
 

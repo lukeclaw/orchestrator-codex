@@ -53,8 +53,8 @@
 }
 
 .pp-filter-pill.active {
-  background: var(--surface);
-  border-color: var(--border);
+  background: var(--accent-muted);
+  color: var(--text-primary);
 }
 
 .pp-filter-dot {

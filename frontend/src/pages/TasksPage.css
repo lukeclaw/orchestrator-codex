@@ -59,8 +59,8 @@
 }
 
 .tk-status-pill.active {
-  background: var(--surface);
-  border-color: var(--border);
+  background: var(--accent-muted);
+  color: var(--text-primary);
 }
 
 .tk-status-dot {
