@@ -1,7 +1,7 @@
 .notifications-page {
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: 6px;
   padding: 0;
 }
 
