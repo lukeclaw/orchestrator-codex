@@ -192,6 +192,21 @@ def ensure_window(session_name: str, window_name: str, cwd: str | None = None) -
     return f"{session_name}:{window_name}"
 
 
+def pane_foreground_command(session_name: str, window_name: str) -> str | None:
+    """Return the foreground command running in the pane (e.g. ``bash``, ``node``).
+
+    Uses ``#{pane_current_command}`` — a single tmux query, completely
+    non-intrusive.  Returns ``None`` if the pane doesn't exist.
+    """
+    target = f"{session_name}:{window_name}"
+    result = _run_tmux(
+        "display-message", "-t", target, "-p", "#{pane_current_command}", check=False
+    )
+    if result.returncode != 0:
+        return None
+    return result.stdout.strip() or None
+
+
 def kill_window(session_name: str, window_name: str) -> bool:
     """Kill a specific window."""
     target = f"{session_name}:{window_name}"

@@ -78,40 +78,41 @@ def set_focus(focus: FocusUpdate):
 
 @router.post("/brain/start", status_code=200)
 def start_brain(db=Depends(get_db)):
-    """Start the orchestrator brain — a Claude Code process with project management tools."""
-    session = _get_brain_session(db)
-    if session and session.status not in ("disconnected",):
-        return {
-            "ok": True,
-            "session_id": session.id,
-            "status": session.status,
-            "message": "Brain already running",
-        }
+    """Start the orchestrator brain — a Claude Code process with project management tools.
 
-    # Brain runs in /tmp/orchestrator/brain, decoupled from the git repo
+    Idempotent: safe to call regardless of current state.  Uses the tmux
+    pane as the single source of truth (the DB record is reconciled to
+    match).
+
+    Decision matrix based on pane_foreground_command():
+      - None          → pane doesn't exist yet → create & launch
+      - shell name    → pane exists, Claude not running → launch
+      - anything else → Claude (or another process) is running → skip
+    """
+    session = _get_brain_session(db)
+
+    # ── Check tmux pane state (single source of truth) ──────────────
+    shells = {"bash", "zsh", "fish", "sh", "dash"}
+    pane_cmd = tmux.pane_foreground_command(TMUX_SESSION, BRAIN_SESSION_NAME)
+    claude_already_running = pane_cmd is not None and pane_cmd not in shells
+
+    # ── Deploy brain files (always, so hooks/skills stay current) ───
     brain_dir = "/tmp/orchestrator/brain"
 
-    # Deploy all brain tmp dir contents via SOT function
     from orchestrator.agents.deploy import deploy_brain_tmp_contents
 
     deploy_brain_tmp_contents(brain_dir, conn=db)
     logger.info("Deployed brain tmp contents via SOT")
 
-    # Read back paths needed for the launch command
     bin_dir = os.path.join(brain_dir, "bin")
     path_export = get_path_export_command(bin_dir)
     settings_path = os.path.join(brain_dir, ".claude", "settings.json")
 
     try:
-        # Idempotency: if the tmux window already exists, the brain (or
-        # its shell) is still alive from a previous run.  Just reconcile
-        # the DB record — never send commands into an existing pane.
-        pane_existed = tmux.window_exists(TMUX_SESSION, BRAIN_SESSION_NAME)
-
         # ensure_window is itself idempotent (no-op when window exists)
         target = tmux.ensure_window(TMUX_SESSION, BRAIN_SESSION_NAME)
 
-        # Reconcile DB record
+        # ── Reconcile DB record ─────────────────────────────────────
         if session:
             sessions_repo.update_session(db, session.id, status="working")
             session_id = session.id
@@ -126,8 +127,9 @@ def start_brain(db=Depends(get_db)):
             session_id = s.id
             sessions_repo.update_session(db, session_id, status="working")
 
-        if pane_existed:
-            logger.info("Brain pane already exists; skipping launch")
+        # ── If Claude is already running, we're done ────────────────
+        if claude_already_running:
+            logger.info("Brain pane already running '%s'; skipping launch", pane_cmd)
             return {
                 "ok": True,
                 "session_id": session_id,
@@ -135,7 +137,7 @@ def start_brain(db=Depends(get_db)):
                 "message": "Brain already running (reconnected)",
             }
 
-        # Fresh pane — set up working directory, PATH, then launch Claude
+        # ── Pane is at a shell prompt (new or leftover) — launch ────
         tmux.send_keys(TMUX_SESSION, BRAIN_SESSION_NAME, f"cd {brain_dir}")
         tmux.send_keys(TMUX_SESSION, BRAIN_SESSION_NAME, path_export)
 
