@@ -1,9 +1,9 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useRef, useEffect } from 'react'
 import { useProjects } from '../hooks/useProjects'
 import { useApp } from '../context/AppContext'
 import { api } from '../api/client'
 import type { Project } from '../api/types'
-import { IconSearch } from '../components/common/Icons'
+import { IconSearch, IconChevronDown } from '../components/common/Icons'
 import ProjectCard from '../components/projects/ProjectCard'
 import ProjectsTable from '../components/projects/ProjectsTable'
 import ProjectForm from '../components/projects/ProjectForm'
@@ -22,6 +22,16 @@ export default function ProjectsPage() {
   const [searchQuery, setSearchQuery] = useState('')
   const [editingProject, setEditingProject] = useState<Project | null>(null)
   const [viewMode, setViewMode] = useState<'table' | 'cards'>('cards')
+  const [layoutOpen, setLayoutOpen] = useState(false)
+  const layoutRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    function handleClick(e: MouseEvent) {
+      if (layoutRef.current && !layoutRef.current.contains(e.target as Node)) setLayoutOpen(false)
+    }
+    document.addEventListener('mousedown', handleClick)
+    return () => document.removeEventListener('mousedown', handleClick)
+  }, [])
 
   // Status counts (ignoring search, so counts stay stable while typing)
   const statusCounts = useMemo(() =>
@@ -62,21 +72,65 @@ export default function ProjectsPage() {
       <div className="page-header">
         <h1>Projects</h1>
         <div className="page-header-actions">
-          <div className="toggle-group toggle-sm">
+          <div className="pp-layout-picker" ref={layoutRef}>
             <button
               type="button"
-              className={`toggle-btn${viewMode === 'table' ? ' active' : ''}`}
-              onClick={() => setViewMode('table')}
+              className={`pp-layout-trigger${layoutOpen ? ' open' : ''}`}
+              onClick={() => setLayoutOpen(o => !o)}
             >
-              Table
+              {/* Inline mini-skeleton icon showing current mode */}
+              {viewMode === 'cards' ? (
+                <svg className="pp-trigger-icon" width="16" height="16" viewBox="0 0 16 16" fill="none">
+                  <rect x="1" y="1" width="6" height="6" rx="1.5" fill="currentColor" opacity="0.5" />
+                  <rect x="9" y="1" width="6" height="6" rx="1.5" fill="currentColor" opacity="0.3" />
+                  <rect x="1" y="9" width="6" height="6" rx="1.5" fill="currentColor" opacity="0.3" />
+                  <rect x="9" y="9" width="6" height="6" rx="1.5" fill="currentColor" opacity="0.5" />
+                </svg>
+              ) : (
+                <svg className="pp-trigger-icon" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+                  <line x1="1" y1="3" x2="15" y2="3" opacity="0.5" />
+                  <line x1="1" y1="6.5" x2="12" y2="6.5" opacity="0.35" />
+                  <line x1="1" y1="10" x2="14" y2="10" opacity="0.35" />
+                  <line x1="1" y1="13.5" x2="10" y2="13.5" opacity="0.35" />
+                </svg>
+              )}
+              <span className="pp-trigger-label">{viewMode === 'cards' ? 'Cards' : 'Table'}</span>
+              <IconChevronDown size={11} className={`pp-layout-chevron${layoutOpen ? ' open' : ''}`} />
             </button>
-            <button
-              type="button"
-              className={`toggle-btn${viewMode === 'cards' ? ' active' : ''}`}
-              onClick={() => setViewMode('cards')}
-            >
-              Cards
-            </button>
+            {layoutOpen && (
+              <div className="pp-layout-popover">
+                <div className="pp-layout-options">
+                  <button
+                    type="button"
+                    className={`pp-layout-card${viewMode === 'cards' ? ' active' : ''}`}
+                    onClick={() => { setViewMode('cards'); setLayoutOpen(false) }}
+                  >
+                    {/* Cards skeleton: 2x2 grid of card shapes */}
+                    <div className="pp-skel pp-skel-cards">
+                      <div className="pp-skel-card"><div className="pp-skel-line w60" /><div className="pp-skel-line w40" /><div className="pp-skel-bar" /></div>
+                      <div className="pp-skel-card"><div className="pp-skel-line w50" /><div className="pp-skel-line w70" /><div className="pp-skel-bar" /></div>
+                      <div className="pp-skel-card"><div className="pp-skel-line w70" /><div className="pp-skel-line w40" /><div className="pp-skel-bar" /></div>
+                      <div className="pp-skel-card"><div className="pp-skel-line w40" /><div className="pp-skel-line w60" /><div className="pp-skel-bar" /></div>
+                    </div>
+                    <span className="pp-layout-label">Cards</span>
+                  </button>
+                  <button
+                    type="button"
+                    className={`pp-layout-card${viewMode === 'table' ? ' active' : ''}`}
+                    onClick={() => { setViewMode('table'); setLayoutOpen(false) }}
+                  >
+                    {/* Table skeleton: header + rows */}
+                    <div className="pp-skel pp-skel-table">
+                      <div className="pp-skel-row header"><div className="pp-skel-cell w30" /><div className="pp-skel-cell w20" /><div className="pp-skel-cell w25" /><div className="pp-skel-cell w15" /></div>
+                      <div className="pp-skel-row"><div className="pp-skel-cell w35" /><div className="pp-skel-cell w15" /><div className="pp-skel-cell w20" /><div className="pp-skel-cell w20" /></div>
+                      <div className="pp-skel-row"><div className="pp-skel-cell w25" /><div className="pp-skel-cell w20" /><div className="pp-skel-cell w30" /><div className="pp-skel-cell w10" /></div>
+                      <div className="pp-skel-row"><div className="pp-skel-cell w30" /><div className="pp-skel-cell w15" /><div className="pp-skel-cell w20" /><div className="pp-skel-cell w25" /></div>
+                    </div>
+                    <span className="pp-layout-label">Table</span>
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
           <button className="btn btn-primary" onClick={() => setShowForm(true)}>
             + New Project
