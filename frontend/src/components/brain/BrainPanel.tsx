@@ -268,7 +268,7 @@ export default function BrainPanel({
           <span className={`brain-indicator ${isRunning ? 'active' : 'inactive'}`} />
           <span className="bp-title">Brain</span>
           {brainStatus?.status && (
-            <span className={`status-badge ${brainStatus.status}`}>{brainStatus.status}</span>
+            <span className={`status-badge ${brainStatus.status}`}>{brainStatus.status === 'working' ? 'Active' : brainStatus.status}</span>
           )}
         </div>
         <div className="bp-header-right">
