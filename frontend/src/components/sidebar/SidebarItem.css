@@ -1,9 +1,9 @@
 .sidebar-item {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
   height: 32px;
-  padding: 0 14px;
+  padding: 0 10px;
   box-sizing: border-box;
   color: var(--text-secondary);
   text-decoration: none;
