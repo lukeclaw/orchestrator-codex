@@ -146,6 +146,7 @@ export default function ProjectsPage() {
             onClick={() => setStatusFilter('')}
             type="button"
           >
+            <span className="pp-filter-dot" style={{ background: 'var(--text-muted)' }} />
             <span className="pp-filter-pill-count">{projects.length}</span>
             <span className="pp-filter-pill-label">All</span>
           </button>

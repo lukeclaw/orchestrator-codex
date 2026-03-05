@@ -229,6 +229,7 @@ export default function ContextPage() {
             onClick={() => setScopeFilter('')}
             type="button"
           >
+            <span className="ctx-scope-dot" style={{ background: 'var(--text-muted)' }} />
             <span className="ctx-scope-pill-count">{items.length}</span>
             <span className="ctx-scope-pill-label">All</span>
           </button>

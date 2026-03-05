@@ -473,6 +473,7 @@ export default function NotificationsPage() {
           className={`np-type-chip ${typeFilter === 'all' ? 'active' : ''}`}
           onClick={() => setTypeFilter('all')}
         >
+          <span className="np-type-chip-dot" style={{ background: 'var(--text-muted)' }} />
           <span className="np-type-chip-count">{notifications.length}</span>
           <span className="np-type-chip-label">All</span>
         </button>

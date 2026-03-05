@@ -235,6 +235,7 @@ export default function TasksPage() {
             onClick={() => updateFilter('status', '')}
             type="button"
           >
+            <span className="tk-status-dot" style={{ background: 'var(--text-muted)' }} />
             <span className="tk-status-pill-count">{Object.values(statusCounts).reduce((a, b) => a + b, 0)}</span>
             <span className="tk-status-pill-label">All</span>
           </button>
