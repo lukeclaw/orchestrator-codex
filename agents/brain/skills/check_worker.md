@@ -50,7 +50,9 @@ If the worker has stated a valid reason for waiting (e.g., outside working hours
 
 Two paths based on terminal output:
 
-**Fast Path** (no completion signals — terminal-only, no external calls):
+**Fast Path** (terminal-only, no external calls):
+
+**Gate:** If terminal shows the worker claiming completion (e.g., "done", "task complete", "finished"), route to Slow Path — never handle self-reported completion here regardless of idle time or context level.
 
 | Condition | Action |
 |-----------|--------|
@@ -66,12 +68,14 @@ Two paths based on terminal output:
 
 **Slow Path** (worker claims completion — verify externally):
 
+"Mark done + stop" requires external confirmation of the deliverable. Worker self-report, low context, or long idle time are never sufficient on their own.
+
 ```bash
 orch-tasks list --assigned <worker-id> --format json | jq '.[0]'
 orch-prs --repo <owner/repo> <pr-numbers>    # batch per repo
 ```
 
-Map `orch-prs` action field to suggested action:
+**For tasks with PRs** — map `orch-prs` action field:
 
 | PR action | Suggested Action |
 |-----------|-----------------|
@@ -82,6 +86,8 @@ Map `orch-prs` action field to suggested action:
 | review_pending, >2h | Nudge: "Use /pr-workflow to check PR status, address comments if any, merge if approved" |
 | draft | — (still working) |
 | closed | Investigate |
+
+**For tasks without PRs** (config, docs, investigation) — verify the deliverable exists (file committed, doc written, answer posted in task notes). If unverifiable, suggest "Needs human" instead of "Mark done + stop."
 
 ### 5. Present summary
 
@@ -136,6 +142,7 @@ orch-workers stop <worker-id>
 - **Always mention `/pr-workflow`** — when sending any PR-related message (create, fix, review, merge), explicitly include `/pr-workflow` so the worker invokes the skill
 - **Always notify before marking done** — completion notification with verification details
 - **Never suggest "stop" for idle workers** — idle workers with no task are already stopped; skip them and let the user decide
+- **Self-report ≠ done** — a worker claiming completion is a signal to verify, not evidence to act on. Always route through Slow Path and confirm the deliverable externally before suggesting "mark done + stop"
 - **Act on facts only** — if unsure, put "Needs human" rather than guessing
 - **Batch PR checks** — `orch-prs --repo <owner/repo> <pr1> <pr2> ...`
 - **For special keys** (arrow keys for selection menus): use `tmux send-keys Up/Down`
