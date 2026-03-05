@@ -103,7 +103,7 @@ class TestSessionCreate:
         mock_request = MagicMock()
         mock_request.app.state.config = {"tmux_session_name": "orchestrator", "api_port": 8093}
 
-        result = create_session(body, mock_request, db=db)
+        create_session(body, mock_request, db=db)
 
         # Status should be updated to connecting before background thread starts
         mock_repo.update_session.assert_called()
@@ -168,6 +168,68 @@ class TestSessionCreate:
         # ensure_window should be called with sanitized name
         call_args = mock_ensure_window.call_args
         assert "/" not in call_args[0][1], "Worker name should be sanitized"
+
+    @patch("orchestrator.state.repositories.tasks.update_task")
+    @patch("orchestrator.api.routes.sessions.threading")
+    @patch("orchestrator.api.routes.sessions.ensure_window")
+    @patch("orchestrator.api.routes.sessions.repo")
+    @patch("orchestrator.api.routes.sessions.is_remote_host")
+    def test_create_local_session_with_task_id_assigns_task(
+        self, mock_is_remote, mock_repo, mock_ensure_window, mock_threading, mock_update_task, db
+    ):
+        """Creating a local session with task_id should assign the task to the worker."""
+        from orchestrator.api.routes.sessions import SessionCreate, create_session
+
+        mock_is_remote.return_value = False
+        mock_ensure_window.return_value = "orchestrator:test-worker"
+
+        mock_session = MagicMock()
+        mock_session.id = "test-session-id"
+        mock_session.name = "test-worker"
+        mock_session.host = "localhost"
+        mock_session.status = "idle"
+        mock_repo.create_session.return_value = mock_session
+
+        body = SessionCreate(name="test-worker", host="localhost", task_id="task-123")
+        mock_request = MagicMock()
+        mock_request.app.state.config = {"tmux_session_name": "orchestrator", "api_port": 8093}
+
+        with patch("orchestrator.api.routes.sessions.send_keys"):
+            create_session(body, mock_request, db=db)
+
+        mock_update_task.assert_called_once_with(
+            db, "task-123", assigned_session_id="test-session-id", status="in_progress"
+        )
+
+    @patch("orchestrator.state.repositories.tasks.update_task")
+    @patch("orchestrator.api.routes.sessions.threading")
+    @patch("orchestrator.api.routes.sessions.ensure_window")
+    @patch("orchestrator.api.routes.sessions.repo")
+    @patch("orchestrator.api.routes.sessions.is_remote_host")
+    def test_create_local_session_without_task_id_skips_assignment(
+        self, mock_is_remote, mock_repo, mock_ensure_window, mock_threading, mock_update_task, db
+    ):
+        """Creating a local session without task_id should not assign any task."""
+        from orchestrator.api.routes.sessions import SessionCreate, create_session
+
+        mock_is_remote.return_value = False
+        mock_ensure_window.return_value = "orchestrator:test-worker"
+
+        mock_session = MagicMock()
+        mock_session.id = "test-session-id"
+        mock_session.name = "test-worker"
+        mock_session.host = "localhost"
+        mock_session.status = "idle"
+        mock_repo.create_session.return_value = mock_session
+
+        body = SessionCreate(name="test-worker", host="localhost")
+        mock_request = MagicMock()
+        mock_request.app.state.config = {"tmux_session_name": "orchestrator", "api_port": 8093}
+
+        with patch("orchestrator.api.routes.sessions.send_keys"):
+            create_session(body, mock_request, db=db)
+
+        mock_update_task.assert_not_called()
 
 
 class TestSessionDelete:

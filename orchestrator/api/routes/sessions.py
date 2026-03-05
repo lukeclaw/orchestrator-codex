@@ -384,6 +384,12 @@ def create_session(body: SessionCreate, request: Request, db=Depends(get_db)):
                 custom_skills=custom_skills_dicts,
                 disabled_builtin_names=disabled_builtins,
             )
+            if body.task_id:
+                from orchestrator.state.repositories import tasks
+
+                tasks.update_task(
+                    db, body.task_id, assigned_session_id=s.id, status="in_progress"
+                )
         except Exception:
             logger.warning("Could not deploy/launch local worker %s", sanitized_name, exc_info=True)
 

@@ -73,6 +73,7 @@ class ProjectUpdate(BaseModel):
     description: str | None = None
     status: str | None = None
     target_date: str | None = None
+    task_prefix: str | None = None
 
 
 @router.get("/projects")
@@ -126,6 +127,8 @@ def update_project(project_id: str, body: ProjectUpdate, db=Depends(get_db)):
         name=body.name,
         description=body.description,
         status=body.status,
+        target_date=body.target_date if "target_date" in body.model_fields_set else ...,
+        task_prefix=body.task_prefix,
     )
     return {"id": updated.id, "name": updated.name, "status": updated.status}
 

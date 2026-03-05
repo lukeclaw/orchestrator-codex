@@ -50,6 +50,7 @@ def update_project(
     description: str | None = None,
     status: str | None = None,
     target_date: str | None = ...,
+    task_prefix: str | None = None,
 ) -> Project | None:
     sets = []
     params = []
@@ -65,6 +66,9 @@ def update_project(
     if target_date is not ...:
         sets.append("target_date = ?")
         params.append(target_date)
+    if task_prefix is not None:
+        sets.append("task_prefix = ?")
+        params.append(task_prefix)
     if not sets:
         return get_project(conn, id)
     sets.append("updated_at = CURRENT_TIMESTAMP")

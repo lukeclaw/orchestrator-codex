@@ -96,14 +96,18 @@ def create_task(
     description: str | None = None,
     priority: str = "M",  # H (High), M (Medium), L (Low)
     parent_task_id: str | None = None,
+    notes: str | None = None,
 ) -> Task:
     id = str(uuid.uuid4())
     # Auto-generate task_index
     task_index = _get_next_task_index(conn, project_id, parent_task_id)
     conn.execute(
-        """INSERT INTO tasks (id, project_id, title, description, priority, parent_task_id, task_index, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)""",
-        (id, project_id, title, description, priority, parent_task_id, task_index),
+        """INSERT INTO tasks
+           (id, project_id, title, description, priority,
+            parent_task_id, task_index, notes, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?,
+                   CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)""",
+        (id, project_id, title, description, priority, parent_task_id, task_index, notes),
     )
     conn.commit()
     return get_task(conn, id)

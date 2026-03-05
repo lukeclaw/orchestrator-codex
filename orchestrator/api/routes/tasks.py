@@ -21,6 +21,7 @@ class TaskCreate(BaseModel):
     project_id: str
     title: str
     description: str | None = None
+    notes: str | None = None
     priority: str = "M"  # H (High), M (Medium), L (Low)
     parent_task_id: str | None = None
 
@@ -150,6 +151,7 @@ def create_task(body: TaskCreate, db=Depends(get_db)):
         body.description,
         body.priority,
         parent_task_id=body.parent_task_id,
+        notes=body.notes,
     )
     return _serialize_task(t)
 
