@@ -1578,7 +1578,7 @@
 }
 
 .tdp-worker-preview-terminal {
-  background: #0d1117;
+  background: var(--bg);
   padding: 10px 12px;
   min-height: 120px;
   max-height: 180px;

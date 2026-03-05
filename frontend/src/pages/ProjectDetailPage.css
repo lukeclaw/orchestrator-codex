@@ -172,7 +172,7 @@
   border: 1px solid var(--border);
   border-radius: 6px;
   background: var(--surface);
-  color: var(--text);
+  color: var(--text-primary);
   font-size: 13px;
   font-family: inherit;
   resize: vertical;
@@ -189,7 +189,7 @@
   border: 1px solid var(--border);
   border-radius: 6px;
   background: var(--surface);
-  color: var(--text);
+  color: var(--text-primary);
   font-size: 13px;
 }
 

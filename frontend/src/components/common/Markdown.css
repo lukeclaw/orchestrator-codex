@@ -26,7 +26,7 @@
 
 .markdown-copy-btn:hover {
   background: var(--surface);
-  color: var(--text);
+  color: var(--text-primary);
 }
 
 .markdown-copy-btn.copied {
@@ -36,7 +36,7 @@
 .markdown-content {
   font-size: 14px;
   line-height: 1.6;
-  color: var(--text);
+  color: var(--text-primary);
 }
 
 .markdown-content h1,
@@ -101,7 +101,7 @@
   font-family: 'SF Mono', 'Menlo', 'Monaco', 'Consolas', monospace;
   font-size: 12px;
   line-height: 1.45;
-  color: var(--text);
+  color: var(--text-primary);
   white-space: pre;
   display: block;
   background: transparent;

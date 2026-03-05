@@ -44,10 +44,10 @@
   top: calc(100% + 4px);
   right: 0;
   min-width: 100%;
-  background: var(--surface);
-  border: 1px solid var(--border);
+  background: var(--surface-overlay);
+  border: 1px solid var(--border-subtle);
   border-radius: var(--radius);
-  box-shadow: var(--shadow-md, 0 4px 12px rgba(0,0,0,0.3));
+  box-shadow: var(--shadow-float);
   z-index: 100;
   overflow: hidden;
 }

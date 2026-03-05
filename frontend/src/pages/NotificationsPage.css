@@ -36,7 +36,7 @@
   gap: 8px;
   padding: 10px 16px;
   background: var(--surface);
-  border: 1px solid var(--border);
+  border: 1px solid transparent;
   border-radius: 8px;
   color: var(--text-secondary);
   font-size: 14px;
@@ -57,7 +57,7 @@
   gap: 8px;
   padding: 10px 16px;
   background: var(--surface);
-  border: 1px solid var(--border);
+  border: 1px solid transparent;
   border-radius: 8px;
   color: var(--text-secondary);
   font-size: 14px;
@@ -104,7 +104,6 @@
 .np-tab.active {
   background: var(--bg);
   color: var(--text-primary);
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
 }
 
 .np-tab-badge {
@@ -115,7 +114,7 @@
 }
 
 .np-tab-badge.active {
-  background: rgba(96, 165, 250, 0.15);
+  background: var(--accent-muted);
   color: var(--accent, #60a5fa);
 }
 
@@ -215,15 +214,14 @@
   gap: 12px;
   padding: 12px 16px;
   background: var(--surface);
-  border: 1px solid var(--border);
+  border: 1px solid transparent;
   border-radius: 10px;
   transition: all 0.2s;
   overflow: hidden;
 }
 
 .np-card:hover {
-  border-color: var(--border-hover);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+  background: var(--surface-hover);
 }
 
 .np-card.focused {
@@ -270,15 +268,15 @@
 }
 
 .np-card.blue .np-card-indicator {
-  background: #3b82f6;
+  background: var(--accent);
 }
 
 .np-card.purple .np-card-indicator {
-  background: #8b5cf6;
+  background: var(--purple);
 }
 
 .np-card.amber .np-card-indicator {
-  background: #f59e0b;
+  background: var(--yellow);
 }
 
 /* Icon container — 32x32 rounded square with colored bg */
@@ -339,7 +337,7 @@
   text-transform: uppercase;
   letter-spacing: 0.5px;
   padding: 3px 8px;
-  border-radius: 4px;
+  border-radius: 999px;
 }
 
 .np-badge.blue {
@@ -575,15 +573,15 @@
 }
 
 .np-type-chip-dot.purple {
-  background: #8b5cf6;
+  background: var(--purple);
 }
 
 .np-type-chip-dot.amber {
-  background: #f59e0b;
+  background: var(--yellow);
 }
 
 .np-type-chip-dot.blue {
-  background: #3b82f6;
+  background: var(--accent);
 }
 
 /* Restore button */
@@ -599,6 +597,5 @@
 }
 
 .np-card.non-expandable:hover {
-  border-color: var(--border);
-  box-shadow: none;
+  background: var(--surface);
 }

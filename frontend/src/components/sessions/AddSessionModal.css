@@ -61,7 +61,7 @@
 
 .btn-icon:hover {
   background: var(--surface-hover);
-  color: var(--text);
+  color: var(--text-primary);
 }
 
 .btn-icon:disabled {
@@ -193,7 +193,7 @@
 .rdev-name {
   font-size: 13px;
   font-weight: 500;
-  color: var(--text);
+  color: var(--text-primary);
 }
 
 .rdev-item-meta {

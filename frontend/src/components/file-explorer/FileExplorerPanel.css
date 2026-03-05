@@ -134,11 +134,11 @@
 }
 
 .fe-node:hover {
-  background: #2A2D2E;
+  background: var(--surface-hover);
 }
 
 .fe-node--selected {
-  background: #04395E;
+  background: var(--accent-muted);
 }
 
 .fe-node--focused {

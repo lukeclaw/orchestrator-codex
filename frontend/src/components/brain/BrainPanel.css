@@ -133,7 +133,7 @@
 }
 
 .brain-indicator.inactive {
-  background: var(--text-tertiary);
+  background: var(--text-muted);
 }
 
 @keyframes pulse-green {
@@ -269,7 +269,7 @@
 
 .bp-footer-paste-btn:hover:not(:disabled) {
   background: var(--surface-hover, var(--bg));
-  color: var(--text);
+  color: var(--text-primary);
   border-color: var(--border);
 }
 

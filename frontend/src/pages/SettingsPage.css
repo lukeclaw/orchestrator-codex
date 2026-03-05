@@ -50,7 +50,6 @@
 .settings-tab.active {
   background: var(--bg);
   color: var(--text-primary);
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
 }
 
 .settings-tab-icon {
@@ -113,7 +112,7 @@
   gap: 16px;
   padding: 16px;
   background: var(--bg);
-  border: 1px solid var(--border-subtle);
+  border: 1px solid transparent;
   border-radius: var(--radius);
 }
 
@@ -587,7 +586,7 @@
 }
 
 .toggle.off {
-  background: var(--bg-secondary);
+  background: var(--surface);
   color: var(--text-secondary);
 }
 
