@@ -16,6 +16,10 @@ import {
   IconChevronRight,
   IconCheck,
   IconExternalLink,
+  IconPencil,
+  IconPlus,
+  IconClipboard,
+  IconTrash,
 } from '../components/common/Icons'
 import { timeAgo, parseDate } from '../components/common/TimeAgo'
 import ConfirmPopover from '../components/common/ConfirmPopover'
@@ -590,7 +594,7 @@ export default function TaskDetailPage() {
                     </button>
                   </div>
                 ) : isEditable && task.description && (
-                  <button className="tdp-edit-btn" onClick={() => setIsEditingDesc(true)}>Edit</button>
+                  <button className="tdp-edit-btn" onClick={() => setIsEditingDesc(true)}><IconPencil size={12} /> Edit</button>
                 )}
               </div>
               {isEditingDesc ? (
@@ -660,7 +664,7 @@ export default function TaskDetailPage() {
                     </button>
                   </div>
                 ) : isEditable && notesExpanded && (
-                  <button className="tdp-edit-btn" onClick={() => setIsEditingNotes(true)}>Edit</button>
+                  <button className="tdp-edit-btn" onClick={() => setIsEditingNotes(true)}><IconPencil size={12} /> Edit</button>
                 )}
                 {!notesExpanded && task.notes && (
                   <span className="tdp-notes-preview">{task.notes.split('\n')[0]}</span>
@@ -773,14 +777,14 @@ export default function TaskDetailPage() {
               <h3>Links {links.length > 0 && <span className="count">({links.length})</span>}</h3>
               {isEditable && !showAddLink && !editingLinkUrl && (
                 <div className="tdp-header-btn-group">
-                  <button className="tdp-edit-btn" onClick={() => setShowAddLink(true)}>+ Add</button>
+                  <button className="tdp-edit-btn" onClick={() => setShowAddLink(true)}><IconPlus size={12} /> Add</button>
                   <button
                     className="tdp-edit-btn"
                     onClick={handlePasteToLinks}
                     disabled={pasting}
                     title="Paste image or URL from clipboard"
                   >
-                    {pasting ? 'Pasting...' : 'Paste'}
+                    <IconClipboard size={12} /> {pasting ? 'Pasting...' : 'Paste'}
                   </button>
                 </div>
               )}
@@ -859,7 +863,7 @@ export default function TaskDetailPage() {
                 )}
               </h3>
               {isEditable && !showAddSubtask && (
-                <button className="tdp-edit-btn" onClick={() => setShowAddSubtask(true)}>+ Add</button>
+                <button className="tdp-edit-btn" onClick={() => setShowAddSubtask(true)}><IconPlus size={12} /> Add</button>
               )}
             </div>
             {showAddSubtask && (
@@ -1070,69 +1074,80 @@ export default function TaskDetailPage() {
         {/* Sidebar */}
         <aside className="tdp-sidebar">
           <div className="tdp-sidebar-card">
-            <div className="sidebar-field">
-              <label>Status</label>
-              <TagDropdown
-                value={status}
-                options={STATUS_OPTIONS}
-                onChange={handleStatusChange}
-                disabled={!isEditable}
-                renderTag={(opt) => (
-                  <span className={`status-badge ${opt.className}`}>{opt.label}</span>
-                )}
-              />
-            </div>
+            <div className="sidebar-group">
+              <div className="sidebar-field">
+                <label>Status</label>
+                <TagDropdown
+                  value={status}
+                  options={STATUS_OPTIONS}
+                  onChange={handleStatusChange}
+                  disabled={!isEditable}
+                  renderTag={(opt) => (
+                    <span className={`sidebar-tag ${opt.className}`}>{opt.label}</span>
+                  )}
+                />
+              </div>
 
-            <div className="sidebar-field">
-              <label>Priority</label>
-              <TagDropdown
-                value={priority}
-                options={PRIORITY_OPTIONS}
-                onChange={handlePriorityChange}
-                disabled={!isEditable}
-                renderTag={(opt) => (
-                  <span className={`priority-badge ${opt.className}`}>{opt.label}</span>
-                )}
-              />
-            </div>
+              <div className="sidebar-field">
+                <label>Priority</label>
+                <TagDropdown
+                  value={priority}
+                  options={PRIORITY_OPTIONS}
+                  onChange={handlePriorityChange}
+                  disabled={!isEditable}
+                  renderTag={(opt) => (
+                    <span className={`sidebar-tag ${opt.className}`}>{opt.label}</span>
+                  )}
+                />
+              </div>
 
-            <div className="sidebar-field">
-              <label>Assigned</label>
-              <div className="tdp-worker-field">
-                {isSubtask ? (
-                  // Subtasks show parent's worker (read-only)
-                  parentAssignedWorker ? (
-                    <Link to={`/workers/${parentAssignedWorker.id}`} className={`tdp-worker-link status-${parentAssignedWorker.status}`}>
-                      {parentAssignedWorker.name}
-                    </Link>
-                  ) : (
-                    <span className="sidebar-empty">Unassigned</span>
-                  )
-                ) : (
-                  // Regular tasks show their own worker with edit button
-                  <>
-                    {assignedWorker ? (
-                      <Link to={`/workers/${assignedWorker.id}`} className={`tdp-worker-link status-${assignedWorker.status}`}>
-                        {assignedWorker.name}
+              <div className="sidebar-field">
+                <label>Assigned</label>
+                <div className="tdp-worker-field">
+                  {isSubtask ? (
+                    // Subtasks show parent's worker (read-only)
+                    parentAssignedWorker ? (
+                      <Link to={`/workers/${parentAssignedWorker.id}`} className={`tdp-worker-link status-${parentAssignedWorker.status}`}>
+                        {parentAssignedWorker.name}
                       </Link>
                     ) : (
                       <span className="sidebar-empty">Unassigned</span>
-                    )}
-                    {isEditable && (
-                      <button 
-                        className="tdp-assign-icon-btn" 
-                        onClick={() => setShowAssignModal(true)}
-                        title={assignedWorker ? 'Reassign worker' : 'Assign worker'}
-                      >
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                          <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
-                          <circle cx="9" cy="7" r="4"/>
-                          <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
-                          <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
-                        </svg>
-                      </button>
-                    )}
-                  </>
+                    )
+                  ) : (
+                    // Regular tasks show their own worker with edit button
+                    <>
+                      {assignedWorker ? (
+                        <Link to={`/workers/${assignedWorker.id}`} className={`tdp-worker-link status-${assignedWorker.status}`}>
+                          {assignedWorker.name}
+                        </Link>
+                      ) : (
+                        <span className="sidebar-empty">Unassigned</span>
+                      )}
+                      {isEditable && (
+                        <button
+                          className="tdp-assign-icon-btn"
+                          onClick={() => setShowAssignModal(true)}
+                          title={assignedWorker ? 'Reassign worker' : 'Assign worker'}
+                        >
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+                            <circle cx="9" cy="7" r="4"/>
+                            <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
+                            <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+                          </svg>
+                        </button>
+                      )}
+                    </>
+                  )}
+                </div>
+              </div>
+
+              <div className="sidebar-field">
+                <label>Project</label>
+                {project ? (
+                  <Link to={`/projects/${project.id}`} className="sidebar-link">{project.name}</Link>
+                ) : (
+                  <span className="sidebar-empty">None</span>
                 )}
               </div>
             </div>
@@ -1146,7 +1161,7 @@ export default function TaskDetailPage() {
                     <button className="tdp-modal-close" onClick={() => setShowAssignModal(false)}>×</button>
                   </div>
                   <div className="tdp-modal-hint">
-                    ⚡ After assignment, the worker will immediately start working on this task.
+                    After assignment, the worker will immediately start working on this task.
                   </div>
                   <div className="tdp-modal-body">
                     <div className="tdp-worker-list">
@@ -1228,25 +1243,15 @@ export default function TaskDetailPage() {
               </div>
             )}
 
-            <div className="sidebar-field">
-              <label>Project</label>
-              {project ? (
-                <Link to={`/projects/${project.id}`} className="sidebar-link">{project.name}</Link>
-              ) : (
-                <span className="sidebar-empty">None</span>
-              )}
-            </div>
-
-            <hr className="sidebar-divider" />
-
-            <div className="sidebar-field">
-              <label>Created</label>
-              <span className="sidebar-date">{parseDate(task.created_at).toLocaleString()}</span>
-            </div>
-
-            <div className="sidebar-field">
-              <label>Updated</label>
-              <span className="sidebar-date">{parseDate(task.updated_at).toLocaleString()}</span>
+            <div className="sidebar-meta-row">
+              <div className="sidebar-meta-item">
+                <label>Created</label>
+                <span className="sidebar-date" data-tooltip={parseDate(task.created_at).toLocaleString()}>{timeAgo(task.created_at)}</span>
+              </div>
+              <div className="sidebar-meta-item">
+                <label>Updated</label>
+                <span className="sidebar-date" data-tooltip={parseDate(task.updated_at).toLocaleString()}>{timeAgo(task.updated_at)}</span>
+              </div>
             </div>
 
             {isEditable && (
@@ -1259,7 +1264,7 @@ export default function TaskDetailPage() {
                 >
                   {({ onClick }) => (
                     <button className="btn btn-danger" onClick={onClick} disabled={deleting}>
-                      {deleting ? 'Deleting...' : 'Delete Task'}
+                      <IconTrash size={14} /> {deleting ? 'Deleting...' : 'Delete Task'}
                     </button>
                   )}
                 </ConfirmPopover>

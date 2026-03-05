@@ -48,8 +48,9 @@ input, textarea, select {
   font-family: inherit;
   background: var(--bg);
   color: var(--text-primary);
-  border: 1px solid var(--border);
+  border: 1px solid transparent;
   border-radius: var(--radius);
+  transition: border-color 0.15s, box-shadow 0.15s;
 }
 
 input::placeholder,
@@ -57,11 +58,18 @@ textarea::placeholder {
   color: var(--text-muted);
 }
 
+input:hover,
+textarea:hover,
+select:hover {
+  border-color: var(--border-subtle);
+}
+
 input:focus,
 textarea:focus,
 select:focus {
   outline: none;
   border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-muted);
 }
 
 /* Scrollbar — unified thin style, matching the brain sidebar terminal */
@@ -109,7 +117,6 @@ select:focus {
 /* Panel */
 .panel {
   background: var(--surface);
-  border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   overflow: hidden;
 }
@@ -119,7 +126,7 @@ select:focus {
   align-items: center;
   justify-content: space-between;
   padding: 14px 18px;
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid var(--border-subtle);
 }
 
 .panel-header h2 {
@@ -187,24 +194,24 @@ select:focus {
 .btn-secondary {
   background: var(--surface-raised);
   color: var(--text-primary);
-  border-color: var(--border);
+  border-color: transparent;
 }
 
 .btn-secondary:hover {
-  background: var(--surface-hover);
-  border-color: var(--text-muted);
+  background: var(--surface-overlay);
+  border-color: transparent;
 }
 
 .btn-danger {
-  background: transparent;
+  background: rgba(248, 81, 73, 0.08);
   color: var(--red);
-  border-color: var(--border);
+  border-color: transparent;
 }
 
 .btn-danger:hover {
-  background: var(--red-muted);
+  background: rgba(248, 81, 73, 0.2);
   color: var(--text-primary);
-  border-color: var(--red);
+  border-color: transparent;
 }
 
 .btn-sm {
@@ -234,71 +241,63 @@ select:focus {
 
 .status-badge.working,
 .status-badge.in_progress {
-  background: var(--accent-muted);
+  background: rgba(88,166,255,0.15);
   color: var(--accent);
-  border: 1px solid rgba(88,166,255,0.3);
 }
 
 .status-badge.idle,
 .status-badge.todo {
-  background: rgba(63,185,80,0.12);
+  background: rgba(63,185,80,0.15);
   color: var(--green);
-  border: 1px solid rgba(63,185,80,0.3);
 }
 
 .status-badge.disconnected,
 .status-badge.error {
-  background: rgba(248,81,73,0.12);
+  background: rgba(248,81,73,0.15);
   color: var(--red);
-  border: 1px solid rgba(248,81,73,0.3);
 }
 
 .status-badge.waiting,
 .status-badge.blocked {
-  background: rgba(210,153,34,0.12);
+  background: rgba(210,153,34,0.15);
   color: var(--yellow);
-  border: 1px solid rgba(210,153,34,0.3);
 }
 
 .status-badge.paused {
-  background: rgba(249,115,22,0.12);
+  background: rgba(249,115,22,0.15);
   color: #f97316;
-  border: 1px solid rgba(249,115,22,0.3);
 }
 
 .status-badge.screen_detached {
-  background: rgba(249,115,22,0.12);
+  background: rgba(249,115,22,0.15);
   color: #f97316;
-  border: 1px solid rgba(249,115,22,0.3);
 }
 
 .status-badge.connecting {
-  background: rgba(88,166,255,0.12);
+  background: rgba(88,166,255,0.15);
   color: var(--accent);
-  border: 1px solid rgba(88,166,255,0.3);
 }
 
 .status-badge.done,
 .status-badge.merged,
 .status-badge.completed {
-  background: rgba(163,113,247,0.12);
+  background: rgba(163,113,247,0.15);
   color: var(--purple);
-  border: 1px solid rgba(163,113,247,0.3);
 }
 
 .status-badge.active {
-  background: rgba(34,197,94,0.12);
+  background: rgba(34,197,94,0.15);
   color: #22c55e;
-  border: 1px solid rgba(34,197,94,0.3);
 }
 
 /* Toggle group */
 .toggle-group {
   display: flex;
   align-self: center;
-  gap: 0;
-  border: 1px solid var(--border);
+  gap: 2px;
+  background: var(--bg);
   border-radius: var(--radius);
+  padding: 2px;
   overflow: hidden;
 }
 
@@ -307,15 +306,16 @@ select:focus {
   padding: 6px 12px;
   font-size: 12px;
   white-space: nowrap;
-  background: var(--surface);
+  background: transparent;
   color: var(--text-secondary);
   border: none;
+  border-radius: calc(var(--radius) - 2px);
   cursor: pointer;
   transition: background 0.15s, color 0.15s;
 }
 
 .toggle-btn:not(:last-child) {
-  border-right: 1px solid var(--border);
+  border-right: none;
 }
 
 .toggle-btn:hover {
@@ -349,14 +349,14 @@ select:focus {
 
 .modal-content {
   background: var(--surface);
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-subtle);
   border-radius: var(--radius-lg);
   width: 90%;
   max-width: 500px;
   max-height: 90vh;
   display: flex;
   flex-direction: column;
-  box-shadow: var(--shadow-lg);
+  box-shadow: var(--shadow-float);
   overflow: hidden;
 }
 
@@ -374,7 +374,7 @@ select:focus {
   align-items: center;
   justify-content: space-between;
   padding: 16px 20px;
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid var(--border-subtle);
 }
 
 .modal-header h3 {
@@ -404,7 +404,7 @@ select:focus {
 
 .modal-footer {
   padding: 14px 20px;
-  border-top: 1px solid var(--border);
+  border-top: 1px solid var(--border-subtle);
   display: flex;
   justify-content: flex-end;
   gap: 8px;
@@ -429,7 +429,7 @@ select:focus {
   width: 100%;
   padding: 8px 12px;
   background: var(--bg);
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-subtle);
   border-radius: var(--radius);
   color: var(--text-primary);
   font-size: 14px;
@@ -472,8 +472,8 @@ select:focus {
   align-items: center;
   justify-content: center;
   padding: 0 10px;
-  background: var(--bg);
-  border: 1px solid var(--border);
+  background: var(--surface-raised);
+  border: 1px solid transparent;
   border-radius: var(--radius);
   color: var(--text-muted);
   cursor: pointer;
@@ -482,8 +482,7 @@ select:focus {
 }
 
 .browse-btn:hover {
-  background: var(--surface-hover);
-  border-color: var(--accent);
+  background: var(--surface-overlay);
   color: var(--text-primary);
 }
 
@@ -523,7 +522,7 @@ select:focus {
   padding: 6px 32px 6px 10px;
   font-size: 13px;
   background: var(--surface);
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-subtle);
   border-radius: var(--radius);
   color: var(--text-primary);
   cursor: pointer;

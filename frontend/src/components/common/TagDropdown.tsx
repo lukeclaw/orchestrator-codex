@@ -79,10 +79,10 @@ export default function TagDropdown({ value, options, onChange, disabled = false
 
   return (
     <div className="tag-dropdown" ref={ref}>
-      <div className="tag-dropdown-selected">
+      <div className={`tag-dropdown-selected ${!disabled ? 'interactive' : ''}`} onClick={() => !disabled && setOpen(!open)}>
         {render(selectedOption, true)}
         {!disabled && (
-          <button className="tag-dropdown-btn" onClick={() => setOpen(!open)}>
+          <button className="tag-dropdown-btn" onClick={(e) => e.stopPropagation()}>
             <span className={`tag-dropdown-arrow ${open ? 'open' : ''}`}>▼</span>
           </button>
         )}
