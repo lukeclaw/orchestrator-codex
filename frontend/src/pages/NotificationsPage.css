@@ -193,16 +193,19 @@
   font-weight: 500;
   text-transform: none;
   letter-spacing: 0;
-  padding: 2px 4px;
+  padding: 2px 6px;
   background: transparent;
-  border: none;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
   color: var(--text-muted);
   cursor: pointer;
-  transition: color 0.15s;
+  transition: color 0.15s, background 0.15s, border-color 0.15s;
 }
 
 .np-group-clear-btn:hover {
   color: var(--text-secondary);
+  background: var(--surface-hover);
+  border-color: var(--border);
 }
 
 .np-card {
@@ -416,18 +419,21 @@
   gap: 4px;
   padding: 4px 6px;
   background: transparent;
-  border: none;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
   color: var(--text-muted);
   font-size: 12px;
   font-weight: 500;
   text-decoration: none;
   cursor: pointer;
-  transition: color 0.15s;
+  transition: color 0.15s, background 0.15s, border-color 0.15s;
   white-space: nowrap;
 }
 
 .np-link-btn:hover {
   color: var(--accent);
+  background: var(--surface-hover);
+  border-color: var(--border);
 }
 
 .np-action-btn {
