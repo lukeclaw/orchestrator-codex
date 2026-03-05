@@ -48,7 +48,6 @@
 .np-dismiss-all-btn:hover {
   background: var(--surface-hover);
   color: var(--text-primary);
-  border-color: var(--border-hover);
 }
 
 .np-delete-all-btn {
@@ -69,7 +68,6 @@
 .np-delete-all-btn:hover {
   background: var(--surface-hover);
   color: var(--text-primary);
-  border-color: var(--border-hover);
 }
 
 /* Tabs */
@@ -202,9 +200,8 @@
 }
 
 .np-group-clear-btn:hover {
-  color: var(--text-secondary);
+  color: var(--text-primary);
   background: var(--surface-hover);
-  border-color: var(--border);
 }
 
 .np-card {
@@ -533,6 +530,7 @@
   align-items: center;
   gap: 6px;
   flex-wrap: wrap;
+  margin-bottom: 10px;
 }
 
 .np-type-chip {
