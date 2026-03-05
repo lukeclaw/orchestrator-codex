@@ -13,6 +13,11 @@ from pydantic import BaseModel
 
 from orchestrator.agents import get_path_export_command
 from orchestrator.api.deps import get_db
+from orchestrator.api.websocket import (
+    get_current_focus,
+    request_focus_from_frontend,
+    set_current_focus,
+)
 from orchestrator.state.repositories import sessions as sessions_repo
 from orchestrator.terminal import manager as tmux
 from orchestrator.terminal.session import send_to_session
@@ -23,12 +28,6 @@ router = APIRouter()
 
 BRAIN_SESSION_NAME = "brain"
 TMUX_SESSION = "orchestrator"
-
-from orchestrator.api.websocket import (
-    get_current_focus,
-    request_focus_from_frontend,
-    set_current_focus,
-)
 
 
 def _get_brain_session(db):
