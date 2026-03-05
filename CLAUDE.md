@@ -24,6 +24,15 @@ Verify all changes with tests. Aim for full coverage of new and modified code pa
 - Cover happy path, error cases, and edge cases
 - Use `uv run pytest <test_file> -v -o "addopts="` to run specific test files
 
+## Pre-Commit Checks
+
+Always run the linter, formatter, type checker, and tests before committing:
+1. `uv run ruff check . --fix && uv run ruff format .` — lint and format Python
+2. `cd frontend && npx tsc --noEmit` — type-check frontend (if frontend files changed)
+3. `uv run pytest -v -o "addopts="` — run the full test suite
+
+Do not commit if there are failures caused by your changes.
+
 ## Frontend — Tauri Compatibility
 
 Never use `window.confirm()`, `window.alert()`, `window.prompt()`, or any other native browser dialogs. They do not work in the Tauri webview. Instead, use the `<ConfirmPopover>` component (`components/common/ConfirmPopover.tsx`) for destructive action confirmations, which supports danger/warning/default variants and smart positioning.
