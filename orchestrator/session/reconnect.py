@@ -291,7 +291,10 @@ def _check_claude_session_exists_remote(host: str, session_id: str) -> bool:
     """
     try:
         # Search for session file in any project directory
-        check_cmd = f"ls ~/.claude/projects/*/{session_id}.jsonl 2>/dev/null && echo SESSION_EXISTS || echo SESSION_MISSING"
+        check_cmd = (
+            f"ls ~/.claude/projects/*/{session_id}.jsonl 2>/dev/null"
+            " && echo SESSION_EXISTS || echo SESSION_MISSING"
+        )
         result = subprocess.run(
             ["ssh", "-o", "ConnectTimeout=10", "-o", "BatchMode=yes", host, check_cmd],
             capture_output=True,
@@ -628,7 +631,8 @@ def _ensure_local_configs_exist(
 def _copy_configs_to_remote(host: str, tmp_dir: str, remote_tmp_dir: str, session_name: str):
     """Copy settings.json, hooks, bin scripts, and skills to remote host via direct SSH.
 
-    This ensures the remote configs and scripts exist, which may have been cleared if /tmp was wiped.
+    This ensures the remote configs and scripts exist, which may have been
+    cleared if /tmp was wiped.
     Called before both reattach and new screen creation.
     Uses direct SSH subprocess (bypasses tmux/screen for reliability).
     """
@@ -639,7 +643,10 @@ def _copy_configs_to_remote(host: str, tmp_dir: str, remote_tmp_dir: str, sessio
         raise RuntimeError(f"Failed to copy configs to remote via SSH: {host}:{remote_tmp_dir}")
 
     # Make scripts executable via SSH subprocess
-    chmod_cmd = f"chmod +x {remote_tmp_dir}/bin/* 2>/dev/null; chmod +x {remote_tmp_dir}/configs/hooks/*.sh 2>/dev/null"
+    chmod_cmd = (
+        f"chmod +x {remote_tmp_dir}/bin/* 2>/dev/null;"
+        f" chmod +x {remote_tmp_dir}/configs/hooks/*.sh 2>/dev/null"
+    )
     subprocess.run(
         ["ssh", "-o", "ConnectTimeout=10", "-o", "BatchMode=yes", host, chmod_cmd],
         capture_output=True,
@@ -651,7 +658,12 @@ def _copy_configs_to_remote(host: str, tmp_dir: str, remote_tmp_dir: str, sessio
     # so we copy skills directly to the user's global ~/.claude/commands/ folder
     # which Claude always loads regardless of working directory.
     # Clear stale skills first, then copy current set.
-    skills_copy_cmd = f"rm -f ~/.claude/commands/*.md 2>/dev/null; mkdir -p ~/.claude/commands && cp {remote_tmp_dir}/.claude/commands/*.md ~/.claude/commands/ 2>/dev/null || true"
+    skills_copy_cmd = (
+        "rm -f ~/.claude/commands/*.md 2>/dev/null;"
+        " mkdir -p ~/.claude/commands"
+        f" && cp {remote_tmp_dir}/.claude/commands/*.md"
+        " ~/.claude/commands/ 2>/dev/null || true"
+    )
     subprocess.run(
         ["ssh", "-o", "ConnectTimeout=10", "-o", "BatchMode=yes", host, skills_copy_cmd],
         capture_output=True,
@@ -659,7 +671,8 @@ def _copy_configs_to_remote(host: str, tmp_dir: str, remote_tmp_dir: str, sessio
     )
 
     logger.info(
-        "Reconnect %s: copied all files to remote via direct SSH (including skills to ~/.claude/commands/)",
+        "Reconnect %s: copied all files to remote via direct SSH"
+        " (including skills to ~/.claude/commands/)",
         session_name,
     )
 

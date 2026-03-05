@@ -39,7 +39,7 @@ def create_session(
     # Create tmux window (start in worker's tmp dir if provided)
     if tmp_dir:
         os.makedirs(tmp_dir, exist_ok=True)
-    target = tmux.create_window(tmux_session, name, cwd=tmp_dir)
+    tmux.create_window(tmux_session, name, cwd=tmp_dir)
 
     # If remote, SSH into host
     if host != "local":
@@ -452,7 +452,8 @@ def _copy_dir_to_remote(
     tmux.send_keys(
         tmux_session,
         window_name,
-        f"base64 -d /tmp/_orch_transfer.b64 | tar xzf - -C {remote_dir} && rm -f /tmp/_orch_transfer.b64",
+        f"base64 -d /tmp/_orch_transfer.b64 | tar xzf - -C {remote_dir}"
+        " && rm -f /tmp/_orch_transfer.b64",
         enter=True,
     )
     time.sleep(0.5)
@@ -628,7 +629,6 @@ def setup_remote_worker(
         # NOTE: --add-dir flag doesn't work reliably in recent Claude Code versions,
         # so we copy skills directly to the user's global ~/.claude/commands/ folder
         # which Claude always loads regardless of working directory.
-        remote_skills_dir = f"{remote_tmp_dir}/.claude/commands"
         if os.path.isdir(os.path.join(local_tmp_dir, ".claude", "commands")):
             global_skills_dest = "~/.claude/commands"
             # Clear stale skills, then copy current set
@@ -642,7 +642,8 @@ def setup_remote_worker(
             tmux.send_keys(
                 tmux_session,
                 name,
-                f"cp {remote_tmp_dir}/.claude/commands/*.md {global_skills_dest}/ 2>/dev/null || true",
+                f"cp {remote_tmp_dir}/.claude/commands/*.md"
+                f" {global_skills_dest}/ 2>/dev/null || true",
                 enter=True,
             )
             time.sleep(0.3)
