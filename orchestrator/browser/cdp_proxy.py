@@ -665,6 +665,7 @@ async def dispatch_key_event(
     code: str = "",
     text: str = "",
     modifiers: int = 0,
+    key_code: int = 0,
 ) -> None:
     """Dispatch a keyboard event to the browser via CDP."""
     params: dict[str, Any] = {
@@ -676,17 +677,24 @@ async def dispatch_key_event(
     if code:
         params["code"] = code
 
-    # Look up special key definition for virtual key code and text
-    key_def = _SPECIAL_KEYS.get(key, {})
-    if "keyCode" in key_def:
-        params["windowsVirtualKeyCode"] = key_def["keyCode"]
-        params["nativeVirtualKeyCode"] = key_def["keyCode"]
-    elif len(key) == 1:
-        # Printable character — derive virtual key code from uppercase ASCII
-        params["windowsVirtualKeyCode"] = ord(key.upper())
-        params["nativeVirtualKeyCode"] = ord(key.upper())
+    # Determine the virtual key code.  Prefer the browser-supplied keyCode
+    # (which correctly maps punctuation like "." -> 190, not ord(".")==46
+    # which collides with VK_DELETE).  Fall back to the special-key table,
+    # then to uppercase-ASCII for letters/digits/space.
+    if key_code:
+        params["windowsVirtualKeyCode"] = key_code
+        params["nativeVirtualKeyCode"] = key_code
+    else:
+        key_def = _SPECIAL_KEYS.get(key, {})
+        if "keyCode" in key_def:
+            params["windowsVirtualKeyCode"] = key_def["keyCode"]
+            params["nativeVirtualKeyCode"] = key_def["keyCode"]
+        elif len(key) == 1:
+            params["windowsVirtualKeyCode"] = ord(key.upper())
+            params["nativeVirtualKeyCode"] = ord(key.upper())
 
     # Set text: use explicit text from caller, fall back to special key text
+    key_def = _SPECIAL_KEYS.get(key, {})
     if text:
         params["text"] = text
     elif event_type == "keyDown" and "text" in key_def:
@@ -1002,6 +1010,7 @@ async def handle_client_input(view: BrowserViewSession, msg: dict) -> None:
             code=msg.get("code", ""),
             text=msg.get("text", ""),
             modifiers=msg.get("modifiers", 0),
+            key_code=msg.get("keyCode", 0),
         )
 
     elif msg_type == "scroll":

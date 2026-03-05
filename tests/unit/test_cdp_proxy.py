@@ -759,6 +759,53 @@ class TestInputDispatch:
         assert "text" not in sent["params"]
 
     @pytest.mark.asyncio
+    async def test_dispatch_period_key_with_keycode(self):
+        """Period key must use browser-supplied keyCode (190), not ord('.')=46
+        which collides with VK_DELETE and causes the character to be dropped."""
+        view = _make_view()
+
+        await dispatch_key_event(
+            view, "keyDown", key=".", code="Period", text=".", key_code=190
+        )
+
+        sent = json.loads(view.cdp_ws.send.call_args[0][0])
+        assert sent["params"]["windowsVirtualKeyCode"] == 190
+        assert sent["params"]["nativeVirtualKeyCode"] == 190
+        assert sent["params"]["text"] == "."
+
+    @pytest.mark.asyncio
+    async def test_dispatch_punctuation_keys_with_keycode(self):
+        """Various punctuation keys should use browser keyCode, not ASCII."""
+        view = _make_view()
+        # comma: ASCII 44, correct VK = 188
+        await dispatch_key_event(
+            view, "keyDown", key=",", code="Comma", text=",", key_code=188
+        )
+        sent = json.loads(view.cdp_ws.send.call_args[0][0])
+        assert sent["params"]["windowsVirtualKeyCode"] == 188
+
+    @pytest.mark.asyncio
+    async def test_dispatch_key_falls_back_without_keycode(self):
+        """Without browser keyCode, falls back to ord(key.upper()) for letters."""
+        view = _make_view()
+
+        await dispatch_key_event(view, "keyDown", key="a", code="KeyA", text="a")
+
+        sent = json.loads(view.cdp_ws.send.call_args[0][0])
+        assert sent["params"]["windowsVirtualKeyCode"] == ord("A")
+
+    @pytest.mark.asyncio
+    async def test_dispatch_special_key_falls_back_without_keycode(self):
+        """Without browser keyCode, special keys still use _SPECIAL_KEYS table."""
+        view = _make_view()
+
+        await dispatch_key_event(view, "keyDown", key="Enter", code="Enter", key_code=0)
+
+        sent = json.loads(view.cdp_ws.send.call_args[0][0])
+        assert sent["params"]["windowsVirtualKeyCode"] == 13
+        assert sent["params"]["text"] == "\r"
+
+    @pytest.mark.asyncio
     async def test_dispatch_scroll_event(self):
         view = _make_view()
 
@@ -808,6 +855,29 @@ class TestHandleClientInput:
         )
 
         view.cdp_ws.send.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_handle_key_input_with_keycode(self):
+        """handle_client_input forwards browser keyCode for punctuation keys."""
+        view = _make_view()
+
+        await handle_client_input(
+            view,
+            {
+                "type": "key",
+                "event": "keyDown",
+                "key": ".",
+                "code": "Period",
+                "keyCode": 190,
+                "text": ".",
+                "modifiers": 0,
+            },
+        )
+
+        view.cdp_ws.send.assert_called_once()
+        sent = json.loads(view.cdp_ws.send.call_args[0][0])
+        assert sent["params"]["windowsVirtualKeyCode"] == 190
+        assert sent["params"]["text"] == "."
 
     @pytest.mark.asyncio
     async def test_handle_scroll_input(self):

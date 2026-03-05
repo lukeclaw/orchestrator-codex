@@ -326,6 +326,7 @@ export default function BrowserView({ sessionId, minimized = false, onMinimizedC
       event: type,
       key: e.key,
       code: e.code,
+      keyCode: e.keyCode,
       text: type === 'keyDown' && e.key.length === 1 ? e.key : '',
       modifiers: getModifiers(e),
     }))
