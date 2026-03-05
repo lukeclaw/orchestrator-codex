@@ -1111,7 +1111,7 @@ export default function TaskDetailPage() {
                         {parentAssignedWorker.name}
                       </Link>
                     ) : (
-                      <span className="sidebar-empty">Unassigned</span>
+                      <span className="sidebar-empty">Assign the parent task</span>
                     )
                   ) : (
                     // Regular tasks show their own worker with edit button
