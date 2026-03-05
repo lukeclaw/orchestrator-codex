@@ -148,6 +148,9 @@ def start_brain(db=Depends(get_db)):
             f"claude --dangerously-skip-permissions --settings {settings_path}",
         )
 
+        # Dismiss any "trust this folder" prompt that may appear after launch
+        tmux.dismiss_trust_prompt(TMUX_SESSION, BRAIN_SESSION_NAME, session_id=session_id)
+
         logger.info("Orchestrator brain started in %s", target)
         return {
             "ok": True,

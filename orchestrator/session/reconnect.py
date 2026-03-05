@@ -32,7 +32,12 @@ from orchestrator.session.health import (
     check_tui_running_in_pane,
     get_screen_session_name,
 )
-from orchestrator.terminal.manager import capture_output, kill_window, send_keys
+from orchestrator.terminal.manager import (
+    capture_output,
+    dismiss_trust_prompt,
+    kill_window,
+    send_keys,
+)
 from orchestrator.terminal.markers import MarkerCommand
 from orchestrator.terminal.session import (
     _copy_dir_to_remote_ssh,
@@ -508,6 +513,9 @@ def _launch_claude_in_screen(
     claude_cmd = f"claude {' '.join(claude_args)}"
     send_keys(tmux_sess, tmux_win, claude_cmd, enter=True)
 
+    # Dismiss any "trust this folder" prompt that may appear after launch
+    dismiss_trust_prompt(tmux_sess, tmux_win, session_id=session.id)
+
     # Verify Claude actually started — use SSH process check because TUI detection
     # (alternate_on) is unreliable inside screen sessions (screen itself uses
     # alternate screen buffer, so alternate_on is always 1).
@@ -549,6 +557,9 @@ def _launch_claude_in_screen(
         claude_cmd_retry = f"claude {' '.join(claude_args_retry)}"
         logger.info("Reconnect %s: retrying with: %s", session.name, fallback_arg)
         send_keys(tmux_sess, tmux_win, claude_cmd_retry, enter=True)
+
+        # Dismiss any "trust this folder" prompt that may appear after launch
+        dismiss_trust_prompt(tmux_sess, tmux_win, session_id=session.id)
 
         # Check the retry with SSH process check
         retry_started, retry_output = _verify_claude_running_via_ssh(
@@ -1265,6 +1276,9 @@ def reconnect_local_worker(
         claude_cmd = f"claude {' '.join(claude_args)}"
         safe_send_keys(tmux_sess, tmux_win, claude_cmd, enter=True)
 
+        # Dismiss any "trust this folder" prompt that may appear after launch
+        dismiss_trust_prompt(tmux_sess, tmux_win, session_id=session.id)
+
         # Verify Claude actually started — recover if -r failed
         started, error_output = _verify_claude_started(tmux_sess, tmux_win)
         if not started:
@@ -1301,6 +1315,9 @@ def reconnect_local_worker(
             claude_cmd_retry = f"claude {' '.join(claude_args_retry)}"
             logger.info("Reconnect local %s: retrying with: %s", session.name, fallback_arg)
             safe_send_keys(tmux_sess, tmux_win, claude_cmd_retry, enter=True)
+
+            # Dismiss any "trust this folder" prompt that may appear after launch
+            dismiss_trust_prompt(tmux_sess, tmux_win, session_id=session.id)
 
             # Check the retry — if this also fails, let the health check loop handle it
             retry_started, retry_output = _verify_claude_started(tmux_sess, tmux_win)

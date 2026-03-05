@@ -685,6 +685,9 @@ def setup_remote_worker(
             work_dir,
         )
 
+        # Dismiss any "trust this folder" prompt that may appear after launch
+        tmux.dismiss_trust_prompt(tmux_session, name, session_id=session_id)
+
         return {"ok": True, "tunnel_pid": tunnel_pid}
 
     except Exception as e:
@@ -793,6 +796,9 @@ def setup_local_worker(
         cmd = " && ".join(cmd_parts)
         tmux.send_keys(tmux_session, name, cmd, enter=True)
         logger.info("Launched Claude for local worker %s (work_dir=%s)", name, work_dir)
+
+        # Dismiss any "trust this folder" prompt that may appear after launch
+        tmux.dismiss_trust_prompt(tmux_session, name, session_id=session_id)
 
         return {"ok": True}
 

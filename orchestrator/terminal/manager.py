@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import subprocess
+import time
 from dataclasses import dataclass
 
 logger = logging.getLogger(__name__)
@@ -247,6 +248,51 @@ def send_keys(session_name: str, window_name: str, text: str, enter: bool = True
         return True
     logger.warning("Failed to send keys to %s: %s", target, result.stderr)
     return False
+
+
+def dismiss_trust_prompt(
+    session_name: str,
+    window_name: str,
+    session_id: str | None = None,
+    presses: int = 3,
+    delay: float = 1.0,
+    initial_wait: float = 3.0,
+) -> None:
+    """Send Enter key presses to dismiss any trust-folder prompt after Claude launch.
+
+    Claude Code sometimes shows a "Yes, trust this folder" prompt even with
+    ``--dangerously-skip-permissions``.  Pressing Enter dismisses it.  If the
+    prompt is not present, empty Enter presses are harmless (Claude ignores
+    them and shell prompts just echo a blank line).
+
+    If *session_id* is provided, each press checks whether the user has
+    attached to the terminal and is actively typing.  If so, the remaining
+    presses are skipped to avoid injecting keystrokes into a live session.
+    """
+    # Lazy import to avoid circular dependency (ws_terminal → manager)
+    from orchestrator.api.ws_terminal import is_user_active
+
+    time.sleep(initial_wait)
+    sent = 0
+    for i in range(presses):
+        if session_id and is_user_active(session_id):
+            logger.debug(
+                "Skipping trust-prompt dismiss for %s:%s — user active in pane",
+                session_name,
+                window_name,
+            )
+            break
+        send_keys(session_name, window_name, "", enter=True)
+        sent += 1
+        if i < presses - 1:
+            time.sleep(delay)
+    logger.debug(
+        "Sent %d/%d Enter presses to %s:%s to dismiss potential trust prompt",
+        sent,
+        presses,
+        session_name,
+        window_name,
+    )
 
 
 def send_keys_literal(session_name: str, window_name: str, text: str) -> bool:
