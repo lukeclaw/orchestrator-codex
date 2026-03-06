@@ -32,6 +32,7 @@ interface AppState {
   removeSession: (id: string) => void
   closeInteractiveCli: (sessionId: string) => void
   closeBrowserView: (sessionId: string) => void
+  setUpdateAvailable: (available: boolean) => void
 }
 
 const AppContext = createContext<AppState>({
@@ -56,6 +57,7 @@ const AppContext = createContext<AppState>({
   removeSession: () => {},
   closeInteractiveCli: () => {},
   closeBrowserView: () => {},
+  setUpdateAvailable: () => {},
 })
 
 export function useApp() {
@@ -294,7 +296,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   // Focus tracking now handled via WebSocket (see above)
 
   return (
-    <AppContext.Provider value={{ sessions, workers, projects, tasks, rdevs, notificationCount, updateAvailable, connected, loading, smartPastePayload, interactiveCliSessions, interactiveCliMinimized, browserViewSessions, browserViewMinimized, setSmartPastePayload, refresh: fetchAll, refreshRdevs, refreshNotificationCount, removeSession, closeInteractiveCli, closeBrowserView }}>
+    <AppContext.Provider value={{ sessions, workers, projects, tasks, rdevs, notificationCount, updateAvailable, connected, loading, smartPastePayload, interactiveCliSessions, interactiveCliMinimized, browserViewSessions, browserViewMinimized, setSmartPastePayload, refresh: fetchAll, refreshRdevs, refreshNotificationCount, removeSession, closeInteractiveCli, closeBrowserView, setUpdateAvailable }}>
       {children}
     </AppContext.Provider>
   )

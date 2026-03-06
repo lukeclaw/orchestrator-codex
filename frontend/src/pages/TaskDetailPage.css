@@ -29,6 +29,7 @@
 
 .tdp-breadcrumb a:hover {
   color: var(--accent);
+  text-decoration: none;
 }
 
 .tdp-breadcrumb .current {
@@ -415,6 +416,7 @@
 
 .tdp-link a:hover {
   color: var(--accent);
+  text-decoration: none;
 }
 
 .tdp-link-actions {
@@ -713,6 +715,10 @@
   padding: 10px 12px;
   flex: 1;
   min-width: 0;
+  text-decoration: none;
+}
+
+.tdp-subtask-item:hover {
   text-decoration: none;
 }
 
@@ -1455,17 +1461,17 @@
 
 /* Worker Preview Card — colored left accent bar, borderless body */
 .tdp-worker-preview-card {
+  border: 1px solid transparent;
   border-left: 3px solid var(--text-muted);
   padding: 0;
   overflow: hidden;
   cursor: pointer;
-  transition: border-color 0.15s, box-shadow 0.15s, background 0.15s;
+  transition: border-color 0.15s, background 0.15s;
 }
 
 .tdp-worker-preview-card:hover {
   border-color: var(--accent);
   background: var(--surface-hover);
-  box-shadow: var(--shadow-md);
 }
 
 .tdp-worker-preview-card .status-indicator {

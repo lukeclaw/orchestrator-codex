@@ -304,6 +304,7 @@
 
 .wc-task-badge:hover {
   background: rgba(88, 166, 255, 0.22);
+  text-decoration: none;
 }
 
 .wc-task-key {
@@ -381,4 +382,5 @@
 .wc-tunnel-badge:hover {
   background: rgba(139, 92, 246, 0.3);
   color: #c4b5fd;
+  text-decoration: none;
 }

@@ -53,6 +53,7 @@ Use Playwright MCP tools to verify frontend changes visually. The dev server run
 - **Panels**: Use `.panel` / `.panel-header` / `.panel-body` from `global.css` for card containers.
 - **Tabs**: Use the pill-style tab bar pattern (`.settings-tabs` / `.settings-tab` in SettingsPage, or `.np-tabs` / `.np-tab` in NotificationsPage).
 - **Confirmations**: Use `<ConfirmPopover>` — never `window.confirm()`.
+- **Design principles**: See `docs/022-ui-design-principles.md` for the full visual design language (color system, elevation, spacing, component patterns, anti-patterns). Read it when making UI changes to ensure consistency.
 
 ## Frontend — Timezone Handling
 

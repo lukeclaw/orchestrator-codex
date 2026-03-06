@@ -261,6 +261,14 @@ Every interactive element expresses a clear, consistent state chain:
 - Hover exit is **relaxed** (200-300ms) — prevents flickering during casual mouse movement.
 - Always specify exact transition properties (`background-color`, `border-color`, `transform`). Never `transition: all`.
 
+### Link Hover and Text-Decoration
+
+The global CSS sets `a:hover { text-decoration: underline }` for inline text links (paragraphs, markdown content). However, many `<a>` and `<Link>` elements are styled as **badges, cards, pills, or buttons** — not text links. These must explicitly override the underline on hover.
+
+**Why this is easy to miss:** The global `a:hover` has specificity `(0,1,1)`. A class selector like `.my-badge` has specificity `(0,1,0)`. Even if the base class sets `text-decoration: none`, the global hover rule wins during hover because `(0,1,1) > (0,1,0)`. The fix must be on the `:hover` pseudo-class: `.my-badge:hover { text-decoration: none; }`.
+
+**Rule:** If a link has a custom background, padding, or border-radius, it is not a text link — always add `text-decoration: none` to its `:hover` state. This applies to: task badges, tunnel badges, sidebar pill links, worker links, breadcrumb links, subtask row links, and any card-like anchor element.
+
 ### Focus
 
 - Use `:focus-visible`, never `:focus`. Focus rings appear for keyboard navigation only, not mouse clicks.
@@ -474,14 +482,21 @@ Auto-dismiss:  5 seconds for info, 8 seconds for errors, manual dismiss availabl
 
 ### Sidebar Field Groups
 
-When displaying metadata in a sidebar (task detail, worker detail), group related fields with spacing instead of dividers.
+When displaying metadata in a sidebar (task detail, worker detail), group related fields into **sections** — inset panels with a subtle elevated background.
 
 ```
-Group gap:         24px between fields
-Label-value gap:   4px (label directly above value)
-Divider:           none — use a slightly larger gap (32px) between groups if needed
-Timestamps:        Horizontal row, relative format (timeAgo), CSS tooltip for exact date
+Section background:  rgba(255, 255, 255, 0.03) — barely lighter than parent card
+Section padding:     12px
+Section border-radius: var(--radius)
+Within-section gap:  12px between fields
+Between-section gap: 12px (card gap)
+Label-value gap:     4-6px (label directly above value)
+Timestamps:          Horizontal row inside a section, relative format (timeAgo), CSS tooltip for exact date
 ```
+
+**Grouping:** Split fields into logical sections (e.g., Status+Priority | Assigned+Project | Dates). This creates visual structure through the card-in-card depth effect — the sections are one shade lighter than the sidebar card, following the dark-theme elevation principle (closer to user = lighter).
+
+**Why `rgba(255,255,255,0.03)` instead of a token?** The effect needs to be *relative* to the parent surface, not an absolute step. A fixed token like `--surface-raised` may be too strong when nested inside a `--surface` card. The transparent white overlay adapts to any parent.
 
 ### Page Structure
 
@@ -573,3 +588,5 @@ Things we explicitly don't do:
 9. **No hardcoded color values.** Every color must come from a CSS variable. Hardcoded hex values in component CSS files bypass theming and create maintenance debt.
 
 10. **No font weight below 300.** Thin text on dark backgrounds becomes unreadable as it bleeds into the background.
+
+11. **No missing `text-decoration: none` on hover for styled links.** Any `<a>` or `<Link>` with custom styling (background, padding, border-radius) must override the global `a:hover { text-decoration: underline }` in its `:hover` rule. The global rule has higher specificity than a base class selector, so the override must be on `:hover` specifically.

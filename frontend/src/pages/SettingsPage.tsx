@@ -3,6 +3,7 @@ import { useSettings } from '../hooks/useSettings'
 import { useBackup } from '../hooks/useBackup'
 import { useUpdate } from '../hooks/useUpdate'
 import { useNotify } from '../context/NotificationContext'
+import { useApp } from '../context/AppContext'
 import { pickFolder } from '../api/pickFolder'
 import ConfirmPopover from '../components/common/ConfirmPopover'
 import './SettingsPage.css'
@@ -39,6 +40,7 @@ type SettingsTab = 'updates' | 'backup'
 export default function SettingsPage() {
   const { loading } = useSettings()
   const notify = useNotify()
+  const { setUpdateAvailable } = useApp()
   const [activeTab, setActiveTab] = useState<SettingsTab>('updates')
   const {
     info: updateInfo,
@@ -77,6 +79,13 @@ export default function SettingsPage() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loading])
+
+  // Sync sidebar badge with latest update check result
+  useEffect(() => {
+    if (updateInfo) {
+      setUpdateAvailable(updateInfo.update_available)
+    }
+  }, [updateInfo, setUpdateAvailable])
 
   useEffect(() => {
     if (backupSettings) {

@@ -317,6 +317,7 @@
 
 .sd-task-badge:hover {
   background: rgba(88, 166, 255, 0.22);
+  text-decoration: none;
 }
 
 .sd-task-key {
@@ -385,6 +386,7 @@
 
 .sd-tunnel-badge:hover {
   background: rgba(139, 92, 246, 0.3);
+  text-decoration: none;
 }
 
 .sd-footer-right {

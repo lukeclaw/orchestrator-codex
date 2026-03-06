@@ -127,6 +127,7 @@
 
 .wcc-task-badge:hover {
   background: rgba(88, 166, 255, 0.22);
+  text-decoration: none;
 }
 
 .wcc-task-key {
