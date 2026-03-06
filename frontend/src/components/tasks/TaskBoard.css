@@ -9,7 +9,7 @@
 
 .tb-column {
   background: var(--bg);
-  border: 1px solid var(--border-subtle);
+  border: none;
   border-radius: var(--radius-lg);
   display: flex;
   flex-direction: column;
@@ -38,22 +38,22 @@
 }
 
 .tb-column.status-in_progress .tb-column-title {
-  color: #58a6ff;
+  color: var(--accent);
 }
 
 .tb-column.status-done .tb-column-title {
-  color: #3fb950;
+  color: var(--green);
 }
 
 .tb-column.status-blocked .tb-column-title {
-  color: #f85149;
+  color: var(--red);
 }
 
 .tb-column-count {
   font-size: 12px;
   font-weight: 500;
   padding: 1px 7px;
-  border-radius: 10px;
+  border-radius: 999px;
 }
 
 .tb-column-count.status-todo {
@@ -63,17 +63,17 @@
 
 .tb-column-count.status-in_progress {
   background: rgba(56, 139, 253, 0.15);
-  color: #58a6ff;
+  color: var(--accent);
 }
 
 .tb-column-count.status-done {
   background: rgba(63, 185, 80, 0.15);
-  color: #3fb950;
+  color: var(--green);
 }
 
 .tb-column-count.status-blocked {
   background: rgba(248, 81, 73, 0.15);
-  color: #f85149;
+  color: var(--red);
 }
 
 .tb-column-body-wrapper {

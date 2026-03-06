@@ -1,7 +1,7 @@
 .project-detail {
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: 24px;
 }
 
 .pd-header {
@@ -51,7 +51,7 @@
 .pd-meta {
   display: flex;
   align-items: center;
-  gap: 20px;
+  gap: 16px;
 }
 
 .pd-progress {
@@ -66,14 +66,14 @@
 
 .pd-section {
   background: var(--surface);
-  border: 1px solid var(--border);
+  border: none;
   border-radius: var(--radius-lg);
   padding: 16px;
 }
 
 .pd-section h2 {
-  font-size: 15px;
-  font-weight: 600;
+  font-size: 16px;
+  font-weight: 500;
   margin-bottom: 12px;
 }
 
@@ -220,19 +220,19 @@
 
 .pd-context-item {
   padding: 12px;
-  background: var(--surface);
+  background: var(--bg);
   border-radius: var(--radius);
-  transition: background 0.15s, border-color 0.15s;
+  border: 1px solid transparent;
+  transition: background-color 0.15s, border-color 0.15s;
 }
 
 .pd-context-item.clickable {
   cursor: pointer;
-  border: 1px solid transparent;
 }
 
 .pd-context-item.clickable:hover {
   background: var(--surface-hover);
-  border-color: var(--border);
+  border-color: var(--border-subtle);
 }
 
 .pd-context-header {

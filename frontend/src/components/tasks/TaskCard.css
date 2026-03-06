@@ -1,6 +1,6 @@
 .task-card {
   background: var(--surface);
-  border: 1px solid var(--border);
+  border: 1px solid transparent;
   border-radius: var(--radius);
   padding: 10px 12px;
   cursor: pointer;
@@ -8,7 +8,7 @@
 }
 
 .task-card:hover {
-  border-color: var(--text-muted);
+  border-color: var(--border-subtle);
   background: var(--surface-hover);
 }
 
