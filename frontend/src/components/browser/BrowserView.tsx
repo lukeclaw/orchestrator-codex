@@ -119,8 +119,8 @@ export default function BrowserView({ sessionId, minimized = false, onMinimizedC
           } else if (msg.type === 'error') {
             setError(msg.message || 'Unknown error')
           } else if (msg.type === 'closed') {
-            setError(`Browser closed: ${msg.reason || 'unknown'}`)
-            setConnected(false)
+            closedIntentionallyRef.current = true
+            onClose()
           }
         } catch {
           // Ignore malformed JSON
