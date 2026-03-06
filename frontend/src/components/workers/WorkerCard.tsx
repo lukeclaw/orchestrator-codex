@@ -3,7 +3,7 @@ import { useNavigate, Link } from 'react-router-dom'
 import type { Session, Task } from '../../api/types'
 import { api } from '../../api/client'
 import { useNotify } from '../../context/NotificationContext'
-import { timeAgo, parseDate } from '../common/TimeAgo'
+import { timeAgo } from '../common/TimeAgo'
 import { IconTrash, IconPause, IconPlay, IconStop, IconRefresh, IconBrain, IconKebab } from '../common/Icons'
 import ConfirmPopover from '../common/ConfirmPopover'
 import AssignTaskModal from '../tasks/AssignTaskModal'
@@ -19,17 +19,6 @@ interface TunnelInfo {
   remote_port: number
   pid: number
   host: string
-}
-
-function statusDuration(dateStr: string | null | undefined): string {
-  if (!dateStr) return ''
-  const d = parseDate(dateStr)
-  const secs = Math.floor((Date.now() - d.getTime()) / 1000)
-  if (secs < 0) return '<1m'
-  if (secs < 60) return '<1m'
-  if (secs < 3600) return `${Math.floor(secs / 60)}m`
-  if (secs < 86400) return `${Math.floor(secs / 3600)}h`
-  return `${Math.floor(secs / 86400)}d`
 }
 
 export default function WorkerCard({
@@ -239,9 +228,6 @@ export default function WorkerCard({
           {isRdev && <span className="wc-type-tag rdev">rdev</span>}
           {isSsh && <span className="wc-type-tag ssh">ssh</span>}
           <span className={`status-badge ${session.status}`}>{session.status}</span>
-          {session.last_status_changed_at && (
-            <span className="wc-duration">{statusDuration(session.last_status_changed_at)}</span>
-          )}
         </div>
         <div className="wc-actions">
           {/* Hoverable action buttons */}

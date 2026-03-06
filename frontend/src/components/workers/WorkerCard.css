@@ -103,13 +103,6 @@
 }
 
 /* Status duration indicator */
-.wc-duration {
-  font-family: var(--font-mono);
-  font-size: 10px;
-  color: var(--text-muted);
-  white-space: nowrap;
-}
-
 /* Action buttons container */
 .wc-actions {
   display: flex;
