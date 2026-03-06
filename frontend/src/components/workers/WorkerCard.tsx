@@ -5,7 +5,7 @@ import { api } from '../../api/client'
 import { useNotify } from '../../context/NotificationContext'
 import { timeAgo } from '../common/TimeAgo'
 import { IconTrash, IconPause, IconPlay, IconStop, IconRefresh, IconBrain, IconKebab } from '../common/Icons'
-import ConfirmPopover from '../common/ConfirmPopover'
+
 import AssignTaskModal from '../tasks/AssignTaskModal'
 import './WorkerCard.css'
 
@@ -279,40 +279,22 @@ export default function WorkerCard({
             </button>
             {showOverflow && (
               <div className="wc-overflow-dropdown">
-                <ConfirmPopover
-                  message={`Stop worker "${session.name}" and clear context?`}
-                  confirmLabel="Stop"
-                  onConfirm={handleStop}
-                  variant="danger"
+                <button
+                  className="wc-overflow-item"
+                  onClick={e => { e.stopPropagation(); setShowOverflow(false); handleStop() }}
+                  disabled={actionPending || session.status === 'idle'}
                 >
-                  {({ onClick }) => (
-                    <button
-                      className="wc-overflow-item"
-                      onClick={onClick}
-                      disabled={actionPending || session.status === 'idle'}
-                    >
-                      <IconStop size={13} />
-                      <span>Stop & clear</span>
-                    </button>
-                  )}
-                </ConfirmPopover>
-                <ConfirmPopover
-                  message={`Remove worker "${session.name}"?`}
-                  confirmLabel="Remove"
-                  onConfirm={handleRemove}
-                  variant="danger"
+                  <IconStop size={13} />
+                  <span>Stop & clear</span>
+                </button>
+                <button
+                  className="wc-overflow-item danger"
+                  onClick={e => { e.stopPropagation(); setShowOverflow(false); handleRemove() }}
+                  disabled={removing}
                 >
-                  {({ onClick }) => (
-                    <button
-                      className="wc-overflow-item danger"
-                      onClick={onClick}
-                      disabled={removing}
-                    >
-                      <IconTrash size={13} />
-                      <span>Remove</span>
-                    </button>
-                  )}
-                </ConfirmPopover>
+                  <IconTrash size={13} />
+                  <span>Remove</span>
+                </button>
               </div>
             )}
           </div>
