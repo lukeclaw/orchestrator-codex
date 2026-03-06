@@ -6,6 +6,7 @@ import { useNotify } from '../../context/NotificationContext'
 import { timeAgo, parseDate } from '../common/TimeAgo'
 import { IconTrash, IconPause, IconPlay, IconStop, IconRefresh, IconBrain, IconKebab } from '../common/Icons'
 import ConfirmPopover from '../common/ConfirmPopover'
+import AssignTaskModal from '../tasks/AssignTaskModal'
 import './WorkerCard.css'
 
 interface Props {
@@ -40,6 +41,7 @@ export default function WorkerCard({
   const [actionPending, setActionPending] = useState(false)
   const [showOverflow, setShowOverflow] = useState(false)
   const [tunnels, setTunnels] = useState<Record<string, TunnelInfo>>({})
+  const [showAssignTask, setShowAssignTask] = useState(false)
   const tunnelIntervalRef = useRef<ReturnType<typeof setInterval> | undefined>(undefined)
   const sessionIdRef = useRef(session.id)
   const overflowRef = useRef<HTMLDivElement>(null)
@@ -350,7 +352,7 @@ export default function WorkerCard({
           ) : (
             <span
               className="wc-assign-task-btn"
-              onClick={e => { e.stopPropagation(); navigate(`/workers/${session.id}`) }}
+              onClick={e => { e.stopPropagation(); setShowAssignTask(true) }}
               title="Assign a task to this worker"
             >
               <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -377,6 +379,13 @@ export default function WorkerCard({
         </div>
         <span className="wc-activity" title="Last viewed">{timeAgo(session.last_viewed_at || session.created_at)}</span>
       </div>
+
+      <AssignTaskModal
+        open={showAssignTask}
+        onClose={() => setShowAssignTask(false)}
+        sessionId={session.id}
+        sessionName={session.name}
+      />
     </div>
   )
 }

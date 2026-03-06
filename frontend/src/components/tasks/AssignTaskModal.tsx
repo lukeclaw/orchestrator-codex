@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useRef, useEffect, useCallback } from 'react'
 import { useApp } from '../../context/AppContext'
 import { useNotify } from '../../context/NotificationContext'
 import { api } from '../../api/client'
@@ -27,6 +27,14 @@ export default function AssignTaskModal({ open, onClose, sessionId, sessionName 
   const { tasks, projects, refresh } = useApp()
   const notify = useNotify()
   const [assigning, setAssigning] = useState(false)
+  const bodyRef = useRef<HTMLDivElement>(null)
+  const [canScroll, setCanScroll] = useState(false)
+
+  const checkScroll = useCallback(() => {
+    const el = bodyRef.current
+    if (!el) return
+    setCanScroll(el.scrollHeight - el.scrollTop - el.clientHeight > 8)
+  }, [])
 
   // Filter: unassigned, top-level, todo or in_progress
   const availableTasks = useMemo(() => {
@@ -67,6 +75,12 @@ export default function AssignTaskModal({ open, onClose, sessionId, sessionName 
     return groups
   }, [availableTasks, projects])
 
+  useEffect(() => {
+    if (!open) return
+    const timer = setTimeout(checkScroll, 50)
+    return () => clearTimeout(timer)
+  }, [open, grouped, checkScroll])
+
   async function handleAssign(taskId: string) {
     if (assigning) return
     setAssigning(true)
@@ -97,9 +111,9 @@ export default function AssignTaskModal({ open, onClose, sessionId, sessionName 
   const priorityLabel: Record<string, string> = { H: 'High', M: 'Med', L: 'Low' }
 
   return (
-    <Modal open={open} onClose={onClose} title={`Assign task to ${sessionName}`}>
+    <Modal open={open} onClose={onClose} title={`Assign task to ${sessionName}`} wide>
       <div className="atm-hint">Pick an available task to assign to this worker</div>
-      <div className="atm-body">
+      <div className={`atm-body${canScroll ? ' atm-body-fade' : ''}`} ref={bodyRef} onScroll={checkScroll}>
         {grouped.length === 0 ? (
           <div className="atm-empty">No available tasks to assign</div>
         ) : (

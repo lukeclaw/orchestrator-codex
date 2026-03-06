@@ -1,7 +1,8 @@
 .worker-card {
   background: var(--surface);
   border: 1px solid transparent;
-  border-left: 3px solid var(--text-muted);
+  border-left: 2px solid var(--text-muted);
+  border-right: 1px solid var(--border-subtle);
   border-radius: var(--radius-lg);
   cursor: pointer;
   transition: border-color 0.15s, background 0.15s, opacity 0.2s;

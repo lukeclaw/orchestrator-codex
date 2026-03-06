@@ -1,10 +1,11 @@
 /* Hint bar at top of modal body */
 .atm-hint {
   padding: 12px 20px;
-  background: rgba(88, 166, 255, 0.1);
-  border-bottom: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.03);
+  border-bottom: 1px solid var(--border-subtle);
   font-size: 13px;
-  color: #58a6ff;
+  color: var(--text-secondary);
+  cursor: default;
 }
 
 /* Scrollable body */
@@ -12,6 +13,12 @@
   padding: 12px;
   max-height: 50vh;
   overflow-y: auto;
+  cursor: default;
+}
+
+.atm-body.atm-body-fade {
+  mask-image: linear-gradient(to bottom, black calc(100% - 32px), transparent 100%);
+  -webkit-mask-image: linear-gradient(to bottom, black calc(100% - 32px), transparent 100%);
 }
 
 /* Empty state */
@@ -43,19 +50,19 @@
   align-items: center;
   gap: 8px;
   padding: 10px 14px;
-  background: var(--bg);
+  background: rgba(255, 255, 255, 0.03);
   border: 1px solid transparent;
-  border-radius: 8px;
+  border-radius: var(--radius);
   cursor: pointer;
   text-align: left;
   width: 100%;
-  transition: all 0.15s;
+  transition: background-color 0.15s, border-color 0.15s;
   margin-bottom: 4px;
 }
 
 .atm-task-option:hover:not(:disabled) {
-  background: var(--surface-hover);
-  border-color: var(--border);
+  background: var(--surface-raised);
+  border-color: var(--border-subtle);
 }
 
 .atm-task-option:disabled {
@@ -67,25 +74,25 @@
 .atm-priority {
   font-size: 10px;
   font-weight: 600;
-  padding: 2px 6px;
-  border-radius: 4px;
+  padding: 3px 8px;
+  border-radius: 999px;
   white-space: nowrap;
   flex-shrink: 0;
 }
 
 .atm-priority.priority-H {
   background: rgba(248, 81, 73, 0.15);
-  color: #f85149;
+  color: var(--red);
 }
 
 .atm-priority.priority-M {
   background: rgba(210, 153, 34, 0.15);
-  color: #d29922;
+  color: var(--yellow);
 }
 
 .atm-priority.priority-L {
   background: rgba(63, 185, 80, 0.15);
-  color: #3fb950;
+  color: var(--green);
 }
 
 /* Task key */
@@ -112,8 +119,9 @@
 /* Status badge */
 .atm-status {
   font-size: 10px;
-  padding: 2px 6px;
-  border-radius: 4px;
+  font-weight: 500;
+  padding: 3px 8px;
+  border-radius: 999px;
   white-space: nowrap;
   flex-shrink: 0;
   text-transform: capitalize;
@@ -121,10 +129,10 @@
 
 .atm-status.status-todo {
   background: rgba(139, 148, 158, 0.15);
-  color: #8b949e;
+  color: var(--text-secondary);
 }
 
 .atm-status.status-in_progress {
   background: rgba(88, 166, 255, 0.15);
-  color: #58a6ff;
+  color: var(--accent);
 }
