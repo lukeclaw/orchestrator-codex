@@ -1174,35 +1174,35 @@
 }
 
 .worker-status-dot.status-idle {
-  background: #3fb950;
+  background: var(--green);
 }
 
 .worker-status-dot.status-working {
-  background: #58a6ff;
+  background: var(--accent);
 }
 
 .worker-status-dot.status-paused {
-  background: #d29922;
+  background: var(--yellow);
 }
 
 .worker-status-dot.status-error {
-  background: #f85149;
+  background: var(--red);
 }
 
 .worker-status-dot.status-waiting {
-  background: #d29922;
+  background: var(--yellow);
 }
 
 .worker-status-dot.status-disconnected {
-  background: #f85149;
+  background: var(--red);
 }
 
 .worker-status-dot.status-connecting {
-  background: #58a6ff;
+  background: var(--accent);
 }
 
 .worker-status-dot.status-screen_detached {
-  background: #f97316;
+  background: var(--orange, #f97316);
 }
 
 .tdp-assign-icon-btn {
@@ -1233,7 +1233,8 @@
   left: 0;
   right: 0;
   bottom: 0;
-  background: rgba(0, 0, 0, 0.6);
+  background: rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(8px);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1245,10 +1246,10 @@
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-lg);
   width: 100%;
-  max-width: 400px;
+  max-width: 480px;
   max-height: 80vh;
   overflow: hidden;
-  box-shadow: var(--shadow-float);
+  box-shadow: var(--shadow-lg);
 }
 
 .tdp-modal-header {
@@ -1284,15 +1285,18 @@
 
 .tdp-modal-hint {
   padding: 12px 20px;
-  background: rgba(88, 166, 255, 0.08);
+  background: rgba(255, 255, 255, 0.03);
+  border-bottom: 1px solid var(--border-subtle);
   font-size: 13px;
-  color: #58a6ff;
+  color: var(--text-secondary);
+  cursor: default;
 }
 
 .tdp-modal-body {
   padding: 12px;
   max-height: 50vh;
   overflow-y: auto;
+  cursor: default;
 }
 
 .tdp-worker-list {
@@ -1306,17 +1310,18 @@
   align-items: center;
   gap: 10px;
   padding: 12px 14px;
-  background: var(--bg);
+  background: rgba(255, 255, 255, 0.03);
   border: 1px solid transparent;
   border-radius: var(--radius);
   cursor: pointer;
   text-align: left;
   width: 100%;
-  transition: all 0.15s;
+  transition: background-color 0.15s, border-color 0.15s;
 }
 
 .tdp-worker-option:hover {
-  background: var(--surface-hover);
+  background: var(--surface-overlay);
+  border-color: var(--border-subtle);
 }
 
 .tdp-worker-option.selected {
@@ -1345,58 +1350,59 @@
 
 .tdp-worker-option .worker-status-label {
   font-size: 11px;
-  padding: 2px 8px;
-  border-radius: var(--radius);
+  font-weight: 500;
+  padding: 3px 8px;
+  border-radius: 999px;
   text-transform: capitalize;
 }
 
 .worker-status-label.status-idle {
   background: rgba(63, 185, 80, 0.15);
-  color: #3fb950;
+  color: var(--green);
 }
 
 .worker-status-label.status-working {
   background: rgba(88, 166, 255, 0.15);
-  color: #58a6ff;
+  color: var(--accent);
 }
 
 .worker-status-label.status-paused {
   background: rgba(210, 153, 34, 0.15);
-  color: #d29922;
+  color: var(--yellow);
 }
 
 .worker-status-label.status-error {
   background: rgba(248, 81, 73, 0.15);
-  color: #f85149;
+  color: var(--red);
 }
 
 .worker-status-label.status-waiting {
   background: rgba(210, 153, 34, 0.15);
-  color: #d29922;
+  color: var(--yellow);
 }
 
 .worker-status-label.status-disconnected {
   background: rgba(248, 81, 73, 0.15);
-  color: #f85149;
+  color: var(--red);
 }
 
 .worker-status-label.status-connecting {
   background: rgba(88, 166, 255, 0.15);
-  color: #58a6ff;
+  color: var(--accent);
 }
 
 .worker-status-label.status-screen_detached {
   background: rgba(249, 115, 22, 0.15);
-  color: #f97316;
+  color: var(--orange, #f97316);
 }
 
 .worker-current {
   font-size: 10px;
   font-weight: 600;
-  padding: 2px 6px;
-  border-radius: 4px;
+  padding: 3px 8px;
+  border-radius: 999px;
   background: rgba(63, 185, 80, 0.15);
-  color: #3fb950;
+  color: var(--green);
   text-transform: uppercase;
 }
 
@@ -1431,7 +1437,7 @@
 }
 
 .tdp-worker-option.disabled:hover {
-  background: var(--bg);
+  background: rgba(255, 255, 255, 0.03);
   border-color: transparent;
 }
 
@@ -1448,15 +1454,15 @@
   background: rgba(88, 166, 255, 0.15);
   border: none;
   border-radius: var(--radius);
-  color: #58a6ff;
+  color: var(--accent);
   cursor: pointer;
-  transition: all 0.15s;
+  transition: background-color 0.15s, color 0.15s;
   margin-left: auto;
 }
 
 .tdp-worker-reconnect-btn:hover {
   background: rgba(88, 166, 255, 0.25);
-  color: #79b8ff;
+  color: var(--accent);
 }
 
 /* Worker Preview Card — colored left accent bar, borderless body */

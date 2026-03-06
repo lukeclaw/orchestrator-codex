@@ -61,7 +61,7 @@
 }
 
 .atm-task-option:hover:not(:disabled) {
-  background: var(--surface-raised);
+  background: var(--surface-overlay);
   border-color: var(--border-subtle);
 }
 
@@ -78,6 +78,8 @@
   border-radius: 999px;
   white-space: nowrap;
   flex-shrink: 0;
+  width: 36px;
+  text-align: center;
 }
 
 .atm-priority.priority-H {
@@ -103,6 +105,8 @@
   color: var(--accent);
   white-space: nowrap;
   flex-shrink: 0;
+  min-width: 56px;
+  text-align: right;
 }
 
 /* Task title */

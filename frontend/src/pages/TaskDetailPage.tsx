@@ -1201,6 +1201,7 @@ export default function TaskDetailPage() {
                         >
                           <span className={`worker-status-dot status-${s.status}`} />
                           <span className="worker-name">{s.name}</span>
+                          {s.host.includes('/') ? <span className="wc-type-tag rdev">rdev</span> : s.host !== 'localhost' ? <span className="wc-type-tag ssh">ssh</span> : null}
                           <span className={`worker-status-label status-${s.status}`}>{s.status}</span>
                           {s.id === assignedSession && <span className="worker-current">Current</span>}
                         </button>
@@ -1229,6 +1230,7 @@ export default function TaskDetailPage() {
                         >
                           <span className={`worker-status-dot status-${s.status}`} />
                           <span className="worker-name">{s.name}</span>
+                          {s.host.includes('/') ? <span className="wc-type-tag rdev">rdev</span> : s.host !== 'localhost' ? <span className="wc-type-tag ssh">ssh</span> : null}
                           <span className={`worker-status-label status-${s.status}`}>{s.status}</span>
                           <button
                             className="tdp-worker-reconnect-btn"
