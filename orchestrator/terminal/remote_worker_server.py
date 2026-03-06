@@ -405,11 +405,21 @@ _REMOTE_WORKER_SERVER_SCRIPT = textwrap.dedent("""\
         # Download Noto Sans fonts to user-local directory (no root required).
         # Uses Google Fonts CDN (fonts.gstatic.com) which serves TTF files directly.
         font_dir = os.path.join(os.path.expanduser("~"), ".local", "share", "fonts")
-        base = "https://fonts.gstatic.com/s"
+        ns = "https://fonts.gstatic.com/s/notosans/v42"
+        nm = "https://fonts.gstatic.com/s/notosansmono/v37"
         fonts = {
-            "NotoSans-Regular.ttf": f"{base}/notosans/v42/o-0mIpQlx3QUlC5A4PNB6Ryti20_6n1iPHjcz6L1SoM-jCpoiyD9A99d.ttf",
-            "NotoSans-Bold.ttf": f"{base}/notosans/v42/o-0mIpQlx3QUlC5A4PNB6Ryti20_6n1iPHjcz6L1SoM-jCpoiyAaBN9d.ttf",
-            "NotoSansMono-Regular.ttf": f"{base}/notosansmono/v37/BngrUXNETWXI6LwhGYvaxZikqZqK6fBq6kPvUce2oAZcdthSBUsYck4-_FNJ49o.ttf",
+            "NotoSans-Regular.ttf": (
+                f"{ns}/o-0mIpQlx3QUlC5A4PNB6Ryti20_6n1iPHjcz6L1SoM"
+                "-jCpoiyD9A99d.ttf"
+            ),
+            "NotoSans-Bold.ttf": (
+                f"{ns}/o-0mIpQlx3QUlC5A4PNB6Ryti20_6n1iPHjcz6L1SoM"
+                "-jCpoiyAaBN9d.ttf"
+            ),
+            "NotoSansMono-Regular.ttf": (
+                f"{nm}/BngrUXNETWXI6LwhGYvaxZikqZqK6fBq6kPvUce2oAZ"
+                "cdthSBUsYck4-_FNJ49o.ttf"
+            ),
         }
         try:
             os.makedirs(font_dir, exist_ok=True)

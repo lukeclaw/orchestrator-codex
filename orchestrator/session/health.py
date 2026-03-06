@@ -446,10 +446,19 @@ def check_screen_and_claude_remote(
         # drops the space before {screen_name} and uses `.*` to bridge both
         # `screen -S <name>` (space-separated) and `screen -rd <pid>.<name>`
         # (dot-separated) forms.
+        # Build the grep pattern for Claude process detection — match
+        # the orchestrator session ID, plus the Claude session ID if different.
+        claude_id_pattern = session_id
+        if claude_session_id and claude_session_id != session_id:
+            claude_id_pattern += "|" + claude_session_id
         check_cmd = (
-            f"screen -ls 2>/dev/null | grep -q '{screen_name}' && echo 'SCREEN_EXISTS' || echo 'NO_SCREEN'; "
-            f"ps aux | grep -v grep | grep -qi '[s]creen.*{screen_name}' && echo 'SCREEN_PS_EXISTS' || echo 'NO_SCREEN_PS'; "
-            f"ps aux | grep -v grep | grep -E 'claude (-r|--|--settings)' | grep -qE '({session_id}{'|' + claude_session_id if claude_session_id and claude_session_id != session_id else ''})' && echo 'CLAUDE_RUNNING' || echo 'NO_CLAUDE'"
+            f"screen -ls 2>/dev/null | grep -q '{screen_name}'"
+            " && echo 'SCREEN_EXISTS' || echo 'NO_SCREEN'; "
+            f"ps aux | grep -v grep | grep -qi '[s]creen.*{screen_name}'"
+            " && echo 'SCREEN_PS_EXISTS' || echo 'NO_SCREEN_PS'; "
+            "ps aux | grep -v grep | grep -E 'claude (-r|--|--settings)'"
+            f" | grep -qE '({claude_id_pattern})'"
+            " && echo 'CLAUDE_RUNNING' || echo 'NO_CLAUDE'"
         )
 
         result = subprocess.run(
@@ -478,7 +487,8 @@ def check_screen_and_claude_remote(
         if result.returncode == 255 and not result.stdout.strip():
             return (
                 "screen_detached",
-                f"SSH connection failed - screen may still be running: {result.stderr.strip()[:200]}",
+                "SSH connection failed - screen may still be running: "
+                f"{result.stderr.strip()[:200]}",
             )
 
         output = result.stdout
@@ -490,7 +500,8 @@ def check_screen_and_claude_remote(
 
         # Debug logging to diagnose false negatives
         logger.debug(
-            "SSH health check for %s (screen=%s): returncode=%d, screen_ls=%s, screen_ps=%s, claude=%s, stdout=%r, stderr=%r",
+            "SSH health check for %s (screen=%s): returncode=%d, "
+            "screen_ls=%s, screen_ps=%s, claude=%s, stdout=%r, stderr=%r",
             host,
             screen_name,
             result.returncode,
@@ -528,7 +539,8 @@ def check_screen_and_claude_remote(
             )
             return (
                 "alive",
-                f"Claude is running without screen (screen session '{screen_name}' not found — likely orphaned)",
+                f"Claude is running without screen "
+                f"(session '{screen_name}' not found — likely orphaned)",
             )
         else:
             # Log at warning level when marking as dead - helps diagnose false negatives

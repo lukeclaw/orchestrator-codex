@@ -214,8 +214,10 @@ class TestReconnectStep3Retry:
     @patch("orchestrator.session.reconnect._clean_pane_for_ssh")
     @patch("orchestrator.session.reconnect._ensure_tunnel")
     @patch("orchestrator.session.reconnect.check_tui_running_in_pane", return_value=False)
+    @patch("orchestrator.session.reconnect.ensure_rdev_node")
     def test_retries_with_kill_on_first_timeout(
         self,
+        mock_node,
         mock_tui,
         mock_tunnel,
         mock_clean,

@@ -265,8 +265,10 @@ class TestReconnectUsesClaudeSessionId:
         "orchestrator.session.health.check_claude_running_local",
         return_value=(False, "not running"),
     )
+    @patch("orchestrator.session.reconnect.dismiss_trust_prompt")
     def test_local_reconnect_uses_claude_session_id(
         self,
+        mock_dismiss,
         mock_alive,
         mock_tui,
         mock_prompt,
@@ -313,8 +315,10 @@ class TestReconnectUsesClaudeSessionId:
         "orchestrator.session.health.check_claude_running_local",
         return_value=(False, "not running"),
     )
+    @patch("orchestrator.session.reconnect.dismiss_trust_prompt")
     def test_local_reconnect_falls_back_to_orch_id(
         self,
+        mock_dismiss,
         mock_alive,
         mock_tui,
         mock_prompt,
@@ -382,7 +386,6 @@ class TestHealthCheckUsesClaudeSessionId:
 
         # Must be called with both IDs + tmux info
         mock_check.assert_called_once()
-        args = mock_check.call_args[1] if mock_check.call_args[1] else None
         positional = mock_check.call_args[0]
         assert positional[0] == s.id  # session.id first
         assert positional[1] == new_claude_id  # claude_session_id second
@@ -683,8 +686,10 @@ class TestClaudeLaunchRecovery:
         "orchestrator.session.health.check_claude_running_local",
         return_value=(False, "not running"),
     )
+    @patch("orchestrator.session.reconnect.dismiss_trust_prompt")
     def test_local_reconnect_retries_on_r_failure(
         self,
+        mock_dismiss,
         mock_alive,
         mock_tui,
         mock_prompt,
@@ -738,8 +743,10 @@ class TestClaudeLaunchRecovery:
         "orchestrator.session.health.check_claude_running_local",
         return_value=(False, "not running"),
     )
+    @patch("orchestrator.session.reconnect.dismiss_trust_prompt")
     def test_local_reconnect_no_retry_on_success(
         self,
+        mock_dismiss,
         mock_alive,
         mock_tui,
         mock_prompt,
@@ -787,8 +794,10 @@ class TestClaudeLaunchRecovery:
         "orchestrator.session.health.check_claude_running_local",
         return_value=(False, "not running"),
     )
+    @patch("orchestrator.session.reconnect.dismiss_trust_prompt")
     def test_local_reconnect_gives_up_after_retry_fails(
         self,
+        mock_dismiss,
         mock_alive,
         mock_tui,
         mock_prompt,

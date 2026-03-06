@@ -618,6 +618,7 @@ class TestReconnectExceptionHandling:
             ),
             patch("orchestrator.session.reconnect.safe_send_keys"),
             patch("orchestrator.session.reconnect.time.sleep"),
+            patch("orchestrator.session.reconnect.ensure_rdev_node"),
         ):
             mock_repo = MagicMock()
             mock_repo.update_session = tracker.update_session
@@ -748,6 +749,7 @@ class TestReconnectExceptionHandling:
                 side_effect=TUIActiveError("TUI active"),
             ),
             patch("orchestrator.session.reconnect.time.sleep"),
+            patch("orchestrator.session.reconnect.ensure_rdev_node"),
         ):
             mock_repo = MagicMock()
             mock_repo.update_session = tracker.update_session
