@@ -267,13 +267,13 @@ class TestWorkerPromptContent:
         assert "orch-context add" in result
         assert "orch-task update --notes" in result
 
-    def test_worker_prompt_does_not_have_orch_skills(self):
-        """Workers should not have orch-skills — only brain manages skills."""
+    def test_worker_prompt_has_orch_skills(self):
+        """Workers should have orch-skills for creating/updating skills."""
         from orchestrator.agents.deploy import get_worker_prompt
 
         result = get_worker_prompt("test-session")
         assert result is not None
-        assert "orch-skills" not in result
+        assert "orch-skills" in result
 
 
 class TestBrainSettingsPermissions:
@@ -288,6 +288,27 @@ class TestBrainSettingsPermissions:
             "..",
             "agents",
             "brain",
+            "settings.json",
+        )
+        with open(settings_path) as f:
+            settings = json.load(f)
+
+        permissions = settings["permissions"]["allow"]
+        assert "Bash(orch-skills *)" in permissions
+
+
+class TestWorkerSettingsPermissions:
+    """Verify worker settings.json has correct permissions."""
+
+    def test_settings_has_orch_skills_permission(self):
+        import json
+
+        settings_path = os.path.join(
+            os.path.dirname(__file__),
+            "..",
+            "..",
+            "agents",
+            "worker",
             "settings.json",
         )
         with open(settings_path) as f:

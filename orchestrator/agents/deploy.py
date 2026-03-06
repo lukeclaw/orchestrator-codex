@@ -33,6 +33,7 @@ WORKER_SCRIPT_NAMES = [
     "orch-prs",
     "orch-interactive",
     "orch-browser",
+    "orch-skills",
 ]
 BRAIN_SCRIPT_NAMES = [
     "orch-workers",
@@ -122,6 +123,15 @@ load_task_info() {{
     PROJECT_ID=$(echo "$tasks_json" | jq -r '.[0].project_id // empty')
 
     return 0
+}}
+
+# Helper to pretty-print JSON
+pp() {{
+    if command -v jq &> /dev/null; then
+        jq .
+    else
+        cat
+    fi
 }}
 
 # Helper: JSON-encode a string

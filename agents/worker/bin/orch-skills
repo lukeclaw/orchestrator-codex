@@ -1,0 +1,200 @@
+#!/bin/bash
+# orch-skills: Manage custom skills
+source "$(dirname "$0")/lib.sh"
+
+show_help() {
+    echo "Usage: orch-skills <command> [options]"
+    echo ""
+    echo "Commands:"
+    echo "  list [filters]                List skills (custom + built-in)"
+    echo "  show <id>                     Show full content of a custom skill"
+    echo "  create [options]              Create a new custom skill"
+    echo "  update <id> [options]         Update a custom skill"
+    echo "  delete <id>                   Delete a custom skill"
+    echo ""
+    echo "List Filters:"
+    echo "  --target TARGET               Filter by target (brain|worker)"
+    echo "  --search TEXT                 Search by name or description"
+    echo ""
+    echo "Create Options:"
+    echo "  --name NAME                   Skill name (required, kebab-case)"
+    echo "  --target TARGET               Target: brain|worker (default: worker)"
+    echo "  --content CONTENT             Skill content (markdown)"
+    echo "  --content-file FILE           Read content from file"
+    echo "  --content-stdin               Read content from stdin"
+    echo "  --description DESC            Brief description"
+    echo ""
+    echo "Update Options:"
+    echo "  --name NAME                   Update skill name"
+    echo "  --target TARGET               Update target"
+    echo "  --content CONTENT             Update content"
+    echo "  --content-file FILE           Read content from file"
+    echo "  --content-stdin               Read content from stdin"
+    echo "  --description DESC            Update description"
+    echo "  --enabled true|false          Enable or disable skill"
+    echo ""
+    echo "Examples:"
+    echo "  orch-skills list --target worker"
+    echo "  orch-skills show abc123"
+    echo "  orch-skills create --name deploy-checklist --content \"Step 1: ...\" --description \"Deploy procedure\""
+    echo "  orch-skills update abc123 --enabled false"
+    echo "  orch-skills delete abc123"
+}
+
+cmd_list() {
+    [[ "$1" == "-h" || "$1" == "--help" ]] && show_help && exit 0
+    local target="" search=""
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --target) target="$2"; shift 2 ;;
+            --search) search="$2"; shift 2 ;;
+            *) echo "Unknown option: $1" >&2; exit 1 ;;
+        esac
+    done
+
+    local url="$API_BASE/api/skills"
+    local sep="?"
+    [[ -n "$target" ]] && url="$url${sep}target=$target" && sep="&"
+    [[ -n "$search" ]] && url="$url${sep}search=$search"
+
+    curl -s "$url" | jq '.[] | {id: .id, name: .name, target: .target, type: .type, description: .description, enabled: .enabled}'
+}
+
+cmd_show() {
+    local id="$1"
+    if [[ -z "$id" ]]; then
+        echo "Error: Skill ID required" >&2
+        exit 1
+    fi
+    curl -s "$API_BASE/api/skills/$id" | pp
+}
+
+cmd_create() {
+    [[ "$1" == "-h" || "$1" == "--help" ]] && show_help && exit 0
+    local name="" target="worker" content="" content_file="" content_stdin="" description=""
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --name) name="$2"; shift 2 ;;
+            --target) target="$2"; shift 2 ;;
+            --content) content="$2"; shift 2 ;;
+            --content-file) content_file="$2"; shift 2 ;;
+            --content-stdin) content_stdin="1"; shift ;;
+            --description) description="$2"; shift 2 ;;
+            *) echo "Unknown option: $1" >&2; exit 1 ;;
+        esac
+    done
+
+    if [[ -z "$name" ]]; then
+        echo "Error: --name is required" >&2
+        exit 1
+    fi
+    if [[ -n "$content_stdin" ]]; then
+        content=$(cat)
+    elif [[ -n "$content_file" ]]; then
+        if [[ ! -f "$content_file" ]]; then
+            echo "Error: Content file not found: $content_file" >&2
+            exit 1
+        fi
+        content=$(cat "$content_file")
+    fi
+
+    local escaped_name=$(json_encode "$name")
+    local escaped_content=$(json_encode "$content")
+
+    local json="{\"name\": \"$escaped_name\", \"target\": \"$target\""
+    if [[ -n "$content" ]]; then
+        json="$json, \"content\": \"$escaped_content\""
+    fi
+    if [[ -n "$description" ]]; then
+        local escaped_desc=$(json_encode "$description")
+        json="$json, \"description\": \"$escaped_desc\""
+    fi
+    json="$json}"
+
+    curl -s -X POST "$API_BASE/api/skills" \
+        -H 'Content-Type: application/json' \
+        -d "$json" | pp
+}
+
+cmd_update() {
+    [[ "$1" == "-h" || "$1" == "--help" ]] && show_help && exit 0
+    local id="$1"
+    shift
+    if [[ -z "$id" ]]; then
+        echo "Error: Skill ID required" >&2
+        exit 1
+    fi
+
+    local name="" target="" content="" content_file="" content_stdin="" description="" enabled=""
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --name) name="$2"; shift 2 ;;
+            --target) target="$2"; shift 2 ;;
+            --content) content="$2"; shift 2 ;;
+            --content-file) content_file="$2"; shift 2 ;;
+            --content-stdin) content_stdin="1"; shift ;;
+            --description) description="$2"; shift 2 ;;
+            --enabled) enabled="$2"; shift 2 ;;
+            *) echo "Unknown option: $1" >&2; exit 1 ;;
+        esac
+    done
+
+    if [[ -n "$content_stdin" ]]; then
+        content=$(cat)
+    elif [[ -n "$content_file" ]]; then
+        if [[ ! -f "$content_file" ]]; then
+            echo "Error: Content file not found: $content_file" >&2
+            exit 1
+        fi
+        content=$(cat "$content_file")
+    fi
+
+    local json="{"
+    local first=true
+    if [[ -n "$name" ]]; then
+        local escaped_name=$(json_encode "$name")
+        json="$json\"name\": \"$escaped_name\""; first=false
+    fi
+    if [[ -n "$target" ]]; then
+        [[ "$first" != true ]] && json="$json, "
+        json="$json\"target\": \"$target\""; first=false
+    fi
+    if [[ -n "$content" ]]; then
+        local escaped_content=$(json_encode "$content")
+        [[ "$first" != true ]] && json="$json, "
+        json="$json\"content\": \"$escaped_content\""; first=false
+    fi
+    if [[ -n "$description" ]]; then
+        local escaped_desc=$(json_encode "$description")
+        [[ "$first" != true ]] && json="$json, "
+        json="$json\"description\": \"$escaped_desc\""; first=false
+    fi
+    if [[ -n "$enabled" ]]; then
+        [[ "$first" != true ]] && json="$json, "
+        json="$json\"enabled\": $enabled"
+    fi
+    json="$json}"
+
+    curl -s -X PATCH "$API_BASE/api/skills/$id" \
+        -H 'Content-Type: application/json' \
+        -d "$json" | pp
+}
+
+cmd_delete() {
+    local id="$1"
+    if [[ -z "$id" ]]; then
+        echo "Error: Skill ID required" >&2
+        exit 1
+    fi
+    curl -s -X DELETE "$API_BASE/api/skills/$id" | pp
+}
+
+case "$1" in
+    list) shift; cmd_list "$@" ;;
+    show) shift; cmd_show "$@" ;;
+    create) shift; cmd_create "$@" ;;
+    update) shift; cmd_update "$@" ;;
+    delete) shift; cmd_delete "$@" ;;
+    -h|--help|"") show_help ;;
+    *) echo "Unknown command: $1" >&2; show_help; exit 1 ;;
+esac

@@ -73,6 +73,17 @@ orch-interactive --close     # Close when done
 orch-interactive --status    # Check if active
 ```
 
+### `orch-skills` — Skill Management
+Create or update reusable procedures and workflows. Skills deploy on next agent restart — not hot-reloaded.
+```bash
+orch-skills list                                                    # List all skills
+orch-skills list --target worker                                    # Filter by target
+orch-skills show <id>                                               # Show full content
+orch-skills create --name "skill-name" --content "..." --description "..."  # Create
+orch-skills update <id> --content "..." --description "..."         # Update
+orch-skills delete <id>                                             # Delete
+```
+
 ### `orch-context` — Project Context
 **2-step lookup** to save context window:
 ```bash

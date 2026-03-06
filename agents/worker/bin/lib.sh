@@ -42,6 +42,15 @@ load_task_info() {
     return 0
 }
 
+# Helper to pretty-print JSON if jq is available
+pp() {
+    if command -v jq &> /dev/null; then
+        jq .
+    else
+        cat
+    fi
+}
+
 # Helper: JSON-encode a string (handles newlines, quotes, backslashes, etc.)
 json_encode() {
     if command -v jq &> /dev/null; then
