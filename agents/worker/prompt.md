@@ -32,10 +32,11 @@ orch-subtask delete --id UUID                                        # Delete if
 
 ### `orch-notify` — Notifications
 Use sparingly for non-blocking info. **MANDATORY** when you interact with another human (PR reviews, comments) — include summary + direct URL.
+**Always pass URLs via `--link`** — never embed URLs in the message text. The dashboard renders links as clickable buttons; URLs in the message body are not clickable.
 ```bash
-orch-notify "Message"                                           # Basic (type: info)
+orch-notify "Message" --link "URL"                              # Info with link (default type: info)
 orch-notify "Message" --type pr_comment --link "PR_COMMENT_URL" # PR reply (auto-fetches context)
-orch-notify "Message" --type warning                            # Warning
+orch-notify "Message" --type warning                            # Warning (no link needed)
 ```
 Don't use for routine status — use `orch-task`/`orch-subtask` instead.
 
