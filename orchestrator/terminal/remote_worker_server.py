@@ -1895,6 +1895,31 @@ def get_remote_worker_server(host: str) -> RemoteWorkerServer:
         raise RuntimeError("Connecting to remote host\u2026")
 
 
+def force_restart_server(host: str, timeout: float = 30.0) -> RemoteWorkerServer:
+    """Kill the remote daemon and start a fresh one synchronously.
+
+    Used when the running daemon is outdated (e.g. missing actions added in
+    newer versions).  Blocks until the new daemon is ready.
+
+    Raises RuntimeError if the restart fails.
+    """
+    with _pool_lock:
+        old = _server_pool.pop(host, None)
+    if old:
+        try:
+            old.kill_remote_daemon()
+            old.stop()
+        except Exception:
+            pass
+
+    new_rws = RemoteWorkerServer(host)
+    new_rws.start(timeout=timeout)
+    with _pool_lock:
+        _server_pool[host] = new_rws
+    logger.info("Force-restarted RWS daemon for %s", host)
+    return new_rws
+
+
 def ensure_rws_starting(host: str) -> None:
     """Trigger a background RWS start for *host* if not already started.
 

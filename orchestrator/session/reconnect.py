@@ -860,12 +860,18 @@ def _reconnect_rws_for_host(session) -> None:
     (which died when SSH dropped).  If the daemon itself is dead (e.g. host
     rebooted), the next `ensure_rws_starting()` will redeploy it.
 
+    After reconnecting, checks the daemon's version via ``server_info`` and
+    forces a full redeploy if the daemon is outdated (e.g. new actions were
+    added to the daemon script since the daemon was started).
+
     Also checks if any active interactive CLI PTYs are still alive.
     """
     from orchestrator.terminal.interactive import _active_clis, get_active_cli
     from orchestrator.terminal.remote_worker_server import (
+        _SCRIPT_HASH,
         _server_pool,
         ensure_rws_starting,
+        force_restart_server,
     )
 
     host = session.host
@@ -889,6 +895,41 @@ def _reconnect_rws_for_host(session) -> None:
                 pass
             _server_pool.pop(host, None)
             ensure_rws_starting(host)
+            return  # PTY check below needs a live RWS; will happen next cycle
+
+        # Check daemon version — if outdated, force a full redeploy so
+        # new actions (e.g. browser_start) become available.
+        try:
+            info = rws.execute({"action": "server_info"}, timeout=5)
+            daemon_version = info.get("version", "")
+            if daemon_version != _SCRIPT_HASH:
+                logger.warning(
+                    "Reconnect %s: RWS daemon outdated (daemon=%s, expected=%s), redeploying",
+                    session.name,
+                    daemon_version[:8],
+                    _SCRIPT_HASH[:8],
+                )
+                try:
+                    force_restart_server(host)
+                    logger.info("Reconnect %s: RWS daemon redeployed successfully", session.name)
+                except Exception:
+                    logger.warning(
+                        "Reconnect %s: RWS daemon redeploy failed",
+                        session.name,
+                        exc_info=True,
+                    )
+            else:
+                logger.debug(
+                    "Reconnect %s: RWS daemon version OK (%s)",
+                    session.name,
+                    daemon_version[:8],
+                )
+        except Exception:
+            logger.debug(
+                "Reconnect %s: could not check RWS daemon version",
+                session.name,
+                exc_info=True,
+            )
     else:
         # No existing RWS — kick off a fresh start (non-blocking)
         ensure_rws_starting(host)

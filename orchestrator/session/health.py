@@ -872,7 +872,11 @@ def check_and_update_worker_health(db, session, tunnel_manager=None) -> dict:
 
             # --- Check remote-side tmp via RWS check_path ---
             try:
-                from orchestrator.terminal.remote_worker_server import _server_pool
+                from orchestrator.terminal.remote_worker_server import (
+                    _SCRIPT_HASH,
+                    _server_pool,
+                    force_restart_server,
+                )
 
                 rws = _server_pool.get(session.host)
                 if rws is not None:
@@ -901,6 +905,26 @@ def check_and_update_worker_health(db, session, tunnel_manager=None) -> dict:
 
                         remote_tmp_dir = f"/tmp/orchestrator/workers/{session.name}"
                         _copy_configs_to_remote(session.host, tmp_dir, remote_tmp_dir, session.name)
+
+                    # Check RWS daemon version — redeploy if outdated
+                    try:
+                        info = rws.execute({"action": "server_info"}, timeout=5)
+                        daemon_version = info.get("version", "")
+                        if daemon_version != _SCRIPT_HASH:
+                            logger.warning(
+                                "Health check: %s RWS daemon outdated "
+                                "(daemon=%s, expected=%s), redeploying",
+                                session.name,
+                                daemon_version[:8],
+                                _SCRIPT_HASH[:8],
+                            )
+                            force_restart_server(session.host)
+                    except Exception:
+                        logger.debug(
+                            "Health check: %s RWS version check failed",
+                            session.name,
+                            exc_info=True,
+                        )
             except Exception:
                 logger.debug(
                     "Health check: %s remote tmp check failed",
