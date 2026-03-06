@@ -7,7 +7,7 @@
   height: calc(100% + 40px);  /* Add back the 20px top + 20px bottom padding */
 }
 
-/* Top bar */
+/* Top bar — recessed control bar */
 .sd-topbar {
   display: flex;
   align-items: center;
@@ -15,7 +15,6 @@
   padding: 10px 16px;
   background: var(--bg);
   border-bottom: 1px solid var(--border-subtle);
-  box-shadow: 0 1px 4px rgba(0,0,0,0.3);
   flex-shrink: 0;
   flex-wrap: wrap;
   z-index: 1;
@@ -32,24 +31,24 @@
   font-weight: 600;
 }
 
-/* Type tag (rdev label) */
+/* Type tag (rdev/ssh label) — pill badge */
 .sd-type-tag {
   font-size: 10px;
   font-weight: 600;
   text-transform: uppercase;
   padding: 2px 6px;
-  border-radius: 4px;
+  border-radius: 999px;
   letter-spacing: 0.5px;
 }
 
 .sd-type-tag.rdev {
   background: rgba(139, 92, 246, 0.15);
-  color: #a78bfa;
+  color: var(--purple);
 }
 
 .sd-type-tag.ssh {
   background: rgba(139, 92, 246, 0.15);
-  color: #a78bfa;
+  color: var(--purple);
 }
 
 /* Check status button next to status badge */
@@ -87,11 +86,10 @@
 .sd-topbar-divider {
   width: 1px;
   height: 20px;
-  background: var(--border);
+  background: var(--border-subtle);
 }
 
-
-/* Control buttons - icon only */
+/* Control buttons — ghost icon buttons, shade-based hover */
 .sd-control-btn {
   display: flex;
   align-items: center;
@@ -100,11 +98,11 @@
   height: 32px;
   padding: 0;
   background: var(--surface-raised);
-  border: 1px solid var(--border);
+  border: 1px solid transparent;
   border-radius: var(--radius);
   color: var(--text-secondary);
   cursor: pointer;
-  transition: all 0.15s;
+  transition: background 0.15s, color 0.15s;
 }
 
 .sd-control-btn:hover:not(:disabled) {
@@ -118,23 +116,22 @@
 }
 
 .sd-control-btn.pause:hover:not(:disabled) {
-  color: var(--orange, #f97316);
-  border-color: var(--orange, #f97316);
+  color: var(--orange);
+  background: rgba(219, 109, 40, 0.1);
 }
 
 .sd-control-btn.continue:hover:not(:disabled) {
   color: var(--green);
-  border-color: var(--green);
+  background: rgba(63, 185, 80, 0.1);
 }
 
 .sd-control-btn.stop:hover:not(:disabled) {
   color: var(--red);
-  border-color: var(--red);
+  background: rgba(248, 81, 73, 0.1);
 }
 
 .sd-control-btn.reconnect {
-  color: var(--blue);
-  border-color: var(--blue);
+  color: var(--accent);
   background: rgba(56, 139, 253, 0.1);
 }
 
@@ -144,12 +141,12 @@
 
 .sd-control-btn.remove:hover:not(:disabled) {
   color: var(--red);
-  border-color: var(--red);
+  background: rgba(248, 81, 73, 0.1);
 }
 
 .sd-control-btn.check-progress:hover:not(:disabled) {
-  color: var(--yellow, #d29922);
-  border-color: var(--yellow, #d29922);
+  color: var(--yellow);
+  background: rgba(210, 153, 34, 0.1);
 }
 
 /* Rdev hint banner */
@@ -173,7 +170,7 @@
   display: inline-block;
   padding: 2px 6px;
   background: var(--surface-raised);
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-subtle);
   border-radius: 4px;
   font-family: inherit;
   font-size: 11px;
@@ -280,7 +277,7 @@
   flex-shrink: 0;
 }
 
-/* Footer - matches WorkerCard footer style */
+/* Footer — recessed control bar */
 .sd-footer {
   display: flex;
   align-items: center;
@@ -293,7 +290,6 @@
   color: var(--text-muted);
   background: var(--bg);
   border-top: 1px solid var(--border-subtle);
-  box-shadow: 0 -1px 4px rgba(0,0,0,0.4);
   flex-shrink: 0;
 }
 
@@ -305,14 +301,14 @@
   flex: 1;
 }
 
-/* Task badge - prominent clickable link (matches WorkerCard) */
+/* Task badge — pill link */
 .sd-task-badge {
   display: flex;
   align-items: center;
   gap: 8px;
   padding: 4px 10px;
   background: rgba(88, 166, 255, 0.12);
-  border-radius: 4px;
+  border-radius: 999px;
   text-decoration: none;
   max-width: 60%;
   min-width: 0;
@@ -353,10 +349,10 @@
   gap: 6px;
   font-size: 12px;
   font-weight: 500;
-  color: var(--green, #3fb950);
+  color: var(--green);
   background: rgba(63, 185, 80, 0.08);
   border: none;
-  border-radius: 4px;
+  border-radius: 999px;
   padding: 4px 10px;
   cursor: pointer;
   transition: background 0.15s, color 0.15s;
@@ -366,7 +362,7 @@
   background: rgba(63, 185, 80, 0.18);
 }
 
-/* Tunnel badges */
+/* Tunnel badges — pill */
 .sd-tunnels {
   display: flex;
   align-items: center;
@@ -378,8 +374,8 @@
   align-items: center;
   padding: 2px 6px;
   background: rgba(139, 92, 246, 0.15);
-  color: #a78bfa;
-  border-radius: 4px;
+  color: var(--purple);
+  border-radius: 999px;
   font-family: var(--font-mono);
   font-size: 11px;
   font-weight: 600;
@@ -389,7 +385,6 @@
 
 .sd-tunnel-badge:hover {
   background: rgba(139, 92, 246, 0.3);
-  color: #c4b5fd;
 }
 
 .sd-footer-right {
@@ -401,7 +396,7 @@
 .sd-footer-divider {
   width: 1px;
   height: 16px;
-  background: var(--border);
+  background: var(--border-subtle);
 }
 
 /* Auto-reconnect toggle in footer */
@@ -431,7 +426,7 @@
 }
 
 .sd-toggle-switch.on {
-  background: var(--blue, #58a6ff);
+  background: var(--accent);
 }
 
 .sd-toggle-knob {
@@ -440,7 +435,7 @@
   left: 2px;
   width: 12px;
   height: 12px;
-  background: white;
+  background: var(--text-primary);
   border-radius: 50%;
   transition: transform 0.2s;
 }
@@ -472,9 +467,8 @@
   cursor: pointer;
   position: relative;
   overflow: hidden;
-  transition: color 0.3s ease, background 0.15s, box-shadow 0.3s ease;
+  transition: color 0.15s, background 0.15s;
   white-space: nowrap;
-  box-shadow: inset 0 -1.5px 0 0 rgba(128, 128, 128, 0.15);
 }
 
 .sd-panel-btn::before {
@@ -487,7 +481,7 @@
     from var(--sd-border-angle, 0deg),
     transparent 30%,
     rgba(88, 166, 255, 0.3) 70%,
-    var(--accent, #58a6ff) 100%
+    var(--accent) 100%
   );
   -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
   -webkit-mask-composite: xor;
@@ -519,17 +513,16 @@
 
 .sd-panel-btn.active {
   color: var(--text-primary);
-  background: var(--surface-raised, var(--surface));
-  box-shadow: inset 0 -1.5px 0 0 rgba(88, 166, 255, 0.4), 0 1px 3px rgba(0, 0, 0, 0.2);
+  background: var(--surface-raised);
+  box-shadow: inset 0 -1.5px 0 0 rgba(88, 166, 255, 0.4);
 }
 
 .sd-panel-btn.active.open {
-  box-shadow: inset 0 -1.5px 0 0 var(--accent, #58a6ff), 0 1px 3px rgba(0, 0, 0, 0.2);
+  box-shadow: inset 0 -1.5px 0 0 var(--accent);
 }
 
-
 .sd-panel-btn.starting {
-  color: var(--accent, #58a6ff);
+  color: var(--accent);
   cursor: wait;
 }
 
@@ -547,12 +540,13 @@
   inherits: false;
 }
 
+/* Paste button — quiet at rest */
 .sd-paste-btn {
   display: flex;
   align-items: center;
   gap: 6px;
   background: none;
-  border: 1px solid var(--border-subtle);
+  border: 1px solid transparent;
   color: var(--text-secondary);
   font-size: 12px;
   font-weight: 500;
@@ -561,7 +555,7 @@
   cursor: pointer;
   position: relative;
   overflow: hidden;
-  transition: background 0.15s, color 0.3s ease, border-color 0.15s;
+  transition: background 0.15s, color 0.3s ease;
 }
 
 .sd-paste-btn::before {
@@ -574,7 +568,7 @@
     from var(--sd-border-angle, 0deg),
     transparent 30%,
     rgba(88, 166, 255, 0.3) 70%,
-    var(--accent, #58a6ff) 100%
+    var(--accent) 100%
   );
   -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
   -webkit-mask-composite: xor;
@@ -587,9 +581,8 @@
 }
 
 .sd-paste-btn:hover:not(:disabled) {
-  background: var(--surface-hover, var(--bg));
+  background: var(--surface-hover);
   color: var(--text-primary);
-  border-color: var(--border);
 }
 
 .sd-paste-btn:active:not(:disabled) {
@@ -602,7 +595,7 @@
 }
 
 .sd-paste-btn.pasting {
-  color: var(--accent, #58a6ff);
+  color: var(--accent);
   cursor: wait;
   opacity: 1;
 }
@@ -626,5 +619,3 @@
     margin-left: 0;
   }
 }
-
-
