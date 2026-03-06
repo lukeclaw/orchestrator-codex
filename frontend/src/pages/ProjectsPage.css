@@ -4,6 +4,11 @@
   gap: 6px;
 }
 
+.projects-page > .panel,
+.projects-page > .projects-grid {
+  margin-top: 6px;
+}
+
 .projects-page .page-header {
   display: flex;
   align-items: center;

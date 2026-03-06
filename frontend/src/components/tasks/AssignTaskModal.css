@@ -93,8 +93,8 @@
 }
 
 .atm-priority.priority-L {
-  background: rgba(63, 185, 80, 0.15);
-  color: var(--green);
+  background: rgba(139, 148, 158, 0.12);
+  color: var(--text-secondary);
 }
 
 /* Task key */
@@ -132,7 +132,7 @@
 }
 
 .atm-status.status-todo {
-  background: rgba(139, 148, 158, 0.15);
+  background: rgba(139, 148, 158, 0.12);
   color: var(--text-secondary);
 }
 

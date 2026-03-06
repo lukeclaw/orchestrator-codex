@@ -91,12 +91,12 @@
 
 .state-badge.state-running {
   background: rgba(63, 185, 80, 0.15);
-  color: #3fb950;
+  color: var(--green);
 }
 
 .state-badge.state-stopped {
   background: rgba(210, 153, 34, 0.15);
-  color: #d29922;
+  color: var(--yellow);
 }
 
 /* Row tinting by state */

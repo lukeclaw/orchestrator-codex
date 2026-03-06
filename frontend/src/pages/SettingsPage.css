@@ -334,8 +334,8 @@
 
 .backup-status {
   font-size: 11px;
-  padding: 1px 8px;
-  border-radius: 10px;
+  padding: 2px 8px;
+  border-radius: 999px;
   font-weight: 500;
 }
 
@@ -355,7 +355,7 @@
   gap: 4px;
   font-size: 11px;
   padding: 2px 8px;
-  border-radius: 10px;
+  border-radius: 999px;
   background: rgba(88,166,255,0.12);
   color: var(--accent);
   font-weight: 500;
@@ -426,8 +426,8 @@
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.5px;
-  padding: 1px 6px;
-  border-radius: 4px;
+  padding: 2px 6px;
+  border-radius: 999px;
   background: rgba(56, 139, 253, 0.12);
   color: var(--accent);
 }

@@ -294,7 +294,7 @@
 
 .np-card-icon-wrap.purple {
   background: rgba(139, 92, 246, 0.1);
-  color: #a78bfa;
+  color: var(--purple);
 }
 
 .np-card-icon-wrap.amber {
@@ -344,7 +344,7 @@
 
 .np-badge.purple {
   background: rgba(139, 92, 246, 0.12);
-  color: #a78bfa;
+  color: var(--purple);
 }
 
 .np-badge.amber {
@@ -513,7 +513,7 @@
 
 .np-comment-author.reply {
   background: rgba(139, 92, 246, 0.12);
-  color: #a78bfa;
+  color: var(--purple);
 }
 
 .np-comment-body {
@@ -530,7 +530,7 @@
   align-items: center;
   gap: 6px;
   flex-wrap: wrap;
-  margin-bottom: 10px;
+  margin-bottom: 6px;
 }
 
 .np-type-chip {

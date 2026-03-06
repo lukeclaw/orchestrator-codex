@@ -45,7 +45,7 @@
   font-weight: 600;
   text-transform: capitalize;
   padding: 2px 8px;
-  border-radius: 10px;
+  border-radius: 999px;
   white-space: nowrap;
   flex-shrink: 0;
 }

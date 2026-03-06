@@ -179,18 +179,18 @@
   font-weight: 700;
   letter-spacing: 0.5px;
   padding: 2px 8px;
-  border-radius: 4px;
+  border-radius: 999px;
   text-transform: uppercase;
 }
 
 .sk-badge.built-in {
   background: rgba(163, 113, 247, 0.15);
-  color: #a371f7;
+  color: var(--purple);
 }
 
 .sk-badge.custom {
   background: rgba(63, 185, 80, 0.15);
-  color: #3fb950;
+  color: var(--green);
 }
 
 /* Target badge colors (TagDropdown) */

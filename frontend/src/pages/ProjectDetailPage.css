@@ -117,6 +117,25 @@
   gap: 16px;
 }
 
+/* Worker cards sit inside a --surface section — use --bg body with lighter header/footer */
+.pd-worker-grid .worker-card {
+  background: var(--bg);
+  border-top-color: var(--border);
+  border-right-color: var(--border);
+  border-bottom-color: var(--border);
+}
+
+.pd-worker-grid .worker-card:hover {
+  border-top-color: var(--accent);
+  border-right-color: var(--accent);
+  border-bottom-color: var(--accent);
+}
+
+.pd-worker-grid .wc-header,
+.pd-worker-grid .wc-footer {
+  background: var(--surface-hover);
+}
+
 .pd-prs {
   display: flex;
   flex-direction: column;

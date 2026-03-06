@@ -156,7 +156,7 @@ export default function ProjectsTable({ projects, hiddenColumns }: Props) {
                   )}
                 </div>
               </td>
-              {!hidden.has('status') && <td className={`pt-td status ${p.status}`}>{p.status}</td>}
+              {!hidden.has('status') && <td className="pt-td status"><span className={`status-badge ${p.status}`}>{p.status}</span></td>}
               {!hidden.has('created') && <td className="pt-td date" title={parseDate(p.created_at).toLocaleString()}>
                 {formatDate(p.created_at)}
               </td>}

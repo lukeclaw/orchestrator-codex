@@ -290,7 +290,7 @@ export default function WorkersPage() {
               ]}
             />
             <button
-              className="btn btn-primary"
+              className="btn btn-primary btn-sm"
               data-testid="add-session-btn"
               onClick={() => setShowAddModal(true)}
             >
@@ -317,7 +317,7 @@ export default function WorkersPage() {
               ]}
             />
             <button
-              className="btn btn-primary"
+              className="btn btn-primary btn-sm"
               onClick={() => setShowCreateRdevModal(true)}
             >
               + New Rdev

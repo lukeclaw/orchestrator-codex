@@ -84,22 +84,21 @@
 }
 
 .wc-type-tag {
-  font-size: 9px;
-  font-weight: 600;
-  text-transform: uppercase;
-  padding: 2px 5px;
-  border-radius: 3px;
-  letter-spacing: 0.5px;
+  font-size: 11px;
+  font-weight: 500;
+  text-transform: lowercase;
+  padding: 2px 8px;
+  border-radius: 999px;
 }
 
 .wc-type-tag.rdev {
   background: rgba(139, 92, 246, 0.15);
-  color: #a78bfa;
+  color: var(--purple);
 }
 
 .wc-type-tag.ssh {
   background: rgba(139, 92, 246, 0.15);
-  color: #a78bfa;
+  color: var(--purple);
 }
 
 /* Status duration indicator */
@@ -215,6 +214,8 @@
   box-shadow: var(--shadow-float);
   z-index: 100;
   overflow: hidden;
+  display: flex;
+  flex-direction: column;
 }
 
 .wc-overflow-item {
@@ -225,7 +226,7 @@
   padding: 6px 10px;
   background: none;
   border: none;
-  color: var(--text-secondary);
+  color: var(--text-primary);
   font-size: 12px;
   cursor: pointer;
   text-align: left;
@@ -233,7 +234,7 @@
 }
 
 .wc-overflow-item:hover {
-  background: var(--surface-hover);
+  background: rgba(255, 255, 255, 0.06);
 }
 
 .wc-overflow-item.danger {
@@ -241,7 +242,7 @@
 }
 
 .wc-overflow-item.danger:hover {
-  background: rgba(248, 81, 73, 0.1);
+  background: rgba(248, 81, 73, 0.15);
 }
 
 .wc-overflow-item:disabled {
@@ -364,10 +365,10 @@
   align-items: center;
   padding: 2px 6px;
   background: rgba(139, 92, 246, 0.15);
-  color: #a78bfa;
-  border-radius: 4px;
+  color: var(--purple);
+  border-radius: 999px;
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 600;
   text-decoration: none;
   transition: background 0.15s;

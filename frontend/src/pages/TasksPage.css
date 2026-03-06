@@ -272,7 +272,9 @@
 
 .tasks-page .task-title {
   font-weight: 500;
-  max-width: 300px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .tasks-page .task-title a {
@@ -295,48 +297,29 @@
   text-decoration: underline;
 }
 
+/* Fixed column widths for tasks table */
+.tasks-page .pt-table {
+  table-layout: fixed;
+  width: 100%;
+}
+
+.tasks-page .pt-th:nth-child(1) { width: 70px; }   /* Key */
+.tasks-page .pt-th:nth-child(2) { width: auto; }    /* Title — takes remaining space */
+.tasks-page .pt-th:nth-child(3) { width: 100px; }   /* Project */
+.tasks-page .pt-th:nth-child(4) { width: 95px; }    /* Status */
+.tasks-page .pt-th:nth-child(5) { width: 75px; }    /* Priority */
+.tasks-page .pt-th:nth-child(6) { width: 70px; }    /* Subtasks */
+.tasks-page .pt-th:nth-child(7) { width: 150px; }   /* Assigned */
+.tasks-page .pt-th:nth-child(8) { width: 80px; }    /* Updated */
+
 .tasks-page .subtasks {
   text-align: center;
   color: var(--text-secondary);
 }
 
 .tasks-page .task-assigned .pt-worker-tag {
-  max-width: 100px;
+  max-width: 140px;
 }
-
-/* Status badges */
-.status-badge {
-  display: inline-block;
-  padding: 3px 8px;
-  border-radius: 999px;
-  font-size: 11px;
-  font-weight: 600;
-  white-space: nowrap;
-}
-
-.status-badge.status-todo       { background: rgba(72, 79, 88, 0.3); color: var(--text-secondary); }
-.status-badge.status-in_progress { background: rgba(88, 166, 255, 0.15); color: #58a6ff; }
-.status-badge.status-done        { background: rgba(63, 185, 80, 0.15); color: #3fb950; }
-.status-badge.status-blocked     { background: rgba(248, 81, 73, 0.15); color: #f85149; }
-
-/* Priority column — compact */
-.tk-col-priority {
-  width: 75px;
-}
-
-/* Priority badges */
-.priority-badge {
-  display: inline-block;
-  padding: 3px 8px;
-  border-radius: 999px;
-  font-size: 11px;
-  font-weight: 600;
-  white-space: nowrap;
-}
-
-.priority-badge.priority-H { background: rgba(248, 81, 73, 0.15); color: #f85149; }
-.priority-badge.priority-M { background: rgba(210, 153, 34, 0.15); color: #d29922; }
-.priority-badge.priority-L { background: rgba(72, 79, 88, 0.3); color: var(--text-secondary); }
 
 /* Enhanced empty state */
 .tk-empty-state {

@@ -58,23 +58,22 @@
 }
 
 .wcc-type-tag {
-  font-size: 8px;
-  font-weight: 600;
-  text-transform: uppercase;
-  padding: 1px 4px;
-  border-radius: 3px;
-  letter-spacing: 0.5px;
+  font-size: 11px;
+  font-weight: 500;
+  text-transform: lowercase;
+  padding: 2px 8px;
+  border-radius: 999px;
   flex-shrink: 0;
 }
 
 .wcc-type-tag.rdev {
   background: rgba(139, 92, 246, 0.15);
-  color: #a78bfa;
+  color: var(--purple);
 }
 
 .wcc-type-tag.ssh {
   background: rgba(139, 92, 246, 0.15);
-  color: #a78bfa;
+  color: var(--purple);
 }
 
 /* Terminal preview — compact */

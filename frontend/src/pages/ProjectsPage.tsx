@@ -132,7 +132,7 @@ export default function ProjectsPage() {
               </div>
             )}
           </div>
-          <button className="btn btn-primary" onClick={() => setShowForm(true)}>
+          <button className="btn btn-primary btn-sm" onClick={() => setShowForm(true)}>
             + New Project
           </button>
         </div>
