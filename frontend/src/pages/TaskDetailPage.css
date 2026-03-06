@@ -932,7 +932,7 @@
   align-self: flex-start;
   padding: 4px 12px;
   background: rgba(88, 166, 255, 0.1);
-  border-radius: 999px;
+  border-radius: 6px;
   color: var(--accent);
   text-decoration: none;
   font-size: 12px;
@@ -1111,7 +1111,7 @@
   gap: 6px;
   padding: 4px 12px;
   background: var(--bg);
-  border-radius: 999px;
+  border-radius: 6px;
   color: var(--text-primary);
   text-decoration: none;
   font-size: 12px;
