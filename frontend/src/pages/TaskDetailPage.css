@@ -789,17 +789,20 @@
 .tdp-sidebar-card {
   background: var(--surface);
   border-radius: var(--radius-lg);
-  padding: 16px;
+  padding: 12px;
   display: flex;
   flex-direction: column;
-  gap: 24px;
+  gap: 12px;
 }
 
-/* Sidebar groups — visual separation without borders */
-.sidebar-group {
+/* Sidebar sections — subtle elevated panels for visual grouping */
+.sidebar-section {
   display: flex;
   flex-direction: column;
-  gap: 24px;
+  gap: 12px;
+  padding: 12px;
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: var(--radius);
 }
 
 .sidebar-meta-row {

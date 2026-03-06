@@ -689,7 +689,7 @@ export default function TaskDetailPage() {
                   </div>
                 ) : task.notes ? (
                   <div className="tdp-notes-content">
-                    <Markdown>{task.notes}</Markdown>
+                    <Markdown expandable>{task.notes}</Markdown>
                   </div>
                 ) : (
                   <p 
@@ -1074,7 +1074,7 @@ export default function TaskDetailPage() {
         {/* Sidebar */}
         <aside className="tdp-sidebar">
           <div className="tdp-sidebar-card">
-            <div className="sidebar-group">
+            <div className="sidebar-section">
               <div className="sidebar-field">
                 <label>Status</label>
                 <TagDropdown
@@ -1100,7 +1100,9 @@ export default function TaskDetailPage() {
                   )}
                 />
               </div>
+            </div>
 
+            <div className="sidebar-section">
               <div className="sidebar-field">
                 <label>Assigned</label>
                 <div className="tdp-worker-field">
@@ -1243,14 +1245,16 @@ export default function TaskDetailPage() {
               </div>
             )}
 
-            <div className="sidebar-meta-row">
-              <div className="sidebar-meta-item">
-                <label>Created</label>
-                <span className="sidebar-date" data-tooltip={parseDate(task.created_at).toLocaleString()}>{timeAgo(task.created_at)}</span>
-              </div>
-              <div className="sidebar-meta-item">
-                <label>Updated</label>
-                <span className="sidebar-date" data-tooltip={parseDate(task.updated_at).toLocaleString()}>{timeAgo(task.updated_at)}</span>
+            <div className="sidebar-section">
+              <div className="sidebar-meta-row">
+                <div className="sidebar-meta-item">
+                  <label>Created</label>
+                  <span className="sidebar-date" data-tooltip={parseDate(task.created_at).toLocaleString()}>{timeAgo(task.created_at)}</span>
+                </div>
+                <div className="sidebar-meta-item">
+                  <label>Updated</label>
+                  <span className="sidebar-date" data-tooltip={parseDate(task.updated_at).toLocaleString()}>{timeAgo(task.updated_at)}</span>
+                </div>
               </div>
             </div>
 

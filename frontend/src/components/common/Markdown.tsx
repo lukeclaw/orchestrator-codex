@@ -1,10 +1,11 @@
 import { useMemo, useState, useCallback } from 'react'
-import { IconCopy, IconCheck } from './Icons'
+import { IconCopy, IconCheck, IconEye } from './Icons'
 import './Markdown.css'
 
 interface Props {
   children: string
   className?: string
+  expandable?: boolean
 }
 
 // Token types for the parser
@@ -510,9 +511,10 @@ function renderTokens(tokens: Token[]): string {
 // Export for testing
 export { tokenize, renderTokens }
 
-export default function Markdown({ children, className }: Props) {
+export default function Markdown({ children, className, expandable }: Props) {
   const [copied, setCopied] = useState(false)
-  
+  const [expanded, setExpanded] = useState(false)
+
   const html = useMemo(() => {
     const tokens = tokenize(children)
     return renderTokens(tokens)
@@ -528,35 +530,73 @@ export default function Markdown({ children, className }: Props) {
     }
   }, [children])
 
+  const handleAnchorClick = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+    const anchor = (e.target as HTMLElement).closest('a')
+    if (!anchor) return
+    const rawHref = anchor.getAttribute('href')
+    if (rawHref?.startsWith('#')) {
+      e.preventDefault()
+      const targetId = rawHref.slice(1)
+      const target = (e.currentTarget as HTMLElement).querySelector(`[id="${targetId}"]`)
+      if (target) {
+        target.scrollIntoView({ behavior: 'smooth' })
+      }
+    }
+    // External links are handled by the global click handler in main.tsx
+    // which intercepts <a href> clicks and opens them via openUrl().
+  }, [])
+
   return (
     <div className={`markdown-wrapper ${className || ''}`}>
-      <button 
-        className={`markdown-copy-btn ${copied ? 'copied' : ''}`}
-        onClick={handleCopy}
-        title={copied ? 'Copied!' : 'Copy content'}
-      >
-        {copied ? <IconCheck size={14} /> : <IconCopy size={14} />}
-      </button>
-      <div 
+      <div className="markdown-btn-group">
+        {expandable && (
+          <button
+            className="markdown-action-btn"
+            onClick={() => setExpanded(true)}
+            title="Preview"
+          >
+            <IconEye size={14} />
+          </button>
+        )}
+        <button
+          className={`markdown-action-btn ${copied ? 'copied' : ''}`}
+          onClick={handleCopy}
+          title={copied ? 'Copied!' : 'Copy content'}
+        >
+          {copied ? <IconCheck size={14} /> : <IconCopy size={14} />}
+        </button>
+      </div>
+      <div
         className="markdown-content"
         dangerouslySetInnerHTML={{ __html: html }}
-        onClick={e => {
-          const anchor = (e.target as HTMLElement).closest('a')
-          if (!anchor) return
-          const rawHref = anchor.getAttribute('href')
-          if (rawHref?.startsWith('#')) {
-            e.preventDefault()
-            const targetId = rawHref.slice(1)
-            const target = (e.currentTarget as HTMLElement).querySelector(`[id="${targetId}"]`)
-            if (target) {
-              target.scrollIntoView({ behavior: 'smooth' })
-            }
-            return
-          }
-          // External links are handled by the global click handler in main.tsx
-          // which intercepts <a href> clicks and opens them via openUrl().
-        }}
+        onClick={handleAnchorClick}
       />
+      {expanded && (
+        <div className="markdown-preview-overlay" onClick={() => setExpanded(false)}>
+          <div className="markdown-preview-modal" onClick={e => e.stopPropagation()}>
+            <div className="markdown-preview-header">
+              <span className="markdown-preview-title">Preview</span>
+              <div className="markdown-preview-actions">
+                <button
+                  className={`markdown-action-btn ${copied ? 'copied' : ''}`}
+                  onClick={handleCopy}
+                  title={copied ? 'Copied!' : 'Copy content'}
+                >
+                  {copied ? <IconCheck size={14} /> : <IconCopy size={14} />}
+                </button>
+                <button className="markdown-preview-close" onClick={() => setExpanded(false)}>×</button>
+              </div>
+            </div>
+            <div className="markdown-preview-body">
+              <div
+                className="markdown-content"
+                dangerouslySetInnerHTML={{ __html: html }}
+                onClick={handleAnchorClick}
+              />
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
