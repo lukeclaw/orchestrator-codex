@@ -630,7 +630,7 @@ export default function TaskDetailPage() {
 
             {isWorkerActive && (
               <div className="tdp-worker-active">
-                Worker <strong>{assignedWorker?.name}</strong> is working on this task
+                Worker <strong>{assignedWorker?.name}</strong> is working on this task — view-only mode
               </div>
             )}
 
