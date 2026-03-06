@@ -554,12 +554,15 @@ def setup_remote_worker(
                     f"Timed out waiting for shell prompt on {host} (after kill+recreate retry)"
                 )
 
-        # 3b. rdev-specific: claude update and Node upgrade
+        # 3b. Ensure Node 24 for Playwright
         if ssh.is_rdev_host(host):
-            tmux.send_keys(tmux_session, name, "claude update", enter=True)
-            time.sleep(5)  # Wait for update to complete
             ensure_rdev_node(tmux_session, name, remote_tmp_dir)
-            logger.info("Updated Claude and installed Node 24 for %s", name)
+            logger.info("Installed Node 24 for rdev worker %s", name)
+        else:
+            # Plain SSH: ensure Node 24 via volta (needed for Playwright plugin's npx)
+            tmux.send_keys(tmux_session, name, "volta install node@24", enter=True)
+            time.sleep(3)
+            logger.info("Installed Node 24 via volta for SSH worker %s", name)
 
         # 3c. Install screen if needed
         if not _install_screen_if_needed(tmux_session, name):

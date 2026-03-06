@@ -1066,9 +1066,14 @@ def reconnect_remote_worker(
             time.sleep(1)
         # ✓ We are now guaranteed at a remote shell prompt.
 
-        # ── Step 3b: rdev-specific — ensure Node 24 for Playwright ──────
+        # ── Step 3b: ensure Node 24 for Playwright ─────────────────────
         if ssh.is_rdev_host(session.host):
             ensure_rdev_node(tmux_sess, tmux_win, remote_tmp_dir)
+        else:
+            # Plain SSH: ensure Node 24 via volta (needed for Playwright plugin's npx)
+            safe_send_keys(tmux_sess, tmux_win, "volta install node@24", enter=True)
+            time.sleep(3)
+            logger.info("Reconnect %s: installed Node 24 via volta for SSH worker", session.name)
 
         # ── Step 4: Ensure configs on remote ──────────────────────────────
         api_base = f"http://127.0.0.1:{api_port}"
