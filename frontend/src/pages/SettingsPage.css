@@ -502,38 +502,6 @@
   margin-top: 12px;
 }
 
-/* Legacy (approval rules) */
-.approval-rules {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.approval-rule {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 12px 14px;
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius);
-  font-size: 14px;
-}
-
-.rule-info {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.rule-label {
-  font-weight: 500;
-}
-
-.rule-hint {
-  font-size: 12px;
-  color: var(--text-secondary);
-}
-
 .toggle {
   padding: 4px 14px;
   border-radius: 10px;
