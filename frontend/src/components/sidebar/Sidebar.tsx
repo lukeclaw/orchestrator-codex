@@ -21,13 +21,11 @@ interface Props {
 }
 
 export default function Sidebar({ collapsed, onToggle }: Props) {
-  const { workers, notificationCount, updateAvailable, interactiveCliSessions } = useApp()
+  const { workers, notificationCount, updateAvailable } = useApp()
 
   const waitingWorkers = workers.filter(
     s => s.status === 'waiting'
   ).length
-
-  const icliCount = interactiveCliSessions.size
 
   return (
     <aside className={`sidebar ${collapsed ? 'collapsed' : ''}`}>
@@ -53,7 +51,7 @@ export default function Sidebar({ collapsed, onToggle }: Props) {
         <SidebarItem to="/" icon={<IconDashboard size={18} />} label="Dashboard" collapsed={collapsed} shortcut="D" />
         <SidebarItem to="/projects" icon={<IconProjects size={18} />} label="Projects" collapsed={collapsed} shortcut="P" />
         <SidebarItem to="/tasks" icon={<IconTasks size={18} />} label="Tasks" collapsed={collapsed} shortcut="T" />
-        <SidebarItem to="/workers" icon={<IconSessions size={18} />} label="Workers" badge={icliCount > 0 ? icliCount : waitingWorkers} badgeVariant={icliCount > 0 ? 'default' : 'warning'} collapsed={collapsed} shortcut="W" />
+        <SidebarItem to="/workers" icon={<IconSessions size={18} />} label="Workers" badge={waitingWorkers} badgeVariant="warning" collapsed={collapsed} shortcut="W" />
         <SidebarItem to="/context" icon={<IconContext size={18} />} label="Context" collapsed={collapsed} shortcut="K" />
         <SidebarItem to="/skills" icon={<IconSkills size={18} />} label="Skills" collapsed={collapsed} shortcut="S" />
         <SidebarItem to="/notifications" icon={<IconBell size={18} />} label="Notifications" badge={notificationCount} badgeVariant="warning" collapsed={collapsed} shortcut="N" />
