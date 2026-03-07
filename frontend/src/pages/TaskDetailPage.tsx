@@ -87,11 +87,13 @@ function getPrStatusChips(data: PrPreviewData): Array<{ label: string; color: st
     }
   }
 
-  // Only surface CI when it needs attention — skip "CI passed"
-  if (ciFailed) {
-    chips.push({ label: 'CI failing', color: 'red' })
-  } else if (relevantChecks.some(c => c.status === 'in_progress')) {
-    chips.push({ label: 'CI running', color: 'yellow' })
+  // Only surface CI when it needs attention on open PRs — skip "CI passed"
+  if (data.state === 'open') {
+    if (ciFailed) {
+      chips.push({ label: 'CI failing', color: 'red' })
+    } else if (relevantChecks.some(c => c.status === 'in_progress')) {
+      chips.push({ label: 'CI running', color: 'yellow' })
+    }
   }
 
   return chips

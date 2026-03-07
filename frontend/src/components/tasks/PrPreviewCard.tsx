@@ -214,7 +214,7 @@ export default function PrPreviewCard({ url, initialData, onDataFetched }: PrPre
       </div>
 
       {/* Two-column layout: reviews (left) | CI + gates (right) */}
-      {(data.reviews.length > 0 || hasChecks || pendingGates.length > 0) && (
+      {(data.reviews.length > 0 || (data.state !== 'closed' && (hasChecks || pendingGates.length > 0))) && (
         <div className="pr-preview-columns">
           {/* Left column — Reviews */}
           <div className="pr-preview-col">
@@ -244,9 +244,9 @@ export default function PrPreviewCard({ url, initialData, onDataFetched }: PrPre
             )}
           </div>
 
-          {/* Right column — CI Checks + Approval Gates */}
+          {/* Right column — CI Checks + Approval Gates (open PRs only) */}
           <div className="pr-preview-col">
-            {hasChecks && (
+            {data.state !== 'closed' && hasChecks && (
               <div className="pr-preview-section">
                 <div className="pr-section-title">
                   CI Checks
@@ -272,7 +272,7 @@ export default function PrPreviewCard({ url, initialData, onDataFetched }: PrPre
               </div>
             )}
 
-            {pendingGates.length > 0 && (
+            {data.state === 'open' && pendingGates.length > 0 && (
               <div className="pr-section-title">
                 {pendingGates.map(c => c.name).join(', ')}
                 <span className="pr-checks-summary">
@@ -280,6 +280,20 @@ export default function PrPreviewCard({ url, initialData, onDataFetched }: PrPre
                 </span>
               </div>
             )}
+
+            {data.state === 'merged' && gateChecks.length > 0 && (() => {
+              const approvers = data.reviews.filter(r => r.state === 'approved').map(r => r.reviewer)
+              return (
+                <div className="pr-section-title">
+                  {gateChecks.map(c => c.name).join(', ')}
+                  <span className="pr-checks-summary">
+                    <span className="checks-ok">
+                      {approvers.length > 0 ? `approved by ${approvers.join(', ')}` : 'approved'}
+                    </span>
+                  </span>
+                </div>
+              )
+            })()}
 
             {data.state === 'open' && autoMerge !== null && (
               <div className="pr-auto-merge-row">
