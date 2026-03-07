@@ -128,18 +128,18 @@ def dismiss_all_notifications(body: DismissAllRequest | None = None, db=Depends(
     return {"dismissed": count}
 
 
-@router.delete("/notifications/{notification_id}")
-def delete_notification(notification_id: str, db=Depends(get_db)):
-    if not repo.delete_notification(db, notification_id):
-        raise HTTPException(404, "Notification not found")
-    return {"ok": True}
-
-
 @router.delete("/notifications/batch")
 def batch_delete_notifications(body: BatchDeleteRequest, db=Depends(get_db)):
     """Delete multiple notifications by IDs."""
     count = repo.delete_notifications_by_ids(db, body.ids)
     return {"deleted": count}
+
+
+@router.delete("/notifications/{notification_id}")
+def delete_notification(notification_id: str, db=Depends(get_db)):
+    if not repo.delete_notification(db, notification_id):
+        raise HTTPException(404, "Notification not found")
+    return {"ok": True}
 
 
 @router.post("/notifications/{notification_id}/undismiss")
