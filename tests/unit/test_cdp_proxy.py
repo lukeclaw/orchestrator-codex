@@ -1,6 +1,7 @@
 """Unit tests for CDP proxy module."""
 
 import asyncio
+import base64
 import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -1004,3 +1005,104 @@ class TestRelayCdpToClient:
         msg = send_json.call_args[0][0]
         assert msg["type"] == "navigate"
         assert msg["url"] == "https://app.example.com/dashboard"
+
+    async def test_viewport_override_reasserts_after_frame_delivery(self):
+        """When metadata shows unexpected dimensions, re-assert viewport after sending frame."""
+        frame_msg = json.dumps(
+            {
+                "method": "Page.screencastFrame",
+                "params": {
+                    "data": base64.b64encode(b"fake-jpeg").decode(),
+                    "sessionId": "sess1",
+                    "metadata": {
+                        "deviceWidth": 800,
+                        "deviceHeight": 600,
+                    },
+                },
+            }
+        )
+
+        view = _make_view()
+        view._zoom_percent = 100
+        view._last_viewport_fix = 0
+        view.cdp_ws = _AsyncIterFromList([frame_msg])
+        view.cdp_ws.send = AsyncMock()
+
+        send_binary = AsyncMock()
+        send_json = AsyncMock()
+
+        await relay_cdp_to_client(view, send_binary, send_json)
+
+        # Frame must be delivered first (ack + binary), then viewport fix
+        sent_calls = view.cdp_ws.send.call_args_list
+        methods = [json.loads(c[0][0]).get("method") for c in sent_calls]
+        assert methods[0] == "Page.screencastFrameAck"
+        assert methods[1] == "Emulation.setDeviceMetricsOverride"
+        override = json.loads(sent_calls[1][0][0])
+        assert override["params"]["width"] == 1280
+        assert override["params"]["height"] == 960
+        assert override["params"]["deviceScaleFactor"] == 1
+        send_binary.assert_called_once()
+
+    async def test_viewport_override_respects_cooldown(self):
+        """Viewport re-assertion fires at most once per second."""
+        frame_msg = json.dumps(
+            {
+                "method": "Page.screencastFrame",
+                "params": {
+                    "data": base64.b64encode(b"fake-jpeg").decode(),
+                    "sessionId": "sess1",
+                    "metadata": {"deviceWidth": 800, "deviceHeight": 600},
+                },
+            }
+        )
+
+        view = _make_view()
+        view._zoom_percent = 100
+        # Pretend we just fixed it (cooldown active)
+        import time
+
+        view._last_viewport_fix = time.monotonic()
+        view.cdp_ws = _AsyncIterFromList([frame_msg])
+        view.cdp_ws.send = AsyncMock()
+
+        send_binary = AsyncMock()
+        send_json = AsyncMock()
+
+        await relay_cdp_to_client(view, send_binary, send_json)
+
+        # Should only send ack, no viewport fix (cooldown active)
+        sent_calls = view.cdp_ws.send.call_args_list
+        methods = [json.loads(c[0][0]).get("method") for c in sent_calls]
+        assert methods == ["Page.screencastFrameAck"]
+        send_binary.assert_called_once()
+
+    async def test_no_viewport_fix_when_dimensions_match(self):
+        """No re-assertion when metadata matches expected viewport."""
+        frame_msg = json.dumps(
+            {
+                "method": "Page.screencastFrame",
+                "params": {
+                    "data": base64.b64encode(b"fake-jpeg").decode(),
+                    "sessionId": "sess1",
+                    "metadata": {"deviceWidth": 1280, "deviceHeight": 960},
+                },
+            }
+        )
+
+        view = _make_view()
+        view._zoom_percent = 100
+        view._last_viewport_fix = 0
+        view.cdp_ws = _AsyncIterFromList([frame_msg])
+        view.cdp_ws.send = AsyncMock()
+
+        send_binary = AsyncMock()
+        send_json = AsyncMock()
+
+        await relay_cdp_to_client(view, send_binary, send_json)
+
+        # Only ack, no viewport fix
+        sent_calls = view.cdp_ws.send.call_args_list
+        methods = [json.loads(c[0][0]).get("method") for c in sent_calls]
+        assert methods == ["Page.screencastFrameAck"]
+        send_binary.assert_called_once()

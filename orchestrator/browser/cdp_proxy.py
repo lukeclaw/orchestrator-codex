@@ -17,6 +17,7 @@ import itertools
 import json
 import logging
 import re
+import time
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
@@ -62,6 +63,10 @@ class BrowserViewSession:
     # Tracked so a new client connection can cancel them before starting
     # its own recv() loop — websockets forbids concurrent recv() calls.
     _cdp_reader_tasks: list = field(default_factory=list, repr=False)
+    # Current zoom level — used to compute expected viewport dimensions
+    # for detecting when another CDP client (Playwright) overrides them.
+    _zoom_percent: int = field(default=100, repr=False)
+    _last_viewport_fix: float = field(default=0, repr=False)
 
 
 # In-memory registry: session_id -> BrowserViewSession
@@ -784,6 +789,7 @@ async def reconnect_cdp(view: BrowserViewSession) -> None:
     )
 
     # Restore viewport (must be set before screencast for correct zoom)
+    view._zoom_percent = 100
     await _cdp_send_and_wait(
         cdp_ws,
         "Emulation.setDeviceMetricsOverride",
@@ -837,6 +843,7 @@ async def set_viewport_zoom(view: BrowserViewSession, zoom_percent: int) -> None
     showing more content in the same screencast area.
     """
     zoom_percent = max(25, min(200, zoom_percent))
+    view._zoom_percent = zoom_percent
     scale = 100 / zoom_percent
     width = round(view.viewport_width * scale)
     height = round(view.viewport_height * scale)
@@ -891,6 +898,34 @@ async def relay_cdp_to_client(
 
                 # Send raw JPEG bytes as binary WebSocket frame
                 await send_binary(frame_data)
+
+                # After delivering the frame, check if another CDP client
+                # (e.g. Playwright) changed the viewport.  Re-assert ours
+                # at most once per second to avoid a tug-of-war.
+                metadata = params.get("metadata")
+                if metadata:
+                    scale = 100 / view._zoom_percent
+                    exp_w = round(view.viewport_width * scale)
+                    exp_h = round(view.viewport_height * scale)
+                    dw = metadata.get("deviceWidth", exp_w)
+                    dh = metadata.get("deviceHeight", exp_h)
+                    if dw != exp_w or dh != exp_h:
+                        now = time.monotonic()
+                        if now - view._last_viewport_fix > 1.0:
+                            view._last_viewport_fix = now
+                            try:
+                                await _cdp_send(
+                                    view.cdp_ws,
+                                    "Emulation.setDeviceMetricsOverride",
+                                    {
+                                        "width": exp_w,
+                                        "height": exp_h,
+                                        "deviceScaleFactor": 1,
+                                        "mobile": False,
+                                    },
+                                )
+                            except Exception:
+                                pass
 
             elif method == "Page.frameNavigated":
                 # Notify client of URL change (ignore chrome-error:// pages)

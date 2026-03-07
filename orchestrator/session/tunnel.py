@@ -232,6 +232,26 @@ def create_tunnel(host: str, remote_port: int, local_port: int | None = None) ->
                     "existing": True,
                 }
 
+    # Check if there's already a tunnel to the same host+remote_port on a
+    # different local port (e.g. requested port 9222 was occupied by local
+    # Chrome, so a previous call allocated 9223).  Reuse it to avoid leaks.
+    for port, info in get_tunnels_for_host(host).items():
+        if info["remote_port"] == remote_port and is_process_alive(info["pid"]):
+            logger.info(
+                "Reusing existing tunnel local:%d -> %s:%d (requested %d)",
+                port,
+                host,
+                remote_port,
+                requested_port,
+            )
+            return True, {
+                "local_port": port,
+                "remote_port": remote_port,
+                "pid": info["pid"],
+                "host": host,
+                "existing": True,
+            }
+
     # Check if the local port is actually available (any process, not just SSH tunnels)
     if not is_port_available(local_port):
         new_port = find_available_port(local_port + 1)
