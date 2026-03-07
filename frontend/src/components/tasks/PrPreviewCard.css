@@ -7,7 +7,7 @@
   margin: 4px 10px 8px 10px;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 10px;
   animation: pr-preview-enter 250ms var(--ease-decelerate);
 }
 
@@ -26,12 +26,18 @@
   }
 }
 
-/* Header: state badge + repo ref + actions */
+/* Header: title + number + actions */
 
 .pr-preview-header {
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+.pr-number {
+  font-size: 13px;
+  color: var(--text-muted);
+  flex-shrink: 0;
 }
 
 .pr-state-badge {
@@ -41,6 +47,7 @@
   letter-spacing: 0.03em;
   padding: 2px 8px;
   border-radius: 999px;
+  margin-right: 4px;
 }
 
 .pr-state-badge.state-open {
@@ -63,22 +70,12 @@
   color: var(--text-muted);
 }
 
-.pr-repo-ref {
-  font-size: 12px;
-  color: var(--text-secondary);
-  font-family: var(--font-mono);
-}
-
 .pr-preview-header-actions {
   margin-left: auto;
   display: flex;
   align-items: center;
   gap: 6px;
-}
-
-.pr-fetched-at {
-  font-size: 11px;
-  color: var(--text-muted);
+  flex-shrink: 0;
 }
 
 .pr-preview-refresh {
@@ -109,16 +106,20 @@
 .pr-preview-title-group {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 4px;
 }
 
 .pr-preview-title {
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 500;
   color: var(--text-primary);
   line-height: 1.4;
   text-decoration: none;
   cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
 }
 
 .pr-preview-title:hover {

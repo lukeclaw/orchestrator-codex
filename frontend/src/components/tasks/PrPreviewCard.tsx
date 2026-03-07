@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { api, openUrl } from '../../api/client'
 import type { PrPreviewData } from '../../api/types'
-import { timeAgo, parseDate } from '../common/TimeAgo'
+import { parseDate } from '../common/TimeAgo'
 import './PrPreviewCard.css'
 
 interface PrPreviewCardProps {
@@ -139,35 +139,32 @@ export default function PrPreviewCard({ url, initialData, onDataFetched }: PrPre
 
   return (
     <div className="pr-preview-card">
-      {/* Header: state + repo + number + refresh */}
-      <div className="pr-preview-header">
-        <span className={`pr-state-badge ${stateClass}`}>{stateLabel}</span>
-        <span className="pr-repo-ref">{data.repo} #{data.number}</span>
-        <div className="pr-preview-header-actions">
-          {data.fetched_at && (
-            <span className="pr-fetched-at">{timeAgo(data.fetched_at)}</span>
-          )}
-          <button
-            className="pr-preview-refresh"
-            onClick={fetchData}
-            disabled={loading}
-            data-tooltip="Refresh"
-          >
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-              <polyline points="23 4 23 10 17 10" />
-              <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
-            </svg>
-          </button>
-        </div>
-      </div>
-
-      {/* Title (clickable) + subtitle with changes summary */}
+      {/* Header block: title row + subtitle row */}
       <div className="pr-preview-title-group">
-        <a className="pr-preview-title" href={url} onClick={e => { e.preventDefault(); openUrl(url) }}>
-          {data.title}
-        </a>
+        <div className="pr-preview-header">
+          <a className="pr-preview-title" href={url} onClick={e => { e.preventDefault(); openUrl(url) }}>
+            {data.title}
+          </a>
+          <span className="pr-number">#{data.number}</span>
+          <div className="pr-preview-header-actions">
+            <button
+              className="pr-preview-refresh"
+              onClick={fetchData}
+              disabled={loading}
+              data-tooltip="Refresh"
+            >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="23 4 23 10 17 10" />
+                <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
+              </svg>
+            </button>
+          </div>
+        </div>
         <div className="pr-preview-subtitle-row">
-          <span className="pr-preview-subtitle">{subtitle}</span>
+          <span className="pr-preview-subtitle">
+            <span className={`pr-state-badge ${stateClass}`}>{stateLabel}</span>
+            {subtitle}
+          </span>
           <span className="pr-changes-label">
             <span className="pr-changes-summary">
               <span className="additions">+{data.additions}</span>
