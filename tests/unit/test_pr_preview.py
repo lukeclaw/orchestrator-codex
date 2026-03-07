@@ -355,7 +355,7 @@ class TestCache:
             client.get("/api/pr-preview?url=https://github.com/org/repo/pull/42")
             client.get("/api/pr-preview?url=https://github.com/org/repo/pull/42")
 
-        # _run_gh: 6 parallel (PR, reviews, PR comments, issue comments, files, requested_reviewers) + 1 (checks) = 7
+        # _run_gh: 6 parallel + 1 sequential (checks) = 7
         # Second call uses cache: 0 calls
         assert mock_gh.call_count == 7
 
@@ -364,10 +364,10 @@ class TestCache:
             mock_gh.side_effect = _mock_gh_side_effect()
             client.get("/api/pr-preview?url=https://github.com/org/repo/pull/42")
 
-        # Expire the cache
+        # Expire the cache (open PR uses _PR_CACHE_TTL_OPEN)
         for key in pr_preview._pr_cache:
             ts, data = pr_preview._pr_cache[key]
-            pr_preview._pr_cache[key] = (ts - pr_preview._PR_CACHE_TTL - 1, data)
+            pr_preview._pr_cache[key] = (ts - pr_preview._PR_CACHE_TTL_OPEN - 1, data)
 
         with patch.object(pr_preview, "_run_gh", new_callable=AsyncMock) as mock_gh:
             mock_gh.side_effect = _mock_gh_side_effect()
@@ -384,6 +384,62 @@ class TestCache:
 
         # 7 calls per unique PR
         assert mock_gh.call_count == 14
+
+    def test_merged_pr_uses_longer_ttl(self, client):
+        """Merged PRs should stay cached for _PR_CACHE_TTL_CLOSED (10min)."""
+        with patch.object(pr_preview, "_run_gh", new_callable=AsyncMock) as mock_gh:
+            mock_gh.side_effect = _mock_gh_side_effect(pr_data=SAMPLE_PR_MERGED)
+            client.get("/api/pr-preview?url=https://github.com/org/repo/pull/42")
+
+        # Advance time past _PR_CACHE_TTL_OPEN but within _PR_CACHE_TTL_CLOSED
+        for key in pr_preview._pr_cache:
+            ts, data = pr_preview._pr_cache[key]
+            pr_preview._pr_cache[key] = (ts - pr_preview._PR_CACHE_TTL_OPEN - 1, data)
+
+        with patch.object(pr_preview, "_run_gh", new_callable=AsyncMock) as mock_gh:
+            mock_gh.side_effect = _mock_gh_side_effect(pr_data=SAMPLE_PR_MERGED)
+            resp = client.get("/api/pr-preview?url=https://github.com/org/repo/pull/42")
+
+        # Should still be cached — 0 calls
+        assert mock_gh.call_count == 0
+        assert resp.json()["state"] == "merged"
+
+    def test_merged_pr_cache_eventually_expires(self, client):
+        """Merged PR cache should expire after _PR_CACHE_TTL_CLOSED."""
+        with patch.object(pr_preview, "_run_gh", new_callable=AsyncMock) as mock_gh:
+            mock_gh.side_effect = _mock_gh_side_effect(pr_data=SAMPLE_PR_MERGED)
+            client.get("/api/pr-preview?url=https://github.com/org/repo/pull/42")
+
+        # Advance time past _PR_CACHE_TTL_CLOSED
+        for key in pr_preview._pr_cache:
+            ts, data = pr_preview._pr_cache[key]
+            pr_preview._pr_cache[key] = (ts - pr_preview._PR_CACHE_TTL_CLOSED - 1, data)
+
+        with patch.object(pr_preview, "_run_gh", new_callable=AsyncMock) as mock_gh:
+            mock_gh.side_effect = _mock_gh_side_effect(pr_data=SAMPLE_PR_MERGED)
+            client.get("/api/pr-preview?url=https://github.com/org/repo/pull/42")
+
+        # Should refetch — merged PR skips requested_reviewers + check_runs = 5 calls
+        assert mock_gh.call_count == 5
+
+    def test_cache_lru_eviction(self, client):
+        """Oldest entries should be evicted when cache exceeds _MAX_CACHE_SIZE."""
+        original_max = pr_preview._MAX_CACHE_SIZE
+        pr_preview._MAX_CACHE_SIZE = 2
+        try:
+            with patch.object(pr_preview, "_run_gh", new_callable=AsyncMock) as mock_gh:
+                mock_gh.side_effect = _mock_gh_side_effect()
+                client.get("/api/pr-preview?url=https://github.com/org/repo/pull/1")
+                client.get("/api/pr-preview?url=https://github.com/org/repo/pull/2")
+                client.get("/api/pr-preview?url=https://github.com/org/repo/pull/3")
+
+            assert len(pr_preview._pr_cache) == 2
+            # Oldest (PR #1) should be evicted
+            assert "org/repo/1" not in pr_preview._pr_cache
+            assert "org/repo/2" in pr_preview._pr_cache
+            assert "org/repo/3" in pr_preview._pr_cache
+        finally:
+            pr_preview._MAX_CACHE_SIZE = original_max
 
 
 class TestErrorHandling:
@@ -438,6 +494,65 @@ class TestErrorHandling:
 
         assert resp.status_code == 200
         assert resp.json()["checks"] == []
+
+
+class TestEndpointSkipping:
+    def test_merged_pr_skips_endpoints_on_refetch(self, client):
+        """After caching a merged PR, re-fetching should skip requested_reviewers + check_runs."""
+        with patch.object(pr_preview, "_run_gh", new_callable=AsyncMock) as mock_gh:
+            mock_gh.side_effect = _mock_gh_side_effect(pr_data=SAMPLE_PR_MERGED)
+            client.get("/api/pr-preview?url=https://github.com/org/repo/pull/42")
+            first_count = mock_gh.call_count
+
+        # First fetch: 7 calls (all endpoints, but check-runs is also skipped for merged
+        # since state was unknown — actually it's 7 on cold fetch)
+        assert first_count == 7
+
+        # Expire the cache
+        for key in pr_preview._pr_cache:
+            ts, data = pr_preview._pr_cache[key]
+            pr_preview._pr_cache[key] = (ts - pr_preview._PR_CACHE_TTL_CLOSED - 1, data)
+
+        with patch.object(pr_preview, "_run_gh", new_callable=AsyncMock) as mock_gh:
+            mock_gh.side_effect = _mock_gh_side_effect(pr_data=SAMPLE_PR_MERGED)
+            resp = client.get("/api/pr-preview?url=https://github.com/org/repo/pull/42")
+
+        # Second fetch: 5 calls (skipped requested_reviewers + check_runs)
+        assert mock_gh.call_count == 5
+        assert resp.json()["state"] == "merged"
+        assert resp.json()["requested_reviewers"] == []
+        assert resp.json()["checks"] == []
+
+    def test_state_change_refetches_skipped(self, client):
+        """If a merged PR is reopened, skipped endpoints should be recovered."""
+        # First fetch as merged
+        with patch.object(pr_preview, "_run_gh", new_callable=AsyncMock) as mock_gh:
+            mock_gh.side_effect = _mock_gh_side_effect(pr_data=SAMPLE_PR_MERGED)
+            client.get("/api/pr-preview?url=https://github.com/org/repo/pull/42")
+
+        # Expire the cache
+        for key in pr_preview._pr_cache:
+            ts, data = pr_preview._pr_cache[key]
+            pr_preview._pr_cache[key] = (ts - pr_preview._PR_CACHE_TTL_CLOSED - 1, data)
+
+        # Now the PR is open again
+        with patch.object(pr_preview, "_run_gh", new_callable=AsyncMock) as mock_gh:
+            mock_gh.side_effect = _mock_gh_side_effect()  # defaults to SAMPLE_PR (open)
+            resp = client.get("/api/pr-preview?url=https://github.com/org/repo/pull/42")
+
+        # Should have fetched 5 initially (skipped 2), then recovered 2 via safety net = 7
+        assert mock_gh.call_count == 7
+        assert resp.json()["state"] == "open"
+
+    def test_gh_cache_kwarg_passed(self, client):
+        """Verify that _run_gh is called with cache kwarg."""
+        with patch.object(pr_preview, "_run_gh", new_callable=AsyncMock) as mock_gh:
+            mock_gh.side_effect = _mock_gh_side_effect()
+            client.get("/api/pr-preview?url=https://github.com/org/repo/pull/42")
+
+        # All calls should pass cache=_GH_HTTP_CACHE
+        for call in mock_gh.call_args_list:
+            assert call.kwargs.get("cache") == pr_preview._GH_HTTP_CACHE
 
 
 class TestHelperFunctions:

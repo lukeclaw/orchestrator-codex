@@ -7,7 +7,7 @@ import json
 import logging
 import re
 import time
-from collections import Counter
+from collections import Counter, OrderedDict
 
 from fastapi import APIRouter, HTTPException, Query
 
@@ -16,20 +16,25 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 # In-memory cache: key = "owner/repo/number", value = (timestamp, response_dict)
-_pr_cache: dict[str, tuple[float, dict]] = {}
-_PR_CACHE_TTL = 60.0  # seconds
+_pr_cache: OrderedDict[str, tuple[float, dict]] = OrderedDict()
+_PR_CACHE_TTL_OPEN = 120.0  # seconds — open PRs change frequently
+_PR_CACHE_TTL_CLOSED = 600.0  # seconds — merged/closed PRs are static
+_MAX_CACHE_SIZE = 50
 
 _PR_URL_RE = re.compile(r"github\.com/([^/]+)/([^/]+)/pull/(\d+)")
 
 _GH_TIMEOUT = 15  # seconds per subprocess call
+_GH_HTTP_CACHE = "120s"  # gh CLI-level HTTP cache for ETag revalidation
 
 
-async def _run_gh(*args: str) -> dict | list:
+async def _run_gh(*args: str, cache: str | None = None) -> dict | list:
     """Run `gh api <args>` and return parsed JSON."""
+    cmd = ["gh", "api"]
+    if cache:
+        cmd.extend(["--cache", cache])
+    cmd.extend(args)
     proc = await asyncio.create_subprocess_exec(
-        "gh",
-        "api",
-        *args,
+        *cmd,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
     )
@@ -221,51 +226,106 @@ def _build_response(
     }
 
 
+def _get_skips(cache_key: str) -> set[str]:
+    """Determine which endpoints to skip based on previously cached state."""
+    if cache_key in _pr_cache:
+        _, prev = _pr_cache[cache_key]
+        if prev.get("state") in ("merged", "closed"):
+            return {"requested_reviewers", "check_runs"}
+    return set()
+
+
 @router.get("/pr-preview")
 async def get_pr_preview(url: str = Query(..., description="GitHub PR URL")):
     """Fetch a GitHub PR preview with metadata, reviews, and CI checks."""
     owner, repo, number = _parse_pr_url(url)
     cache_key = f"{owner}/{repo}/{number}"
 
-    # Check cache
+    # Check cache — state-aware TTL
     if cache_key in _pr_cache:
         ts, data = _pr_cache[cache_key]
-        if time.time() - ts < _PR_CACHE_TTL:
+        state = data.get("state", "open")
+        ttl = _PR_CACHE_TTL_CLOSED if state in ("merged", "closed") else _PR_CACHE_TTL_OPEN
+        if time.time() - ts < ttl:
+            _pr_cache.move_to_end(cache_key)
             return data
 
+    # Determine which endpoints to skip based on previously cached state
+    skip = _get_skips(cache_key)
+
     # Fetch PR metadata, reviews, comments, and files in parallel
-    (
-        pr_data,
-        reviews_data,
-        review_comments,
-        issue_comments,
-        files_data,
-        requested_reviewers_data,
-    ) = await asyncio.gather(
-        _run_gh(f"repos/{owner}/{repo}/pulls/{number}"),
-        _run_gh(f"repos/{owner}/{repo}/pulls/{number}/reviews"),
-        _run_gh(f"repos/{owner}/{repo}/pulls/{number}/comments"),
-        _run_gh(f"repos/{owner}/{repo}/issues/{number}/comments"),
-        _run_gh(f"repos/{owner}/{repo}/pulls/{number}/files"),
-        _run_gh(f"repos/{owner}/{repo}/pulls/{number}/requested_reviewers"),
+    coros = [
+        _run_gh(f"repos/{owner}/{repo}/pulls/{number}", cache=_GH_HTTP_CACHE),
+        _run_gh(f"repos/{owner}/{repo}/pulls/{number}/reviews", cache=_GH_HTTP_CACHE),
+        _run_gh(
+            f"repos/{owner}/{repo}/pulls/{number}/comments", cache=_GH_HTTP_CACHE
+        ),
+        _run_gh(
+            f"repos/{owner}/{repo}/issues/{number}/comments", cache=_GH_HTTP_CACHE
+        ),
+        _run_gh(f"repos/{owner}/{repo}/pulls/{number}/files", cache=_GH_HTTP_CACHE),
+    ]
+    if "requested_reviewers" not in skip:
+        coros.append(
+            _run_gh(
+                f"repos/{owner}/{repo}/pulls/{number}/requested_reviewers",
+                cache=_GH_HTTP_CACHE,
+            )
+        )
+
+    results = await asyncio.gather(*coros)
+
+    pr_data = results[0]
+    reviews_data = results[1]
+    review_comments = results[2]
+    issue_comments = results[3]
+    files_data = results[4]
+    requested_reviewers_data = (
+        results[5] if "requested_reviewers" not in skip else {"users": []}
     )
 
+    pr_dict = pr_data if isinstance(pr_data, dict) else {}
+    actual_state = "merged" if pr_dict.get("merged") else pr_dict.get("state", "open")
+
+    # Safety net: if we skipped endpoints but PR is actually open, re-fetch them
+    if skip and actual_state == "open":
+        if "requested_reviewers" in skip:
+            requested_reviewers_data = await _run_gh(
+                f"repos/{owner}/{repo}/pulls/{number}/requested_reviewers",
+                cache=_GH_HTTP_CACHE,
+            )
+
     # Fetch check runs using head SHA (depends on pr_data)
-    head_sha = pr_data.get("head", {}).get("sha", "") if isinstance(pr_data, dict) else ""
+    head_sha = (
+        pr_data.get("head", {}).get("sha", "") if isinstance(pr_data, dict) else ""
+    )
     checks_data: dict = {"check_runs": []}
-    if head_sha:
+    if head_sha and "check_runs" not in skip:
         try:
-            checks_data = await _run_gh(f"repos/{owner}/{repo}/commits/{head_sha}/check-runs")
+            checks_data = await _run_gh(
+                f"repos/{owner}/{repo}/commits/{head_sha}/check-runs",
+                cache=_GH_HTTP_CACHE,
+            )
         except HTTPException:
             # Non-fatal: some repos may not have checks configured
             logger.debug("Could not fetch check runs for %s", cache_key)
+    elif head_sha and "check_runs" in skip and actual_state == "open":
+        # Safety net: re-fetch if PR reopened
+        try:
+            checks_data = await _run_gh(
+                f"repos/{owner}/{repo}/commits/{head_sha}/check-runs",
+                cache=_GH_HTTP_CACHE,
+            )
+        except HTTPException:
+            pass
 
     # For closed (non-merged) PRs, find who closed it from issue events
     closed_by: str | None = None
-    pr_dict = pr_data if isinstance(pr_data, dict) else {}
     if pr_dict.get("state") == "closed" and not pr_dict.get("merged"):
         try:
-            events = await _run_gh(f"repos/{owner}/{repo}/issues/{number}/events")
+            events = await _run_gh(
+                f"repos/{owner}/{repo}/issues/{number}/events", cache=_GH_HTTP_CACHE
+            )
             if isinstance(events, list):
                 for ev in reversed(events):
                     if ev.get("event") == "closed":
@@ -276,7 +336,9 @@ async def get_pr_preview(url: str = Query(..., description="GitHub PR URL")):
 
     # Extract requested reviewer logins
     rr = requested_reviewers_data if isinstance(requested_reviewers_data, dict) else {}
-    requested_reviewers = [u.get("login", "") for u in rr.get("users", []) if u.get("login")]
+    requested_reviewers = [
+        u.get("login", "") for u in rr.get("users", []) if u.get("login")
+    ]
 
     response = _build_response(
         pr_dict,
@@ -289,8 +351,11 @@ async def get_pr_preview(url: str = Query(..., description="GitHub PR URL")):
         closed_by=closed_by,
     )
 
-    # Cache
+    # Cache with LRU eviction
     _pr_cache[cache_key] = (time.time(), response)
+    _pr_cache.move_to_end(cache_key)
+    while len(_pr_cache) > _MAX_CACHE_SIZE:
+        _pr_cache.popitem(last=False)
     return response
 
 
