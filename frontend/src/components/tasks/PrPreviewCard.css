@@ -356,7 +356,7 @@
 
 .pr-review-name {
   color: var(--text-primary);
-  font-weight: 500;
+  font-weight: 400;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
