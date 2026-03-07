@@ -378,13 +378,13 @@
   align-items: center;
   gap: 10px;
   padding: 8px 10px;
-  background: var(--bg);
+  background: var(--surface-hover);
   border-radius: var(--radius);
   transition: background 0.15s;
 }
 
 .tdp-link:hover {
-  background: var(--surface-hover);
+  background: var(--surface-raised);
 }
 
 .link-tag {
@@ -832,12 +832,12 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  background: var(--bg);
+  background: var(--surface-hover);
   border-radius: var(--radius);
 }
 
 .tdp-subtask-row:hover {
-  background: var(--surface-hover);
+  background: var(--surface-raised);
 }
 
 .tdp-subtask-item {
