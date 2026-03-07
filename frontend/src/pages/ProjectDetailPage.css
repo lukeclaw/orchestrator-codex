@@ -117,9 +117,8 @@
   gap: 16px;
 }
 
-/* Worker cards sit inside a --surface section — use --bg body with lighter header/footer */
+/* Worker cards sit inside a --surface section */
 .pd-worker-grid .worker-card {
-  background: var(--bg);
   border-top-color: var(--border);
   border-right-color: var(--border);
   border-bottom-color: var(--border);
@@ -129,11 +128,6 @@
   border-top-color: var(--accent);
   border-right-color: var(--accent);
   border-bottom-color: var(--accent);
-}
-
-.pd-worker-grid .wc-header,
-.pd-worker-grid .wc-footer {
-  background: var(--surface-hover);
 }
 
 .pd-prs {
@@ -147,7 +141,6 @@
   align-items: center;
   justify-content: space-between;
   padding: 8px 12px;
-  background: var(--bg);
   border-radius: var(--radius);
   font-size: 13px;
 }
@@ -180,7 +173,7 @@
   gap: 8px;
   margin-bottom: 12px;
   padding: 12px;
-  background: var(--bg);
+  border: 1px solid var(--border-subtle);
   border-radius: var(--radius);
 }
 
@@ -220,7 +213,6 @@
 
 .pd-context-item {
   padding: 12px;
-  background: var(--bg);
   border-radius: var(--radius);
   border: 1px solid transparent;
   transition: background-color 0.15s, border-color 0.15s;

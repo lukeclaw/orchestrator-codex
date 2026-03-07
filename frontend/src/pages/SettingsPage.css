@@ -79,8 +79,6 @@
   display: flex;
   gap: 16px;
   padding: 16px;
-  background: var(--bg);
-  border: 1px solid transparent;
   border-radius: var(--radius);
 }
 
@@ -516,7 +514,6 @@
   align-items: center;
   justify-content: space-between;
   padding: 12px 14px;
-  background: var(--bg);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius);
   font-size: 14px;
