@@ -160,7 +160,10 @@ export default function TaskDetailPage() {
     setNotesExpanded(true)
     setSubtasksExpanded(true)
     setShowAssignModal(false)
-    // Reset PR preview state to avoid stale data from previous task
+    // Reset links + PR preview state to avoid stale data from previous task.
+    // Resetting links to [] forces the prefetch effect to re-fire even when
+    // the new task has the same PR URLs as the old one.
+    setLinks([])
     setPrPreviewUrl(null)
     setPrPreviews({})
     setPrLoading(new Set())
