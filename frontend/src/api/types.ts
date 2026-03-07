@@ -148,6 +148,7 @@ export interface PrPreviewData {
   changed_files: number
   commits: number
   reviews: PrReview[]
+  requested_reviewers: string[]
   checks: PrCheck[]
   auto_merge: boolean
   files: PrChangedFile[]

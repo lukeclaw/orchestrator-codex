@@ -61,6 +61,7 @@ export default function PrPreviewCard({ url, initialData, onDataFetched }: PrPre
   const [error, setError] = useState<string | null>(null)
   const [autoMerge, setAutoMerge] = useState<boolean | null>(initialData?.auto_merge ?? null)
   const [autoMergeLoading, setAutoMergeLoading] = useState(false)
+  const [copied, setCopied] = useState(false)
   const abortRef = useRef<AbortController | null>(null)
 
   const fetchData = async () => {
@@ -163,6 +164,26 @@ export default function PrPreviewCard({ url, initialData, onDataFetched }: PrPre
             {data.title}
           </a>
           <span className="pr-number">#{data.number}</span>
+          <button
+            className={`pr-copy-link ${copied ? 'copied' : ''}`}
+            onClick={() => {
+              navigator.clipboard.writeText(url)
+              setCopied(true)
+              setTimeout(() => setCopied(false), 2000)
+            }}
+            data-copy-tooltip={copied ? 'Copied!' : 'Copy link'}
+          >
+            {copied ? (
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="20 6 9 17 4 12" />
+              </svg>
+            ) : (
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+              </svg>
+            )}
+          </button>
           <div className="pr-preview-header-actions">
             <button
               className="pr-preview-refresh"
@@ -273,11 +294,23 @@ export default function PrPreviewCard({ url, initialData, onDataFetched }: PrPre
             )}
 
             {data.state === 'open' && pendingGates.length > 0 && (
-              <div className="pr-section-title">
-                {pendingGates.map(c => c.name).join(', ')}
-                <span className="pr-checks-summary">
-                  <span className="checks-pending">{pendingGates.length} awaiting</span>
-                </span>
+              <div className="pr-preview-section">
+                <div className="pr-section-title">
+                  {pendingGates.map(c => c.name).join(', ')}
+                  <span className="pr-checks-summary">
+                    <span className="checks-pending">{pendingGates.length} awaiting</span>
+                  </span>
+                </div>
+                {data.requested_reviewers.length > 0 && (
+                  <div className="pr-reviews">
+                    {data.requested_reviewers.map(name => (
+                      <div key={name} className="pr-review-item">
+                        <span className="pr-review-icon review-pending">●</span>
+                        <span className="pr-review-name">{name}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
 

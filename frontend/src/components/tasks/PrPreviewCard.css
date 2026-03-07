@@ -40,6 +40,55 @@
   flex-shrink: 0;
 }
 
+.pr-copy-link {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 4px;
+  border-radius: var(--radius);
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  position: relative;
+  transition: color var(--duration-normal) var(--ease-standard),
+              background var(--duration-normal) var(--ease-standard);
+}
+
+.pr-copy-link:hover {
+  color: var(--accent);
+  background: rgba(88, 166, 255, 0.1);
+}
+
+.pr-copy-link.copied {
+  color: var(--green);
+}
+
+.pr-copy-link::after {
+  content: attr(data-copy-tooltip);
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--surface);
+  color: var(--text-primary);
+  font-size: 12px;
+  font-weight: 400;
+  white-space: nowrap;
+  padding: 5px 10px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 100ms;
+}
+
+.pr-copy-link:hover::after,
+.pr-copy-link.copied::after {
+  opacity: 1;
+}
+
 .pr-state-badge {
   font-size: 11px;
   font-weight: 600;
@@ -383,6 +432,11 @@
 
 .pr-review-icon.review-dismissed {
   color: var(--text-muted);
+  font-size: 7px;
+}
+
+.pr-review-icon.review-pending {
+  color: var(--yellow);
   font-size: 7px;
 }
 

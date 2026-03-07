@@ -150,6 +150,7 @@ def _build_response(
     review_comments: list[dict],
     issue_comments: list[dict],
     files_raw: list[dict],
+    requested_reviewers: list[str] | None = None,
     closed_by: str | None = None,
 ) -> dict:
     """Build the PR preview response from raw GitHub API data."""
@@ -177,6 +178,7 @@ def _build_response(
         "changed_files": pr.get("changed_files", 0),
         "commits": pr.get("commits", 0),
         "reviews": _build_reviews(reviews_raw, review_comments, issue_comments, author),
+        "requested_reviewers": requested_reviewers or [],
         "auto_merge": pr.get("auto_merge") is not None,
         "checks": _map_checks(checks_raw),
         "files": _map_files(files_raw),
@@ -197,12 +199,20 @@ async def get_pr_preview(url: str = Query(..., description="GitHub PR URL")):
             return data
 
     # Fetch PR metadata, reviews, comments, and files in parallel
-    pr_data, reviews_data, review_comments, issue_comments, files_data = await asyncio.gather(
+    (
+        pr_data,
+        reviews_data,
+        review_comments,
+        issue_comments,
+        files_data,
+        requested_reviewers_data,
+    ) = await asyncio.gather(
         _run_gh(f"repos/{owner}/{repo}/pulls/{number}"),
         _run_gh(f"repos/{owner}/{repo}/pulls/{number}/reviews"),
         _run_gh(f"repos/{owner}/{repo}/pulls/{number}/comments"),
         _run_gh(f"repos/{owner}/{repo}/issues/{number}/comments"),
         _run_gh(f"repos/{owner}/{repo}/pulls/{number}/files"),
+        _run_gh(f"repos/{owner}/{repo}/pulls/{number}/requested_reviewers"),
     )
 
     # Fetch check runs using head SHA (depends on pr_data)
@@ -229,6 +239,10 @@ async def get_pr_preview(url: str = Query(..., description="GitHub PR URL")):
         except HTTPException:
             logger.debug("Could not fetch events for %s", cache_key)
 
+    # Extract requested reviewer logins
+    rr = requested_reviewers_data if isinstance(requested_reviewers_data, dict) else {}
+    requested_reviewers = [u.get("login", "") for u in rr.get("users", []) if u.get("login")]
+
     response = _build_response(
         pr_dict,
         reviews_data if isinstance(reviews_data, list) else [],
@@ -236,6 +250,7 @@ async def get_pr_preview(url: str = Query(..., description="GitHub PR URL")):
         review_comments if isinstance(review_comments, list) else [],
         issue_comments if isinstance(issue_comments, list) else [],
         files_data if isinstance(files_data, list) else [],
+        requested_reviewers=requested_reviewers,
         closed_by=closed_by,
     )
 
