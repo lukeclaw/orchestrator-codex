@@ -72,27 +72,51 @@
 
 /* Tabs */
 .np-tabs {
+  position: relative;
   display: flex;
   gap: 4px;
+  width: 220px;
   background: var(--surface);
-  padding: 3px;
-  border-radius: 8px;
-  width: fit-content;
+  padding: 4px;
+  border-radius: 10px;
+}
+
+.np-tabs::before {
+  content: '';
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  width: calc(50% - 6px);
+  height: calc(100% - 8px);
+  background: var(--accent-muted);
+  border-radius: 6px;
+  z-index: 0;
+  transition: transform 200ms cubic-bezier(0.4, 0, 0.2, 1);
+  pointer-events: none;
+}
+
+.np-tabs.archived::before {
+  transform: translateX(calc(100% + 4px));
 }
 
 .np-tab {
+  position: relative;
+  z-index: 1;
+  flex: 1;
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 4px 12px;
+  justify-content: center;
+  gap: 8px;
+  padding: 6px 14px;
   background: transparent;
   border: none;
   border-radius: 6px;
   color: var(--text-secondary);
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 500;
+  text-align: center;
   cursor: pointer;
-  transition: all 0.2s;
+  transition: color 150ms ease;
 }
 
 .np-tab:hover {
@@ -100,8 +124,12 @@
 }
 
 .np-tab.active {
-  background: var(--bg);
   color: var(--text-primary);
+}
+
+.np-tab:focus-visible {
+  box-shadow: 0 0 0 2px var(--accent-muted);
+  outline: none;
 }
 
 .np-tab-badge {
@@ -112,8 +140,8 @@
 }
 
 .np-tab-badge.active {
-  background: var(--accent-muted);
-  color: var(--accent, #60a5fa);
+  background: rgba(88, 166, 255, 0.15);
+  color: var(--accent);
 }
 
 /* Content */

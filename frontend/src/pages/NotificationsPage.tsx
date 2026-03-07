@@ -451,13 +451,12 @@ export default function NotificationsPage() {
       {/* Header with tabs */}
       <div className="page-header">
         <h1>Notifications</h1>
-        <div className="np-tabs">
+        <div className={`np-tabs ${filter === 'archived' ? 'archived' : ''}`}>
           <button
             className={`np-tab ${filter === 'active' ? 'active' : ''}`}
             onClick={() => setFilter('active')}
           >
             Active
-            {activeCount > 0 && <span className="np-tab-badge active">{activeCount}</span>}
           </button>
           <button
             className={`np-tab ${filter === 'archived' ? 'active' : ''}`}
