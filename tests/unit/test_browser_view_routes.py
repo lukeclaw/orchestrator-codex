@@ -380,6 +380,58 @@ class TestBrowserStartEndpoint:
         )
         assert response.status_code == 500
 
+    @patch("orchestrator.api.routes.browser_view.force_restart_server")
+    @patch("orchestrator.api.routes.browser_view.get_remote_worker_server")
+    def test_stale_daemon_redeploys_and_retries(
+        self, mock_get_rws, mock_force_restart, client, rdev_session
+    ):
+        """When daemon returns 'Unknown action', force-restart and retry."""
+        stale_server = MagicMock()
+        stale_server.start_browser.side_effect = RuntimeError(
+            "Browser start failed on host: Unknown action: browser_start"
+        )
+        mock_get_rws.return_value = stale_server
+
+        new_server = MagicMock()
+        new_server.start_browser.return_value = {
+            "status": "ok",
+            "pid": 9999,
+            "port": 9222,
+            "already_running": False,
+        }
+        mock_force_restart.return_value = new_server
+
+        response = client.post(
+            f"/api/sessions/{rdev_session.id}/browser-start",
+            json={"port": 9222},
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["pid"] == 9999
+        mock_force_restart.assert_called_once_with(rdev_session.host)
+        new_server.start_browser.assert_called_once()
+
+    @patch("orchestrator.api.routes.browser_view.force_restart_server")
+    @patch("orchestrator.api.routes.browser_view.get_remote_worker_server")
+    def test_stale_daemon_redeploy_fails(
+        self, mock_get_rws, mock_force_restart, client, rdev_session
+    ):
+        """When daemon is stale and redeploy also fails, return 500."""
+        stale_server = MagicMock()
+        stale_server.start_browser.side_effect = RuntimeError(
+            "Browser start failed on host: Unknown action: browser_start"
+        )
+        mock_get_rws.return_value = stale_server
+        mock_force_restart.side_effect = RuntimeError("SSH connection failed")
+
+        response = client.post(
+            f"/api/sessions/{rdev_session.id}/browser-start",
+            json={"port": 9222},
+        )
+
+        assert response.status_code == 500
+
     def test_404_session_not_found(self, client):
         response = client.post(
             "/api/sessions/nonexistent-id/browser-start",
@@ -409,6 +461,28 @@ class TestBrowserStopEndpoint:
 
         response = client.post(f"/api/sessions/{rdev_session.id}/browser-stop")
         assert response.status_code == 503
+
+    @patch("orchestrator.api.routes.browser_view.force_restart_server")
+    @patch("orchestrator.api.routes.browser_view.get_remote_worker_server")
+    def test_stale_daemon_redeploys_and_retries(
+        self, mock_get_rws, mock_force_restart, client, rdev_session
+    ):
+        """When daemon returns 'Unknown action' on stop, force-restart and retry."""
+        stale_server = MagicMock()
+        stale_server.stop_browser.side_effect = RuntimeError(
+            "Browser stop failed on host: Unknown action: browser_stop"
+        )
+        mock_get_rws.return_value = stale_server
+
+        new_server = MagicMock()
+        new_server.stop_browser.return_value = None
+        mock_force_restart.return_value = new_server
+
+        response = client.post(f"/api/sessions/{rdev_session.id}/browser-stop")
+
+        assert response.status_code == 200
+        assert response.json()["ok"] is True
+        mock_force_restart.assert_called_once_with(rdev_session.host)
 
     def test_404_session_not_found(self, client):
         response = client.post("/api/sessions/nonexistent-id/browser-stop")

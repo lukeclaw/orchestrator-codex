@@ -669,6 +669,7 @@ _REMOTE_WORKER_SERVER_SCRIPT = textwrap.dedent("""\
                 return False
 
     pty_sessions = {}  # pty_id -> PtySession
+    _server_fd = -1  # Set by run_server(); closed in PTY children
     sel = selectors.DefaultSelector()
 
     def handle_pty_create(cmd):
@@ -689,6 +690,13 @@ _REMOTE_WORKER_SERVER_SCRIPT = textwrap.dedent("""\
         if child_pid == 0:
             # Child process
             os.setsid()
+            # Close the server listen socket so exec'd shell doesn't
+            # hold port 9741 open (prevents daemon upgrades).
+            if _server_fd >= 0:
+                try:
+                    os.close(_server_fd)
+                except OSError:
+                    pass
             # Set slave as controlling terminal
             fcntl.ioctl(slave_fd, termios.TIOCSCTTY, 0)
             os.dup2(slave_fd, 0)
@@ -1127,6 +1135,59 @@ _REMOTE_WORKER_SERVER_SCRIPT = textwrap.dedent("""\
 
     # ── Daemonize and run ─────────────────────────────────────────────────
 
+    def _kill_pid(pid):
+        # Send SIGTERM then SIGKILL to a process. Best-effort.
+        try:
+            os.kill(pid, signal.SIGTERM)
+            for _ in range(20):  # wait up to 2s
+                time.sleep(0.1)
+                try:
+                    os.kill(pid, 0)
+                except OSError:
+                    return  # Dead
+            os.kill(pid, signal.SIGKILL)
+            time.sleep(0.2)
+        except OSError:
+            pass
+
+    def _find_port_owner():
+        # Find the PID of the process listening on LISTEN_PORT by
+        # parsing /proc/net/tcp + scanning /proc/*/fd.  Returns PID or None.
+        try:
+            hex_port = f"{LISTEN_PORT:04X}"
+            target_local = f"0100007F:{hex_port}"  # 127.0.0.1:PORT
+            inode = None
+            with open("/proc/net/tcp") as f:
+                for line in f:
+                    fields = line.split()
+                    if len(fields) >= 10 and fields[1] == target_local:
+                        # State 0A = LISTEN
+                        if fields[3] == "0A":
+                            inode = fields[9]
+                            break
+            if not inode or inode == "0":
+                return None
+
+            # Scan /proc/*/fd for the socket inode
+            target = f"socket:[{inode}]"
+            for entry in os.listdir("/proc"):
+                if not entry.isdigit():
+                    continue
+                fd_dir = f"/proc/{entry}/fd"
+                try:
+                    for fd in os.listdir(fd_dir):
+                        try:
+                            link = os.readlink(f"{fd_dir}/{fd}")
+                            if link == target:
+                                return int(entry)
+                        except OSError:
+                            continue
+                except OSError:
+                    continue
+        except OSError:
+            pass
+        return None
+
     def check_existing_daemon():
         pid_file = f"/tmp/orchestrator-rws-{LISTEN_PORT}.pid"
         ver_file = f"/tmp/orchestrator-rws-{LISTEN_PORT}.version"
@@ -1147,19 +1208,7 @@ _REMOTE_WORKER_SERVER_SCRIPT = textwrap.dedent("""\
 
                 if old_version != SCRIPT_VERSION:
                     # Version mismatch — kill old daemon for upgrade
-                    try:
-                        os.kill(old_pid, signal.SIGTERM)
-                        # Wait briefly for clean exit
-                        for _ in range(10):
-                            time.sleep(0.1)
-                            try:
-                                os.kill(old_pid, 0)
-                            except OSError:
-                                break
-                        else:
-                            os.kill(old_pid, signal.SIGKILL)
-                    except OSError:
-                        pass
+                    _kill_pid(old_pid)
                     for f_path in (pid_file, ver_file):
                         try:
                             os.unlink(f_path)
@@ -1196,6 +1245,14 @@ _REMOTE_WORKER_SERVER_SCRIPT = textwrap.dedent("""\
                     os.unlink(f_path)
                 except OSError:
                     pass
+
+        # Fallback: check if something else is holding the port.
+        # This catches orphaned daemons whose PID file was overwritten
+        # by a later (failed) deployment attempt.
+        owner = _find_port_owner()
+        if owner and owner != os.getpid():
+            _kill_pid(owner)
+
         return None
 
     def write_pid_file():
@@ -1263,11 +1320,13 @@ _REMOTE_WORKER_SERVER_SCRIPT = textwrap.dedent("""\
         run_server()
 
     def run_server():
+        global _server_fd
         server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         server.bind((LISTEN_HOST, LISTEN_PORT))
         server.listen(16)
         server.setblocking(False)
+        _server_fd = server.fileno()
         sel.register(server, selectors.EVENT_READ, data=("accept", None))
 
         while True:

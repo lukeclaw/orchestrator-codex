@@ -23,6 +23,7 @@ from orchestrator.core.events import Event, publish
 from orchestrator.state.repositories import sessions as repo
 from orchestrator.terminal.remote_worker_server import (
     ensure_rws_starting,
+    force_restart_server,
     get_remote_worker_server,
 )
 from orchestrator.terminal.ssh import is_remote_host
@@ -197,7 +198,15 @@ async def _auto_start_browser_and_retry(
     try:
         if is_remote_host(host):
             rws = await _wait_for_rws(host)
-            rws.start_browser(session_id, port=cdp_port)
+            try:
+                rws.start_browser(session_id, port=cdp_port)
+            except RuntimeError as e:
+                if "Unknown action" in str(e):
+                    logger.warning("Stale RWS daemon on %s, redeploying", host)
+                    rws = force_restart_server(host)
+                    rws.start_browser(session_id, port=cdp_port)
+                else:
+                    raise
             # Remote: tunnel doesn't exist yet, so we can't poll localhost.
             # start_browser_view() will create the tunnel and discover_browser_targets
             # has its own retries (5 attempts, 1s delay).
@@ -494,7 +503,16 @@ def start_browser_endpoint(
         try:
             result = rws.start_browser(session_id, port=port)
         except RuntimeError as e:
-            raise HTTPException(500, str(e))
+            if "Unknown action" in str(e):
+                # Stale daemon — force-redeploy and retry once
+                logger.warning("Stale RWS daemon on %s, redeploying", s.host)
+                try:
+                    rws = force_restart_server(s.host)
+                    result = rws.start_browser(session_id, port=port)
+                except RuntimeError as e2:
+                    raise HTTPException(500, str(e2))
+            else:
+                raise HTTPException(500, str(e))
 
         return {
             "ok": True,
@@ -526,6 +544,14 @@ def stop_browser_endpoint(session_id: str, db=Depends(get_db)):
     try:
         rws.stop_browser(session_id)
     except RuntimeError as e:
-        raise HTTPException(500, str(e))
+        if "Unknown action" in str(e):
+            logger.warning("Stale RWS daemon on %s, redeploying", s.host)
+            try:
+                rws = force_restart_server(s.host)
+                rws.stop_browser(session_id)
+            except RuntimeError as e2:
+                raise HTTPException(500, str(e2))
+        else:
+            raise HTTPException(500, str(e))
 
     return {"ok": True}
