@@ -132,6 +132,37 @@
   color: var(--text-secondary);
 }
 
+.pr-date-hover {
+  text-decoration: underline dotted var(--text-muted);
+  text-underline-offset: 2px;
+  cursor: default;
+  position: relative;
+}
+
+.pr-date-hover::after {
+  content: attr(data-full-date);
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--surface);
+  color: var(--text-primary);
+  font-size: 12px;
+  font-weight: 400;
+  white-space: nowrap;
+  padding: 5px 10px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 100ms;
+}
+
+.pr-date-hover:hover::after {
+  opacity: 1;
+}
+
 .pr-preview-subtitle-row {
   display: flex;
   align-items: center;

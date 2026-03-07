@@ -47,6 +47,14 @@ function formatDate(dateStr: string): string {
   return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
 }
 
+function formatFullDate(dateStr: string): string {
+  const d = parseDate(dateStr)
+  return d.toLocaleString(undefined, {
+    weekday: 'short', month: 'short', day: 'numeric', year: 'numeric',
+    hour: 'numeric', minute: '2-digit', second: '2-digit',
+  })
+}
+
 export default function PrPreviewCard({ url, initialData, onDataFetched }: PrPreviewCardProps) {
   const [data, setData] = useState<PrPreviewData | null>(initialData ?? null)
   const [loading, setLoading] = useState(!initialData)
@@ -133,9 +141,10 @@ export default function PrPreviewCard({ url, initialData, onDataFetched }: PrPre
   const pendingGates = gateChecks.filter(c => c.status !== 'completed')
 
   // Subtitle: "opened by @author on Mar 5, 2026" or "merged by @merger on Mar 6, 2026"
+  const dateStr = data.state === 'merged' && data.merged_at ? data.merged_at : data.created_at
   const subtitle = data.state === 'merged' && data.merged_by
-    ? `merged by @${data.merged_by} on ${formatDate(data.merged_at!)}`
-    : `opened by @${data.author} on ${formatDate(data.created_at)}`
+    ? <>merged by @{data.merged_by} on <span className="pr-date-hover" data-full-date={formatFullDate(dateStr)}>{formatDate(dateStr)}</span></>
+    : <>opened by @{data.author} on <span className="pr-date-hover" data-full-date={formatFullDate(dateStr)}>{formatDate(dateStr)}</span></>
 
   return (
     <div className="pr-preview-card">
