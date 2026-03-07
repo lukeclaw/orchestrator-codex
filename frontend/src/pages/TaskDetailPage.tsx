@@ -177,7 +177,12 @@ export default function TaskDetailPage() {
       setPriority(task.priority)
       setAssignedSession(task.assigned_session_id || '')
       const isEditingLinks = showAddLink || editingLinkUrl !== null
-      if (!isEditingLinks) setLinks(task.links || [])
+      if (!isEditingLinks) {
+        const incoming = task.links || []
+        setLinks(prev =>
+          JSON.stringify(prev) === JSON.stringify(incoming) ? prev : incoming
+        )
+      }
 
       api<Task[]>(`/api/tasks?parent_task_id=${task.id}&include_subtask_stats=false`)
         .then(setSubtasks)
@@ -195,10 +200,25 @@ export default function TaskDetailPage() {
     const prLinks = links.filter(l => l.tag === 'PR')
     if (prLinks.length === 0) return
 
-    const controller = new AbortController()
-    setPrLoading(new Set(prLinks.map(l => l.url)))
+    // Only fetch PRs we don't already have data for
+    const unfetched = prLinks.filter(l => !prPreviews[l.url])
+    if (unfetched.length === 0) {
+      // Still auto-open the first PR if not yet opened
+      if (!prAutoOpenedRef.current && prLinks.length > 0 && prPreviews[prLinks[0].url]) {
+        prAutoOpenedRef.current = true
+        setPrPreviewUrl(prLinks[0].url)
+      }
+      return
+    }
 
-    prLinks.forEach(async (link) => {
+    const controller = new AbortController()
+    setPrLoading(prev => {
+      const next = new Set(prev)
+      unfetched.forEach(l => next.add(l.url))
+      return next
+    })
+
+    unfetched.forEach(async (link) => {
       try {
         const result = await api<PrPreviewData>(
           `/api/pr-preview?url=${encodeURIComponent(link.url)}`,
@@ -226,7 +246,7 @@ export default function TaskDetailPage() {
     })
 
     return () => controller.abort()
-  }, [links])
+  }, [links]) // eslint-disable-line react-hooks/exhaustive-deps — prPreviews intentionally excluded
 
   const assignedWorker = sessions.find(s => s.id === task?.assigned_session_id)
 
@@ -963,7 +983,7 @@ export default function TaskDetailPage() {
                               variant="danger"
                             >
                               {({ onClick }) => (
-                                <button className="link-remove" onClick={onClick} title="Remove">×</button>
+                                <button className="link-remove" onClick={onClick} title="Remove"><IconTrash size={12} /></button>
                               )}
                             </ConfirmPopover>
                           </div>
@@ -1078,7 +1098,7 @@ export default function TaskDetailPage() {
                           onClick={e => { e.stopPropagation() }}
                           title={st.links.length > 1 ? `${st.links[0].url} (+${st.links.length - 1} more)` : st.links[0].url}
                         >
-                          ↗{st.links.length > 1 && <span className="link-more">...</span>}
+                          <IconExternalLink size={13} />{st.links.length > 1 && <span className="link-more">...</span>}
                         </a>
                       )}
                     </div>
