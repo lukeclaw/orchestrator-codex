@@ -394,11 +394,11 @@
   padding: 2px 6px;
   margin: 0 -6px;
   border-radius: 4px;
-  transition: background 0.15s, color 0.15s;
+  transition: background 0.15s;
+  position: relative;
 }
 
-.pr-review-item.pr-review-clickable,
-.pr-review-item.pr-review-expandable {
+.pr-review-item.pr-review-clickable {
   cursor: pointer;
 }
 
@@ -406,29 +406,8 @@
   background: var(--surface-hover);
 }
 
-.pr-review-item.pr-review-clickable:hover .pr-review-name,
-.pr-review-item.pr-review-expandable:hover .pr-review-name {
+.pr-review-item.pr-review-clickable:hover .pr-review-name {
   color: var(--accent);
-}
-
-.pr-review-item.pr-review-expanded {
-  background: rgba(88, 166, 255, 0.08);
-}
-
-.pr-review-item.pr-review-expanded .pr-review-name {
-  color: var(--accent);
-}
-
-.pr-review-chevron {
-  font-size: 14px;
-  color: var(--text-muted);
-  transition: transform 0.2s var(--ease-standard);
-  margin-left: -2px;
-  line-height: 1;
-}
-
-.pr-review-chevron.expanded {
-  transform: rotate(90deg);
 }
 
 .pr-review-icon {
@@ -481,76 +460,45 @@
   line-height: 18px;
 }
 
-/* Expanded review thread panel — full-width below columns */
+/* Review hover popup — appears above the reviewer item */
 
-.pr-thread-panel {
+.pr-review-popup {
+  display: none;
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 0;
+  z-index: 100;
+  background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  background: var(--surface);
-  overflow: hidden;
-  animation: pr-thread-panel-enter 200ms var(--ease-decelerate);
+  padding: 6px;
+  min-width: 340px;
+  max-width: 480px;
+  max-height: 360px;
+  overflow-y: auto;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  animation: pr-popup-enter 150ms var(--ease-decelerate);
 }
 
-@keyframes pr-thread-panel-enter {
-  from { opacity: 0; max-height: 0; }
-  to { opacity: 1; max-height: 600px; }
+/* Bridge the gap between item and popup so hover isn't lost */
+.pr-review-popup::after {
+  content: '';
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  height: 8px;
 }
 
-.pr-thread-panel-header {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 12px;
-  border-bottom: 1px solid var(--border);
-  background: rgba(255, 255, 255, 0.02);
-}
-
-.pr-thread-panel-name {
-  font-size: 13px;
-  font-weight: 500;
-  color: var(--text-primary);
-}
-
-.pr-thread-panel-state {
-  font-size: 11px;
-  color: var(--text-muted);
-  font-weight: 500;
-}
-
-.pr-thread-panel-state.review-approved { color: var(--green); }
-.pr-thread-panel-state.review-changes { color: var(--yellow); }
-
-.pr-thread-panel-count {
-  font-size: 11px;
-  color: var(--text-muted);
-  font-weight: 400;
-}
-
-.pr-thread-panel-close {
-  margin-left: auto;
-  background: none;
-  border: none;
-  color: var(--text-muted);
-  font-size: 16px;
-  cursor: pointer;
-  padding: 0 4px;
-  line-height: 1;
-  border-radius: 4px;
-  transition: color 0.15s, background 0.15s;
-}
-
-.pr-thread-panel-close:hover {
-  color: var(--text-primary);
-  background: var(--surface-hover);
-}
-
-.pr-thread-panel-body {
+.pr-review-item:hover .pr-review-popup {
   display: flex;
   flex-direction: column;
   gap: 2px;
-  padding: 6px;
-  max-height: 320px;
-  overflow-y: auto;
+}
+
+@keyframes pr-popup-enter {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
 .pr-thread-card {
@@ -615,6 +563,10 @@
   line-height: 1.5;
   margin: 0;
   word-break: break-word;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 
 .pr-thread-replies {
