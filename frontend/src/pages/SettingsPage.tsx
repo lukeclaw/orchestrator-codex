@@ -6,6 +6,7 @@ import { useNotify } from '../context/NotificationContext'
 import { useApp } from '../context/AppContext'
 import { pickFolder } from '../api/pickFolder'
 import ConfirmPopover from '../components/common/ConfirmPopover'
+import SlidingTabs from '../components/common/SlidingTabs'
 import './SettingsPage.css'
 
 function formatBytes(bytes: number): string {
@@ -138,31 +139,35 @@ export default function SettingsPage() {
       </div>
 
       {/* Tab bar */}
-      <div className="settings-tabs">
-        <button
-          className={`settings-tab ${activeTab === 'updates' ? 'active' : ''}`}
-          onClick={() => setActiveTab('updates')}
-        >
-          <svg className="settings-tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-            <polyline points="7 10 12 15 17 10" />
-            <line x1="12" y1="15" x2="12" y2="3" />
-          </svg>
-          Updates
-          {updateInfo?.update_available && <span className="settings-tab-dot" />}
-        </button>
-        <button
-          className={`settings-tab ${activeTab === 'backup' ? 'active' : ''}`}
-          onClick={() => setActiveTab('backup')}
-        >
-          <svg className="settings-tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />
-            <polyline points="17 21 17 13 7 13 7 21" />
-            <polyline points="7 3 7 8 15 8" />
-          </svg>
-          Backup
-        </button>
-      </div>
+      <SlidingTabs
+        tabs={[
+          {
+            value: 'updates' as const,
+            label: <>
+              <svg className="settings-tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                <polyline points="7 10 12 15 17 10" />
+                <line x1="12" y1="15" x2="12" y2="3" />
+              </svg>
+              Updates
+              {updateInfo?.update_available && <span className="settings-tab-dot" />}
+            </>,
+          },
+          {
+            value: 'backup' as const,
+            label: <>
+              <svg className="settings-tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />
+                <polyline points="17 21 17 13 7 13 7 21" />
+                <polyline points="7 3 7 8 15 8" />
+              </svg>
+              Backup
+            </>,
+          },
+        ]}
+        value={activeTab}
+        onChange={setActiveTab}
+      />
 
       {/* ── Updates Tab ── */}
       {activeTab === 'updates' && (

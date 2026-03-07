@@ -18,6 +18,7 @@ import {
 import ConfirmPopover from '../components/common/ConfirmPopover'
 import { parseDate } from '../components/common/TimeAgo'
 import { linkifyText } from '../components/common/linkify'
+import SlidingTabs from '../components/common/SlidingTabs'
 import './NotificationsPage.css'
 
 type DateGroup = { label: string; notifications: Notification[] }
@@ -451,20 +452,14 @@ export default function NotificationsPage() {
       {/* Header with tabs */}
       <div className="page-header">
         <h1>Notifications</h1>
-        <div className={`np-tabs ${filter === 'archived' ? 'archived' : ''}`}>
-          <button
-            className={`np-tab ${filter === 'active' ? 'active' : ''}`}
-            onClick={() => setFilter('active')}
-          >
-            Active
-          </button>
-          <button
-            className={`np-tab ${filter === 'archived' ? 'active' : ''}`}
-            onClick={() => setFilter('archived')}
-          >
-            Archived
-          </button>
-        </div>
+        <SlidingTabs
+          tabs={[
+            { value: 'active', label: 'Active' },
+            { value: 'archived', label: 'Archived' },
+          ]}
+          value={filter}
+          onChange={setFilter}
+        />
       </div>
 
       {/* Type filter chips */}

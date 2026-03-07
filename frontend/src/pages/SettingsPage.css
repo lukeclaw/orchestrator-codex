@@ -18,47 +18,15 @@
   line-height: 1;
 }
 
-/* Tab bar — matches NotificationsPage pattern */
-.settings-tabs {
-  display: flex;
-  gap: 4px;
-  background: var(--surface);
-  padding: 4px;
-  border-radius: 10px;
-  width: fit-content;
-}
-
-.settings-tab {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 16px;
-  background: transparent;
-  border: none;
-  border-radius: 6px;
-  color: var(--text-secondary);
-  font-size: 14px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.settings-tab:hover {
-  color: var(--text-primary);
-}
-
-.settings-tab.active {
-  background: var(--bg);
-  color: var(--text-primary);
-}
-
+/* Tab icon & dot (used inside SlidingTabs labels) */
 .settings-tab-icon {
   width: 16px;
   height: 16px;
   opacity: 0.7;
+  transition: opacity 150ms ease;
 }
 
-.settings-tab.active .settings-tab-icon {
+.sliding-tabs__tab.active .settings-tab-icon {
   opacity: 1;
 }
 
