@@ -121,8 +121,9 @@ export default function PrPreviewCard({ url, initialData, onDataFetched }: PrPre
 
   if (!data) return null
 
-  const stateClass = data.draft ? 'state-draft' : (STATE_CLASSES[data.state] || '')
-  const stateLabel = data.draft ? 'Draft' : (STATE_LABELS[data.state] || data.state)
+  const isDraft = data.draft && data.state === 'open'
+  const stateClass = isDraft ? 'state-draft' : (STATE_CLASSES[data.state] || '')
+  const stateLabel = isDraft ? 'Draft' : (STATE_LABELS[data.state] || data.state)
 
   // Separate approval-gate checks (e.g. "Owner Approval") from real CI
   const APPROVAL_GATE_RE = /approval/i

@@ -52,12 +52,12 @@ const APPROVAL_GATE_RE = /approval/i
 function getPrStatusChips(data: PrPreviewData): Array<{ label: string; color: string }> {
   const chips: Array<{ label: string; color: string }> = []
 
-  if (data.draft) {
-    chips.push({ label: 'Draft', color: 'muted' })
-  } else if (data.state === 'merged') {
+  if (data.state === 'merged') {
     chips.push({ label: 'Merged', color: 'purple' })
   } else if (data.state === 'closed') {
     chips.push({ label: 'Closed', color: 'red' })
+  } else if (data.draft) {
+    chips.push({ label: 'Draft', color: 'muted' })
   } else {
     chips.push({ label: 'Open', color: 'green' })
   }
