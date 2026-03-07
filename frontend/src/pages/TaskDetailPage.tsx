@@ -202,14 +202,7 @@ export default function TaskDetailPage() {
 
     // Only fetch PRs we don't already have data for
     const unfetched = prLinks.filter(l => !prPreviews[l.url])
-    if (unfetched.length === 0) {
-      // Still auto-open the first PR if not yet opened
-      if (!prAutoOpenedRef.current && prLinks.length > 0 && prPreviews[prLinks[0].url]) {
-        prAutoOpenedRef.current = true
-        setPrPreviewUrl(prLinks[0].url)
-      }
-      return
-    }
+    if (unfetched.length === 0) return
 
     const controller = new AbortController()
     setPrLoading(prev => {
@@ -226,11 +219,6 @@ export default function TaskDetailPage() {
         )
         if (!controller.signal.aborted) {
           setPrPreviews(prev => ({ ...prev, [link.url]: result }))
-          // Auto-open the first PR preview
-          if (!prAutoOpenedRef.current && link.url === prLinks[0].url) {
-            prAutoOpenedRef.current = true
-            setPrPreviewUrl(link.url)
-          }
         }
       } catch {
         // Silent fail for prefetch
@@ -247,6 +235,16 @@ export default function TaskDetailPage() {
 
     return () => controller.abort()
   }, [links]) // eslint-disable-line react-hooks/exhaustive-deps — prPreviews intentionally excluded
+
+  // Auto-open the first PR preview once its data is ready
+  useEffect(() => {
+    if (prAutoOpenedRef.current) return
+    const firstPr = links.find(l => l.tag === 'PR')
+    if (firstPr && prPreviews[firstPr.url]) {
+      prAutoOpenedRef.current = true
+      setPrPreviewUrl(firstPr.url)
+    }
+  }, [links, prPreviews])
 
   const assignedWorker = sessions.find(s => s.id === task?.assigned_session_id)
 
