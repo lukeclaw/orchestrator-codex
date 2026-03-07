@@ -1,8 +1,9 @@
 .sliding-tabs {
   position: relative;
-  display: flex;
+  display: grid;
+  grid-template-columns: repeat(var(--tab-count, 2), 1fr);
   gap: 4px;
-  width: 220px;
+  width: fit-content;
   background: var(--surface);
   padding: 4px;
   border-radius: 10px;
@@ -12,10 +13,12 @@
   position: absolute;
   top: 4px;
   left: 4px;
+  width: calc((100% - 8px - (var(--tab-count, 2) - 1) * 4px) / var(--tab-count, 2));
   height: calc(100% - 8px);
   background: var(--accent-muted);
   border-radius: 6px;
   z-index: 0;
+  transform: translateX(calc(var(--active-index, 0) * (100% + 4px)));
   transition: transform 200ms cubic-bezier(0.4, 0, 0.2, 1);
   pointer-events: none;
 }
@@ -23,12 +26,11 @@
 .sliding-tabs__tab {
   position: relative;
   z-index: 1;
-  flex: 1;
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 8px;
-  padding: 6px 14px;
+  padding: 6px 20px;
   background: transparent;
   border: none;
   border-radius: 6px;

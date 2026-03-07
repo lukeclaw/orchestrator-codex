@@ -19,19 +19,13 @@ export default function SlidingTabs<T extends string = string>({
 }: SlidingTabsProps<T>) {
   const activeIndex = tabs.findIndex(t => t.value === value)
   const count = tabs.length
-  // Indicator width: (100% - padding offsets) / N tabs
-  // Transform: slide by index * (100% + gap)
-  const indicatorWidth = `calc(${100 / count}% - ${(count + 1) * 4 / count}px)`
-  const indicatorTransform = activeIndex > 0
-    ? `translateX(calc(${activeIndex} * (100% + 4px)))`
-    : undefined
 
   return (
-    <div className="sliding-tabs">
-      <div
-        className="sliding-tabs__indicator"
-        style={{ width: indicatorWidth, transform: indicatorTransform }}
-      />
+    <div
+      className="sliding-tabs"
+      style={{ '--tab-count': count, '--active-index': activeIndex } as React.CSSProperties}
+    >
+      <div className="sliding-tabs__indicator" />
       {tabs.map(tab => (
         <button
           key={tab.value}
