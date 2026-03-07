@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { api, openUrl } from '../../api/client'
 import type { PrPreviewData } from '../../api/types'
+import ConfirmPopover from '../common/ConfirmPopover'
 import { parseDate } from '../common/TimeAgo'
 import './PrPreviewCard.css'
 
@@ -61,6 +62,7 @@ export default function PrPreviewCard({ url, initialData, onDataFetched }: PrPre
   const [error, setError] = useState<string | null>(null)
   const [autoMerge, setAutoMerge] = useState<boolean | null>(initialData?.auto_merge ?? null)
   const [autoMergeLoading, setAutoMergeLoading] = useState(false)
+  const [markingReady, setMarkingReady] = useState(false)
   const [copied, setCopied] = useState(false)
   const abortRef = useRef<AbortController | null>(null)
 
@@ -254,9 +256,25 @@ export default function PrPreviewCard({ url, initialData, onDataFetched }: PrPre
                       </span>
                       <span className="pr-review-name">{r.reviewer}</span>
                       {r.comments > 0 && (
-                        <span className="pr-review-comments" title={`${r.comments} ${r.comments === 1 ? 'comment' : 'comments'}`}>
+                        <span className="pr-review-comments">
                           {r.comments}
                         </span>
+                      )}
+                      {r.comment_threads.length > 0 && (
+                        <div className="pr-review-popup">
+                          {r.comment_threads.map((t, i) => (
+                            <div key={i} className="pr-review-thread">
+                              {t.file && <span className="pr-thread-file">{t.file}</span>}
+                              <p className="pr-thread-body">{t.body}</p>
+                              {t.replies.map((reply, j) => (
+                                <div key={j} className="pr-thread-reply">
+                                  <span className="pr-thread-reply-author">@{reply.author}</span>
+                                  <p className="pr-thread-body">{reply.body}</p>
+                                </div>
+                              ))}
+                            </div>
+                          ))}
+                        </div>
                       )}
                     </div>
                   ))}
@@ -328,7 +346,34 @@ export default function PrPreviewCard({ url, initialData, onDataFetched }: PrPre
               )
             })()}
 
-            {data.state === 'open' && autoMerge !== null && (
+            {isDraft && (
+              <div className="pr-auto-merge-row">
+                <ConfirmPopover
+                  message="Mark this PR as ready for review?"
+                  confirmLabel="Mark ready"
+                  variant="default"
+                  onConfirm={async () => {
+                    setMarkingReady(true)
+                    try {
+                      await api(`/api/pr-ready?url=${encodeURIComponent(url)}`, { method: 'POST' })
+                      fetchData()
+                    } catch {
+                      // stay as-is on failure
+                    } finally {
+                      setMarkingReady(false)
+                    }
+                  }}
+                >
+                  {({ onClick }) => (
+                    <button className="pr-ready-btn" onClick={onClick} disabled={markingReady}>
+                      {markingReady ? 'Marking…' : 'Ready for review'}
+                    </button>
+                  )}
+                </ConfirmPopover>
+              </div>
+            )}
+
+            {data.state === 'open' && !isDraft && autoMerge !== null && (
               <div className="pr-auto-merge-row">
                 <span className="pr-section-title">
                   Auto-merge

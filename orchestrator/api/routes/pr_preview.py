@@ -59,24 +59,57 @@ def _build_reviews(
     pr_author: str = "",
 ) -> list[dict]:
     """Build review list with latest state and per-user comment counts."""
-    # Count comments per user (top-level review comments + PR-level comments)
-    # Filter out replies (in_reply_to_id set) to avoid double-counting
+    # Index review comments: top-level by id, replies grouped by parent
+    top_comments: dict[int, dict] = {}  # id -> comment
+    replies_by_parent: dict[int, list[dict]] = {}  # parent_id -> [replies]
+    for c in review_comments:
+        reply_to = c.get("in_reply_to_id")
+        if reply_to:
+            replies_by_parent.setdefault(reply_to, []).append(c)
+        else:
+            top_comments[c["id"]] = c
+
+    # Build per-user comment threads (top-level review comments only)
+    user_threads: dict[str, list[dict]] = {}
     comment_counts: Counter[str] = Counter()
     latest_comment_url: dict[str, str] = {}
-    for c in review_comments:
-        if c.get("in_reply_to_id"):
-            continue
+    for cid, c in top_comments.items():
         user = c.get("user", {}).get("login", "")
-        if user:
-            comment_counts[user] += 1
-            if c.get("html_url"):
-                latest_comment_url[user] = c["html_url"]
+        if not user:
+            continue
+        comment_counts[user] += 1
+        if c.get("html_url"):
+            latest_comment_url[user] = c["html_url"]
+        path = c.get("path", "")
+        thread = {
+            "body": (c.get("body") or "")[:200],
+            "file": path.rsplit("/", 1)[-1] if path else "",
+            "html_url": c.get("html_url"),
+            "replies": [],
+        }
+        for r in replies_by_parent.get(cid, []):
+            thread["replies"].append(
+                {
+                    "author": (r.get("user") or {}).get("login", ""),
+                    "body": (r.get("body") or "")[:200],
+                }
+            )
+        user_threads.setdefault(user, []).append(thread)
+
+    # Also include issue-level comments (PR conversation tab)
     for c in issue_comments:
         user = c.get("user", {}).get("login", "")
         if user:
             comment_counts[user] += 1
             if c.get("html_url"):
                 latest_comment_url[user] = c["html_url"]
+            thread = {
+                "body": (c.get("body") or "")[:200],
+                "file": "",
+                "html_url": c.get("html_url"),
+                "replies": [],
+            }
+            user_threads.setdefault(user, []).append(thread)
 
     # Dedupe reviews: keep latest per reviewer, skip pending
     latest: dict[str, dict] = {}
@@ -90,6 +123,7 @@ def _build_reviews(
             "state": state,
             "submitted_at": r.get("submitted_at"),
             "comments": comment_counts.get(user, 0),
+            "comment_threads": user_threads.get(user, []),
             "html_url": r.get("html_url"),
         }
 
@@ -101,6 +135,7 @@ def _build_reviews(
                 "state": "commented",
                 "submitted_at": None,
                 "comments": count,
+                "comment_threads": user_threads.get(user, []),
                 "html_url": latest_comment_url.get(user),
             }
 
@@ -287,3 +322,28 @@ async def toggle_auto_merge(
     _pr_cache.pop(cache_key, None)
 
     return {"ok": True, "auto_merge": enable}
+
+
+@router.post("/pr-ready")
+async def mark_ready_for_review(
+    url: str = Query(..., description="GitHub PR URL"),
+):
+    """Mark a draft PR as ready for review via `gh pr ready`."""
+    owner, repo, number = _parse_pr_url(url)
+    cache_key = f"{owner}/{repo}/{number}"
+
+    cmd = ["gh", "pr", "ready", number, "--repo", f"{owner}/{repo}"]
+
+    proc = await asyncio.create_subprocess_exec(
+        *cmd,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=_GH_TIMEOUT)
+    if proc.returncode != 0:
+        err = stderr.decode().strip()
+        raise HTTPException(502, f"gh pr ready error: {err}")
+
+    _pr_cache.pop(cache_key, None)
+
+    return {"ok": True}

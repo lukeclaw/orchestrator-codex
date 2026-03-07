@@ -80,18 +80,24 @@ SAMPLE_REVIEWS = [
 
 SAMPLE_REVIEW_COMMENTS = [
     {
+        "id": 1001,
         "user": {"login": "bob"},
         "body": "Looks good",
+        "path": "src/auth/token.ts",
         "html_url": "https://github.com/org/repo/pull/42#discussion_r1001",
     },
     {
+        "id": 1002,
         "user": {"login": "bob"},
         "body": "One nit",
+        "path": "src/auth/refresh.ts",
         "html_url": "https://github.com/org/repo/pull/42#discussion_r1002",
     },
     {
+        "id": 1003,
         "user": {"login": "carol"},
         "body": "Please fix this",
+        "path": "src/auth/token.ts",
         "html_url": "https://github.com/org/repo/pull/42#discussion_r1003",
     },
 ]
@@ -123,6 +129,8 @@ SAMPLE_FILES = [
     {"filename": "tests/auth.test.ts", "status": "modified", "additions": 0, "deletions": 22},
 ]
 
+SAMPLE_REQUESTED_REVIEWERS = {"users": [], "teams": []}
+
 
 def _mock_gh_side_effect(
     pr_data=None,
@@ -131,6 +139,7 @@ def _mock_gh_side_effect(
     review_comments=None,
     issue_comments=None,
     files_data=None,
+    requested_reviewers=None,
 ):
     """Create a side effect that returns different data based on the gh api path."""
     pr = pr_data or SAMPLE_PR
@@ -139,6 +148,7 @@ def _mock_gh_side_effect(
     rc = review_comments if review_comments is not None else SAMPLE_REVIEW_COMMENTS
     ic = issue_comments if issue_comments is not None else SAMPLE_ISSUE_COMMENTS
     files = files_data if files_data is not None else SAMPLE_FILES
+    rr = requested_reviewers or SAMPLE_REQUESTED_REVIEWERS
 
     async def side_effect(*args, **kwargs):
         path = args[0] if args else ""
@@ -148,6 +158,8 @@ def _mock_gh_side_effect(
             return checks
         elif "/files" in path:
             return files
+        elif "/requested_reviewers" in path:
+            return rr
         elif "/issues/" in path and "/comments" in path:
             return ic
         elif "/pulls/" in path and "/comments" in path:
@@ -343,9 +355,9 @@ class TestCache:
             client.get("/api/pr-preview?url=https://github.com/org/repo/pull/42")
             client.get("/api/pr-preview?url=https://github.com/org/repo/pull/42")
 
-        # _run_gh: 5 parallel (PR, reviews, PR comments, issue comments, files) + 1 (checks) = 6
+        # _run_gh: 6 parallel (PR, reviews, PR comments, issue comments, files, requested_reviewers) + 1 (checks) = 7
         # Second call uses cache: 0 calls
-        assert mock_gh.call_count == 6
+        assert mock_gh.call_count == 7
 
     def test_cache_expires(self, client):
         with patch.object(pr_preview, "_run_gh", new_callable=AsyncMock) as mock_gh:
@@ -361,8 +373,8 @@ class TestCache:
             mock_gh.side_effect = _mock_gh_side_effect()
             client.get("/api/pr-preview?url=https://github.com/org/repo/pull/42")
 
-        # Should have fetched again (6 calls)
-        assert mock_gh.call_count == 6
+        # Should have fetched again (7 calls)
+        assert mock_gh.call_count == 7
 
     def test_different_prs_cached_separately(self, client):
         with patch.object(pr_preview, "_run_gh", new_callable=AsyncMock) as mock_gh:
@@ -370,8 +382,8 @@ class TestCache:
             client.get("/api/pr-preview?url=https://github.com/org/repo/pull/42")
             client.get("/api/pr-preview?url=https://github.com/org/repo/pull/99")
 
-        # 6 calls per unique PR
-        assert mock_gh.call_count == 12
+        # 7 calls per unique PR
+        assert mock_gh.call_count == 14
 
 
 class TestErrorHandling:
@@ -412,6 +424,8 @@ class TestErrorHandling:
                 return SAMPLE_REVIEWS
             if "/files" in path:
                 return SAMPLE_FILES
+            if "/requested_reviewers" in path:
+                return SAMPLE_REQUESTED_REVIEWERS
             if "/issues/" in path and "/comments" in path:
                 return SAMPLE_ISSUE_COMMENTS
             if "/pulls/" in path and "/comments" in path:
@@ -448,7 +462,7 @@ class TestHelperFunctions:
 
     def test_build_reviews_with_comments(self):
         result = pr_preview._build_reviews(
-            SAMPLE_REVIEWS, SAMPLE_REVIEW_COMMENTS, SAMPLE_ISSUE_COMMENTS
+            SAMPLE_REVIEWS, SAMPLE_REVIEW_COMMENTS, SAMPLE_ISSUE_COMMENTS, pr_author="alice"
         )
         bob = next(r for r in result if r["reviewer"] == "bob")
         assert bob["state"] == "approved"

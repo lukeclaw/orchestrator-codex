@@ -109,11 +109,19 @@ export interface ContextItem {
   updated_at: string
 }
 
+export interface PrCommentThread {
+  body: string
+  file: string
+  html_url: string | null
+  replies: { author: string; body: string }[]
+}
+
 export interface PrReview {
   reviewer: string
   state: 'approved' | 'changes_requested' | 'commented' | 'pending' | 'dismissed'
   submitted_at: string | null
   comments: number
+  comment_threads: PrCommentThread[]
   html_url: string | null
 }
 

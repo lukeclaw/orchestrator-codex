@@ -387,7 +387,7 @@
 }
 
 .pr-review-item {
-  display: flex;
+  display: inline-flex;
   align-items: center;
   gap: 8px;
   font-size: 13px;
@@ -395,13 +395,14 @@
   margin: 0 -4px;
   border-radius: 4px;
   transition: background 0.15s;
+  position: relative;
 }
 
 .pr-review-item.pr-review-clickable {
   cursor: pointer;
 }
 
-.pr-review-item.pr-review-clickable:hover {
+.pr-review-item:hover {
   background: var(--surface-hover);
 }
 
@@ -459,6 +460,70 @@
   line-height: 18px;
 }
 
+/* Review comments popup on hover */
+.pr-review-popup {
+  display: none;
+  position: absolute;
+  bottom: -4px;
+  left: calc(100% + 2px);
+  z-index: 100;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 8px 0;
+  min-width: 340px;
+  max-width: 520px;
+  max-height: 320px;
+  overflow-y: auto;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  animation: pr-files-enter 150ms var(--ease-decelerate);
+}
+
+.pr-review-item:hover .pr-review-popup {
+  display: flex;
+  flex-direction: column;
+}
+
+.pr-review-thread {
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.pr-review-thread:last-child {
+  border-bottom: none;
+}
+
+.pr-thread-file {
+  font-size: 11px;
+  font-family: var(--font-mono);
+  color: var(--text-muted);
+  display: block;
+  margin-bottom: 4px;
+}
+
+.pr-thread-body {
+  font-size: 12px;
+  color: var(--text-primary);
+  line-height: 1.5;
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.pr-thread-reply {
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid var(--border);
+}
+
+.pr-thread-reply-author {
+  font-size: 11px;
+  color: var(--text-secondary);
+  font-weight: 500;
+  display: block;
+  margin-bottom: 2px;
+}
+
 /* CI Checks */
 
 .pr-checks-summary {
@@ -510,6 +575,31 @@
 .pr-check-icon.failure { background: var(--red); }
 .pr-check-icon.running { background: var(--yellow); }
 .pr-check-icon.neutral { background: var(--text-muted); }
+
+/* Mark ready for review button */
+
+.pr-ready-btn {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-primary);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  padding: 4px 12px;
+  border-radius: var(--radius);
+  cursor: pointer;
+  transition: color var(--duration-normal) var(--ease-standard),
+              border-color var(--duration-normal) var(--ease-standard);
+}
+
+.pr-ready-btn:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.pr-ready-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
 
 /* Auto-merge toggle — matches SessionDetailPage toggle style */
 
