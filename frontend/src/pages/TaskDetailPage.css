@@ -857,10 +857,7 @@
 .subtask-link-btn {
   display: flex;
   align-items: center;
-  justify-content: center;
-  width: 32px;
-  flex-shrink: 0;
-  padding: 6px 0;
+  padding: 6px 10px;
   margin-right: 8px;
   color: var(--text-muted);
   text-decoration: none;
@@ -875,7 +872,9 @@
 }
 
 .subtask-link-btn .link-more {
-  display: none;
+  font-size: 10px;
+  margin-left: 2px;
+  color: var(--text-muted);
 }
 
 
