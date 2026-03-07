@@ -139,6 +139,8 @@ export interface PrPreviewData {
   author: string
   created_at: string
   updated_at: string
+  closed_at: string | null
+  closed_by: string | null
   merged_at: string | null
   merged_by: string | null
   additions: number

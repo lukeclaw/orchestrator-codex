@@ -150,6 +150,7 @@ def _build_response(
     review_comments: list[dict],
     issue_comments: list[dict],
     files_raw: list[dict],
+    closed_by: str | None = None,
 ) -> dict:
     """Build the PR preview response from raw GitHub API data."""
     state = pr.get("state", "open")
@@ -167,6 +168,8 @@ def _build_response(
         "author": author,
         "created_at": pr.get("created_at", ""),
         "updated_at": pr.get("updated_at", ""),
+        "closed_at": pr.get("closed_at"),
+        "closed_by": closed_by,
         "merged_at": pr.get("merged_at"),
         "merged_by": (pr.get("merged_by") or {}).get("login"),
         "additions": pr.get("additions", 0),
@@ -212,13 +215,28 @@ async def get_pr_preview(url: str = Query(..., description="GitHub PR URL")):
             # Non-fatal: some repos may not have checks configured
             logger.debug("Could not fetch check runs for %s", cache_key)
 
+    # For closed (non-merged) PRs, find who closed it from issue events
+    closed_by: str | None = None
+    pr_dict = pr_data if isinstance(pr_data, dict) else {}
+    if pr_dict.get("state") == "closed" and not pr_dict.get("merged"):
+        try:
+            events = await _run_gh(f"repos/{owner}/{repo}/issues/{number}/events")
+            if isinstance(events, list):
+                for ev in reversed(events):
+                    if ev.get("event") == "closed":
+                        closed_by = (ev.get("actor") or {}).get("login")
+                        break
+        except HTTPException:
+            logger.debug("Could not fetch events for %s", cache_key)
+
     response = _build_response(
-        pr_data if isinstance(pr_data, dict) else {},
+        pr_dict,
         reviews_data if isinstance(reviews_data, list) else [],
         checks_data.get("check_runs", []) if isinstance(checks_data, dict) else [],
         review_comments if isinstance(review_comments, list) else [],
         issue_comments if isinstance(issue_comments, list) else [],
         files_data if isinstance(files_data, list) else [],
+        closed_by=closed_by,
     )
 
     # Cache

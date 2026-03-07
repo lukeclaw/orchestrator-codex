@@ -140,11 +140,18 @@ export default function PrPreviewCard({ url, initialData, onDataFetched }: PrPre
   const hasChecks = relevantChecks.length > 0
   const pendingGates = gateChecks.filter(c => c.status !== 'completed')
 
-  // Subtitle: "opened by @author on Mar 5, 2026" or "merged by @merger on Mar 6, 2026"
-  const dateStr = data.state === 'merged' && data.merged_at ? data.merged_at : data.created_at
+  // Subtitle varies by state
+  const dateStr = data.state === 'merged' && data.merged_at
+    ? data.merged_at
+    : data.state === 'closed' && data.closed_at
+      ? data.closed_at
+      : data.created_at
+  const dateBadge = <span className="pr-date-hover" data-full-date={formatFullDate(dateStr)}>{formatDate(dateStr)}</span>
   const subtitle = data.state === 'merged' && data.merged_by
-    ? <>merged by @{data.merged_by} on <span className="pr-date-hover" data-full-date={formatFullDate(dateStr)}>{formatDate(dateStr)}</span></>
-    : <>opened by @{data.author} on <span className="pr-date-hover" data-full-date={formatFullDate(dateStr)}>{formatDate(dateStr)}</span></>
+    ? <>merged by @{data.merged_by} on {dateBadge}</>
+    : data.state === 'closed'
+      ? <>closed {data.closed_by ? <>by @{data.closed_by}</> : ''} on {dateBadge}</>
+      : <>opened by @{data.author} on {dateBadge}</>
 
   return (
     <div className="pr-preview-card">
