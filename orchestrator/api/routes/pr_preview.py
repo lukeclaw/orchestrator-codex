@@ -56,12 +56,16 @@ def _build_reviews(
     reviews_raw: list[dict],
     review_comments: list[dict],
     issue_comments: list[dict],
+    pr_author: str = "",
 ) -> list[dict]:
     """Build review list with latest state and per-user comment counts."""
-    # Count comments per user (inline review comments + PR-level comments)
+    # Count comments per user (top-level review comments + PR-level comments)
+    # Filter out replies (in_reply_to_id set) to avoid double-counting
     comment_counts: Counter[str] = Counter()
     latest_comment_url: dict[str, str] = {}
     for c in review_comments:
+        if c.get("in_reply_to_id"):
+            continue
         user = c.get("user", {}).get("login", "")
         if user:
             comment_counts[user] += 1
@@ -104,6 +108,10 @@ def _build_reviews(
     for user, entry in latest.items():
         if user in comment_counts and entry["comments"] == 0:
             entry["comments"] = comment_counts[user]
+
+    # Exclude the PR author — their comments are responses, not reviews
+    if pr_author:
+        latest.pop(pr_author, None)
 
     return list(latest.values())
 
@@ -148,13 +156,15 @@ def _build_response(
     if pr.get("merged"):
         state = "merged"
 
+    author = pr.get("user", {}).get("login", "")
+
     return {
         "title": pr.get("title", ""),
         "state": state,
         "draft": pr.get("draft", False),
         "number": pr.get("number", 0),
         "repo": pr.get("base", {}).get("repo", {}).get("full_name", ""),
-        "author": pr.get("user", {}).get("login", ""),
+        "author": author,
         "created_at": pr.get("created_at", ""),
         "updated_at": pr.get("updated_at", ""),
         "merged_at": pr.get("merged_at"),
@@ -163,7 +173,7 @@ def _build_response(
         "deletions": pr.get("deletions", 0),
         "changed_files": pr.get("changed_files", 0),
         "commits": pr.get("commits", 0),
-        "reviews": _build_reviews(reviews_raw, review_comments, issue_comments),
+        "reviews": _build_reviews(reviews_raw, review_comments, issue_comments, author),
         "auto_merge": pr.get("auto_merge") is not None,
         "checks": _map_checks(checks_raw),
         "files": _map_files(files_raw),

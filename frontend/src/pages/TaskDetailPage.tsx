@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useParams, Link, useNavigate } from 'react-router-dom'
 import { useApp } from '../context/AppContext'
 import { useNotify } from '../context/NotificationContext'
@@ -127,6 +127,7 @@ export default function TaskDetailPage() {
   const [editingLinkUrl, setEditingLinkUrl] = useState<string | null>(null)
   const [prPreviewUrl, setPrPreviewUrl] = useState<string | null>(null)
   const [prPreviews, setPrPreviews] = useState<Record<string, PrPreviewData>>({})
+  const prAutoOpenedRef = useRef(false)
   const [prLoading, setPrLoading] = useState<Set<string>>(new Set())
   const [editLinkUrl, setEditLinkUrl] = useState('')
   const [editLinkTag, setEditLinkTag] = useState('')
@@ -145,7 +146,7 @@ export default function TaskDetailPage() {
   const [workerActionPending, setWorkerActionPending] = useState(false)
   const [pasting, setPasting] = useState(false)
 
-  // Reset all editing states when navigating to a different task
+  // Reset all editing states and PR preview state when navigating to a different task
   useEffect(() => {
     setIsEditingTitle(false)
     setIsEditingDesc(false)
@@ -157,6 +158,11 @@ export default function TaskDetailPage() {
     setNotesExpanded(true)
     setSubtasksExpanded(true)
     setShowAssignModal(false)
+    // Reset PR preview state to avoid stale data from previous task
+    setPrPreviewUrl(null)
+    setPrPreviews({})
+    setPrLoading(new Set())
+    prAutoOpenedRef.current = false
   }, [id])
 
   useEffect(() => {
@@ -198,6 +204,11 @@ export default function TaskDetailPage() {
         )
         if (!controller.signal.aborted) {
           setPrPreviews(prev => ({ ...prev, [link.url]: result }))
+          // Auto-open the first PR preview
+          if (!prAutoOpenedRef.current && link.url === prLinks[0].url) {
+            prAutoOpenedRef.current = true
+            setPrPreviewUrl(link.url)
+          }
         }
       } catch {
         // Silent fail for prefetch
