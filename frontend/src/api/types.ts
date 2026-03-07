@@ -109,6 +109,48 @@ export interface ContextItem {
   updated_at: string
 }
 
+export interface PrReview {
+  reviewer: string
+  state: 'approved' | 'changes_requested' | 'commented' | 'pending' | 'dismissed'
+  submitted_at: string | null
+  comments: number
+  html_url: string | null
+}
+
+export interface PrCheck {
+  name: string
+  status: 'completed' | 'in_progress' | 'queued' | 'pending'
+  conclusion: 'success' | 'failure' | 'cancelled' | 'skipped' | 'timed_out' | 'neutral' | null
+}
+
+export interface PrChangedFile {
+  filename: string
+  status: string
+  additions: number
+  deletions: number
+}
+
+export interface PrPreviewData {
+  title: string
+  state: 'open' | 'closed' | 'merged'
+  draft: boolean
+  number: number
+  repo: string
+  author: string
+  created_at: string
+  updated_at: string
+  merged_at: string | null
+  merged_by: string | null
+  additions: number
+  deletions: number
+  changed_files: number
+  commits: number
+  reviews: PrReview[]
+  checks: PrCheck[]
+  files: PrChangedFile[]
+  fetched_at: string
+}
+
 export interface PrCommentMetadata {
   pr_title?: string
   reviewer_comment?: string

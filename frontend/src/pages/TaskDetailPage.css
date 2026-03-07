@@ -454,6 +454,133 @@
   color: #f85149;
 }
 
+/* Link wrapper — contains link row + optional PR preview expansion */
+.tdp-link-wrapper {
+  display: flex;
+  flex-direction: column;
+}
+
+/* PR preview toggle button */
+.link-preview {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 4px 6px;
+  border-radius: var(--radius);
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  transition: color var(--duration-normal) var(--ease-standard),
+              background var(--duration-normal) var(--ease-standard);
+}
+
+.link-preview:hover {
+  background: rgba(88, 166, 255, 0.1);
+  color: var(--accent);
+}
+
+.link-preview.active {
+  color: var(--accent);
+  background: rgba(88, 166, 255, 0.12);
+}
+
+/* PR link — clickable row */
+.tdp-link.tdp-link-pr {
+  cursor: pointer;
+}
+
+.tdp-link.tdp-link-pr-active {
+  background: rgba(88, 166, 255, 0.06);
+}
+
+/* PR link inline content — repo#number + status chips */
+.pr-link-content {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.pr-link-label {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: var(--text-primary);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.pr-inline-status {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  margin-left: 4px;
+}
+
+.pr-status-chip {
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.pr-status-chip + .pr-status-chip::before {
+  content: '·';
+  color: var(--text-muted);
+  margin: 0 6px;
+  font-weight: 400;
+}
+
+.pr-chip-green { color: var(--green); }
+.pr-chip-purple { color: var(--purple); }
+.pr-chip-red { color: var(--red); }
+.pr-chip-yellow { color: var(--yellow); }
+.pr-chip-muted { color: var(--text-muted); }
+
+/* PR inline loading skeleton */
+.pr-inline-skeleton {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: 8px;
+}
+
+.skel-chip {
+  height: 10px;
+  width: 48px;
+  background: var(--surface-hover);
+  border-radius: 4px;
+  animation: skel-shimmer 1.5s ease-in-out infinite;
+}
+
+.skel-chip-short {
+  width: 32px;
+}
+
+@keyframes skel-shimmer {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 0.7; }
+}
+
+/* PR expand indicator — left of label */
+.pr-expand-indicator {
+  font-size: 8px;
+  color: var(--text-muted);
+  transition: transform 0.2s;
+  flex-shrink: 0;
+}
+
+
+.pr-expand-indicator.expanded {
+  transform: rotate(90deg);
+}
+
+/* PR open-link — always visible, outside the hover-reveal actions */
+.pr-open-link {
+  flex-shrink: 0;
+}
+
 /* Notes Section (inside header card) */
 .tdp-notes-section {
   margin-top: 16px;

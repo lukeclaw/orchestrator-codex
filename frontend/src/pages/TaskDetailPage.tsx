@@ -4,7 +4,7 @@ import { useApp } from '../context/AppContext'
 import { useNotify } from '../context/NotificationContext'
 import { api, openUrl } from '../api/client'
 import { useSmartPaste } from '../hooks/useSmartPaste'
-import type { Task, TaskLink, Notification } from '../api/types'
+import type { Task, TaskLink, Notification, PrPreviewData } from '../api/types'
 import {
   IconPause,
   IconPlay,
@@ -22,6 +22,7 @@ import {
   IconTrash,
 } from '../components/common/Icons'
 import { timeAgo, parseDate } from '../components/common/TimeAgo'
+import PrPreviewCard from '../components/tasks/PrPreviewCard'
 import ConfirmPopover from '../components/common/ConfirmPopover'
 import TagDropdown from '../components/common/TagDropdown'
 import Markdown from '../components/common/Markdown'
@@ -40,6 +41,55 @@ const PRIORITY_OPTIONS = [
   { value: 'M', label: 'Medium', className: 'priority-M' },
   { value: 'L', label: 'Low', className: 'priority-L' },
 ]
+
+function prLinkLabel(url: string): string {
+  const m = url.match(/github\.com\/[^/]+\/([^/]+)\/pull\/(\d+)/)
+  return m ? `${m[1]} #${m[2]}` : url
+}
+
+function getPrStatusChips(data: PrPreviewData): Array<{ label: string; color: string }> {
+  const chips: Array<{ label: string; color: string }> = []
+
+  if (data.draft) {
+    chips.push({ label: 'Draft', color: 'muted' })
+  } else if (data.state === 'merged') {
+    chips.push({ label: 'Merged', color: 'purple' })
+  } else if (data.state === 'closed') {
+    chips.push({ label: 'Closed', color: 'red' })
+  } else {
+    chips.push({ label: 'Open', color: 'green' })
+  }
+
+  if (data.state === 'open' && !data.draft) {
+    const approvals = data.reviews.filter(r => r.state === 'approved').length
+    const hasChangesRequested = data.reviews.some(r => r.state === 'changes_requested')
+    if (hasChangesRequested) {
+      chips.push({ label: 'Changes requested', color: 'yellow' })
+    } else if (approvals > 0) {
+      chips.push({ label: 'Approved', color: 'green' })
+    } else {
+      chips.push({ label: 'Waiting for review', color: 'muted' })
+    }
+  }
+
+  const totalChecks = data.checks.length
+  if (totalChecks > 0) {
+    const failed = data.checks.filter(c =>
+      c.conclusion === 'failure' || c.conclusion === 'timed_out' || c.conclusion === 'cancelled'
+    ).length
+    const pending = data.checks.filter(c => c.status !== 'completed').length
+    const passed = data.checks.filter(c => c.conclusion === 'success').length
+    if (failed > 0) {
+      chips.push({ label: 'CI failing', color: 'red' })
+    } else if (pending > 0) {
+      chips.push({ label: 'CI running', color: 'yellow' })
+    } else if (passed === totalChecks) {
+      chips.push({ label: 'CI passed', color: 'green' })
+    }
+  }
+
+  return chips
+}
 
 export default function TaskDetailPage() {
   const { id } = useParams<{ id: string }>()
@@ -69,6 +119,9 @@ export default function TaskDetailPage() {
   const [newLinkUrl, setNewLinkUrl] = useState('')
   const [newLinkTag, setNewLinkTag] = useState('')
   const [editingLinkUrl, setEditingLinkUrl] = useState<string | null>(null)
+  const [prPreviewUrl, setPrPreviewUrl] = useState<string | null>(null)
+  const [prPreviews, setPrPreviews] = useState<Record<string, PrPreviewData>>({})
+  const [prLoading, setPrLoading] = useState<Set<string>>(new Set())
   const [editLinkUrl, setEditLinkUrl] = useState('')
   const [editLinkTag, setEditLinkTag] = useState('')
   const [subtasksExpanded, setSubtasksExpanded] = useState(true)
@@ -122,6 +175,39 @@ export default function TaskDetailPage() {
         .catch(() => setNotifications([]))
     }
   }, [task, isEditingTitle, isEditingDesc, isEditingNotes, showAddLink, editingLinkUrl])
+
+  // Prefetch PR preview data for links tagged "PR"
+  useEffect(() => {
+    const prLinks = links.filter(l => l.tag === 'PR')
+    if (prLinks.length === 0) return
+
+    const controller = new AbortController()
+    setPrLoading(new Set(prLinks.map(l => l.url)))
+
+    prLinks.forEach(async (link) => {
+      try {
+        const result = await api<PrPreviewData>(
+          `/api/pr-preview?url=${encodeURIComponent(link.url)}`,
+          { signal: controller.signal }
+        )
+        if (!controller.signal.aborted) {
+          setPrPreviews(prev => ({ ...prev, [link.url]: result }))
+        }
+      } catch {
+        // Silent fail for prefetch
+      } finally {
+        if (!controller.signal.aborted) {
+          setPrLoading(prev => {
+            const next = new Set(prev)
+            next.delete(link.url)
+            return next
+          })
+        }
+      }
+    })
+
+    return () => controller.abort()
+  }, [links])
 
   const assignedWorker = sessions.find(s => s.id === task?.assigned_session_id)
 
@@ -820,23 +906,61 @@ export default function TaskDetailPage() {
                       </div>
                     </div>
                   ) : (
-                    <div key={link.url} className="tdp-link">
-                      <span className={`link-tag ${link.tag ? '' : 'empty'}`}>{link.tag || ''}</span>
-                      <a href={link.url}>{link.url}</a>
-                      {isEditable && (
-                        <div className="tdp-link-actions">
-                          <button className="link-edit" onClick={() => startEditLink(link)} title="Edit">✎</button>
-                          <ConfirmPopover
-                            message="Remove this link?"
-                            confirmLabel="Remove"
-                            onConfirm={() => handleRemoveLink(link.url)}
-                            variant="danger"
-                          >
-                            {({ onClick }) => (
-                              <button className="link-remove" onClick={onClick} title="Remove">×</button>
-                            )}
-                          </ConfirmPopover>
-                        </div>
+                    <div key={link.url} className="tdp-link-wrapper">
+                      <div
+                        className={`tdp-link ${link.tag === 'PR' ? 'tdp-link-pr' : ''} ${link.tag === 'PR' && prPreviewUrl === link.url ? 'tdp-link-pr-active' : ''}`}
+                        onClick={link.tag === 'PR' ? () => setPrPreviewUrl(prPreviewUrl === link.url ? null : link.url) : undefined}
+                      >
+                        <span className={`link-tag ${link.tag ? '' : 'empty'}`}>{link.tag || ''}</span>
+                        {link.tag === 'PR' ? (
+                          <>
+                            <span className={`pr-expand-indicator ${prPreviewUrl === link.url ? 'expanded' : ''}`}>▶</span>
+                            <span className="pr-link-content">
+                              <span className="pr-link-label">{prLinkLabel(link.url)}</span>
+                              {prPreviews[link.url] ? (
+                                <span className="pr-inline-status">
+                                  {getPrStatusChips(prPreviews[link.url]).map((chip, i) => (
+                                    <span key={i} className={`pr-status-chip pr-chip-${chip.color}`}>{chip.label}</span>
+                                  ))}
+                                </span>
+                              ) : prLoading.has(link.url) ? (
+                                <span className="pr-inline-skeleton">
+                                  <span className="skel-chip" />
+                                  <span className="skel-chip skel-chip-short" />
+                                </span>
+                              ) : null}
+                            </span>
+                          </>
+                        ) : (
+                          <a href={link.url}>{link.url}</a>
+                        )}
+                        {isEditable && (
+                          <div className="tdp-link-actions" onClick={e => e.stopPropagation()}>
+                            <button className="link-edit" onClick={() => startEditLink(link)} title="Edit">✎</button>
+                            <ConfirmPopover
+                              message="Remove this link?"
+                              confirmLabel="Remove"
+                              onConfirm={() => handleRemoveLink(link.url)}
+                              variant="danger"
+                            >
+                              {({ onClick }) => (
+                                <button className="link-remove" onClick={onClick} title="Remove">×</button>
+                              )}
+                            </ConfirmPopover>
+                          </div>
+                        )}
+                        {link.tag === 'PR' && (
+                          <button className="link-edit pr-open-link" onClick={e => { e.stopPropagation(); openUrl(link.url) }} title="Open in GitHub">
+                            <IconExternalLink size={13} />
+                          </button>
+                        )}
+                      </div>
+                      {link.tag === 'PR' && prPreviewUrl === link.url && (
+                        <PrPreviewCard
+                          url={link.url}
+                          initialData={prPreviews[link.url]}
+                          onDataFetched={(d) => setPrPreviews(prev => ({ ...prev, [link.url]: d }))}
+                        />
                       )}
                     </div>
                   )
