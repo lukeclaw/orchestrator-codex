@@ -17,6 +17,7 @@ import {
 } from '../components/common/Icons'
 import ConfirmPopover from '../components/common/ConfirmPopover'
 import { parseDate } from '../components/common/TimeAgo'
+import { linkifyText } from '../components/common/linkify'
 import './NotificationsPage.css'
 
 type DateGroup = { label: string; notifications: Notification[] }
@@ -416,12 +417,12 @@ export default function NotificationsPage() {
                   </div>
                 )}
                 {!n.metadata.reviewer_comment && !n.metadata.reply && (
-                  <p className="np-message" style={{ whiteSpace: 'pre-wrap' }}>{n.message}</p>
+                  <p className="np-message" style={{ whiteSpace: 'pre-wrap' }}>{linkifyText(n.message, openUrl)}</p>
                 )}
               </div>
             ) : (
               <p className="np-message" title={expanded.has(n.id) ? undefined : (n.metadata?.reply || n.message)}>
-                {!expanded.has(n.id) && n.metadata?.reply ? n.metadata.reply : n.message}
+                {linkifyText(!expanded.has(n.id) && n.metadata?.reply ? n.metadata.reply : n.message, openUrl)}
               </p>
             )}
           </div>

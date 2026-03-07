@@ -366,6 +366,18 @@
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+.np-inline-link {
+  color: var(--accent);
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.np-inline-link:hover {
+  text-decoration: underline;
 }
 
 .np-card.expanded .np-message {
