@@ -40,7 +40,7 @@
 
 /* Content area */
 .settings-content {
-  max-width: 700px;
+  max-width: 560px;
 }
 
 .settings-section h3 {
@@ -79,6 +79,7 @@
   display: flex;
   gap: 16px;
   padding: 16px;
+  background: var(--surface-hover);
   border-radius: var(--radius);
 }
 
