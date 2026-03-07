@@ -64,6 +64,7 @@ export default function PrPreviewCard({ url, initialData, onDataFetched }: PrPre
   const [autoMergeLoading, setAutoMergeLoading] = useState(false)
   const [markingReady, setMarkingReady] = useState(false)
   const [copied, setCopied] = useState(false)
+  const [expandedReviewer, setExpandedReviewer] = useState<string | null>(null)
   const abortRef = useRef<AbortController | null>(null)
 
   const fetchData = async () => {
@@ -81,6 +82,7 @@ export default function PrPreviewCard({ url, initialData, onDataFetched }: PrPre
       if (!controller.signal.aborted) {
         setData(result)
         setAutoMerge(result.auto_merge)
+        setExpandedReviewer(null)
         onDataFetched?.(result)
       }
     } catch (e: any) {
@@ -248,8 +250,14 @@ export default function PrPreviewCard({ url, initialData, onDataFetched }: PrPre
                   {data.reviews.map(r => (
                     <div
                       key={r.reviewer}
-                      className={`pr-review-item ${r.html_url ? 'pr-review-clickable' : ''}`}
-                      onClick={r.html_url ? () => openUrl(r.html_url!) : undefined}
+                      className={`pr-review-item ${r.comment_threads.length > 0 ? 'pr-review-expandable' : ''} ${expandedReviewer === r.reviewer ? 'pr-review-expanded' : ''} ${r.html_url && r.comment_threads.length === 0 ? 'pr-review-clickable' : ''}`}
+                      onClick={() => {
+                        if (r.comment_threads.length > 0) {
+                          setExpandedReviewer(expandedReviewer === r.reviewer ? null : r.reviewer)
+                        } else if (r.html_url) {
+                          openUrl(r.html_url!)
+                        }
+                      }}
                     >
                       <span className={`pr-review-icon review-${r.state}`}>
                         {r.state === 'approved' ? '✓' : r.state === 'changes_requested' ? '△' : '●'}
@@ -261,20 +269,7 @@ export default function PrPreviewCard({ url, initialData, onDataFetched }: PrPre
                         </span>
                       )}
                       {r.comment_threads.length > 0 && (
-                        <div className="pr-review-popup">
-                          {r.comment_threads.map((t, i) => (
-                            <div key={i} className="pr-review-thread">
-                              {t.file && <span className="pr-thread-file">{t.file}</span>}
-                              <p className="pr-thread-body">{t.body}</p>
-                              {t.replies.map((reply, j) => (
-                                <div key={j} className="pr-thread-reply">
-                                  <span className="pr-thread-reply-author">@{reply.author}</span>
-                                  <p className="pr-thread-body">{reply.body}</p>
-                                </div>
-                              ))}
-                            </div>
-                          ))}
-                        </div>
+                        <span className={`pr-review-chevron ${expandedReviewer === r.reviewer ? 'expanded' : ''}`}>›</span>
                       )}
                     </div>
                   ))}
@@ -406,6 +401,58 @@ export default function PrPreviewCard({ url, initialData, onDataFetched }: PrPre
           </div>
         </div>
       )}
+
+      {/* Expanded review threads panel */}
+      {expandedReviewer && data.reviews.find(r => r.reviewer === expandedReviewer)?.comment_threads.length! > 0 && (() => {
+        const reviewer = data.reviews.find(r => r.reviewer === expandedReviewer)!
+        return (
+          <div className="pr-thread-panel">
+            <div className="pr-thread-panel-header">
+              <span className={`pr-review-icon review-${reviewer.state}`}>
+                {reviewer.state === 'approved' ? '✓' : reviewer.state === 'changes_requested' ? '△' : '●'}
+              </span>
+              <span className="pr-thread-panel-name">{reviewer.reviewer}</span>
+              <span className={`pr-thread-panel-state ${REVIEW_CLASSES[reviewer.state] || ''}`}>
+                {REVIEW_LABELS[reviewer.state] || reviewer.state}
+              </span>
+              <span className="pr-thread-panel-count">{reviewer.comment_threads.length} {reviewer.comment_threads.length === 1 ? 'thread' : 'threads'}</span>
+              <button className="pr-thread-panel-close" onClick={() => setExpandedReviewer(null)}>×</button>
+            </div>
+            <div className="pr-thread-panel-body">
+              {reviewer.comment_threads.map((t, i) => (
+                <div
+                  key={i}
+                  className={`pr-thread-card ${t.html_url ? 'pr-thread-clickable' : ''}`}
+                  onClick={t.html_url ? () => openUrl(t.html_url!) : undefined}
+                >
+                  {t.file && (
+                    <div className="pr-thread-file-label">
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                        <polyline points="14 2 14 8 20 8" />
+                      </svg>
+                      {t.file}
+                    </div>
+                  )}
+                  <div className="pr-thread-comment pr-thread-root-comment">
+                    <p className="pr-thread-body">{t.body}</p>
+                  </div>
+                  {t.replies.length > 0 && (
+                    <div className="pr-thread-replies">
+                      {t.replies.map((reply, j) => (
+                        <div key={j} className="pr-thread-comment pr-thread-reply">
+                          <span className="pr-thread-author">{reply.author}</span>
+                          <p className="pr-thread-body">{reply.body}</p>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        )
+      })()}
     </div>
   )
 }
