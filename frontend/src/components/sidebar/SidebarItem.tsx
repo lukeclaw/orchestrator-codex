@@ -13,9 +13,7 @@ interface Props {
 }
 
 export default function SidebarItem({ to, icon, label, badge, badgeVariant = 'default', collapsed, shortcut }: Props) {
-  const tooltip = collapsed
-    ? `${label}${shortcut ? ` (G ${shortcut})` : ''}`
-    : shortcut ? `G ${shortcut}` : undefined
+  const tooltip = collapsed ? label : undefined
 
   return (
     <NavLink

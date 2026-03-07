@@ -2,8 +2,8 @@
   width: var(--sidebar-width);
   min-width: var(--sidebar-width);
   height: 100vh;
-  background: var(--bg-alt);
-  border-right: 1px solid var(--border);
+  background: var(--bg);
+  border-right: 1px solid var(--border-subtle);
   display: flex;
   flex-direction: column;
   transition: width 0.2s ease, min-width 0.2s ease;
