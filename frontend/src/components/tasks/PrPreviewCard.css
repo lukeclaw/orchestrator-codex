@@ -131,61 +131,23 @@
   color: var(--text-secondary);
 }
 
-/* Section (changes, reviews, checks) */
-
-.pr-preview-section {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.pr-section-title {
-  font-size: 11px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--text-secondary);
+.pr-preview-subtitle-row {
   display: flex;
   align-items: center;
-  gap: 8px;
+  justify-content: space-between;
+  gap: 10px;
 }
 
-/* Changes section — expandable toggle */
-
-.pr-section-toggle {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  background: none;
-  border: none;
-  padding: 4px 0;
-  cursor: pointer;
-  color: var(--text-secondary);
-  width: 100%;
-  text-align: left;
-}
-
-.pr-section-toggle:hover {
-  color: var(--text-primary);
-}
-
-.pr-section-toggle .expand-chevron {
-  font-size: 9px;
-  transition: transform var(--duration-normal) var(--ease-standard);
-  color: var(--text-muted);
+/* Changes label — inline with subtitle, hover to show files */
+.pr-changes-label {
+  position: relative;
+  cursor: default;
   flex-shrink: 0;
-  width: 12px;
-}
-
-.pr-section-toggle .expand-chevron.expanded {
-  transform: rotate(90deg);
 }
 
 .pr-changes-summary {
   font-size: 12px;
   font-weight: 400;
-  text-transform: none;
-  letter-spacing: normal;
   display: flex;
   align-items: center;
   gap: 6px;
@@ -206,19 +168,66 @@
   margin-left: 2px;
 }
 
-/* File list */
+/* File popup on hover */
+.pr-files-popup {
+  display: none;
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 100;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 6px 0;
+  min-width: 260px;
+  max-width: 400px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  animation: pr-files-enter 150ms var(--ease-decelerate);
+}
 
-.pr-files-list {
+.pr-changes-label:hover .pr-files-popup {
   display: flex;
   flex-direction: column;
-  gap: 2px;
-  padding-left: 18px;
-  animation: pr-files-enter 200ms var(--ease-decelerate);
+  gap: 1px;
 }
 
 @keyframes pr-files-enter {
-  from { opacity: 0; }
-  to { opacity: 1; }
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* Two-column layout: reviews | checks */
+
+.pr-preview-columns {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+.pr-preview-col {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+
+/* Section (reviews, checks) */
+
+.pr-preview-section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.pr-section-title {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-secondary);
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .pr-file-item {
@@ -226,13 +235,12 @@
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 3px 8px;
-  border-radius: 4px;
+  padding: 4px 10px;
   font-size: 12px;
 }
 
 .pr-file-item:hover {
-  background: var(--surface);
+  background: var(--surface-hover);
 }
 
 .pr-file-name {
@@ -320,43 +328,49 @@
   color: var(--accent);
 }
 
-.pr-review-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
+.pr-review-icon {
+  font-size: 11px;
   flex-shrink: 0;
-  background: var(--text-muted);
+  width: 14px;
+  text-align: center;
+  line-height: 1;
 }
 
-.pr-review-dot.review-approved {
-  background: var(--green);
+.pr-review-icon.review-approved {
+  color: var(--green);
 }
 
-.pr-review-dot.review-changes {
-  background: var(--yellow);
+.pr-review-icon.review-changes_requested {
+  color: var(--yellow);
 }
 
-.pr-review-dot.review-commented {
-  background: var(--accent);
+.pr-review-icon.review-commented {
+  color: var(--text-muted);
+  font-size: 7px;
 }
 
-.pr-review-dot.review-dismissed {
-  background: var(--text-muted);
+.pr-review-icon.review-dismissed {
+  color: var(--text-muted);
+  font-size: 7px;
 }
 
 .pr-review-name {
   color: var(--text-primary);
   font-weight: 500;
-}
-
-.pr-review-state {
-  color: var(--text-secondary);
-  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .pr-review-comments {
   color: var(--text-muted);
-  font-size: 12px;
+  font-size: 11px;
+  font-family: var(--font-mono);
+  flex-shrink: 0;
+  background: var(--surface);
+  padding: 0 5px;
+  border-radius: 999px;
+  line-height: 18px;
 }
 
 /* CI Checks */
@@ -410,6 +424,72 @@
 .pr-check-icon.failure { background: var(--red); }
 .pr-check-icon.running { background: var(--yellow); }
 .pr-check-icon.neutral { background: var(--text-muted); }
+
+/* Auto-merge toggle — matches SessionDetailPage toggle style */
+
+.pr-auto-merge-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.pr-auto-merge-toggle {
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+}
+
+.pr-auto-merge-toggle input {
+  display: none;
+}
+
+.pr-toggle-switch {
+  position: relative;
+  width: 28px;
+  height: 16px;
+  background: var(--border);
+  border: none;
+  border-radius: 999px;
+  flex-shrink: 0;
+  transition: background 0.2s;
+}
+
+.pr-toggle-knob {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 12px;
+  height: 12px;
+  background: var(--text-primary);
+  border-radius: 50%;
+  transition: transform 0.2s;
+}
+
+.pr-auto-merge-toggle input:checked ~ .pr-toggle-switch {
+  background: var(--accent);
+}
+
+.pr-auto-merge-toggle input:checked ~ .pr-toggle-switch .pr-toggle-knob {
+  transform: translateX(12px);
+}
+
+.pr-auto-merge-toggle input:disabled ~ .pr-toggle-switch {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.pr-auto-merge-spinner {
+  width: 10px;
+  height: 10px;
+  border: 1.5px solid var(--text-muted);
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: pr-spin 0.6s linear infinite;
+}
+
+@keyframes pr-spin {
+  to { transform: rotate(360deg); }
+}
 
 /* Error state */
 

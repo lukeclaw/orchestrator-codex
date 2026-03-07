@@ -164,6 +164,7 @@ def _build_response(
         "changed_files": pr.get("changed_files", 0),
         "commits": pr.get("commits", 0),
         "reviews": _build_reviews(reviews_raw, review_comments, issue_comments),
+        "auto_merge": pr.get("auto_merge") is not None,
         "checks": _map_checks(checks_raw),
         "files": _map_files(files_raw),
         "fetched_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
@@ -213,3 +214,33 @@ async def get_pr_preview(url: str = Query(..., description="GitHub PR URL")):
     # Cache
     _pr_cache[cache_key] = (time.time(), response)
     return response
+
+
+@router.post("/pr-auto-merge")
+async def toggle_auto_merge(
+    url: str = Query(..., description="GitHub PR URL"),
+    enable: bool = Query(..., description="Enable or disable auto-merge"),
+):
+    """Toggle auto-merge on a GitHub PR via `gh pr merge`."""
+    owner, repo, number = _parse_pr_url(url)
+    cache_key = f"{owner}/{repo}/{number}"
+
+    if enable:
+        cmd = ["gh", "pr", "merge", number, "--repo", f"{owner}/{repo}", "--auto", "--squash"]
+    else:
+        cmd = ["gh", "pr", "merge", number, "--repo", f"{owner}/{repo}", "--disable-auto"]
+
+    proc = await asyncio.create_subprocess_exec(
+        *cmd,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=_GH_TIMEOUT)
+    if proc.returncode != 0:
+        err = stderr.decode().strip()
+        raise HTTPException(502, f"gh pr merge error: {err}")
+
+    # Invalidate cache so next fetch reflects the new state
+    _pr_cache.pop(cache_key, None)
+
+    return {"ok": True, "auto_merge": enable}

@@ -51,7 +51,8 @@ export default function PrPreviewCard({ url, initialData, onDataFetched }: PrPre
   const [data, setData] = useState<PrPreviewData | null>(initialData ?? null)
   const [loading, setLoading] = useState(!initialData)
   const [error, setError] = useState<string | null>(null)
-  const [filesExpanded, setFilesExpanded] = useState(false)
+  const [autoMerge, setAutoMerge] = useState<boolean | null>(initialData?.auto_merge ?? null)
+  const [autoMergeLoading, setAutoMergeLoading] = useState(false)
   const abortRef = useRef<AbortController | null>(null)
 
   const fetchData = async () => {
@@ -68,6 +69,7 @@ export default function PrPreviewCard({ url, initialData, onDataFetched }: PrPre
       )
       if (!controller.signal.aborted) {
         setData(result)
+        setAutoMerge(result.auto_merge)
         onDataFetched?.(result)
       }
     } catch (e: any) {
@@ -114,14 +116,21 @@ export default function PrPreviewCard({ url, initialData, onDataFetched }: PrPre
   const stateClass = data.draft ? 'state-draft' : (STATE_CLASSES[data.state] || '')
   const stateLabel = data.draft ? 'Draft' : (STATE_LABELS[data.state] || data.state)
 
-  // CI check categorization
-  const passedChecks = data.checks.filter(c => c.conclusion === 'success').length
-  const failedChecks = data.checks.filter(c =>
-    c.conclusion === 'failure' || c.conclusion === 'timed_out' || c.conclusion === 'cancelled'
+  // Separate approval-gate checks (e.g. "Owner Approval") from real CI
+  const APPROVAL_GATE_RE = /approval/i
+  const ciChecks = data.checks.filter(c => !APPROVAL_GATE_RE.test(c.name))
+  const gateChecks = data.checks.filter(c => APPROVAL_GATE_RE.test(c.name))
+
+  const skippedConclusions = new Set(['cancelled', 'skipped', 'neutral'])
+  const relevantChecks = ciChecks.filter(c => !skippedConclusions.has(c.conclusion ?? ''))
+  const passedChecks = relevantChecks.filter(c => c.conclusion === 'success').length
+  const failedChecks = relevantChecks.filter(c =>
+    c.conclusion === 'failure' || c.conclusion === 'timed_out'
   )
-  const pendingChecks = data.checks.filter(c => c.status !== 'completed')
+  const pendingChecks = relevantChecks.filter(c => c.status === 'in_progress')
   const actionableChecks = [...failedChecks, ...pendingChecks]
-  const hasChecks = data.checks.length > 0
+  const hasChecks = relevantChecks.length > 0
+  const pendingGates = gateChecks.filter(c => c.status !== 'completed')
 
   // Subtitle: "opened by @author on Mar 5, 2026" or "merged by @merger on Mar 6, 2026"
   const subtitle = data.state === 'merged' && data.merged_by
@@ -152,102 +161,143 @@ export default function PrPreviewCard({ url, initialData, onDataFetched }: PrPre
         </div>
       </div>
 
-      {/* Title (clickable) + subtitle */}
+      {/* Title (clickable) + subtitle with changes summary */}
       <div className="pr-preview-title-group">
         <a className="pr-preview-title" href={url} onClick={e => { e.preventDefault(); openUrl(url) }}>
           {data.title}
         </a>
-        <span className="pr-preview-subtitle">{subtitle}</span>
-      </div>
-
-      {/* Changes section (expandable) */}
-      <div className="pr-preview-section">
-        <button
-          className="pr-section-toggle"
-          onClick={() => setFilesExpanded(!filesExpanded)}
-        >
-          <span className={`expand-chevron ${filesExpanded ? 'expanded' : ''}`}>▶</span>
-          <span className="pr-section-title">Changes</span>
-          <span className="pr-changes-summary">
-            <span className="additions">+{data.additions}</span>
-            {' '}
-            <span className="deletions">&minus;{data.deletions}</span>
-            <span className="pr-changes-files">{data.changed_files} {data.changed_files === 1 ? 'file' : 'files'}</span>
-          </span>
-        </button>
-        {filesExpanded && data.files && data.files.length > 0 && (
-          <div className="pr-files-list">
-            {data.files.map(f => (
-              <div key={f.filename} className="pr-file-item">
-                <span className="pr-file-name" data-tooltip={f.filename}>
-                  {f.filename.split('/').pop()}
-                  {FILE_STATUS_LABELS[f.status] && (
-                    <span className={`pr-file-status pr-file-${f.status}`}>
-                      {FILE_STATUS_LABELS[f.status]}
+        <div className="pr-preview-subtitle-row">
+          <span className="pr-preview-subtitle">{subtitle}</span>
+          <span className="pr-changes-label">
+            <span className="pr-changes-summary">
+              <span className="additions">+{data.additions}</span>
+              {' '}
+              <span className="deletions">&minus;{data.deletions}</span>
+              <span className="pr-changes-files">{data.changed_files} {data.changed_files === 1 ? 'file' : 'files'}</span>
+            </span>
+            {data.files && data.files.length > 0 && (
+              <div className="pr-files-popup">
+                {data.files.map(f => (
+                  <div key={f.filename} className="pr-file-item" title={f.filename}>
+                    <span className="pr-file-name">
+                      {f.filename.split('/').pop()}
+                      {FILE_STATUS_LABELS[f.status] && (
+                        <span className={`pr-file-status pr-file-${f.status}`}>
+                          {FILE_STATUS_LABELS[f.status]}
+                        </span>
+                      )}
                     </span>
-                  )}
-                </span>
-                <span className="pr-file-stats">
-                  {f.additions > 0 && <span className="additions">+{f.additions}</span>}
-                  {f.deletions > 0 && <span className="deletions">&minus;{f.deletions}</span>}
-                </span>
+                    <span className="pr-file-stats">
+                      {f.additions > 0 && <span className="additions">+{f.additions}</span>}
+                      {f.deletions > 0 && <span className="deletions">&minus;{f.deletions}</span>}
+                    </span>
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
-        )}
+            )}
+          </span>
+        </div>
       </div>
 
-      {/* Reviews with comment counts */}
-      {data.reviews.length > 0 && (
-        <div className="pr-preview-section">
-          <div className="pr-section-title">Reviews</div>
-          <div className="pr-reviews">
-            {data.reviews.map(r => (
-              <div
-                key={r.reviewer}
-                className={`pr-review-item ${r.html_url ? 'pr-review-clickable' : ''}`}
-                onClick={r.html_url ? () => openUrl(r.html_url!) : undefined}
-              >
-                <span className={`pr-review-dot ${REVIEW_CLASSES[r.state] || ''}`} />
-                <span className="pr-review-name">{r.reviewer}</span>
-                <span className="pr-review-state">
-                  {REVIEW_LABELS[r.state] || r.state}
-                </span>
-                {r.comments > 0 && (
-                  <span className="pr-review-comments">
-                    {r.comments} {r.comments === 1 ? 'comment' : 'comments'}
+      {/* Two-column layout: reviews (left) | CI + gates (right) */}
+      {(data.reviews.length > 0 || hasChecks || pendingGates.length > 0) && (
+        <div className="pr-preview-columns">
+          {/* Left column — Reviews */}
+          <div className="pr-preview-col">
+            {data.reviews.length > 0 && (
+              <div className="pr-preview-section">
+                <div className="pr-section-title">Reviews</div>
+                <div className="pr-reviews">
+                  {data.reviews.map(r => (
+                    <div
+                      key={r.reviewer}
+                      className={`pr-review-item ${r.html_url ? 'pr-review-clickable' : ''}`}
+                      onClick={r.html_url ? () => openUrl(r.html_url!) : undefined}
+                    >
+                      <span className={`pr-review-icon review-${r.state}`}>
+                        {r.state === 'approved' ? '✓' : r.state === 'changes_requested' ? '△' : '●'}
+                      </span>
+                      <span className="pr-review-name">{r.reviewer}</span>
+                      {r.comments > 0 && (
+                        <span className="pr-review-comments" title={`${r.comments} ${r.comments === 1 ? 'comment' : 'comments'}`}>
+                          {r.comments}
+                        </span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Right column — CI Checks + Approval Gates */}
+          <div className="pr-preview-col">
+            {hasChecks && (
+              <div className="pr-preview-section">
+                <div className="pr-section-title">
+                  CI Checks
+                  <span className="pr-checks-summary">
+                    {passedChecks > 0 && <span className="checks-ok">{passedChecks} passed</span>}
+                    {failedChecks.length > 0 && <span className="checks-fail">{failedChecks.length} failed</span>}
+                    {pendingChecks.length > 0 && <span className="checks-pending">{pendingChecks.length} running</span>}
                   </span>
+                </div>
+                {actionableChecks.length > 0 && (
+                  <div className="pr-checks">
+                    {actionableChecks.map(c => (
+                      <span
+                        key={c.name}
+                        className={`pr-check-pill ${c.status !== 'completed' ? 'check-running' : 'check-failed'}`}
+                      >
+                        <span className={`pr-check-icon ${c.status !== 'completed' ? 'running' : 'failure'}`} />
+                        {c.name}
+                      </span>
+                    ))}
+                  </div>
                 )}
               </div>
-            ))}
-          </div>
-        </div>
-      )}
+            )}
 
-      {/* CI Checks — simplified: count passed, only show failed/pending details */}
-      {hasChecks && (
-        <div className="pr-preview-section">
-          <div className="pr-section-title">
-            CI Checks
-            <span className="pr-checks-summary">
-              {passedChecks > 0 && <span className="checks-ok">{passedChecks} passed</span>}
-              {failedChecks.length > 0 && <span className="checks-fail">{failedChecks.length} failed</span>}
-              {pendingChecks.length > 0 && <span className="checks-pending">{pendingChecks.length} running</span>}
-            </span>
-          </div>
-          {actionableChecks.length > 0 && (
-            <div className="pr-checks">
-              {actionableChecks.map(c => (
-                <span
-                  key={c.name}
-                  className={`pr-check-pill ${c.status !== 'completed' ? 'check-running' : 'check-failed'}`}
-                >
-                  <span className={`pr-check-icon ${c.status !== 'completed' ? 'running' : 'failure'}`} />
-                  {c.name}
+            {pendingGates.length > 0 && (
+              <div className="pr-section-title">
+                {pendingGates.map(c => c.name).join(', ')}
+                <span className="pr-checks-summary">
+                  <span className="checks-pending">{pendingGates.length} awaiting</span>
                 </span>
-              ))}
-            </div>
-          )}
+              </div>
+            )}
+
+            {data.state === 'open' && autoMerge !== null && (
+              <div className="pr-auto-merge-row">
+                <span className="pr-section-title">
+                  Auto-merge
+                  {autoMergeLoading && <span className="pr-auto-merge-spinner" />}
+                </span>
+                <label className="pr-auto-merge-toggle">
+                  <input
+                    type="checkbox"
+                    checked={autoMerge}
+                    disabled={autoMergeLoading}
+                    onChange={async () => {
+                      const next = !autoMerge
+                      setAutoMergeLoading(true)
+                      try {
+                        await api(`/api/pr-auto-merge?url=${encodeURIComponent(url)}&enable=${next}`, { method: 'POST' })
+                        setAutoMerge(next)
+                      } catch {
+                        // revert on failure — state stays as-is
+                      } finally {
+                        setAutoMergeLoading(false)
+                      }
+                    }}
+                  />
+                  <span className="pr-toggle-switch">
+                    <span className="pr-toggle-knob" />
+                  </span>
+                </label>
+              </div>
+            )}
+          </div>
         </div>
       )}
     </div>

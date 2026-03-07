@@ -47,6 +47,8 @@ function prLinkLabel(url: string): string {
   return m ? `${m[1]} #${m[2]}` : url
 }
 
+const APPROVAL_GATE_RE = /approval/i
+
 function getPrStatusChips(data: PrPreviewData): Array<{ label: string; color: string }> {
   const chips: Array<{ label: string; color: string }> = []
 
@@ -60,11 +62,24 @@ function getPrStatusChips(data: PrPreviewData): Array<{ label: string; color: st
     chips.push({ label: 'Open', color: 'green' })
   }
 
+  // Separate approval-gate checks (e.g. "Owner Approval") from real CI
+  const ciChecks = data.checks.filter(c => !APPROVAL_GATE_RE.test(c.name))
+  const gateChecks = data.checks.filter(c => APPROVAL_GATE_RE.test(c.name))
+  const hasPendingGates = gateChecks.some(c => c.status !== 'completed')
+  const skippedConclusions = new Set(['cancelled', 'skipped', 'neutral'])
+  const relevantChecks = ciChecks.filter(c => !skippedConclusions.has(c.conclusion ?? ''))
+  const ciFailed = relevantChecks.some(c =>
+    c.conclusion === 'failure' || c.conclusion === 'timed_out'
+  )
+
   if (data.state === 'open' && !data.draft) {
     const approvals = data.reviews.filter(r => r.state === 'approved').length
     const hasChangesRequested = data.reviews.some(r => r.state === 'changes_requested')
     if (hasChangesRequested) {
       chips.push({ label: 'Changes requested', color: 'yellow' })
+    } else if (hasPendingGates && !ciFailed) {
+      // Pending approval gate overrides "Approved"; suppressed when CI is failing
+      chips.push({ label: 'Awaiting owner approval', color: 'yellow' })
     } else if (approvals > 0) {
       chips.push({ label: 'Approved', color: 'green' })
     } else {
@@ -72,20 +87,11 @@ function getPrStatusChips(data: PrPreviewData): Array<{ label: string; color: st
     }
   }
 
-  const totalChecks = data.checks.length
-  if (totalChecks > 0) {
-    const failed = data.checks.filter(c =>
-      c.conclusion === 'failure' || c.conclusion === 'timed_out' || c.conclusion === 'cancelled'
-    ).length
-    const pending = data.checks.filter(c => c.status !== 'completed').length
-    const passed = data.checks.filter(c => c.conclusion === 'success').length
-    if (failed > 0) {
-      chips.push({ label: 'CI failing', color: 'red' })
-    } else if (pending > 0) {
-      chips.push({ label: 'CI running', color: 'yellow' })
-    } else if (passed === totalChecks) {
-      chips.push({ label: 'CI passed', color: 'green' })
-    }
+  // Only surface CI when it needs attention — skip "CI passed"
+  if (ciFailed) {
+    chips.push({ label: 'CI failing', color: 'red' })
+  } else if (relevantChecks.some(c => c.status === 'in_progress')) {
+    chips.push({ label: 'CI running', color: 'yellow' })
   }
 
   return chips
