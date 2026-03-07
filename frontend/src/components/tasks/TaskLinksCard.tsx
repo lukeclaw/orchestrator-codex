@@ -12,8 +12,14 @@ import {
 import ConfirmPopover from '../common/ConfirmPopover'
 import PrPreviewCard from './PrPreviewCard'
 
+const GH_PR_RE = /github\.com\/[^/]+\/([^/]+)\/pull\/(\d+)/
+
+function isPrUrl(url: string): boolean {
+  return GH_PR_RE.test(url)
+}
+
 function prLinkLabel(url: string): string {
-  const m = url.match(/github\.com\/[^/]+\/([^/]+)\/pull\/(\d+)/)
+  const m = url.match(GH_PR_RE)
   return m ? `${m[1]} #${m[2]}` : url
 }
 
@@ -66,10 +72,6 @@ function getPrStatusChips(data: PrPreviewData): Array<{ label: string; color: st
     }
   }
 
-  if (data.auto_merge) {
-    chips.push({ label: 'Auto-merge', color: 'blue' })
-  }
-
   return chips
 }
 
@@ -111,7 +113,7 @@ export default function TaskLinksCard({ task, isEditable, onSaveField }: TaskLin
 
   // Prefetch PR preview data for links tagged "PR"
   useEffect(() => {
-    const prLinks = links.filter(l => l.tag === 'PR')
+    const prLinks = links.filter(l => isPrUrl(l.url))
     if (prLinks.length === 0) return
 
     // Only fetch PRs we don't already have data for
@@ -142,7 +144,7 @@ export default function TaskLinksCard({ task, isEditable, onSaveField }: TaskLin
   // Auto-open the first PR preview once its data is ready
   useEffect(() => {
     if (prAutoOpenedRef.current) return
-    const firstPr = links.find(l => l.tag === 'PR')
+    const firstPr = links.find(l => isPrUrl(l.url))
     if (firstPr && prPreviews[firstPr.url]) {
       prAutoOpenedRef.current = true
       setPrPreviewUrl(firstPr.url)
@@ -316,11 +318,11 @@ export default function TaskLinksCard({ task, isEditable, onSaveField }: TaskLin
             ) : (
               <div key={link.url} className="tdp-link-wrapper">
                 <div
-                  className={`tdp-link ${link.tag === 'PR' ? 'tdp-link-pr' : ''} ${link.tag === 'PR' && prPreviewUrl === link.url ? 'tdp-link-pr-active' : ''}`}
-                  onClick={link.tag === 'PR' ? () => setPrPreviewUrl(prPreviewUrl === link.url ? null : link.url) : undefined}
+                  className={`tdp-link ${isPrUrl(link.url) ? 'tdp-link-pr' : ''} ${isPrUrl(link.url) && prPreviewUrl === link.url ? 'tdp-link-pr-active' : ''}`}
+                  onClick={isPrUrl(link.url) ? () => setPrPreviewUrl(prPreviewUrl === link.url ? null : link.url) : undefined}
                 >
                   <span className={`link-tag ${link.tag ? '' : 'empty'}`}>{link.tag || ''}</span>
-                  {link.tag === 'PR' ? (
+                  {isPrUrl(link.url) ? (
                     <>
                       <span className={`pr-expand-indicator ${prPreviewUrl === link.url ? 'expanded' : ''}`}>&#9654;</span>
                       <span className="pr-link-content">
@@ -357,13 +359,13 @@ export default function TaskLinksCard({ task, isEditable, onSaveField }: TaskLin
                       </ConfirmPopover>
                     </div>
                   )}
-                  {link.tag === 'PR' && (
+                  {isPrUrl(link.url) && (
                     <button className="link-edit pr-open-link" onClick={e => { e.stopPropagation(); openUrl(link.url) }} title="Open in GitHub">
                       <IconExternalLink size={13} />
                     </button>
                   )}
                 </div>
-                {link.tag === 'PR' && prPreviewUrl === link.url && (
+                {isPrUrl(link.url) && prPreviewUrl === link.url && (
                   <PrPreviewCard
                     url={link.url}
                     initialData={prPreviews[link.url]}
