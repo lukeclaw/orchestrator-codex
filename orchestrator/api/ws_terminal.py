@@ -12,14 +12,14 @@ Server → Client binary:  raw PTY bytes (write directly to xterm.js)
 Server → Client JSON:    {"type": "sync"|"history"|"error", ...}
 Client → Server JSON:    {"type": "input"|"resize"|"request_history"|"request_sync", ...}
 
-Streaming modes
----------------
-* **pipe-pane** (default): Raw PTY bytes via ``tmux pipe-pane -O`` — no octal
-  encoding, no line-level fragmentation.  Eliminates TUI frame tearing.
-* **control-mode** (fallback): ``%output`` notifications via tmux control mode.
-  Used when pipe-pane is unavailable (tmux < 2.6, pipe-pane startup failure).
+Streaming
+---------
+Output streams via ``tmux pipe-pane -O`` (raw PTY bytes through a FIFO).
+If pipe-pane fails to start, the terminal degrades to drift-correction-only
+mode (capture-pane every 2s).
 
-Set ``TERMINAL_STREAM_MODE=control-mode`` env var to force the legacy path.
+Control mode (``tmux -C``) is still used for I/O operations (send_keys,
+resize) but no longer for output streaming.
 """
 
 from __future__ import annotations
@@ -34,7 +34,6 @@ import zlib
 from fastapi import WebSocket, WebSocketDisconnect
 
 from orchestrator.terminal.control import (
-    TmuxControlPool,
     capture_pane_with_cursor_atomic_async,
     capture_pane_with_history_async,
     check_alternate_screen_async,
@@ -43,11 +42,7 @@ from orchestrator.terminal.control import (
     send_keys_async,
 )
 from orchestrator.terminal.manager import ensure_window, tmux_target, window_exists
-from orchestrator.terminal.pty_stream import (
-    TERMINAL_STREAM_MODE,
-    PtyStreamPool,
-    suppress_control_mode_output,
-)
+from orchestrator.terminal.pty_stream import PtyStreamPool
 
 logger = logging.getLogger(__name__)
 
@@ -63,6 +58,13 @@ USER_ACTIVITY_TIMEOUT = 30
 # the stale buffer and schedule an immediate sync (capture-pane) instead.
 # This replaces the old drop-based approach that silently lost bytes.
 SNAPSHOT_RECOVERY_THRESHOLD = 256_000  # ~256 KB
+
+# Drift correction timing constants.
+DRIFT_HEALTHY_INTERVAL = 5.0  # seconds between syncs when stream is healthy
+DRIFT_UNHEALTHY_INTERVAL = 2.0  # seconds between syncs when stream is down
+DRIFT_STREAM_HEALTH_TIMEOUT = 5.0  # stream is "unhealthy" after this many seconds idle
+DRIFT_STAGGER_MAX = 2.0  # max random stagger to spread out drift checks
+DRIFT_EARLY_SYNC_DELAY = 0.15  # seconds before first sync after history
 
 
 def record_user_input(session_id: str) -> None:
@@ -129,8 +131,6 @@ async def stream_pane(
     # --- Resolve pane ID for streaming ----------------------------------------
     pane_id = await get_pane_id_async(tmux_sess, tmux_win)
     stream_active = False
-    # Which streaming mode is active for this connection
-    using_pipe_pane = False
     drift_task: asyncio.Task | None = None
 
     # --- Stream batching & flow control state ---------------------------------
@@ -141,7 +141,7 @@ async def stream_pane(
     sync_in_progress = False  # prevents flusher from sending during sync
     last_sync_hash: int | None = None  # CRC32 of last sync content — skip if unchanged
 
-    # --- Callback for stream data (used by both pipe-pane and %output) --------
+    # --- Callback for stream data (pipe-pane) ----------------------------------
     # NEVER drops bytes.  If the buffer grows too large (client can't keep
     # up), we discard the stale buffer and request a full sync instead.
     async def on_stream_data(raw_bytes: bytes) -> None:
@@ -183,8 +183,12 @@ async def stream_pane(
                     break  # WebSocket closed
 
     # --- Helpers for sync with divergence hash ---------------------------------
-    async def _send_sync():
-        """Capture pane and send a sync message with CRC32 hash."""
+    async def _send_sync(force: bool = False):
+        """Capture pane and send a sync message with CRC32 hash.
+
+        When *force* is True, the hash check is bypassed — the sync is
+        always sent.  Used for snapshot recovery and health transitions.
+        """
         nonlocal sync_in_progress, last_sync_hash
 
         sync_in_progress = True
@@ -204,7 +208,7 @@ async def stream_pane(
             # Skip sending if content hasn't changed — avoids expensive
             # client-side full-screen rewrite that blocks the browser
             # main thread and delays keyboard event processing.
-            if content_hash == last_sync_hash and not sync_requested:
+            if content_hash == last_sync_hash and not force:
                 return
             last_sync_hash = content_hash
 
@@ -220,49 +224,32 @@ async def stream_pane(
         finally:
             sync_in_progress = False
 
-    # --- Streaming: subscribe (pipe-pane with fallback to %output) ------------
+    # --- Streaming: subscribe via pipe-pane -------------------------------------
     async def _start_streaming() -> None:
-        """Start output streaming for the resolved pane.
+        """Start output streaming for the resolved pane via pipe-pane.
 
-        Tries pipe-pane first (if enabled), falls back to %output on failure.
+        If pipe-pane fails, the terminal degrades to drift-correction-only
+        mode (capture-pane every 2s).
         """
-        nonlocal stream_active, using_pipe_pane
+        nonlocal stream_active
 
         if not pane_id or stream_active:
             return
 
-        # Try pipe-pane mode first
-        if TERMINAL_STREAM_MODE == "pipe-pane":
-            pty_pool = PtyStreamPool.get_instance()
-            success = await pty_pool.subscribe(pane_id, tmux_sess, tmux_win, on_stream_data)
-            if success:
-                stream_active = True
-                using_pipe_pane = True
-                # Suppress unused %output processing (tmux >= 3.2)
-                await suppress_control_mode_output(tmux_sess)
-                logger.info(
-                    "Streaming via pipe-pane for pane %s (session %s)",
-                    pane_id,
-                    tmux_sess,
-                )
-                return
-            else:
-                logger.warning(
-                    "pipe-pane failed for pane %s, falling back to %%output",
-                    pane_id,
-                )
-
-        # Fallback: %output control mode
-        pool = TmuxControlPool.get_instance()
-        conn = await pool.get_connection(tmux_sess)
-        await conn.subscribe(pane_id, on_stream_data)
-        stream_active = True
-        using_pipe_pane = False
-        logger.info(
-            "Streaming via %%output for pane %s (session %s)",
-            pane_id,
-            tmux_sess,
-        )
+        pty_pool = PtyStreamPool.get_instance()
+        success = await pty_pool.subscribe(pane_id, tmux_sess, tmux_win, on_stream_data)
+        if success:
+            stream_active = True
+            logger.info(
+                "Streaming via pipe-pane for pane %s (session %s)",
+                pane_id,
+                tmux_sess,
+            )
+        else:
+            logger.warning(
+                "pipe-pane failed for pane %s — drift correction only",
+                pane_id,
+            )
 
     async def _stop_streaming() -> None:
         """Stop output streaming and clean up."""
@@ -271,29 +258,21 @@ async def stream_pane(
         if not stream_active or not pane_id:
             return
 
-        if using_pipe_pane:
-            try:
-                pty_pool = PtyStreamPool.get_instance()
-                await pty_pool.unsubscribe(pane_id, on_stream_data)
-            except Exception:
-                pass
-        else:
-            try:
-                pool = TmuxControlPool.get_instance()
-                ctrl = await pool.get_connection(tmux_sess)
-                await ctrl.unsubscribe(pane_id, on_stream_data)
-            except Exception:
-                pass
+        try:
+            pty_pool = PtyStreamPool.get_instance()
+            await pty_pool.unsubscribe(pane_id, on_stream_data)
+        except Exception:
+            pass
 
         stream_active = False
 
     # --- Drift correction (background sync) ------------------------------------
     async def drift_correction():
-        nonlocal sync_requested, pane_id
+        nonlocal sync_requested, pane_id, last_sync_hash
 
         # Early sync: correct any desync from the brief gap between
         # history capture and streaming start.
-        await asyncio.sleep(0.15)
+        await asyncio.sleep(DRIFT_EARLY_SYNC_DELAY)
         if initial_sent:
             try:
                 await _send_sync()
@@ -304,20 +283,21 @@ async def stream_pane(
         # spawning tmux subprocesses simultaneously.
         import random
 
-        stagger = random.uniform(0, 2.0)
+        stagger = random.uniform(0, DRIFT_STAGGER_MAX)
         await asyncio.sleep(stagger)
 
+        was_stream_healthy = False
+
         while True:
-            # Longer interval when streaming is healthy (5s); standard 2s
-            # when stream is unhealthy and we need ground-truth syncs.
+            # Longer interval when streaming is healthy; shorter when
+            # stream is unhealthy and we need ground-truth syncs.
             now = asyncio.get_running_loop().time()
             stream_healthy = (
-                using_pipe_pane
-                and stream_active
+                stream_active
                 and last_flush_time > 0
-                and (now - last_flush_time) < 5.0
+                and (now - last_flush_time) < DRIFT_STREAM_HEALTH_TIMEOUT
             )
-            interval = 5.0 if stream_healthy else 2.0
+            interval = DRIFT_HEALTHY_INTERVAL if stream_healthy else DRIFT_UNHEALTHY_INTERVAL
             await asyncio.sleep(interval)
 
             if not initial_sent:
@@ -331,11 +311,15 @@ async def stream_pane(
             # Re-check stream health after sleep (may have changed)
             now = asyncio.get_running_loop().time()
             stream_healthy = (
-                using_pipe_pane
-                and stream_active
+                stream_active
                 and last_flush_time > 0
-                and (now - last_flush_time) < 5.0
+                and (now - last_flush_time) < DRIFT_STREAM_HEALTH_TIMEOUT
             )
+
+            # Detect healthy → unhealthy transition: force sync to correct
+            # any drift that accumulated while the stream was delivering.
+            force_next_sync = was_stream_healthy and not stream_healthy
+            was_stream_healthy = stream_healthy
 
             if stream_healthy and not sync_requested:
                 continue
@@ -344,7 +328,7 @@ async def stream_pane(
             if sync_requested:
                 sync_requested = False
                 try:
-                    await _send_sync()
+                    await _send_sync(force=True)
                 except Exception:
                     pass
                 continue
@@ -363,6 +347,7 @@ async def stream_pane(
                     )
                     await _stop_streaming()
                     pane_id = new_pane_id
+                    last_sync_hash = None
                     await _start_streaming()
                     sync_requested = True
                     continue
@@ -371,7 +356,7 @@ async def stream_pane(
 
             # No recent stream data — do a full sync via capture-pane
             try:
-                await _send_sync()
+                await _send_sync(force=force_next_sync)
             except Exception:
                 pass
 

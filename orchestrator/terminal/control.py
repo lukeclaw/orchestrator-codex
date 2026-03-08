@@ -1,8 +1,9 @@
-"""Tmux Control Mode for low-latency terminal streaming.
+"""Tmux Control Mode for low-latency terminal I/O.
 
-Control mode (`tmux -C`) provides a persistent connection to tmux that avoids
-spawning subprocesses for each operation. This dramatically reduces latency
-for both sending input and capturing output.
+Control mode (``tmux -C``) provides a persistent connection to tmux that
+avoids spawning subprocesses for each operation.  Used for sending keys,
+resizing windows, and capturing pane content.  Output streaming is handled
+by pipe-pane (see ``pty_stream.py``).
 """
 
 from __future__ import annotations
@@ -10,55 +11,8 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
-from collections.abc import Callable
 
 logger = logging.getLogger(__name__)
-
-
-def _unescape_tmux_output(data: str) -> bytes:
-    """Convert tmux octal-escaped string to raw bytes.
-
-    tmux control mode escapes non-printable bytes as ``\\NNN`` (octal) and
-    literal backslashes as ``\\\\``.  Everything else is a literal character.
-    """
-    result = bytearray()
-    i = 0
-    while i < len(data):
-        if data[i] == "\\" and i + 1 < len(data):
-            if data[i + 1] == "\\":
-                result.append(0x5C)  # literal backslash
-                i += 2
-            elif i + 3 < len(data) and data[i + 1 : i + 4].isdigit():
-                result.append(int(data[i + 1 : i + 4], 8))
-                i += 4
-            else:
-                result.append(ord(data[i]))
-                i += 1
-        else:
-            result.extend(data[i].encode("utf-8"))
-            i += 1
-    return bytes(result)
-
-
-def _parse_output_line(line: str) -> tuple[str, bytes] | None:
-    """Parse a ``%output`` notification from tmux control mode.
-
-    Expected format::
-
-        %output %PANE_ID DATA
-
-    Returns ``(pane_id, raw_bytes)`` on success, ``None`` otherwise.
-    """
-    if not line.startswith("%output "):
-        return None
-    # "%output %5 some data here"
-    rest = line[len("%output ") :]
-    space = rest.find(" ")
-    if space == -1:
-        return None
-    pane_id = rest[:space]
-    raw = _unescape_tmux_output(rest[space + 1 :])
-    return pane_id, raw
 
 
 def _strip_tmux_sequences(data: bytes, state: dict[str, bool] | None = None) -> bytes:
@@ -228,20 +182,15 @@ async def get_pane_id_async(session: str, window: str) -> str | None:
 class TmuxControlConnection:
     """Persistent tmux control mode connection for a tmux **session**.
 
-    One connection serves all windows/panes in the session.  Subscribers
-    register per-pane callbacks to receive ``%output`` notifications.
+    One connection serves all windows/panes in the session.  Used for
+    sending keys and resizing windows via control mode commands.
     """
 
     def __init__(self, session: str):
         self.session = session
         self._process: asyncio.subprocess.Process | None = None
-        self._reader_task: asyncio.Task | None = None
+        self._drain_task: asyncio.Task | None = None
         self._running = False
-        # pane_id -> set of async callbacks  (callback signature: async (bytes) -> None)
-        self._output_subscribers: dict[str, set[Callable]] = {}
-        # pane_id -> state for cross-chunk tmux ESC k stripping
-        self._strip_states: dict[str, dict[str, bool]] = {}
-        self._lock = asyncio.Lock()
 
     async def start(self) -> bool:
         """Start the control mode connection."""
@@ -274,7 +223,10 @@ class TmuxControlConnection:
                 self._process.pid,
             )
 
-            self._reader_task = asyncio.create_task(self._read_output())
+            # Drain stdout so the pipe buffer never fills up and blocks
+            # the tmux process.  We don't parse the output — pipe-pane
+            # handles streaming — but we must keep reading.
+            self._drain_task = asyncio.create_task(self._drain_stdout())
             return True
 
         except Exception as e:
@@ -285,13 +237,13 @@ class TmuxControlConnection:
         """Stop the control mode connection."""
         self._running = False
 
-        if self._reader_task:
-            self._reader_task.cancel()
+        if self._drain_task:
+            self._drain_task.cancel()
             try:
-                await self._reader_task
+                await self._drain_task
             except asyncio.CancelledError:
                 pass
-            self._reader_task = None
+            self._drain_task = None
 
         if self._process:
             self._process.terminate()
@@ -301,71 +253,27 @@ class TmuxControlConnection:
                 self._process.kill()
             self._process = None
 
-        self._output_subscribers.clear()
-        self._strip_states.clear()
-
         logger.info("Stopped tmux control mode for session %s", self.session)
 
-    async def _read_output(self):
-        """Read control-mode stdout, dispatch ``%output`` to subscribers."""
+    async def _drain_stdout(self):
+        """Read and discard control-mode stdout to prevent pipe backpressure.
+
+        tmux control mode continuously writes notifications (``%output``,
+        ``%begin``, ``%end``, etc.) to stdout.  If nobody reads them, the
+        pipe buffer fills up (~64KB) and the tmux process blocks — making
+        stdin commands (send_keys, resize) hang too.
+        """
         if not self._process or not self._process.stdout:
             return
-
         try:
             while self._running:
-                line = await self._process.stdout.readline()
-                if not line:
-                    break
-
-                decoded = line.decode("utf-8", errors="replace").rstrip("\n")
-
-                if decoded.startswith("%exit"):
-                    logger.info("tmux control mode exited for session %s", self.session)
-                    break
-
-                parsed = _parse_output_line(decoded)
-                if parsed is None:
-                    continue
-
-                pane_id, raw_bytes = parsed
-                # Strip tmux-specific sequences (ESC k title ST) that
-                # standard terminal emulators would display as literal text.
-                strip_state = self._strip_states.setdefault(
-                    pane_id,
-                    {"in_title": False, "pending_esc": False},
-                )
-                raw_bytes = _strip_tmux_sequences(raw_bytes, strip_state)
-                if not raw_bytes:
-                    continue
-                # Snapshot subscriber set under lock, then dispatch outside lock
-                async with self._lock:
-                    callbacks = set(self._output_subscribers.get(pane_id, ()))
-                for cb in callbacks:
-                    try:
-                        await cb(raw_bytes)
-                    except Exception:
-                        logger.exception("Error in %output subscriber for pane %s", pane_id)
+                data = await self._process.stdout.read(8192)
+                if not data:
+                    break  # EOF — process exited
         except asyncio.CancelledError:
             pass
         except Exception as e:
-            logger.error("Error reading tmux control output: %s", e)
-
-    # -- subscriber management --------------------------------------------------
-
-    async def subscribe(self, pane_id: str, callback: Callable) -> None:
-        """Register *callback* to receive raw bytes for *pane_id*."""
-        async with self._lock:
-            self._output_subscribers.setdefault(pane_id, set()).add(callback)
-
-    async def unsubscribe(self, pane_id: str, callback: Callable) -> None:
-        """Remove *callback* from *pane_id* notifications."""
-        async with self._lock:
-            subs = self._output_subscribers.get(pane_id)
-            if subs:
-                subs.discard(callback)
-                if not subs:
-                    del self._output_subscribers[pane_id]
-                    self._strip_states.pop(pane_id, None)
+            logger.debug("stdout drain ended for session %s: %s", self.session, e)
 
     # -- command helpers --------------------------------------------------------
 

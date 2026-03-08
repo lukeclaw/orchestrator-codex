@@ -24,7 +24,6 @@ from orchestrator.terminal.pty_stream import (
     get_tmux_version,
     reset_tmux_version_cache,
     set_tmux_version_cache,
-    suppress_control_mode_output,
 )
 
 # ---------------------------------------------------------------------------
@@ -488,34 +487,6 @@ class TestPtyStreamPool:
 
 
 # ---------------------------------------------------------------------------
-# suppress_control_mode_output
-# ---------------------------------------------------------------------------
-
-
-class TestSuppressControlModeOutput:
-    """Test the refresh-client -f no-output helper."""
-
-    async def test_skips_old_tmux(self):
-        """Should return False on tmux < 3.2."""
-        set_tmux_version_cache(3, 1)
-        result = await suppress_control_mode_output("sess")
-        assert result is False
-
-    async def test_succeeds_on_new_tmux(self):
-        """Should return True when tmux >= 3.2 and command succeeds."""
-        set_tmux_version_cache(3, 4)
-
-        mock_proc = AsyncMock()
-        mock_proc.returncode = 0
-        mock_proc.communicate.return_value = (b"", b"")
-
-        with patch("asyncio.create_subprocess_exec", return_value=mock_proc):
-            result = await suppress_control_mode_output("sess")
-
-        assert result is True
-
-
-# ---------------------------------------------------------------------------
 # ws_terminal integration: pipe-pane path
 # ---------------------------------------------------------------------------
 
@@ -586,12 +557,10 @@ class TestWsTerminalPipePanePath:
             patch("orchestrator.api.ws_terminal._get_conn") as mock_get_conn,
             patch("orchestrator.api.ws_terminal.ensure_window", return_value="o:t"),
             patch("orchestrator.api.ws_terminal.get_pane_id_async", return_value="%0"),
-            patch("orchestrator.api.ws_terminal.TERMINAL_STREAM_MODE", "pipe-pane"),
             patch(
                 "orchestrator.api.ws_terminal.PtyStreamPool.get_instance",
                 return_value=mock_pool,
             ),
-            patch("orchestrator.api.ws_terminal.suppress_control_mode_output", return_value=True),
             patch("orchestrator.api.ws_terminal.resize_async", return_value=True),
             patch("orchestrator.api.ws_terminal.check_alternate_screen_async", return_value=False),
             patch(
@@ -634,106 +603,23 @@ class TestWsTerminalPipePanePath:
             assert len(ws.sent_bytes) >= 1
             assert b"\x1b[32mgreen\x1b[0m" in b"".join(ws.sent_bytes)
 
-    async def test_pipe_pane_fallback_to_control_mode(self):
-        """When pipe-pane fails, should fall back to %output."""
+    async def test_pipe_pane_failure_degrades_gracefully(self):
+        """When pipe-pane fails, terminal should degrade to drift-correction-only."""
         from orchestrator.api.ws_terminal import terminal_websocket
 
         ws = FakeWebSocket()
-        ctrl_subscribe_called = {}
 
-        # pipe-pane pool returns False
         mock_pty_pool = AsyncMock(spec=PtyStreamPool)
         mock_pty_pool.subscribe = AsyncMock(return_value=False)
-
-        # control mode mock
-        mock_ctrl_conn = AsyncMock()
-
-        async def fake_ctrl_subscribe(pane_id, callback):
-            ctrl_subscribe_called["pane_id"] = pane_id
-            ctrl_subscribe_called["cb"] = callback
-
-        mock_ctrl_conn.subscribe = fake_ctrl_subscribe
-        mock_ctrl_conn.unsubscribe = AsyncMock()
-        mock_ctrl_conn.is_alive = True
-
-        mock_ctrl_pool = MagicMock()
-        mock_ctrl_pool.get_connection = AsyncMock(return_value=mock_ctrl_conn)
+        mock_pty_pool.unsubscribe = AsyncMock()
 
         with (
             patch("orchestrator.api.ws_terminal._get_conn") as mock_get_conn,
             patch("orchestrator.api.ws_terminal.ensure_window", return_value="o:t"),
             patch("orchestrator.api.ws_terminal.get_pane_id_async", return_value="%0"),
-            patch("orchestrator.api.ws_terminal.TERMINAL_STREAM_MODE", "pipe-pane"),
             patch(
                 "orchestrator.api.ws_terminal.PtyStreamPool.get_instance",
                 return_value=mock_pty_pool,
-            ),
-            patch(
-                "orchestrator.api.ws_terminal.TmuxControlPool.get_instance",
-                return_value=mock_ctrl_pool,
-            ),
-            patch("orchestrator.api.ws_terminal.resize_async", return_value=True),
-            patch("orchestrator.api.ws_terminal.check_alternate_screen_async", return_value=False),
-            patch(
-                "orchestrator.api.ws_terminal.capture_pane_with_history_async",
-                return_value=("hello\n", 0, 0, 1),
-            ),
-            patch(
-                "orchestrator.api.ws_terminal.capture_pane_with_cursor_atomic_async",
-                return_value=("hello", 0, 0),
-            ),
-        ):
-            db_conn = MagicMock()
-            db_conn.execute.return_value.fetchone.return_value = _make_db_row()
-            mock_get_conn.return_value = db_conn
-            ws.app.state.conn_factory = None
-            ws.app.state.conn = db_conn
-
-            handler_task = asyncio.create_task(terminal_websocket(ws, "sess-1"))
-            await asyncio.sleep(0.05)
-
-            ws.inject_text(json.dumps({"type": "resize", "cols": 80, "rows": 24}))
-            await asyncio.sleep(0.15)
-
-            # Verify control mode fallback was used
-            assert "pane_id" in ctrl_subscribe_called
-            assert ctrl_subscribe_called["pane_id"] == "%0"
-
-            ws.inject_disconnect()
-            await asyncio.sleep(0.1)
-            handler_task.cancel()
-            try:
-                await handler_task
-            except (asyncio.CancelledError, Exception):
-                pass
-
-    async def test_control_mode_forced(self):
-        """TERMINAL_STREAM_MODE=control-mode should skip pipe-pane entirely."""
-        from orchestrator.api.ws_terminal import terminal_websocket
-
-        ws = FakeWebSocket()
-        ctrl_subscribe_called = {}
-
-        mock_ctrl_conn = AsyncMock()
-
-        async def fake_ctrl_subscribe(pane_id, callback):
-            ctrl_subscribe_called["pane_id"] = pane_id
-
-        mock_ctrl_conn.subscribe = fake_ctrl_subscribe
-        mock_ctrl_conn.unsubscribe = AsyncMock()
-        mock_ctrl_conn.is_alive = True
-
-        mock_ctrl_pool = MagicMock()
-        mock_ctrl_pool.get_connection = AsyncMock(return_value=mock_ctrl_conn)
-
-        with (
-            patch("orchestrator.api.ws_terminal._get_conn") as mock_get_conn,
-            patch("orchestrator.api.ws_terminal.ensure_window", return_value="o:t"),
-            patch("orchestrator.api.ws_terminal.get_pane_id_async", return_value="%0"),
-            patch("orchestrator.api.ws_terminal.TERMINAL_STREAM_MODE", "control-mode"),
-            patch(
-                "orchestrator.api.ws_terminal.TmuxControlPool.get_instance",
-                return_value=mock_ctrl_pool,
             ),
             patch("orchestrator.api.ws_terminal.resize_async", return_value=True),
             patch("orchestrator.api.ws_terminal.check_alternate_screen_async", return_value=False),
@@ -756,10 +642,15 @@ class TestWsTerminalPipePanePath:
             await asyncio.sleep(0.05)
 
             ws.inject_text(json.dumps({"type": "resize", "cols": 80, "rows": 24}))
-            await asyncio.sleep(0.15)
+            await asyncio.sleep(0.5)
 
-            # Control mode subscribe should have been called
-            assert "pane_id" in ctrl_subscribe_called
+            # No error should have been sent
+            error_msgs = [m for m in ws.sent_json if m.get("type") == "error"]
+            assert len(error_msgs) == 0
+
+            # History should still be sent
+            json_types = {m["type"] for m in ws.sent_json}
+            assert "history" in json_types
 
             ws.inject_disconnect()
             await asyncio.sleep(0.1)
@@ -794,26 +685,21 @@ class TestWsTerminalPipePanePath:
             sync_count += 1
             return ("recovered", 0, 0)
 
+        _ws = "orchestrator.api.ws_terminal"
         with (
-            patch("orchestrator.api.ws_terminal._get_conn") as mock_get_conn,
-            patch("orchestrator.api.ws_terminal.ensure_window", return_value="o:t"),
-            patch("orchestrator.api.ws_terminal.get_pane_id_async", return_value="%0"),
-            patch("orchestrator.api.ws_terminal.TERMINAL_STREAM_MODE", "pipe-pane"),
-            patch(
-                "orchestrator.api.ws_terminal.PtyStreamPool.get_instance",
-                return_value=mock_pool,
-            ),
-            patch("orchestrator.api.ws_terminal.suppress_control_mode_output", return_value=True),
-            patch("orchestrator.api.ws_terminal.resize_async", return_value=True),
-            patch("orchestrator.api.ws_terminal.check_alternate_screen_async", return_value=False),
-            patch(
-                "orchestrator.api.ws_terminal.capture_pane_with_history_async",
-                return_value=("$ \n", 0, 0, 1),
-            ),
-            patch(
-                "orchestrator.api.ws_terminal.capture_pane_with_cursor_atomic_async",
-                side_effect=counting_capture,
-            ),
+            patch(f"{_ws}._get_conn") as mock_get_conn,
+            patch(f"{_ws}.ensure_window", return_value="o:t"),
+            patch(f"{_ws}.get_pane_id_async", return_value="%0"),
+            patch(f"{_ws}.PtyStreamPool.get_instance", return_value=mock_pool),
+            patch(f"{_ws}.resize_async", return_value=True),
+            patch(f"{_ws}.check_alternate_screen_async", return_value=False),
+            patch(f"{_ws}.capture_pane_with_history_async", return_value=("$ \n", 0, 0, 1)),
+            patch(f"{_ws}.capture_pane_with_cursor_atomic_async", side_effect=counting_capture),
+            patch(f"{_ws}.DRIFT_HEALTHY_INTERVAL", 0.05),
+            patch(f"{_ws}.DRIFT_UNHEALTHY_INTERVAL", 0.02),
+            patch(f"{_ws}.DRIFT_STREAM_HEALTH_TIMEOUT", 0.15),
+            patch(f"{_ws}.DRIFT_STAGGER_MAX", 0.0),
+            patch(f"{_ws}.DRIFT_EARLY_SYNC_DELAY", 0.01),
         ):
             db_conn = MagicMock()
             db_conn.execute.return_value.fetchone.return_value = _make_db_row()
@@ -825,7 +711,7 @@ class TestWsTerminalPipePanePath:
             await asyncio.sleep(0.05)
 
             ws.inject_text(json.dumps({"type": "resize", "cols": 80, "rows": 24}))
-            await asyncio.sleep(0.15)
+            await asyncio.sleep(0.1)
 
             initial_syncs = sync_count
 
@@ -836,11 +722,10 @@ class TestWsTerminalPipePanePath:
             await cb(chunk)
 
             # Wait for drift correction to pick up sync_requested
-            # Drift has random stagger (0-2s) + adaptive interval (2-5s)
-            await asyncio.sleep(8)
+            await asyncio.sleep(0.3)
 
             ws.inject_disconnect()
-            await asyncio.sleep(0.1)
+            await asyncio.sleep(0.05)
             handler_task.cancel()
             try:
                 await handler_task

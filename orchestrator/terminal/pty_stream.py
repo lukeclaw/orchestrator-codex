@@ -1,9 +1,8 @@
 """Direct PTY streaming via tmux pipe-pane.
 
-Replaces the ``%output`` control-mode subscription with ``pipe-pane -O``,
-which provides raw PTY bytes as a continuous stream — no octal encoding,
-no line-level fragmentation.  This eliminates TUI frame tearing in
-xterm.js.
+Provides raw PTY bytes via ``pipe-pane -O`` as a continuous stream — no
+octal encoding, no line-level fragmentation.  This is the only output
+streaming mechanism; the ``%output`` control-mode fallback has been removed.
 
 Architecture::
 
@@ -39,9 +38,6 @@ logger = logging.getLogger(__name__)
 FIFO_DIR = "/tmp/orchestrator_pty"
 STARTUP_TIMEOUT = 3.0  # seconds to wait for first byte from pipe-pane
 EAGER_RESTART_DELAY = 0.5  # seconds before attempting eager restart after EOF
-
-# Stream mode: "pipe-pane" (default) or "control-mode" (fallback)
-TERMINAL_STREAM_MODE = os.environ.get("TERMINAL_STREAM_MODE", "pipe-pane")
 
 # ---------------------------------------------------------------------------
 # tmux version detection
@@ -608,42 +604,3 @@ class PtyStreamPool:
                     logger.debug("Cleaned up stale FIFO: %s", entry)
                 except OSError:
                     pass
-
-
-# ---------------------------------------------------------------------------
-# Helper: suppress %output on control mode connection
-# ---------------------------------------------------------------------------
-
-
-async def suppress_control_mode_output(session: str) -> bool:
-    """Send ``refresh-client -f no-output`` to suppress ``%output`` lines.
-
-    Only works on tmux >= 3.2.  Returns True on success.
-    """
-    version = await get_tmux_version()
-    if version < (3, 2):
-        logger.debug(
-            "tmux %d.%d < 3.2 — cannot suppress %%output via refresh-client",
-            *version,
-        )
-        return False
-
-    try:
-        proc = await asyncio.create_subprocess_exec(
-            "tmux",
-            "refresh-client",
-            "-f",
-            "no-output",
-            "-t",
-            session,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
-        await proc.communicate()
-        if proc.returncode == 0:
-            logger.info("Suppressed %%output notifications for session %s", session)
-            return True
-        return False
-    except Exception as e:
-        logger.debug("Failed to suppress %%output: %s", e)
-        return False

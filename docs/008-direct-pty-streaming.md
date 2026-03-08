@@ -684,24 +684,14 @@ whether `PtyStreamReader` started successfully.
 
 ## 8. Fallback Strategy
 
-Three levels of fallback, from automatic to manual:
+> **Update (2026-03-07):** The `%output` control-mode fallback and
+> `TERMINAL_STREAM_MODE` env var have been removed (see doc 024). Pipe-pane
+> is now the only streaming mode. If pipe-pane fails to start, the terminal
+> degrades to drift-correction-only mode (capture-pane every 2s).
 
-1. **Per-connection auto-fallback** (runtime): If `PtyStreamPool.subscribe()`
-   returns `False` (pipe-pane fails to start, startup timeout fires, or tmux
-   version < 2.6), the WebSocket handler automatically falls back to `%output`
-   subscription for that connection. No user impact. See section 6.13.
-
-2. **Feature flag** (operational): Add a server config flag
-   `TERMINAL_STREAM_MODE = "pipe-pane" | "control-mode"`. Default
-   `"pipe-pane"`. Setting to `"control-mode"` bypasses pipe-pane entirely
-   and uses the existing `%output` path. No code change or restart needed
-   if loaded from config file with reload support; otherwise requires
-   restart.
-
-3. **Code revert** (emergency): The `%output` subscriber system in
-   `TmuxControlConnection` is deliberately preserved (not removed until
-   Phase 5 cleanup). Reverting is a small, well-scoped change in
-   `ws_terminal.py`.
+If `PtyStreamPool.subscribe()` returns `False` (pipe-pane fails to start,
+startup timeout fires, or tmux version < 2.6), the terminal still works via
+drift correction syncs — a degraded but functional experience.
 
 ---
 
