@@ -64,7 +64,21 @@ export default function PrPreviewCard({ url, initialData, onDataFetched }: PrPre
   const [autoMergeLoading, setAutoMergeLoading] = useState(false)
   const [markingReady, setMarkingReady] = useState(false)
   const [copied, setCopied] = useState(false)
+  const [openReviewPopup, setOpenReviewPopup] = useState<string | null>(null)
+  const reviewsRef = useRef<HTMLDivElement | null>(null)
   const abortRef = useRef<AbortController | null>(null)
+
+  // Close review popup on click outside
+  useEffect(() => {
+    if (!openReviewPopup) return
+    const handler = (e: MouseEvent) => {
+      if (reviewsRef.current && !reviewsRef.current.contains(e.target as Node)) {
+        setOpenReviewPopup(null)
+      }
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [openReviewPopup])
 
   const fetchData = async () => {
     abortRef.current?.abort()
@@ -244,55 +258,83 @@ export default function PrPreviewCard({ url, initialData, onDataFetched }: PrPre
             {data.reviews.length > 0 && (
               <div className="pr-preview-section">
                 <div className="pr-section-title">Reviews</div>
-                <div className="pr-reviews">
+                <div className="pr-reviews" ref={reviewsRef}>
                   {data.reviews.map(r => (
-                    <div
-                      key={r.reviewer}
-                      className={`pr-review-item ${r.html_url ? 'pr-review-clickable' : ''}`}
-                      onClick={r.html_url ? () => openUrl(r.html_url!) : undefined}
-                    >
-                      <span className={`pr-review-icon review-${r.state}`}>
-                        {r.state === 'approved' ? '✓' : r.state === 'changes_requested' ? '△' : '●'}
-                      </span>
-                      <span className="pr-review-name">{r.reviewer}</span>
-                      {r.comments > 0 && (
-                        <span className="pr-review-comments">
-                          {r.comments}
+                    <div key={r.reviewer} className="pr-review-item">
+                      <span
+                        className={`pr-review-label ${r.html_url ? 'pr-review-clickable' : ''}`}
+                        onClick={r.html_url ? () => openUrl(r.html_url!) : undefined}
+                      >
+                        <span className={`pr-review-icon review-${r.state}`}>
+                          {r.state === 'approved' ? '✓' : r.state === 'changes_requested' ? '△' : '●'}
                         </span>
-                      )}
+                        <span className="pr-review-name">{r.reviewer}</span>
+                      </span>
                       {r.comment_threads.length > 0 && (
-                        <div className="pr-review-popup" onClick={e => e.stopPropagation()}>
-                          {r.comment_threads.map((t, i) => (
-                            <div
-                              key={i}
-                              className={`pr-thread-card ${t.html_url ? 'pr-thread-clickable' : ''}`}
-                              onClick={t.html_url ? () => openUrl(t.html_url!) : undefined}
-                            >
-                              {t.file && (
-                                <div className="pr-thread-file-label">
-                                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-                                    <polyline points="14 2 14 8 20 8" />
-                                  </svg>
-                                  {t.file}
+                        <>
+                          <button
+                            className={`pr-review-threads-btn ${openReviewPopup === r.reviewer ? 'active' : ''}`}
+                            onClick={e => {
+                              e.stopPropagation()
+                              setOpenReviewPopup(openReviewPopup === r.reviewer ? null : r.reviewer)
+                            }}
+                            title="View comments"
+                          >
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                              <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+                              <circle cx="12" cy="12" r="3" />
+                            </svg>
+                            <span>{r.comment_threads.length}</span>
+                          </button>
+                          {openReviewPopup === r.reviewer && (
+                            <div className="pr-review-popup" onClick={e => e.stopPropagation()}>
+                              <div className="pr-review-popup-header">
+                                <span className="pr-review-popup-title">{r.reviewer}</span>
+                                <div className="pr-review-popup-actions">
+                                  {r.html_url && (
+                                    <button className="pr-review-popup-link" onClick={() => openUrl(r.html_url!)} title="Open review in GitHub">
+                                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                        <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+                                        <polyline points="15 3 21 3 21 9" />
+                                        <line x1="10" y1="14" x2="21" y2="3" />
+                                      </svg>
+                                    </button>
+                                  )}
+                                  <button className="pr-review-popup-close" onClick={() => setOpenReviewPopup(null)}>&times;</button>
                                 </div>
-                              )}
-                              <div className="pr-thread-comment pr-thread-root-comment">
-                                <p className="pr-thread-body">{previewText(t.body)}</p>
                               </div>
-                              {t.replies.length > 0 && (
-                                <div className="pr-thread-replies">
-                                  {t.replies.map((reply, j) => (
-                                    <div key={j} className="pr-thread-comment pr-thread-reply">
-                                      <span className="pr-thread-author">{reply.author}</span>
-                                      <p className="pr-thread-body">{previewText(reply.body)}</p>
+                              {r.comment_threads.map((t, i) => (
+                                <div
+                                  key={i}
+                                  className="pr-thread-card"
+                                >
+                                  {t.file && (
+                                    <div className="pr-thread-file-label">
+                                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                                        <polyline points="14 2 14 8 20 8" />
+                                      </svg>
+                                      {t.file}
                                     </div>
-                                  ))}
+                                  )}
+                                  <div className="pr-thread-comment pr-thread-root-comment">
+                                    <p className="pr-thread-body">{previewText(t.body)}</p>
+                                  </div>
+                                  {t.replies.length > 0 && (
+                                    <div className="pr-thread-replies">
+                                      {t.replies.map((reply, j) => (
+                                        <div key={j} className="pr-thread-comment pr-thread-reply">
+                                          <span className="pr-thread-author">{reply.author}</span>
+                                          <p className="pr-thread-body">{previewText(reply.body)}</p>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  )}
                                 </div>
-                              )}
+                              ))}
                             </div>
-                          ))}
-                        </div>
+                          )}
+                        </>
                       )}
                     </div>
                   ))}

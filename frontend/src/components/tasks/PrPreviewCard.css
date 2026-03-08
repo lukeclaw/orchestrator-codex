@@ -383,30 +383,36 @@
 .pr-reviews {
   display: flex;
   flex-direction: column;
+  align-items: flex-start;
   gap: 4px;
 }
 
 .pr-review-item {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: 4px;
   font-size: 13px;
-  padding: 2px 6px;
-  margin: 0 -6px;
-  border-radius: 4px;
-  transition: background 0.15s;
   position: relative;
 }
 
-.pr-review-item.pr-review-clickable {
+.pr-review-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  transition: background 0.15s;
+}
+
+.pr-review-label.pr-review-clickable {
   cursor: pointer;
 }
 
-.pr-review-item:hover {
+.pr-review-label.pr-review-clickable:hover {
   background: var(--surface-hover);
 }
 
-.pr-review-item.pr-review-clickable:hover .pr-review-name {
+.pr-review-label.pr-review-clickable:hover .pr-review-name {
   color: var(--accent);
 }
 
@@ -449,51 +455,102 @@
   white-space: nowrap;
 }
 
-.pr-review-comments {
+/* Eye-icon button to toggle review comment threads */
+.pr-review-threads-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  flex-shrink: 0;
+  background: none;
+  border: none;
+  padding: 1px 4px;
   color: var(--text-muted);
   font-size: 11px;
   font-family: var(--font-mono);
-  flex-shrink: 0;
-  background: var(--surface);
-  padding: 0 5px;
-  border-radius: 999px;
   line-height: 18px;
+  cursor: pointer;
+  transition: color 120ms ease;
 }
 
-/* Review hover popup — appears above the reviewer item */
+.pr-review-threads-btn:hover {
+  color: var(--text-secondary);
+}
+
+.pr-review-threads-btn.active {
+  background: var(--accent-muted, rgba(88, 166, 255, 0.12));
+  border-color: var(--accent, #58a6ff);
+  color: var(--accent, #58a6ff);
+}
+
+.pr-review-threads-btn svg {
+  flex-shrink: 0;
+}
+
+/* Review popup — click-triggered, appears above the reviewer item */
 
 .pr-review-popup {
-  display: none;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
   position: absolute;
   bottom: calc(100% + 6px);
-  left: 0;
+  left: 50px;
   z-index: 100;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: 6px;
-  min-width: 340px;
-  max-width: 480px;
+  min-width: 420px;
+  max-width: 560px;
   max-height: 360px;
   overflow-y: auto;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
   animation: pr-popup-enter 150ms var(--ease-decelerate);
 }
 
-/* Bridge the gap between item and popup so hover isn't lost */
-.pr-review-popup::after {
-  content: '';
-  position: absolute;
-  top: 100%;
-  left: 0;
-  right: 0;
-  height: 8px;
+.pr-review-popup-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-bottom: 4px;
+  margin-bottom: 2px;
+  border-bottom: 1px solid var(--border);
 }
 
-.pr-review-item:hover .pr-review-popup {
+.pr-review-popup-title {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+
+.pr-review-popup-actions {
   display: flex;
-  flex-direction: column;
+  align-items: center;
   gap: 2px;
+}
+
+.pr-review-popup-link,
+.pr-review-popup-close {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 16px;
+  line-height: 1;
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius);
+  cursor: pointer;
+  padding: 0;
+  flex-shrink: 0;
+}
+
+.pr-review-popup-link:hover,
+.pr-review-popup-close:hover {
+  background: var(--surface-hover);
+  color: var(--text-primary);
 }
 
 @keyframes pr-popup-enter {
@@ -517,13 +574,6 @@
   padding-top: 12px;
 }
 
-.pr-thread-card.pr-thread-clickable {
-  cursor: pointer;
-}
-
-.pr-thread-card.pr-thread-clickable:hover {
-  background: var(--surface-hover);
-}
 
 .pr-thread-file-label {
   display: flex;
@@ -563,10 +613,10 @@
   line-height: 1.5;
   margin: 0;
   word-break: break-word;
-  display: -webkit-box;
-  -webkit-line-clamp: 3;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
+  white-space: pre-wrap;
+  max-height: 150px;
+  overflow-y: auto;
+  display: block;
 }
 
 .pr-thread-replies {

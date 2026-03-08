@@ -87,7 +87,7 @@ def _build_reviews(
             latest_comment_url[user] = c["html_url"]
         path = c.get("path", "")
         thread = {
-            "body": (c.get("body") or "")[:200],
+            "body": (c.get("body") or "")[:2000],
             "file": path.rsplit("/", 1)[-1] if path else "",
             "html_url": c.get("html_url"),
             "replies": [],
@@ -96,7 +96,7 @@ def _build_reviews(
             thread["replies"].append(
                 {
                     "author": (r.get("user") or {}).get("login", ""),
-                    "body": (r.get("body") or "")[:200],
+                    "body": (r.get("body") or "")[:2000],
                 }
             )
         user_threads.setdefault(user, []).append(thread)
@@ -109,7 +109,7 @@ def _build_reviews(
             if c.get("html_url"):
                 latest_comment_url[user] = c["html_url"]
             thread = {
-                "body": (c.get("body") or "")[:200],
+                "body": (c.get("body") or "")[:2000],
                 "file": "",
                 "html_url": c.get("html_url"),
                 "replies": [],
@@ -257,12 +257,8 @@ async def get_pr_preview(url: str = Query(..., description="GitHub PR URL")):
     coros = [
         _run_gh(f"repos/{owner}/{repo}/pulls/{number}", cache=_GH_HTTP_CACHE),
         _run_gh(f"repos/{owner}/{repo}/pulls/{number}/reviews", cache=_GH_HTTP_CACHE),
-        _run_gh(
-            f"repos/{owner}/{repo}/pulls/{number}/comments", cache=_GH_HTTP_CACHE
-        ),
-        _run_gh(
-            f"repos/{owner}/{repo}/issues/{number}/comments", cache=_GH_HTTP_CACHE
-        ),
+        _run_gh(f"repos/{owner}/{repo}/pulls/{number}/comments", cache=_GH_HTTP_CACHE),
+        _run_gh(f"repos/{owner}/{repo}/issues/{number}/comments", cache=_GH_HTTP_CACHE),
         _run_gh(f"repos/{owner}/{repo}/pulls/{number}/files", cache=_GH_HTTP_CACHE),
     ]
     if "requested_reviewers" not in skip:
@@ -280,9 +276,7 @@ async def get_pr_preview(url: str = Query(..., description="GitHub PR URL")):
     review_comments = results[2]
     issue_comments = results[3]
     files_data = results[4]
-    requested_reviewers_data = (
-        results[5] if "requested_reviewers" not in skip else {"users": []}
-    )
+    requested_reviewers_data = results[5] if "requested_reviewers" not in skip else {"users": []}
 
     pr_dict = pr_data if isinstance(pr_data, dict) else {}
     actual_state = "merged" if pr_dict.get("merged") else pr_dict.get("state", "open")
@@ -296,9 +290,7 @@ async def get_pr_preview(url: str = Query(..., description="GitHub PR URL")):
             )
 
     # Fetch check runs using head SHA (depends on pr_data)
-    head_sha = (
-        pr_data.get("head", {}).get("sha", "") if isinstance(pr_data, dict) else ""
-    )
+    head_sha = pr_data.get("head", {}).get("sha", "") if isinstance(pr_data, dict) else ""
     checks_data: dict = {"check_runs": []}
     if head_sha and "check_runs" not in skip:
         try:
@@ -336,9 +328,7 @@ async def get_pr_preview(url: str = Query(..., description="GitHub PR URL")):
 
     # Extract requested reviewer logins
     rr = requested_reviewers_data if isinstance(requested_reviewers_data, dict) else {}
-    requested_reviewers = [
-        u.get("login", "") for u in rr.get("users", []) if u.get("login")
-    ]
+    requested_reviewers = [u.get("login", "") for u in rr.get("users", []) if u.get("login")]
 
     response = _build_response(
         pr_dict,
