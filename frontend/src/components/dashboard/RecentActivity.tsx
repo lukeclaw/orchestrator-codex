@@ -64,12 +64,13 @@ export default function RecentActivity({ workers, tasks }: Props) {
     }
   }
 
-  // Collect worker status changes for grouping
+  // Collect worker status changes for grouping — include ALL workers in
+  // the current status so counts match StatsBar (use last_status_changed_at
+  // for sort order, falling back to created_at for workers without it).
   for (const w of workers) {
-    const ts = w.last_status_changed_at ? new Date(w.last_status_changed_at).getTime() : 0
-    if (!ts) continue
-    const ago = Date.now() - ts
-    if (ago > 24 * 60 * 60 * 1000) continue // only last 24h
+    const ts = w.last_status_changed_at
+      ? new Date(w.last_status_changed_at).getTime()
+      : new Date(w.created_at).getTime()
 
     const shortName = w.name.includes('_') ? w.name.split('_').pop()! : w.name
 
@@ -87,7 +88,7 @@ export default function RecentActivity({ workers, tasks }: Props) {
       }
       workerGroups[groupKey] = { ...cfg[groupKey], workers: [] }
     }
-    workerGroups[groupKey].workers.push({ id: w.id, name: shortName, ts, time: w.last_status_changed_at! })
+    workerGroups[groupKey].workers.push({ id: w.id, name: shortName, ts, time: w.last_status_changed_at || w.created_at })
   }
 
   // Convert worker groups into display items
