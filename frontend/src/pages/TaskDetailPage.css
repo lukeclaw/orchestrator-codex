@@ -552,20 +552,20 @@
 }
 
 .skel-chip {
-  height: 10px;
-  width: 48px;
-  background: var(--surface-hover);
-  border-radius: 4px;
-  animation: skel-shimmer 1.5s ease-in-out infinite;
+  height: 14px;
+  width: 56px;
+  background: var(--border);
+  border-radius: 7px;
+  animation: skel-shimmer 1.2s ease-in-out infinite;
 }
 
 .skel-chip-short {
-  width: 32px;
+  width: 40px;
 }
 
 @keyframes skel-shimmer {
-  0%, 100% { opacity: 0.4; }
-  50% { opacity: 0.7; }
+  0%, 100% { opacity: 0.3; }
+  50% { opacity: 0.8; }
 }
 
 /* PR expand indicator — left of label */

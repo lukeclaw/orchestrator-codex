@@ -50,8 +50,6 @@ function getPrStatusChips(data: PrPreviewData): Array<{ label: string; color: st
     }
 
     if (data.checks && data.checks.length > 0) {
-      const allPassed = data.checks.every(c => c.conclusion === 'success' || c.conclusion === 'skipped')
-      const anyFailed = data.checks.some(c => c.conclusion === 'failure')
       const approvalGate = data.checks.find(c => APPROVAL_GATE_RE.test(c.name))
 
       if (approvalGate) {
@@ -62,12 +60,21 @@ function getPrStatusChips(data: PrPreviewData): Array<{ label: string; color: st
         }
       }
 
-      if (anyFailed) {
-        chips.push({ label: 'CI failing', color: 'red' })
-      } else if (allPassed) {
-        chips.push({ label: 'CI passed', color: 'green' })
-      } else {
-        chips.push({ label: 'CI running', color: 'yellow' })
+      // Filter out approval gates and skipped/cancelled/neutral checks (same as PrPreviewCard)
+      const skippedConclusions = new Set(['cancelled', 'skipped', 'neutral'])
+      const ciChecks = data.checks.filter(c => !APPROVAL_GATE_RE.test(c.name))
+      const relevantChecks = ciChecks.filter(c => !skippedConclusions.has(c.conclusion ?? ''))
+
+      if (relevantChecks.length > 0) {
+        const anyFailed = relevantChecks.some(c => c.conclusion === 'failure' || c.conclusion === 'timed_out')
+        const anyRunning = relevantChecks.some(c => c.status === 'in_progress')
+        const passedCount = relevantChecks.filter(c => c.conclusion === 'success').length
+
+        if (anyFailed) {
+          chips.push({ label: 'CI failing', color: 'red' })
+        } else if (anyRunning) {
+          chips.push({ label: 'CI running', color: 'yellow' })
+        }
       }
     }
   }
