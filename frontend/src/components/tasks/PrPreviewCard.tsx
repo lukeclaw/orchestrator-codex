@@ -3,7 +3,7 @@ import { api, openUrl } from '../../api/client'
 import type { PrPreviewData } from '../../api/types'
 import ConfirmPopover from '../common/ConfirmPopover'
 import { tokenize, renderTokens } from '../common/Markdown'
-import { parseDate } from '../common/TimeAgo'
+import { timeAgo, parseDate } from '../common/TimeAgo'
 import './PrPreviewCard.css'
 
 interface PrPreviewCardProps {
@@ -291,7 +291,12 @@ export default function PrPreviewCard({ url, initialData, onDataFetched }: PrPre
                           {openReviewPopup === r.reviewer && (
                             <div className="pr-review-popup" onClick={e => e.stopPropagation()}>
                               <div className="pr-review-popup-header">
-                                <span className="pr-review-popup-title">{r.reviewer}</span>
+                                <span className="pr-review-popup-title">
+                                  {r.reviewer}
+                                  {r.submitted_at && (
+                                    <span className="pr-thread-time tooltip-below" data-full-date={formatFullDate(r.submitted_at)}>{timeAgo(r.submitted_at)}</span>
+                                  )}
+                                </span>
                                 <div className="pr-review-popup-actions">
                                   {r.html_url && (
                                     <button className="pr-review-popup-link" onClick={() => openUrl(r.html_url!)} title="Open review in GitHub">
@@ -311,15 +316,18 @@ export default function PrPreviewCard({ url, initialData, onDataFetched }: PrPre
                                     key={i}
                                     className="pr-thread-card"
                                   >
-                                    {t.file && (
+                                    {t.file ? (
                                       <div className="pr-thread-file-label">
                                         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                                           <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
                                           <polyline points="14 2 14 8 20 8" />
                                         </svg>
                                         {t.file}
+                                        {t.created_at && (
+                                          <span className="pr-thread-time" data-full-date={formatFullDate(t.created_at)}>{timeAgo(t.created_at)}</span>
+                                        )}
                                       </div>
-                                    )}
+                                    ) : null}
                                     <div className="pr-thread-comment pr-thread-root-comment">
                                       <div className="pr-thread-body markdown-content" dangerouslySetInnerHTML={{ __html: renderMd(t.body, t.original_lines) }} />
                                     </div>
@@ -327,7 +335,12 @@ export default function PrPreviewCard({ url, initialData, onDataFetched }: PrPre
                                       <div className="pr-thread-replies">
                                         {t.replies.map((reply, j) => (
                                           <div key={j} className="pr-thread-comment pr-thread-reply">
-                                            <span className="pr-thread-author">{reply.author}</span>
+                                            <div className="pr-thread-reply-header">
+                                              <span className="pr-thread-author">{reply.author}</span>
+                                              {reply.created_at && (
+                                                <span className="pr-thread-time" data-full-date={formatFullDate(reply.created_at)}>{timeAgo(reply.created_at)}</span>
+                                              )}
+                                            </div>
                                             <div className="pr-thread-body markdown-content" dangerouslySetInnerHTML={{ __html: renderMd(reply.body) }} />
                                           </div>
                                         ))}

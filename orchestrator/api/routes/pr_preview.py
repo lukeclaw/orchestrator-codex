@@ -130,6 +130,7 @@ def _build_reviews(
             "file": path.rsplit("/", 1)[-1] if path else "",
             "html_url": c.get("html_url"),
             "original_lines": _extract_suggestion_original(c),
+            "created_at": c.get("created_at"),
             "replies": [],
         }
         for r in replies_by_parent.get(cid, []):
@@ -137,6 +138,7 @@ def _build_reviews(
                 {
                     "author": (r.get("user") or {}).get("login", ""),
                     "body": r.get("body") or "",
+                    "created_at": r.get("created_at"),
                 }
             )
         user_threads.setdefault(user, []).append(thread)
@@ -152,6 +154,7 @@ def _build_reviews(
                 "body": c.get("body") or "",
                 "file": "",
                 "html_url": c.get("html_url"),
+                "created_at": c.get("created_at"),
                 "replies": [],
             }
             user_threads.setdefault(user, []).append(thread)
@@ -174,6 +177,7 @@ def _build_reviews(
                     "file": "",
                     "html_url": r.get("html_url"),
                     "original_lines": None,
+                    "created_at": r.get("submitted_at"),
                     "replies": [],
                 },
             )

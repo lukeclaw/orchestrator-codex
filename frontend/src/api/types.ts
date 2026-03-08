@@ -114,7 +114,8 @@ export interface PrCommentThread {
   file: string
   html_url: string | null
   original_lines: string | null
-  replies: { author: string; body: string }[]
+  created_at: string | null
+  replies: { author: string; body: string; created_at: string | null }[]
 }
 
 export interface PrReview {
