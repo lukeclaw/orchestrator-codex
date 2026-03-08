@@ -117,13 +117,10 @@ def server(e2e_db_path, server_port):
     """
     import httpx
 
-    from orchestrator.terminal import manager as _tmux_mgr
-
     env = {
         **os.environ,
         "ORCHESTRATOR_DB_PATH": e2e_db_path,
         "ORCHESTRATOR_SKIP_RECONCILE": "1",
-        "ORCHESTRATOR_TMUX_SESSION": _tmux_mgr.TMUX_SESSION,
     }
 
     proc = subprocess.Popen(

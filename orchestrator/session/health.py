@@ -796,21 +796,31 @@ def check_and_update_worker_health(db, session, tunnel_manager=None) -> dict:
 
     worker_tmp_dir = f"/tmp/orchestrator/workers/{session.name}"
 
-    # Track whether the pane already existed before health check.
-    # If the pane was pre-existing and the worker turns out dead,
-    # the pane is likely frozen (dead SSH, queued commands) and needs
-    # to be killed and recreated.  If the pane was missing, create it.
+    # Check whether the pane exists.  If it does and the worker turns out
+    # dead, the pane is likely frozen (dead SSH, queued commands) and needs
+    # to be killed and recreated.  If the pane is missing, the worker is
+    # clearly not running — skip straight to marking disconnected instead
+    # of creating an empty shell that would just be left behind.
     try:
         pane_preexisted = window_exists(tmux_sess, tmux_win)
-        if not pane_preexisted:
-            ensure_window(tmux_sess, tmux_win, cwd=worker_tmp_dir)
     except Exception:
         pane_preexisted = False
         logger.debug(
-            "Health check: %s failed to check/create tmux window",
+            "Health check: %s failed to check tmux window",
             session.name,
             exc_info=True,
         )
+
+    if not pane_preexisted:
+        if session.status != "disconnected":
+            repo.update_session(db, session.id, status="disconnected")
+            logger.info("Health check: %s has no tmux window, marking disconnected", session.name)
+        return {
+            "alive": False,
+            "status": "disconnected",
+            "reason": "no tmux window",
+            "needs_reconnect": True,
+        }
 
     if is_remote_host(session.host):
         screen_status, reason = check_screen_and_claude_remote(

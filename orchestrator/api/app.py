@@ -48,17 +48,6 @@ async def lifespan(app: FastAPI):
     except Exception:
         config = {}
 
-    # Allow env var override for tmux session name (used by E2E tests to
-    # isolate test windows from the user's real orchestrator session).
-    tmux_override = os.environ.get("ORCHESTRATOR_TMUX_SESSION")
-    if tmux_override:
-        config.setdefault("tmux", {})["session_name"] = tmux_override
-        # Also update the module-level constant so tmux_target() and all
-        # code paths that read manager.TMUX_SESSION use the override.
-        from orchestrator.terminal import manager as _mgr
-
-        _mgr.TMUX_SESSION = tmux_override
-
     app.state.config = config
     api_port = config.get("server", {}).get("port", 8093)
 

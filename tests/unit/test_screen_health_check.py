@@ -283,6 +283,7 @@ class TestPaneAttachmentDetection(unittest.TestCase):
     If not, the worker is marked screen_detached for auto-reattach.
     """
 
+    @patch(f"{_HEALTH}.window_exists", return_value=True)
     @patch(f"{_HEALTH}.check_tui_running_in_pane", return_value=False)
     @patch(f"{_HEALTH}.check_screen_and_claude_remote", return_value=_SCREEN_ALIVE)
     @patch(f"{_HEALTH}.repo")
@@ -291,6 +292,7 @@ class TestPaneAttachmentDetection(unittest.TestCase):
         mock_repo,
         mock_screen_check,
         mock_tui,
+        mock_win_exists,
     ):
         """screen_status=alive + TUI not active → screen_detached + needs_reconnect."""
         session = _make_remote_session()
@@ -305,6 +307,7 @@ class TestPaneAttachmentDetection(unittest.TestCase):
         assert "pane not attached" in result["reason"]
         mock_tui.assert_called_once()
 
+    @patch(f"{_HEALTH}.window_exists", return_value=True)
     @patch(f"{_HEALTH}.check_tui_running_in_pane", return_value=True)
     @patch(f"{_HEALTH}.check_screen_and_claude_remote", return_value=_SCREEN_ALIVE)
     @patch(f"{_HEALTH}.repo")
@@ -313,6 +316,7 @@ class TestPaneAttachmentDetection(unittest.TestCase):
         mock_repo,
         mock_screen_check,
         mock_tui,
+        mock_win_exists,
     ):
         """screen_status=alive + TUI active → alive."""
         session = _make_remote_session()
@@ -325,6 +329,7 @@ class TestPaneAttachmentDetection(unittest.TestCase):
         assert result["tunnel_alive"] is True
         mock_tui.assert_called_once()
 
+    @patch(f"{_HEALTH}.window_exists", return_value=True)
     @patch(f"{_HEALTH}.check_tui_running_in_pane", return_value=False)
     @patch(f"{_HEALTH}.check_screen_and_claude_remote", return_value=_SCREEN_ALIVE)
     @patch(f"{_HEALTH}.repo")
@@ -333,6 +338,7 @@ class TestPaneAttachmentDetection(unittest.TestCase):
         mock_repo,
         mock_screen_check,
         mock_tui,
+        mock_win_exists,
     ):
         """Tunnel dead → restart succeeds → TUI not active → screen_detached.
 
@@ -353,6 +359,7 @@ class TestPaneAttachmentDetection(unittest.TestCase):
         assert result["tunnel_alive"] is True
         mock_tui.assert_called_once()
 
+    @patch(f"{_HEALTH}.window_exists", return_value=True)
     @patch(f"{_HEALTH}.check_tui_running_in_pane", return_value=True)
     @patch(f"{_HEALTH}.check_screen_and_claude_remote", return_value=_SCREEN_ALIVE)
     @patch(f"{_HEALTH}.repo")
@@ -361,6 +368,7 @@ class TestPaneAttachmentDetection(unittest.TestCase):
         mock_repo,
         mock_screen_check,
         mock_tui,
+        mock_win_exists,
     ):
         """Tunnel dead → restart succeeds → TUI active → alive + tunnel_reconnected."""
         session = _make_remote_session()
@@ -380,6 +388,7 @@ class TestPaneAttachmentDetection(unittest.TestCase):
 class TestRdevRecoveryStatus(unittest.TestCase):
     """Test that rdev recovery returns the updated status, not the stale one."""
 
+    @patch(f"{_HEALTH}.window_exists", return_value=True)
     @patch(f"{_HEALTH}.check_tui_running_in_pane", return_value=True)
     @patch(f"{_HEALTH}.check_screen_and_claude_remote", return_value=_SCREEN_ALIVE)
     @patch(f"{_HEALTH}.repo")
@@ -388,6 +397,7 @@ class TestRdevRecoveryStatus(unittest.TestCase):
         mock_repo,
         mock_screen_check,
         mock_tui,
+        mock_win_exists,
     ):
         """Rdev worker recovering from disconnected should return status='waiting'."""
         session = _make_remote_session(status="disconnected")
@@ -400,6 +410,7 @@ class TestRdevRecoveryStatus(unittest.TestCase):
         assert result["status"] == "waiting"  # not stale "disconnected"
         mock_repo.update_session.assert_called_once()
 
+    @patch(f"{_HEALTH}.window_exists", return_value=True)
     @patch(f"{_HEALTH}.check_tui_running_in_pane", return_value=True)
     @patch(f"{_HEALTH}.check_screen_and_claude_remote", return_value=_SCREEN_ALIVE)
     @patch(f"{_HEALTH}.repo")
@@ -408,6 +419,7 @@ class TestRdevRecoveryStatus(unittest.TestCase):
         mock_repo,
         mock_screen_check,
         mock_tui,
+        mock_win_exists,
     ):
         """Rdev worker recovering from error should return status='waiting'."""
         session = _make_remote_session(status="error")
@@ -419,6 +431,7 @@ class TestRdevRecoveryStatus(unittest.TestCase):
         assert result["alive"] is True
         assert result["status"] == "waiting"  # not stale "error"
 
+    @patch(f"{_HEALTH}.window_exists", return_value=True)
     @patch(f"{_HEALTH}.check_tui_running_in_pane", return_value=True)
     @patch(f"{_HEALTH}.check_screen_and_claude_remote", return_value=_SCREEN_ALIVE)
     @patch(f"{_HEALTH}.repo")
@@ -427,6 +440,7 @@ class TestRdevRecoveryStatus(unittest.TestCase):
         mock_repo,
         mock_screen_check,
         mock_tui,
+        mock_win_exists,
     ):
         """Rdev worker recovering from screen_detached should return status='waiting'."""
         session = _make_remote_session(status="screen_detached")
@@ -438,6 +452,7 @@ class TestRdevRecoveryStatus(unittest.TestCase):
         assert result["alive"] is True
         assert result["status"] == "waiting"
 
+    @patch(f"{_HEALTH}.window_exists", return_value=True)
     @patch(f"{_HEALTH}.check_tui_running_in_pane", return_value=True)
     @patch(f"{_HEALTH}.check_screen_and_claude_remote", return_value=_SCREEN_ALIVE)
     @patch(f"{_HEALTH}.repo")
@@ -446,6 +461,7 @@ class TestRdevRecoveryStatus(unittest.TestCase):
         mock_repo,
         mock_screen_check,
         mock_tui,
+        mock_win_exists,
     ):
         """Rdev worker already 'working' should keep that status."""
         session = _make_remote_session(status="working")

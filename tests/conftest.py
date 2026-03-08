@@ -12,7 +12,6 @@ condition tests).
 """
 
 import logging
-import os
 import socket
 import subprocess
 import sys
@@ -39,10 +38,11 @@ TEST_TMUX_SESSION = "orchestrator-test"
 
 @pytest.fixture(scope="session", autouse=True)
 def _isolate_tmux_session(worker_id):
-    """Route all test tmux operations to a dedicated test session.
+    """Route all in-process test tmux operations to a dedicated test session.
 
-    Patches the in-process constant AND sets the env var so that server
-    subprocesses (E2E tests) also pick up the isolated session name.
+    Patches the module-level ``TMUX_SESSION`` constant so code that calls
+    ``tmux_target()`` or reads ``manager.TMUX_SESSION`` uses the test
+    session name instead of the real ``orchestrator`` session.
     """
     import orchestrator.terminal.manager as mgr
 
@@ -51,17 +51,11 @@ def _isolate_tmux_session(worker_id):
     )
 
     orig_mgr = mgr.TMUX_SESSION
-    orig_env = os.environ.get("ORCHESTRATOR_TMUX_SESSION")
     mgr.TMUX_SESSION = session_name
-    os.environ["ORCHESTRATOR_TMUX_SESSION"] = session_name
 
     yield session_name
 
     mgr.TMUX_SESSION = orig_mgr
-    if orig_env is None:
-        os.environ.pop("ORCHESTRATOR_TMUX_SESSION", None)
-    else:
-        os.environ["ORCHESTRATOR_TMUX_SESSION"] = orig_env
 
     # Kill the test session (use saved reference to bypass subprocess guard)
     try:

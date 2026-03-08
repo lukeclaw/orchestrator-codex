@@ -103,12 +103,13 @@ class TestStatusTransitions:
         # Should update to disconnected
         mock_health_repo.update_session.assert_called()
 
+    @patch("orchestrator.session.health.window_exists", return_value=True)
     @patch("orchestrator.session.health.check_claude_running_local")
     @patch("orchestrator.session.health.is_remote_host")
     @patch("orchestrator.session.health.repo")
     @patch("orchestrator.api.routes.sessions.repo")
     def test_disconnected_to_waiting_on_health_recover(
-        self, mock_route_repo, mock_health_repo, mock_is_remote, mock_check_claude, db
+        self, mock_route_repo, mock_health_repo, mock_is_remote, mock_check_claude, mock_win_exists, db
     ):
         """Health check finding alive Claude should recover disconnected -> waiting."""
         from orchestrator.api.routes.sessions import health_check_session
@@ -136,12 +137,13 @@ class TestStatusTransitions:
         _, kwargs = mock_health_repo.update_session.call_args
         assert kwargs["status"] == "waiting"
 
+    @patch("orchestrator.session.health.window_exists", return_value=True)
     @patch("orchestrator.session.health.check_claude_running_local")
     @patch("orchestrator.session.health.is_remote_host")
     @patch("orchestrator.session.health.repo")
     @patch("orchestrator.api.routes.sessions.repo")
     def test_error_to_waiting_on_health_recover(
-        self, mock_route_repo, mock_health_repo, mock_is_remote, mock_check_claude, db
+        self, mock_route_repo, mock_health_repo, mock_is_remote, mock_check_claude, mock_win_exists, db
     ):
         """Health check finding alive Claude should recover error -> waiting."""
         from orchestrator.api.routes.sessions import health_check_session
@@ -166,12 +168,13 @@ class TestStatusTransitions:
         assert result["status"] == "waiting"
         mock_health_repo.update_session.assert_called_once()
 
+    @patch("orchestrator.session.health.window_exists", return_value=True)
     @patch("orchestrator.session.health.check_claude_running_local")
     @patch("orchestrator.session.health.is_remote_host")
     @patch("orchestrator.session.health.repo")
     @patch("orchestrator.api.routes.sessions.repo")
     def test_working_stays_working_on_health_alive(
-        self, mock_route_repo, mock_health_repo, mock_is_remote, mock_check_claude, db
+        self, mock_route_repo, mock_health_repo, mock_is_remote, mock_check_claude, mock_win_exists, db
     ):
         """Health check finding alive Claude with 'working' status should keep it."""
         from orchestrator.api.routes.sessions import health_check_session
@@ -197,13 +200,14 @@ class TestStatusTransitions:
         # Should NOT update the DB — status is already fine
         mock_health_repo.update_session.assert_not_called()
 
+    @patch("orchestrator.session.health.window_exists", return_value=True)
     @patch("orchestrator.session.health.check_tui_running_in_pane", return_value=True)
     @patch("orchestrator.session.health.check_screen_and_claude_remote")
     @patch("orchestrator.session.health.is_remote_host")
     @patch("orchestrator.session.health.repo")
     @patch("orchestrator.api.routes.sessions.repo")
     def test_working_tunnel_dead_auto_reconnect_success(
-        self, mock_route_repo, mock_health_repo, mock_is_remote, mock_screen_check, mock_tui, db
+        self, mock_route_repo, mock_health_repo, mock_is_remote, mock_screen_check, mock_tui, mock_win_exists, db
     ):
         """Dead tunnel with alive Claude should auto-reconnect and stay alive."""
         from orchestrator.api.routes.sessions import health_check_session
@@ -232,12 +236,13 @@ class TestStatusTransitions:
         assert result["tunnel_reconnected"] is True
         mock_tm.restart_tunnel.assert_called_once()
 
+    @patch("orchestrator.session.health.window_exists", return_value=True)
     @patch("orchestrator.session.health.check_screen_and_claude_remote")
     @patch("orchestrator.session.health.is_remote_host")
     @patch("orchestrator.session.health.repo")
     @patch("orchestrator.api.routes.sessions.repo")
     def test_working_to_screen_detached_on_tunnel_reconnect_fail(
-        self, mock_route_repo, mock_health_repo, mock_is_remote, mock_screen_check, db
+        self, mock_route_repo, mock_health_repo, mock_is_remote, mock_screen_check, mock_win_exists, db
     ):
         """Dead tunnel with failed auto-reconnect should transition to screen_detached."""
         from orchestrator.api.routes.sessions import health_check_session

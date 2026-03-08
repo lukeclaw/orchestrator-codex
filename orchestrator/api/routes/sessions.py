@@ -584,12 +584,10 @@ def send_message(session_id: str, body: SendMessage, request: Request, db=Depend
     if s is None:
         raise HTTPException(404, "Session not found")
 
+    from orchestrator.terminal.manager import TMUX_SESSION
     from orchestrator.terminal.session import send_to_session
 
-    config = getattr(request.app.state, "config", {})
-    tmux_session = config.get("tmux", {}).get("session_name", "orchestrator")
-
-    success = send_to_session(s.name, body.message, tmux_session)
+    success = send_to_session(s.name, body.message, TMUX_SESSION)
     if not success:
         raise HTTPException(500, "Failed to send message")
     return {"ok": True, "session": s.name}
@@ -611,12 +609,9 @@ def type_text(session_id: str, body: TypeText, request: Request, db=Depends(get_
     if s is None:
         raise HTTPException(404, "Session not found")
 
-    from orchestrator.terminal.manager import send_keys_literal
+    from orchestrator.terminal.manager import TMUX_SESSION, send_keys_literal
 
-    config = getattr(request.app.state, "config", {})
-    tmux_session = config.get("tmux", {}).get("session_name", "orchestrator")
-
-    success = send_keys_literal(tmux_session, s.name, body.text)
+    success = send_keys_literal(TMUX_SESSION, s.name, body.text)
     if not success:
         raise HTTPException(500, "Failed to type text")
     return {"ok": True, "session": s.name}
@@ -635,12 +630,9 @@ def paste_to_pane_endpoint(session_id: str, body: TypeText, request: Request, db
     if s is None:
         raise HTTPException(404, "Session not found")
 
-    from orchestrator.terminal.manager import paste_to_pane
+    from orchestrator.terminal.manager import TMUX_SESSION, paste_to_pane
 
-    config = getattr(request.app.state, "config", {})
-    tmux_session = config.get("tmux", {}).get("session_name", "orchestrator")
-
-    success = paste_to_pane(tmux_session, s.name, body.text)
+    success = paste_to_pane(TMUX_SESSION, s.name, body.text)
     if not success:
         raise HTTPException(500, "Failed to paste text")
     return {"ok": True, "session": s.name}

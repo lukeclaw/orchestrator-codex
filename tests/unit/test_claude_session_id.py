@@ -369,8 +369,9 @@ class TestHealthCheckUsesClaudeSessionId:
     ps aux fallback checking both session.id and claude_session_id.
     """
 
+    @patch("orchestrator.session.health.window_exists", return_value=True)
     @patch("orchestrator.session.health.check_claude_running_local")
-    def test_health_check_passes_both_ids(self, mock_check, db):
+    def test_health_check_passes_both_ids(self, mock_check, mock_win_exists, db):
         """Health check should pass both session.id and claude_session_id."""
         from orchestrator.session.health import check_and_update_worker_health
 
@@ -390,8 +391,9 @@ class TestHealthCheckUsesClaudeSessionId:
         assert positional[0] == s.id  # session.id first
         assert positional[1] == new_claude_id  # claude_session_id second
 
+    @patch("orchestrator.session.health.window_exists", return_value=True)
     @patch("orchestrator.session.health.check_claude_running_local")
-    def test_health_check_falls_back_to_session_id(self, mock_check, db):
+    def test_health_check_falls_back_to_session_id(self, mock_check, mock_win_exists, db):
         """When claude_session_id is None, fall back gracefully."""
         from orchestrator.session.health import check_and_update_worker_health
 
