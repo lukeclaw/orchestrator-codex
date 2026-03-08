@@ -257,9 +257,9 @@ export default function PrPreviewCard({ url, initialData, onDataFetched }: PrPre
         <div className="pr-preview-columns">
           {/* Left column — Reviews */}
           <div className="pr-preview-col">
-            {data.reviews.length > 0 && (
-              <div className="pr-preview-section">
-                <div className="pr-section-title">Reviews</div>
+            <div className="pr-preview-section">
+              <div className="pr-section-title">Reviews</div>
+              {data.reviews.length > 0 ? (
                 <div className="pr-reviews" ref={reviewsRef}>
                   {data.reviews.map(r => (
                     <div key={r.reviewer} className="pr-review-item">
@@ -356,8 +356,10 @@ export default function PrPreviewCard({ url, initialData, onDataFetched }: PrPre
                     </div>
                   ))}
                 </div>
-              </div>
-            )}
+              ) : (
+                <span className="pr-no-reviews">No reviews yet</span>
+              )}
+            </div>
           </div>
 
           {/* Right column — CI Checks + Approval Gates (open PRs only) */}

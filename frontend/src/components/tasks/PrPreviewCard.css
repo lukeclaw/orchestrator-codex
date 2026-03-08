@@ -464,6 +464,11 @@
   white-space: nowrap;
 }
 
+.pr-no-reviews {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
 /* Eye-icon button to toggle review comment threads */
 .pr-review-threads-btn {
   display: inline-flex;
