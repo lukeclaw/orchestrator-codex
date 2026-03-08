@@ -472,6 +472,16 @@ function renderTokens(tokens: Token[]): string {
         return `<p>${parseInline(token.content)}</p>`
       
       case 'code_block':
+        if (token.language === 'suggestion') {
+          const lines = token.content.split('\n')
+          const diffLines = lines.map(l => {
+            if (l.startsWith('-')) {
+              return `<div class="suggestion-line suggestion-del"><span class="suggestion-prefix">-</span>${escapeHtml(l.slice(1))}</div>`
+            }
+            return `<div class="suggestion-line suggestion-add"><span class="suggestion-prefix">+</span>${escapeHtml(l)}</div>`
+          }).join('')
+          return `<div class="suggestion-block"><div class="suggestion-header">Suggested change</div><pre class="suggestion-diff"><code>${diffLines}</code></pre></div>`
+        }
         return `<pre class="code-block${token.language ? ` language-${token.language}` : ''}"><code>${highlightCode(token.content, token.language)}</code></pre>`
       
       case 'blockquote':

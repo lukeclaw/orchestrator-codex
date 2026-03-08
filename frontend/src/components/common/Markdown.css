@@ -264,6 +264,66 @@
   border-radius: 6px;
 }
 
+/* GitHub suggestion blocks */
+.markdown-content .suggestion-block {
+  margin: 0.5em 0;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.markdown-content .suggestion-header {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  padding: 4px 10px;
+  background: var(--surface-raised);
+  border-bottom: 1px solid var(--border);
+}
+
+.markdown-content .suggestion-diff {
+  margin: 0;
+  padding: 0;
+  background: rgba(63, 185, 80, 0.06);
+  border: none;
+  border-radius: 0;
+}
+
+.markdown-content .suggestion-diff code {
+  font-family: 'SF Mono', 'Menlo', 'Monaco', 'Consolas', monospace;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-primary);
+  display: block;
+  background: transparent;
+}
+
+.markdown-content .suggestion-line {
+  padding: 1px 10px;
+  white-space: pre;
+}
+
+.markdown-content .suggestion-del {
+  background: rgba(248, 81, 73, 0.1);
+}
+
+.markdown-content .suggestion-add {
+  background: rgba(63, 185, 80, 0.1);
+}
+
+.markdown-content .suggestion-prefix {
+  margin-right: 6px;
+  user-select: none;
+}
+
+.markdown-content .suggestion-del .suggestion-prefix {
+  color: var(--red);
+}
+
+.markdown-content .suggestion-add .suggestion-prefix {
+  color: var(--green);
+}
+
 /* Syntax highlighting (VS Code Dark+ inspired) */
 .markdown-content .hl-keyword { color: #569cd6; }
 .markdown-content .hl-comment { color: #6a9955; font-style: italic; }

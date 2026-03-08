@@ -30,10 +30,18 @@ const FILE_STATUS_LABELS: Record<string, string> = {
   renamed: 'renamed',
 }
 
-/** Render markdown text to HTML for comment previews */
-function renderMd(text: string): string {
+/** Render markdown text to HTML for comment previews.
+ *  If originalLines is provided, injects them as deletion lines in suggestion blocks. */
+function renderMd(text: string, originalLines?: string | null): string {
   // Strip HTML tags from GitHub API response before parsing as markdown
-  const cleaned = text.replace(/<[^>]+>/g, '')
+  let cleaned = text.replace(/<[^>]+>/g, '')
+  // Inject original lines into suggestion blocks so the renderer can show the diff
+  if (originalLines) {
+    cleaned = cleaned.replace(
+      /```suggestion\s*\n/,
+      `\`\`\`suggestion\n${originalLines.split('\n').map(l => `-${l}`).join('\n')}\n`,
+    )
+  }
   return renderTokens(tokenize(cleaned))
 }
 
@@ -312,7 +320,7 @@ export default function PrPreviewCard({ url, initialData, onDataFetched }: PrPre
                                     </div>
                                   )}
                                   <div className="pr-thread-comment pr-thread-root-comment">
-                                    <div className="pr-thread-body markdown-content" dangerouslySetInnerHTML={{ __html: renderMd(t.body) }} />
+                                    <div className="pr-thread-body markdown-content" dangerouslySetInnerHTML={{ __html: renderMd(t.body, t.original_lines) }} />
                                   </div>
                                   {t.replies.length > 0 && (
                                     <div className="pr-thread-replies">

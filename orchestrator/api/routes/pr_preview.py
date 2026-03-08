@@ -57,6 +57,32 @@ def _parse_pr_url(url: str) -> tuple[str, str, str]:
     return m.group(1), m.group(2), m.group(3)
 
 
+def _extract_suggestion_original(comment: dict) -> str | None:
+    """Extract original lines from diff_hunk when comment body has a suggestion."""
+    body = comment.get("body") or ""
+    if "```suggestion" not in body:
+        return None
+    # Count how many lines are in the suggestion block
+    m = re.search(r"```suggestion\s*\n(.*?)```", body, re.DOTALL)
+    if not m:
+        return None
+    suggestion_lines = m.group(1).rstrip("\n").split("\n")
+    num_suggestion_lines = len(suggestion_lines)
+
+    diff_hunk = comment.get("diff_hunk") or ""
+    if not diff_hunk:
+        return None
+    # diff_hunk ends with the lines being commented on.
+    # The last N lines (matching suggestion line count) are the original code.
+    hunk_lines = diff_hunk.split("\n")
+    # Skip the @@ header line and only look at content lines
+    content_lines = [ln for ln in hunk_lines if not ln.startswith("@@")]
+    # Take the last N content lines — strip the leading +/- /space prefix
+    original = content_lines[-num_suggestion_lines:]
+    # Strip the diff prefix character (first char: +, -, or space)
+    return "\n".join(ln[1:] if ln and ln[0] in ("+", "-", " ") else ln for ln in original)
+
+
 def _build_reviews(
     reviews_raw: list[dict],
     review_comments: list[dict],
@@ -90,6 +116,7 @@ def _build_reviews(
             "body": (c.get("body") or "")[:2000],
             "file": path.rsplit("/", 1)[-1] if path else "",
             "html_url": c.get("html_url"),
+            "original_lines": _extract_suggestion_original(c),
             "replies": [],
         }
         for r in replies_by_parent.get(cid, []):

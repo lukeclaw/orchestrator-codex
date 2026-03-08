@@ -113,6 +113,7 @@ export interface PrCommentThread {
   body: string
   file: string
   html_url: string | null
+  original_lines: string | null
   replies: { author: string; body: string }[]
 }
 
