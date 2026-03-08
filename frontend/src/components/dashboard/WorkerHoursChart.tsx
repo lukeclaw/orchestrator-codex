@@ -16,12 +16,13 @@ function localYMD(d: Date): string {
   return `${y}-${m}-${day}`
 }
 
-/** Fill missing days with zeros for continuous x-axis. */
+/** Fill missing days with zeros, newest first (reversed).
+ *  See ThroughputChart for rationale on reversed order. */
 function fillDays(data: WorkerHoursDay[], rangeDays: number): WorkerHoursDay[] {
   const map = new Map(data.map(d => [d.date, d]))
   const result: WorkerHoursDay[] = []
   const now = new Date()
-  for (let i = rangeDays - 1; i >= 0; i--) {
+  for (let i = 0; i < rangeDays; i++) {
     const d = new Date(now)
     d.setDate(d.getDate() - i)
     const key = localYMD(d)
@@ -46,12 +47,10 @@ export default function WorkerHoursChart({ data, range, onPointClick }: Props) {
 
   const hasData = data.length > 0
 
-  // Today's hours and this week total
-  const stats = useMemo(() => {
-    const today = localYMD(new Date())
-    const todayHours = filled.find(d => d.date === today)?.hours || 0
-    const weekTotal = filled.slice(-7).reduce((s, d) => s + d.hours, 0)
-    return { todayHours: todayHours.toFixed(1), weekTotal: weekTotal.toFixed(1) }
+  // Daily average over selected range
+  const avg = useMemo(() => {
+    const total = filled.reduce((s, d) => s + d.hours, 0)
+    return (total / filled.length).toFixed(1)
   }, [filled])
 
   if (!hasData) return null
@@ -60,7 +59,7 @@ export default function WorkerHoursChart({ data, range, onPointClick }: Props) {
     <div className="trends-chart">
       <div className="trends-chart-header">
         <span className="trends-chart-title">Worker-Hours</span>
-        <span className="trends-chart-stat">{stats.todayHours}h today / {stats.weekTotal}h this week</span>
+        <span className="trends-chart-stat">{avg}h/day avg ({range})</span>
       </div>
       <ResponsiveContainer width="100%" height={180}>
         <AreaChart
@@ -82,6 +81,7 @@ export default function WorkerHoursChart({ data, range, onPointClick }: Props) {
           <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
           <XAxis
             dataKey="date"
+            reversed
             tickFormatter={formatDate}
             tick={{ fill: 'var(--text-muted)', fontSize: 11 }}
             axisLine={{ stroke: 'var(--border)' }}

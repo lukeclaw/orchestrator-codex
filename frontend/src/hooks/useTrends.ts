@@ -5,7 +5,7 @@ import type { TrendsData } from '../api/types'
 export function useTrends() {
   const [data, setData] = useState<TrendsData | null>(null)
   const [loading, setLoading] = useState(true)
-  const [range, setRange] = useState<'7d' | '30d' | '90d'>('7d')
+  const [range, setRange] = useState<'7d' | '30d' | '90d'>('30d')
   const hasLoaded = useRef(false)
 
   const fetch = useCallback(async () => {

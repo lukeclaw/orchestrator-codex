@@ -16,12 +16,15 @@ function localYMD(d: Date): string {
   return `${y}-${m}-${day}`
 }
 
-/** Fill missing days in the range with zeros for a continuous x-axis. */
+/** Fill missing days in the range with zeros, newest first (reversed).
+ *  Reversed order keeps recent-day indices stable across range switches,
+ *  so Recharts animates new (older) bars in at the end of the array.
+ *  The XAxis `reversed` prop flips the visual back to chronological order. */
 function fillDays(data: ThroughputDay[], rangeDays: number): ThroughputDay[] {
   const map = new Map(data.map(d => [d.date, d]))
   const result: ThroughputDay[] = []
   const now = new Date()
-  for (let i = rangeDays - 1; i >= 0; i--) {
+  for (let i = 0; i < rangeDays; i++) {
     const d = new Date(now)
     d.setDate(d.getDate() - i)
     const key = localYMD(d)
@@ -46,11 +49,10 @@ export default function ThroughputChart({ data, range, onBarClick }: Props) {
 
   const hasData = data.length > 0
 
-  // Rolling 7-day average
-  const avg7d = useMemo(() => {
-    const last7 = filled.slice(-7)
-    const total = last7.reduce((s, d) => s + d.tasks + d.subtasks, 0)
-    return (total / last7.length).toFixed(1)
+  // Average over selected range
+  const avg = useMemo(() => {
+    const total = filled.reduce((s, d) => s + d.tasks + d.subtasks, 0)
+    return (total / filled.length).toFixed(1)
   }, [filled])
 
   if (!hasData) return null
@@ -59,7 +61,7 @@ export default function ThroughputChart({ data, range, onBarClick }: Props) {
     <div className="trends-chart">
       <div className="trends-chart-header">
         <span className="trends-chart-title">Task Throughput</span>
-        <span className="trends-chart-stat">{avg7d}/day avg (7d)</span>
+        <span className="trends-chart-stat">{avg}/day avg ({range})</span>
       </div>
       <ResponsiveContainer width="100%" height={180}>
         <BarChart
@@ -75,6 +77,7 @@ export default function ThroughputChart({ data, range, onBarClick }: Props) {
           <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
           <XAxis
             dataKey="date"
+            reversed
             tickFormatter={formatDate}
             tick={{ fill: 'var(--text-muted)', fontSize: 11 }}
             axisLine={{ stroke: 'var(--border)' }}
