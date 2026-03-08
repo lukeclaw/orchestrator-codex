@@ -126,7 +126,7 @@ def _build_reviews(
             latest_comment_url[user] = c["html_url"]
         path = c.get("path", "")
         thread = {
-            "body": (c.get("body") or "")[:2000],
+            "body": c.get("body") or "",
             "file": path.rsplit("/", 1)[-1] if path else "",
             "html_url": c.get("html_url"),
             "original_lines": _extract_suggestion_original(c),
@@ -136,7 +136,7 @@ def _build_reviews(
             thread["replies"].append(
                 {
                     "author": (r.get("user") or {}).get("login", ""),
-                    "body": (r.get("body") or "")[:2000],
+                    "body": r.get("body") or "",
                 }
             )
         user_threads.setdefault(user, []).append(thread)
@@ -149,7 +149,7 @@ def _build_reviews(
             if c.get("html_url"):
                 latest_comment_url[user] = c["html_url"]
             thread = {
-                "body": (c.get("body") or "")[:2000],
+                "body": c.get("body") or "",
                 "file": "",
                 "html_url": c.get("html_url"),
                 "replies": [],
@@ -170,7 +170,7 @@ def _build_reviews(
             threads.insert(
                 0,
                 {
-                    "body": review_body[:2000],
+                    "body": review_body,
                     "file": "",
                     "html_url": r.get("html_url"),
                     "original_lines": None,
