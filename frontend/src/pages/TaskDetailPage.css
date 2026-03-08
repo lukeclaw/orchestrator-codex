@@ -857,8 +857,9 @@
 .subtask-link-btn {
   display: flex;
   align-items: center;
-  padding: 6px 10px;
-  margin-right: 8px;
+  padding: 6px 10px 6px 10px;
+  margin-right: 0;
+  min-width: 44px;
   color: var(--text-muted);
   text-decoration: none;
   font-size: 12px;
