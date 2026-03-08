@@ -204,7 +204,7 @@ export default function PrPreviewCard({ url, initialData, onDataFetched }: PrPre
           </button>
           <div className="pr-preview-header-actions">
             <button
-              className="pr-preview-refresh"
+              className={`pr-preview-refresh ${loading ? 'refreshing' : ''}`}
               onClick={fetchData}
               disabled={loading}
               data-tooltip="Refresh"
@@ -305,35 +305,37 @@ export default function PrPreviewCard({ url, initialData, onDataFetched }: PrPre
                                   <button className="pr-review-popup-close" onClick={() => setOpenReviewPopup(null)}>&times;</button>
                                 </div>
                               </div>
-                              {r.comment_threads.map((t, i) => (
-                                <div
-                                  key={i}
-                                  className="pr-thread-card"
-                                >
-                                  {t.file && (
-                                    <div className="pr-thread-file-label">
-                                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-                                        <polyline points="14 2 14 8 20 8" />
-                                      </svg>
-                                      {t.file}
+                              <div className="pr-review-popup-content">
+                                {r.comment_threads.map((t, i) => (
+                                  <div
+                                    key={i}
+                                    className="pr-thread-card"
+                                  >
+                                    {t.file && (
+                                      <div className="pr-thread-file-label">
+                                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                                          <polyline points="14 2 14 8 20 8" />
+                                        </svg>
+                                        {t.file}
+                                      </div>
+                                    )}
+                                    <div className="pr-thread-comment pr-thread-root-comment">
+                                      <div className="pr-thread-body markdown-content" dangerouslySetInnerHTML={{ __html: renderMd(t.body, t.original_lines) }} />
                                     </div>
-                                  )}
-                                  <div className="pr-thread-comment pr-thread-root-comment">
-                                    <div className="pr-thread-body markdown-content" dangerouslySetInnerHTML={{ __html: renderMd(t.body, t.original_lines) }} />
+                                    {t.replies.length > 0 && (
+                                      <div className="pr-thread-replies">
+                                        {t.replies.map((reply, j) => (
+                                          <div key={j} className="pr-thread-comment pr-thread-reply">
+                                            <span className="pr-thread-author">{reply.author}</span>
+                                            <div className="pr-thread-body markdown-content" dangerouslySetInnerHTML={{ __html: renderMd(reply.body) }} />
+                                          </div>
+                                        ))}
+                                      </div>
+                                    )}
                                   </div>
-                                  {t.replies.length > 0 && (
-                                    <div className="pr-thread-replies">
-                                      {t.replies.map((reply, j) => (
-                                        <div key={j} className="pr-thread-comment pr-thread-reply">
-                                          <span className="pr-thread-author">{reply.author}</span>
-                                          <div className="pr-thread-body markdown-content" dangerouslySetInnerHTML={{ __html: renderMd(reply.body) }} />
-                                        </div>
-                                      ))}
-                                    </div>
-                                  )}
-                                </div>
-                              ))}
+                                ))}
+                              </div>
                             </div>
                           )}
                         </>

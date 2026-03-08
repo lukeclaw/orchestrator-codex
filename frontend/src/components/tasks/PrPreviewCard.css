@@ -150,6 +150,15 @@
   cursor: default;
 }
 
+.pr-preview-refresh.refreshing svg {
+  animation: pr-refresh-spin 0.8s linear infinite;
+}
+
+@keyframes pr-refresh-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
 /* Title group: clickable title + subtitle */
 
 .pr-preview-title-group {
@@ -491,7 +500,6 @@
 .pr-review-popup {
   display: flex;
   flex-direction: column;
-  gap: 2px;
   position: absolute;
   bottom: calc(100% + 6px);
   left: calc(100% + 6px);
@@ -499,12 +507,11 @@
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  padding: 8px;
   width: max-content;
   min-width: 360px;
   max-width: min(600px, 40vw);
   max-height: min(500px, 50vh);
-  overflow-y: auto;
+  overflow: hidden;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
   animation: pr-popup-enter 150ms var(--ease-decelerate);
 }
@@ -513,15 +520,22 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding-bottom: 4px;
-  margin-bottom: 2px;
+  padding: 8px 10px;
   border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.pr-review-popup-content {
+  overflow-y: auto;
+  padding: 4px 8px 8px;
+  flex: 1;
+  min-height: 0;
 }
 
 .pr-review-popup-title {
   font-size: 12px;
-  font-weight: 500;
-  color: var(--text-secondary);
+  font-weight: 600;
+  color: var(--text-primary);
 }
 
 .pr-review-popup-actions {
