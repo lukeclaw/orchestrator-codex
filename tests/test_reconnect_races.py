@@ -24,6 +24,8 @@ from orchestrator.state.migrations.runner import apply_migrations
 from orchestrator.state.models import Session
 from orchestrator.state.repositories import sessions as repo
 
+pytestmark = pytest.mark.allow_threading
+
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------

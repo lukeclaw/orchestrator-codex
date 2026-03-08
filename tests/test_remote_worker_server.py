@@ -23,6 +23,8 @@ from orchestrator.terminal.remote_worker_server import (
     shutdown_all_rws_servers,
 )
 
+pytestmark = pytest.mark.allow_threading
+
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------

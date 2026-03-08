@@ -34,19 +34,18 @@ class TestSessions:
             "orchestrator.api.routes.sessions.ensure_window", return_value="orchestrator:worker-1"
         ):
             resp = client.post(
-                "/api/sessions", json={"name": "worker-1", "host": "rdev1.example.com"}
+                "/api/sessions", json={"name": "worker-1", "host": "localhost"}
             )
         assert resp.status_code == 201
         data = resp.json()
         assert data["name"] == "worker-1"
-        # Remote workers start in "connecting" while background setup runs
-        assert data["status"] == "connecting"
+        assert data["status"] == "idle"
 
     def test_get_session(self, client):
         with patch(
             "orchestrator.api.routes.sessions.ensure_window", return_value="orchestrator:w1"
         ):
-            create = client.post("/api/sessions", json={"name": "w1", "host": "h1"})
+            create = client.post("/api/sessions", json={"name": "w1", "host": "localhost"})
         sid = create.json()["id"]
         resp = client.get(f"/api/sessions/{sid}")
         assert resp.status_code == 200
@@ -60,7 +59,7 @@ class TestSessions:
         with patch(
             "orchestrator.api.routes.sessions.ensure_window", return_value="orchestrator:w2"
         ):
-            create = client.post("/api/sessions", json={"name": "w2", "host": "h2"})
+            create = client.post("/api/sessions", json={"name": "w2", "host": "localhost"})
         sid = create.json()["id"]
         resp = client.patch(f"/api/sessions/{sid}", json={"status": "working"})
         assert resp.status_code == 200
@@ -70,7 +69,7 @@ class TestSessions:
         with patch(
             "orchestrator.api.routes.sessions.ensure_window", return_value="orchestrator:del"
         ):
-            create = client.post("/api/sessions", json={"name": "del", "host": "h"})
+            create = client.post("/api/sessions", json={"name": "del", "host": "localhost"})
         sid = create.json()["id"]
         resp = client.delete(f"/api/sessions/{sid}")
         assert resp.status_code == 200
@@ -570,7 +569,8 @@ class TestSessionPasteImage:
         with patch(
             "orchestrator.api.routes.sessions.ensure_window", return_value=f"orchestrator:{name}"
         ):
-            resp = client.post("/api/sessions", json={"name": name, "host": host})
+            with patch("orchestrator.api.routes.sessions.threading"):
+                resp = client.post("/api/sessions", json={"name": name, "host": host})
         return resp.json()["id"]
 
     def test_paste_image_local_worker(self, client, tmp_path):

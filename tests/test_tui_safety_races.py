@@ -36,6 +36,8 @@ from orchestrator.session.reconnect import (
     safe_send_keys,
 )
 
+pytestmark = pytest.mark.allow_threading
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------

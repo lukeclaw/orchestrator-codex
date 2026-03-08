@@ -1,18 +1,21 @@
 """Shared test fixtures and global guardrails.
 
-Guardrails: any test that forgets to mock socket or subprocess will fail
-immediately with a clear error instead of silently making real SSH connections,
-HTTP requests, or tmux calls.
+Guardrails: any test that forgets to mock socket, subprocess, or threading
+will fail immediately with a clear error instead of silently making real SSH
+connections, HTTP requests, tmux calls, or spawning daemon threads that
+outlive the test scope.
 
-Use ``@pytest.mark.allow_network`` or ``@pytest.mark.allow_subprocess`` to
-opt out for tests that intentionally need real I/O (e.g. E2E, integration
-terminal tests).
+Use ``@pytest.mark.allow_network``, ``@pytest.mark.allow_subprocess``, or
+``@pytest.mark.allow_threading`` to opt out for tests that intentionally
+need real I/O or concurrency (e.g. E2E, integration terminal tests, race
+condition tests).
 """
 
 import logging
 import socket
 import subprocess
 import sys
+import threading
 import traceback
 
 import pytest
@@ -109,6 +112,29 @@ def _block_subprocess(request, monkeypatch):
         return
     monkeypatch.setattr(subprocess, "Popen", _guarded_popen)
     monkeypatch.setattr(subprocess, "run", _guarded_run)
+
+
+# ---------------------------------------------------------------------------
+# Threading guard — blocks daemon threads that outlive test scope
+# ---------------------------------------------------------------------------
+
+_real_thread_start = threading.Thread.start
+
+
+def _guarded_thread_start(self):
+    if not _called_from_project():
+        return _real_thread_start(self)
+    raise RuntimeError(
+        f"Test tried to start a real thread ({self._target!r}). "
+        "Mock threading or mark the test with @pytest.mark.allow_threading."
+    )
+
+
+@pytest.fixture(autouse=True)
+def _block_threading(request, monkeypatch):
+    if request.node.get_closest_marker("allow_threading"):
+        return
+    monkeypatch.setattr(threading.Thread, "start", _guarded_thread_start)
 
 
 # ---------------------------------------------------------------------------

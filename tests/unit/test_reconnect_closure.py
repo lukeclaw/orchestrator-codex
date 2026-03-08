@@ -9,6 +9,10 @@ Previously, tmp_dir was captured by reference (free variable) instead of by valu
 import os
 import threading
 
+import pytest
+
+pytestmark = pytest.mark.allow_threading
+
 WORKER_BASE_DIR = "/tmp/orchestrator/workers"
 
 

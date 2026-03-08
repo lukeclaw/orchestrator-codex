@@ -60,6 +60,7 @@ timeout = 10           # Fail any test that takes longer than 10 seconds
 markers = [
     "allow_network: permit real socket connections in this test",
     "allow_subprocess: permit real subprocess calls in this test",
+    "allow_threading: permit real thread creation in this test",
 ]
 
 [tool.ruff]

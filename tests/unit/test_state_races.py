@@ -30,6 +30,8 @@ from orchestrator.session.state_machine import (
 )
 from orchestrator.state.models import Session
 
+pytestmark = pytest.mark.allow_threading
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
