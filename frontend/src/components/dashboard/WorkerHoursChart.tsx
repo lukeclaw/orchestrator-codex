@@ -112,6 +112,8 @@ export default function WorkerHoursChart({ data, range, onPointClick }: Props) {
             stroke="var(--green)"
             strokeWidth={2}
             fill="url(#workerHoursGradient)"
+            animationDuration={400}
+            animationEasing="ease-out"
             activeDot={onPointClick ? ((props: any) => {
               const { cx, cy, payload } = props
               return (

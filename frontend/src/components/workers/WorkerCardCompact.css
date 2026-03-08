@@ -1,6 +1,6 @@
 .wcc-card {
   background: var(--surface);
-  border: 1px solid transparent;
+  border: 1px solid var(--border);
   border-left: 3px solid var(--text-muted);
   border-radius: var(--radius-lg);
   cursor: pointer;
@@ -11,8 +11,8 @@
 }
 
 .wcc-card:hover {
-  border-color: var(--accent);
   background: var(--surface-hover);
+  border-color: var(--border);
 }
 
 /* Status border colors — matches WorkerCard */
@@ -91,7 +91,7 @@
   font-family: var(--font-mono);
   font-size: 10px;
   line-height: 1.35;
-  color: #c9d1d9;
+  color: var(--text-secondary);
   white-space: pre;
   overflow: hidden;
 }
@@ -116,7 +116,7 @@
   align-items: center;
   gap: 4px;
   padding: 2px 6px;
-  background: rgba(88, 166, 255, 0.12);
+  background: var(--accent-muted);
   border-radius: 4px;
   text-decoration: none;
   max-width: 60%;

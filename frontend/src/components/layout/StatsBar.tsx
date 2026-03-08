@@ -20,6 +20,10 @@ export default function StatsBar() {
   if (errorCount > 0) workerParts.push(`${errorCount} offline`)
   const workerSub = workerParts.join(' · ') || 'none'
 
+  // Project breakdown
+  const completedProjects = projects.filter(p => p.status === 'completed').length
+  const projectSub = `${activeProjects} active · ${completedProjects} completed`
+
   // Task breakdown
   const todoTasks = tasks.filter(t => t.status === 'todo').length
   const doneTasks = tasks.filter(t => t.status === 'done' || t.status === 'completed').length
@@ -30,20 +34,21 @@ export default function StatsBar() {
 
   return (
     <section className="stats-bar" data-testid="stats-bar">
-      <Link to="/workers" className={`stat${needsAttention ? ' stat-warning' : ''}`} data-testid="stat-sessions">
+      <Link to="/workers" className={`stat stat-workers${needsAttention ? ' stat-warning' : ''}`} data-testid="stat-sessions">
         <div className="stat-value" id="stat-sessions-val">{activeSessions}</div>
         <div className="stat-text">
           <div className="stat-label">Workers</div>
           <div className="stat-sub">{workerSub}</div>
         </div>
       </Link>
-      <Link to="/projects" className="stat" data-testid="stat-projects">
+      <Link to="/projects" className="stat stat-projects" data-testid="stat-projects">
         <div className="stat-value">{activeProjects}</div>
         <div className="stat-text">
           <div className="stat-label">Projects</div>
+          <div className="stat-sub">{projectSub}</div>
         </div>
       </Link>
-      <Link to="/tasks" className="stat" data-testid="stat-tasks">
+      <Link to="/tasks" className="stat stat-tasks" data-testid="stat-tasks">
         <div className="stat-value">{inProgressTasks}</div>
         <div className="stat-text">
           <div className="stat-label">In-Progress Tasks</div>

@@ -104,6 +104,8 @@ export default function ThroughputChart({ data, range, onBarClick }: Props) {
             fill="var(--accent)"
             name="Tasks"
             radius={[0, 0, 0, 0]}
+            animationDuration={400}
+            animationEasing="ease-out"
             onClick={(data: any) => onBarClick?.(data?.payload?.date)}
             style={{ cursor: onBarClick ? 'pointer' : undefined }}
           />
@@ -113,6 +115,8 @@ export default function ThroughputChart({ data, range, onBarClick }: Props) {
             fill="var(--purple)"
             name="Subtasks"
             radius={[2, 2, 0, 0]}
+            animationDuration={400}
+            animationEasing="ease-out"
             onClick={(data: any) => onBarClick?.(data?.payload?.date)}
             style={{ cursor: onBarClick ? 'pointer' : undefined }}
           />

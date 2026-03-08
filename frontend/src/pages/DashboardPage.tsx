@@ -10,6 +10,7 @@ import ProjectsTable from '../components/projects/ProjectsTable'
 import RecentActivity from '../components/dashboard/RecentActivity'
 import TrendsPanel from '../components/dashboard/TrendsPanel'
 import CollapsiblePanel from '../components/dashboard/CollapsiblePanel'
+import { IconSessions, IconProjects } from '../components/common/Icons'
 import './DashboardPage.css'
 
 export default function DashboardPage() {
@@ -63,11 +64,6 @@ export default function DashboardPage() {
         id="projects"
         className="dashboard-projects"
         title={<Link to="/projects" className="panel-header-link"><h2>Active Projects</h2></Link>}
-        actions={
-          <button className="btn btn-primary btn-sm" onClick={() => setShowAddProject(true)}>
-            + New Project
-          </button>
-        }
       >
         {activeProjects.length > 0 ? (
           <div className={`dashboard-projects-scroll-wrapper${hasOverflow ? ' has-overflow' : ''}`}>
@@ -76,7 +72,12 @@ export default function DashboardPage() {
             </div>
           </div>
         ) : (
-          <p className="empty-state">No active projects.</p>
+          <div className="dashboard-empty-state">
+            <IconProjects size={48} />
+            <h3>No active projects</h3>
+            <p>Create a project to organize tasks and track progress.</p>
+            <button className="btn btn-primary" onClick={() => setShowAddProject(true)}>+ New Project</button>
+          </div>
         )}
       </CollapsiblePanel>
 
@@ -85,16 +86,16 @@ export default function DashboardPage() {
         id="workers"
         data-testid="sessions-panel"
         title={<Link to="/workers" className="panel-header-link"><h2>Workers</h2></Link>}
-        actions={
-          <button className="btn btn-primary btn-sm" data-testid="add-session-btn" onClick={() => setShowAddWorker(true)}>
-            + Add Worker
-          </button>
-        }
       >
         {loading ? (
           <p className="empty-state">Loading workers...</p>
         ) : workers.length === 0 ? (
-          <p className="empty-state">No workers yet.</p>
+          <div className="dashboard-empty-state">
+            <IconSessions size={48} />
+            <h3>No workers yet</h3>
+            <p>Add a worker to get started with Claude Code sessions.</p>
+            <button className="btn btn-primary" onClick={() => setShowAddWorker(true)}>+ Add Worker</button>
+          </div>
         ) : (
           <div className="dashboard-worker-grid" data-testid="session-grid">
             {sortedWorkers.map(s => (

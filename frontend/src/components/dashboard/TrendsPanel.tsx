@@ -5,10 +5,12 @@ import WorkerHeatmap from './WorkerHeatmap'
 import WorkerHoursChart from './WorkerHoursChart'
 import TrendDetailModal from './TrendDetailModal'
 import CollapsiblePanel from './CollapsiblePanel'
+import SlidingTabs from '../common/SlidingTabs'
 import type { TrendDetailSelection } from '../../api/types'
 import './TrendsPanel.css'
 
 const RANGES = ['7d', '30d', '90d'] as const
+const RANGE_TABS = RANGES.map(r => ({ value: r, label: r }))
 
 export default function TrendsPanel() {
   const { data, loading, range, setRange } = useTrends()
@@ -26,17 +28,11 @@ export default function TrendsPanel() {
       className="trends-panel"
       title="Trends"
       actions={
-        <div className="toggle-group toggle-sm">
-          {RANGES.map(r => (
-            <button
-              key={r}
-              className={`toggle-btn${range === r ? ' active' : ''}`}
-              onClick={() => setRange(r)}
-            >
-              {r}
-            </button>
-          ))}
-        </div>
+        <SlidingTabs
+          tabs={RANGE_TABS}
+          value={range}
+          onChange={setRange}
+        />
       }
     >
       {loading ? (

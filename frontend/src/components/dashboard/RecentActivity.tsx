@@ -1,12 +1,14 @@
+import { type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import type { Session, Task } from '../../api/types'
 import { timeAgo } from '../common/TimeAgo'
+import { IconCheck, IconX, IconArrowRight, IconPlay, IconPause } from '../common/Icons'
 import CollapsiblePanel from './CollapsiblePanel'
 import './RecentActivity.css'
 
 interface ActivityItem {
   id: string
-  icon: string
+  icon: ReactNode
   iconClass: string
   text: string
   link?: string
@@ -19,9 +21,11 @@ interface Props {
   tasks: Task[]
 }
 
+const ICON_SIZE = 12
+
 export default function RecentActivity({ workers, tasks }: Props) {
   const taskItems: ActivityItem[] = []
-  const workerGroups: Record<string, { icon: string; iconClass: string; label: string; workers: { id: string; name: string; ts: number; time: string }[] }> = {}
+  const workerGroups: Record<string, { icon: ReactNode; iconClass: string; label: string; workers: { id: string; name: string; ts: number; time: string }[] }> = {}
 
   // Derive activity from recently updated tasks
   for (const t of tasks) {
@@ -32,7 +36,7 @@ export default function RecentActivity({ workers, tasks }: Props) {
     if (t.status === 'done' || t.status === 'completed') {
       taskItems.push({
         id: `task-done-${t.id}`,
-        icon: '✓',
+        icon: <IconCheck size={ICON_SIZE} />,
         iconClass: 'done',
         text: `${t.task_key || 'Task'} completed — ${t.title}`,
         link: `/tasks/${t.id}`,
@@ -49,7 +53,7 @@ export default function RecentActivity({ workers, tasks }: Props) {
         const workerName = worker ? worker.name.split('_').pop() : 'worker'
         taskItems.push({
           id: `task-active-${t.id}`,
-          icon: '→',
+          icon: <IconArrowRight size={ICON_SIZE} />,
           iconClass: 'info',
           text: `${t.task_key || 'Task'} picked up by ${workerName}`,
           link: `/tasks/${t.id}`,
@@ -76,10 +80,10 @@ export default function RecentActivity({ workers, tasks }: Props) {
     else continue
 
     if (!workerGroups[groupKey]) {
-      const cfg: Record<string, { icon: string; iconClass: string; label: string }> = {
-        disconnected: { icon: '✕', iconClass: 'error', label: 'disconnected' },
-        waiting: { icon: '⏸', iconClass: 'warn', label: 'waiting for input' },
-        working: { icon: '●', iconClass: 'info', label: 'started working' },
+      const cfg: Record<string, { icon: ReactNode; iconClass: string; label: string }> = {
+        disconnected: { icon: <IconX size={ICON_SIZE} />, iconClass: 'error', label: 'disconnected' },
+        waiting: { icon: <IconPause size={ICON_SIZE} />, iconClass: 'warn', label: 'waiting for input' },
+        working: { icon: <IconPlay size={ICON_SIZE} />, iconClass: 'info', label: 'started working' },
       }
       workerGroups[groupKey] = { ...cfg[groupKey], workers: [] }
     }

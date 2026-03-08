@@ -2,9 +2,26 @@
   margin-bottom: 16px;
 }
 
+/* SlidingTabs size override for compact panel header */
+.trends-panel .sliding-tabs {
+  padding: 2px;
+  border-radius: var(--radius);
+  background: var(--surface-raised);
+}
+
+.trends-panel .sliding-tabs__indicator {
+  border-radius: calc(var(--radius) - 2px);
+}
+
+.trends-panel .sliding-tabs__tab {
+  padding: 4px 12px;
+  font-size: 12px;
+}
+
 .trends-body {
   padding: 12px 16px;
 }
+
 
 .trends-bottom-row {
   display: flex;
@@ -47,9 +64,10 @@
 
 /* Heatmap tooltip */
 .heatmap-tooltip {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 6px;
+  background: var(--surface-overlay);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-float);
   padding: 4px 8px;
   font-size: 11px;
   color: var(--text-primary);
