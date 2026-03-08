@@ -9,6 +9,9 @@ sessions/windows/panes.  They verify the full lifecycle:
 4. Graceful cleanup on macOS FIFOs
 
 Marked with `allow_subprocess` since they spawn real tmux processes.
+
+All tmux activity uses the globally-patched test session
+(``orchestrator-test``) so nothing leaks into the user's real session.
 """
 
 from __future__ import annotations
@@ -33,9 +36,8 @@ pytestmark = [
     pytest.mark.timeout(30),
 ]
 
-# Test tmux session name (unique to avoid conflicts)
-TEST_SESSION = f"pty_test_{os.getpid()}"
-TEST_WINDOW = "0"
+# Window name used by pty-stream tests inside the global test session.
+_PTY_TEST_WINDOW = "pty-test"
 
 
 @pytest.fixture(autouse=True)
@@ -66,14 +68,22 @@ def _skip_without_tmux():
         pytest.skip("tmux not available")
 
 
-async def _create_test_session():
-    """Create a tmux session for testing."""
+def _get_session_name() -> str:
+    """Get the patched test tmux session name."""
+    from orchestrator.terminal.manager import TMUX_SESSION
+
+    return TMUX_SESSION
+
+
+async def _ensure_test_session():
+    """Ensure the global test tmux session exists."""
+    session = _get_session_name()
     proc = await asyncio.create_subprocess_exec(
         "tmux",
         "new-session",
         "-d",
         "-s",
-        TEST_SESSION,
+        session,
         "-x",
         "80",
         "-y",
@@ -81,21 +91,47 @@ async def _create_test_session():
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
     )
-    _, stderr = await proc.communicate()
-    if proc.returncode != 0:
-        # Session may already exist
-        err = stderr.decode()
-        if "duplicate session" not in err:
-            raise RuntimeError(f"Failed to create test session: {err}")
+    await proc.communicate()  # ignore duplicate-session errors
+    return session
 
 
-async def _destroy_test_session():
-    """Kill the test tmux session."""
+async def _create_test_window():
+    """Create a dedicated test window in the global test session."""
+    session = await _ensure_test_session()
+    # Kill stale test window if it exists from a previous run
     proc = await asyncio.create_subprocess_exec(
         "tmux",
-        "kill-session",
+        "kill-window",
         "-t",
-        TEST_SESSION,
+        f"{session}:{_PTY_TEST_WINDOW}",
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    await proc.communicate()
+    # Create fresh window
+    proc = await asyncio.create_subprocess_exec(
+        "tmux",
+        "new-window",
+        "-d",
+        "-t",
+        session,
+        "-n",
+        _PTY_TEST_WINDOW,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    await proc.communicate()
+    return session
+
+
+async def _destroy_test_window():
+    """Kill the test window (session cleanup handled by root conftest)."""
+    session = _get_session_name()
+    proc = await asyncio.create_subprocess_exec(
+        "tmux",
+        "kill-window",
+        "-t",
+        f"{session}:{_PTY_TEST_WINDOW}",
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
     )
@@ -104,11 +140,12 @@ async def _destroy_test_session():
 
 async def _get_pane_id() -> str:
     """Get the pane ID for the test window."""
+    session = _get_session_name()
     proc = await asyncio.create_subprocess_exec(
         "tmux",
         "list-panes",
         "-t",
-        f"{TEST_SESSION}:{TEST_WINDOW}",
+        f"{session}:{_PTY_TEST_WINDOW}",
         "-F",
         "#{pane_id}",
         stdout=asyncio.subprocess.PIPE,
@@ -120,11 +157,12 @@ async def _get_pane_id() -> str:
 
 async def _send_keys(keys: str):
     """Send keys to the test pane."""
+    session = _get_session_name()
     proc = await asyncio.create_subprocess_exec(
         "tmux",
         "send-keys",
         "-t",
-        f"{TEST_SESSION}:{TEST_WINDOW}",
+        f"{session}:{_PTY_TEST_WINDOW}",
         keys,
         "Enter",
         stdout=asyncio.subprocess.PIPE,
@@ -135,11 +173,11 @@ async def _send_keys(keys: str):
 
 @pytest.fixture
 async def tmux_session():
-    """Create and tear down a tmux session for testing."""
+    """Create and tear down a test window for pty-stream tests."""
     _skip_without_tmux()
-    await _create_test_session()
-    yield
-    await _destroy_test_session()
+    session = await _create_test_window()
+    yield session
+    await _destroy_test_window()
 
 
 class TestPtyStreamReaderIntegration:
@@ -153,7 +191,7 @@ class TestPtyStreamReaderIntegration:
         async def on_data(data: bytes):
             received.append(data)
 
-        reader = PtyStreamReader(TEST_SESSION, TEST_WINDOW, pane_id)
+        reader = PtyStreamReader(tmux_session, _PTY_TEST_WINDOW, pane_id)
 
         with pytest.MonkeyPatch.context() as mp:
             mp.setattr("orchestrator.terminal.pty_stream.FIFO_DIR", fifo_test_dir)
@@ -185,7 +223,7 @@ class TestPtyStreamReaderIntegration:
         """stop() should remove the FIFO and stop pipe-pane."""
         pane_id = await _get_pane_id()
 
-        reader = PtyStreamReader(TEST_SESSION, TEST_WINDOW, pane_id)
+        reader = PtyStreamReader(tmux_session, _PTY_TEST_WINDOW, pane_id)
 
         with pytest.MonkeyPatch.context() as mp:
             mp.setattr("orchestrator.terminal.pty_stream.FIFO_DIR", fifo_test_dir)
@@ -208,24 +246,13 @@ class TestPtyStreamReaderIntegration:
 
     async def test_eof_on_pane_destroy(self, tmux_session, fifo_test_dir):
         """Destroying the pane should trigger EOF callback."""
-        # Create a second window so killing one doesn't kill the session
-        proc = await asyncio.create_subprocess_exec(
-            "tmux",
-            "new-window",
-            "-t",
-            TEST_SESSION,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
-        await proc.communicate()
-
         pane_id = await _get_pane_id()
         eof_triggered = asyncio.Event()
 
         async def on_eof():
             eof_triggered.set()
 
-        reader = PtyStreamReader(TEST_SESSION, TEST_WINDOW, pane_id)
+        reader = PtyStreamReader(tmux_session, _PTY_TEST_WINDOW, pane_id)
 
         with pytest.MonkeyPatch.context() as mp:
             mp.setattr("orchestrator.terminal.pty_stream.FIFO_DIR", fifo_test_dir)
@@ -234,12 +261,13 @@ class TestPtyStreamReaderIntegration:
             if not started:
                 pytest.skip("PtyStreamReader failed to start (may be tmux version issue)")
 
-            # Kill the window — should trigger EOF
+            # Kill the test window — should trigger EOF.
+            # Other windows in the test session keep it alive.
             proc = await asyncio.create_subprocess_exec(
                 "tmux",
                 "kill-window",
                 "-t",
-                f"{TEST_SESSION}:{TEST_WINDOW}",
+                f"{tmux_session}:{_PTY_TEST_WINDOW}",
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )
@@ -278,7 +306,7 @@ class TestPtyStreamPoolIntegration:
         with pytest.MonkeyPatch.context() as mp:
             mp.setattr("orchestrator.terminal.pty_stream.FIFO_DIR", fifo_test_dir)
 
-            success = await pool.subscribe(pane_id, TEST_SESSION, TEST_WINDOW, on_data)
+            success = await pool.subscribe(pane_id, tmux_session, _PTY_TEST_WINDOW, on_data)
             assert success, "Pool subscribe failed"
 
             # Generate output
@@ -307,8 +335,8 @@ class TestPtyStreamPoolIntegration:
         with pytest.MonkeyPatch.context() as mp:
             mp.setattr("orchestrator.terminal.pty_stream.FIFO_DIR", fifo_test_dir)
 
-            s1 = await pool.subscribe(pane_id, TEST_SESSION, TEST_WINDOW, on_data1)
-            s2 = await pool.subscribe(pane_id, TEST_SESSION, TEST_WINDOW, on_data2)
+            s1 = await pool.subscribe(pane_id, tmux_session, _PTY_TEST_WINDOW, on_data1)
+            s2 = await pool.subscribe(pane_id, tmux_session, _PTY_TEST_WINDOW, on_data2)
             assert s1 and s2
 
             await _send_keys("echo TWO_SUBS_TEST")

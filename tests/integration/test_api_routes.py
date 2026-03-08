@@ -33,9 +33,7 @@ class TestSessions:
         with patch(
             "orchestrator.api.routes.sessions.ensure_window", return_value="orchestrator:worker-1"
         ):
-            resp = client.post(
-                "/api/sessions", json={"name": "worker-1", "host": "localhost"}
-            )
+            resp = client.post("/api/sessions", json={"name": "worker-1", "host": "localhost"})
         assert resp.status_code == 201
         data = resp.json()
         assert data["name"] == "worker-1"
@@ -145,7 +143,9 @@ class TestSessions:
             resp = client.post(f"/api/sessions/{sid}/type", json={"text": "/tmp/img.png"})
 
         assert resp.status_code == 200
-        mock_lit.assert_called_once_with("orchestrator", "tw", "/tmp/img.png")
+        from orchestrator.terminal.manager import TMUX_SESSION
+
+        mock_lit.assert_called_once_with(TMUX_SESSION, "tw", "/tmp/img.png")
 
     def test_type_text_not_found(self, client):
         resp = client.post("/api/sessions/nonexistent/type", json={"text": "hi"})

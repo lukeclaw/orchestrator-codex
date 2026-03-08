@@ -1006,9 +1006,7 @@ class TestCheckRemoteMtimes:
     @patch("orchestrator.api.routes.files.get_remote_worker_server")
     def test_returns_mtimes_from_rws(self, mock_get_rws):
         mock_rws = MagicMock()
-        mock_rws.execute.return_value = {
-            "mtimes": {"a.py": 1700000000.0, "b.py": 1700000001.0}
-        }
+        mock_rws.execute.return_value = {"mtimes": {"a.py": 1700000000.0, "b.py": 1700000001.0}}
         mock_get_rws.return_value = mock_rws
         resp = _check_remote_mtimes("host", "/work", ["a.py", "b.py"])
         assert resp.mtimes["a.py"] == 1700000000.0

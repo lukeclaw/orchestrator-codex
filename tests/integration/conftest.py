@@ -3,8 +3,9 @@
 Configures pytest-asyncio to use function-scoped event loops to avoid
 conflicts with E2E tests that use session-scoped playwright fixtures.
 
-Supports parallel execution via pytest-xdist by providing worker-isolated
-tmux session names.
+The tmux session name for tests is set globally by the root conftest's
+``_isolate_tmux_session`` fixture.  Integration tests that need explicit
+session names use module-unique sub-sessions under the test umbrella.
 """
 
 import subprocess
@@ -25,43 +26,37 @@ def event_loop_policy():
 # ---------------------------------------------------------------------------
 
 
-@pytest.fixture(scope="session")
-def worker_id(request):
-    """Get xdist worker ID for isolation, or 'master' if running sequentially."""
-    if hasattr(request.config, "workerinput"):
-        return request.config.workerinput["workerid"]
-    return "master"
+def _short_module_name(request) -> str:
+    """Extract a short suffix from the test module name."""
+    return request.module.__name__.rsplit(".", 1)[-1].replace("test_", "")
 
 
 @pytest.fixture(scope="module")
-def tmux_session_name(worker_id):
-    """Worker-isolated tmux session name to avoid parallel conflicts."""
-    return f"orch-test-{worker_id}"
+def tmux_session_name(_isolate_tmux_session, request):
+    """Module-unique tmux session name under the test umbrella.
 
-
-@pytest.fixture(scope="module")
-def tmux_control_session(worker_id):
-    """Worker-isolated tmux session for terminal control tests."""
-    return f"orch-control-{worker_id}"
-
-
-@pytest.fixture(autouse=True)
-def cleanup_test_sessions(request, worker_id):
-    """Clean up any test tmux sessions after tests that use real tmux."""
-    yield
-    if not request.node.get_closest_marker("allow_subprocess"):
-        return
-    # Use the real subprocess.run (guards are patched via monkeypatch and
-    # already restored by this point in teardown, but import the saved
-    # reference just in case).
+    Each integration test module gets its own sub-session so that tests
+    which create/destroy sessions don't collide with each other.
+    """
+    name = f"{_isolate_tmux_session}-{_short_module_name(request)}"
+    yield name
+    # Clean up the sub-session after the module finishes
     from tests.conftest import _real_run
 
-    for name in (f"orch-test-{worker_id}", f"orch-control-{worker_id}"):
-        try:
-            _real_run(
-                ["tmux", "kill-session", "-t", name],
-                capture_output=True,
-                timeout=5,
-            )
-        except (subprocess.TimeoutExpired, FileNotFoundError):
-            pass
+    try:
+        _real_run(["tmux", "kill-session", "-t", name], capture_output=True, timeout=5)
+    except (subprocess.TimeoutExpired, FileNotFoundError):
+        pass
+
+
+@pytest.fixture(scope="module")
+def tmux_control_session(_isolate_tmux_session, request):
+    """Module-unique tmux session for terminal control tests."""
+    name = f"{_isolate_tmux_session}-{_short_module_name(request)}"
+    yield name
+    from tests.conftest import _real_run
+
+    try:
+        _real_run(["tmux", "kill-session", "-t", name], capture_output=True, timeout=5)
+    except (subprocess.TimeoutExpired, FileNotFoundError):
+        pass

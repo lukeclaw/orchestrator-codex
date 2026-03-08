@@ -27,7 +27,6 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 BRAIN_SESSION_NAME = "brain"
-TMUX_SESSION = "orchestrator"
 
 
 def _get_brain_session(db):
@@ -93,7 +92,7 @@ def start_brain(db=Depends(get_db)):
 
     # ── Check tmux pane state (single source of truth) ──────────────
     shells = {"bash", "zsh", "fish", "sh", "dash"}
-    pane_cmd = tmux.pane_foreground_command(TMUX_SESSION, BRAIN_SESSION_NAME)
+    pane_cmd = tmux.pane_foreground_command(tmux.TMUX_SESSION, BRAIN_SESSION_NAME)
     claude_already_running = pane_cmd is not None and pane_cmd not in shells
 
     # ── Deploy brain files (always, so hooks/skills stay current) ───
@@ -110,7 +109,7 @@ def start_brain(db=Depends(get_db)):
 
     try:
         # ensure_window is itself idempotent (no-op when window exists)
-        target = tmux.ensure_window(TMUX_SESSION, BRAIN_SESSION_NAME)
+        target = tmux.ensure_window(tmux.TMUX_SESSION, BRAIN_SESSION_NAME)
 
         # ── Reconcile DB record ─────────────────────────────────────
         if session:
@@ -138,18 +137,18 @@ def start_brain(db=Depends(get_db)):
             }
 
         # ── Pane is at a shell prompt (new or leftover) — launch ────
-        tmux.send_keys(TMUX_SESSION, BRAIN_SESSION_NAME, f"cd {brain_dir}")
-        tmux.send_keys(TMUX_SESSION, BRAIN_SESSION_NAME, path_export)
+        tmux.send_keys(tmux.TMUX_SESSION, BRAIN_SESSION_NAME, f"cd {brain_dir}")
+        tmux.send_keys(tmux.TMUX_SESSION, BRAIN_SESSION_NAME, path_export)
 
         time.sleep(0.5)
         tmux.send_keys(
-            TMUX_SESSION,
+            tmux.TMUX_SESSION,
             BRAIN_SESSION_NAME,
             f"claude --dangerously-skip-permissions --settings {settings_path}",
         )
 
         # Dismiss any "trust this folder" prompt that may appear after launch
-        tmux.dismiss_trust_prompt(TMUX_SESSION, BRAIN_SESSION_NAME, session_id=session_id)
+        tmux.dismiss_trust_prompt(tmux.TMUX_SESSION, BRAIN_SESSION_NAME, session_id=session_id)
 
         logger.info("Orchestrator brain started in %s", target)
         return {
@@ -176,7 +175,7 @@ def stop_brain(db=Depends(get_db)):
     try:
         # Send Ctrl-C three times to force-exit Claude Code
         for _ in range(3):
-            tmux.send_keys(TMUX_SESSION, BRAIN_SESSION_NAME, "C-c", enter=False)
+            tmux.send_keys(tmux.TMUX_SESSION, BRAIN_SESSION_NAME, "C-c", enter=False)
             time.sleep(0.3)
         sessions_repo.update_session(db, session.id, status="disconnected")
         logger.info("Orchestrator brain stopped")
@@ -245,7 +244,7 @@ def brain_sync(db=Depends(get_db)):
 
     prompt = "\n".join(parts)
 
-    success = send_to_session(BRAIN_SESSION_NAME, prompt, TMUX_SESSION)
+    success = send_to_session(BRAIN_SESSION_NAME, prompt, tmux.TMUX_SESSION)
     if not success:
         raise HTTPException(500, "Failed to send monitoring prompt to brain")
 
@@ -359,7 +358,7 @@ def brain_paste_to_pane(req: PasteTextRequest, db=Depends(get_db)):
     if session is None or session.status in ("disconnected",):
         raise HTTPException(400, "Brain is not running")
 
-    success = tmux.paste_to_pane(TMUX_SESSION, BRAIN_SESSION_NAME, req.text)
+    success = tmux.paste_to_pane(tmux.TMUX_SESSION, BRAIN_SESSION_NAME, req.text)
     if not success:
         raise HTTPException(500, "Failed to paste text to brain")
     return {"ok": True}
@@ -385,24 +384,24 @@ def brain_command(req: BrainCommandRequest, db=Depends(get_db)):
 
     try:
         # 1. Send Ctrl-C to cancel any running operation
-        tmux.send_keys(TMUX_SESSION, BRAIN_SESSION_NAME, "C-c", enter=False)
+        tmux.send_keys(tmux.TMUX_SESSION, BRAIN_SESSION_NAME, "C-c", enter=False)
         time.sleep(0.15)
 
         # 2. Send Escape to exit any mode / dismiss prompts
-        tmux.send_keys(TMUX_SESSION, BRAIN_SESSION_NAME, "Escape", enter=False)
+        tmux.send_keys(tmux.TMUX_SESSION, BRAIN_SESSION_NAME, "Escape", enter=False)
         time.sleep(0.15)
 
         # 3. Clear any leftover input on the line (Ctrl-U)
-        tmux.send_keys(TMUX_SESSION, BRAIN_SESSION_NAME, "C-u", enter=False)
+        tmux.send_keys(tmux.TMUX_SESSION, BRAIN_SESSION_NAME, "C-u", enter=False)
         time.sleep(0.1)
 
         # 4. Type the command using literal mode (safe for special chars)
-        tmux.send_keys_literal(TMUX_SESSION, BRAIN_SESSION_NAME, req.command)
+        tmux.send_keys_literal(tmux.TMUX_SESSION, BRAIN_SESSION_NAME, req.command)
 
         # 5. Optionally press Enter
         if req.enter:
             time.sleep(0.1)
-            tmux.send_keys(TMUX_SESSION, BRAIN_SESSION_NAME, "", enter=True)
+            tmux.send_keys(tmux.TMUX_SESSION, BRAIN_SESSION_NAME, "", enter=True)
 
         return {"ok": True, "command": req.command, "entered": req.enter}
 

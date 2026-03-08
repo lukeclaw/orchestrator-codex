@@ -48,9 +48,12 @@ def _run(coro):
 def tmux_window(tmux_control_session):
     """Create a test tmux session and window using worker-isolated session name."""
     tmux.create_session(tmux_control_session)
+    # Kill any stale window from a previous test to avoid name ambiguity
+    tmux.kill_window(tmux_control_session, TEST_WINDOW)
     tmux.create_window(tmux_control_session, TEST_WINDOW)
     time.sleep(0.2)  # Let shell initialize
-    return (tmux_control_session, TEST_WINDOW)
+    yield (tmux_control_session, TEST_WINDOW)
+    tmux.kill_window(tmux_control_session, TEST_WINDOW)
 
 
 class TestAtomicCapture:

@@ -12,6 +12,7 @@ condition tests).
 """
 
 import logging
+import os
 import socket
 import subprocess
 import sys
@@ -26,6 +27,52 @@ from orchestrator.state.migrations.runner import apply_migrations
 # Suppress noisy WARNING logs during tests (e.g. tmux "can't find window"
 # messages from capture_output / send_keys in integration tests).
 logging.getLogger("orchestrator").setLevel(logging.ERROR)
+
+# ---------------------------------------------------------------------------
+# tmux session isolation — all tests use "orchestrator-test" instead of
+# "orchestrator" so test windows never pollute the user's real session.
+# ---------------------------------------------------------------------------
+
+# The test tmux session name.  With xdist, each worker gets its own session.
+TEST_TMUX_SESSION = "orchestrator-test"
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _isolate_tmux_session(worker_id):
+    """Route all test tmux operations to a dedicated test session.
+
+    Patches the in-process constant AND sets the env var so that server
+    subprocesses (E2E tests) also pick up the isolated session name.
+    """
+    import orchestrator.terminal.manager as mgr
+
+    session_name = (
+        TEST_TMUX_SESSION if worker_id == "master" else f"{TEST_TMUX_SESSION}-{worker_id}"
+    )
+
+    orig_mgr = mgr.TMUX_SESSION
+    orig_env = os.environ.get("ORCHESTRATOR_TMUX_SESSION")
+    mgr.TMUX_SESSION = session_name
+    os.environ["ORCHESTRATOR_TMUX_SESSION"] = session_name
+
+    yield session_name
+
+    mgr.TMUX_SESSION = orig_mgr
+    if orig_env is None:
+        os.environ.pop("ORCHESTRATOR_TMUX_SESSION", None)
+    else:
+        os.environ["ORCHESTRATOR_TMUX_SESSION"] = orig_env
+
+    # Kill the test session (use saved reference to bypass subprocess guard)
+    try:
+        _real_run(
+            ["tmux", "kill-session", "-t", session_name],
+            capture_output=True,
+            timeout=5,
+        )
+    except (subprocess.TimeoutExpired, FileNotFoundError):
+        pass
+
 
 # Directories whose code should be blocked by the subprocess/network guards.
 # Calls from third-party libraries (e.g. python-multipart) are allowed through.
