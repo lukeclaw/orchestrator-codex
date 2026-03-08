@@ -5,17 +5,19 @@ will fail immediately with a clear error instead of silently making real SSH
 connections, HTTP requests, tmux calls, or spawning daemon threads that
 outlive the test scope.
 
-Use ``@pytest.mark.allow_network``, ``@pytest.mark.allow_subprocess``, or
-``@pytest.mark.allow_threading`` to opt out for tests that intentionally
-need real I/O or concurrency (e.g. E2E, integration terminal tests, race
-condition tests).
+Use ``@pytest.mark.allow_network``, ``@pytest.mark.allow_subprocess``,
+``@pytest.mark.allow_threading``, or ``@pytest.mark.allow_sleep`` to opt
+out for tests that intentionally need real I/O, concurrency, or wall-clock
+timing (e.g. E2E, integration terminal tests, race condition tests).
 """
 
+import importlib
 import logging
 import socket
 import subprocess
 import sys
 import threading
+import time as _real_time_module
 import traceback
 
 import pytest
@@ -176,6 +178,80 @@ def _block_threading(request, monkeypatch):
     if request.node.get_closest_marker("allow_threading"):
         return
     monkeypatch.setattr(threading.Thread, "start", _guarded_thread_start)
+
+
+# ---------------------------------------------------------------------------
+# Sleep acceleration — makes time.sleep instant in production code
+# ---------------------------------------------------------------------------
+
+# Production modules whose ``time`` reference is replaced with a virtual
+# clock during tests.  ``time.sleep(n)`` advances the clock by *n* seconds
+# instantly (no wall-clock delay), and ``time.time()`` returns the virtual
+# clock value so polling loops behave correctly.
+_SLEEP_MODULES = [
+    "orchestrator.session.reconnect",
+    "orchestrator.session.health",
+    "orchestrator.session.tunnel",
+    "orchestrator.terminal.manager",
+    "orchestrator.terminal.session",
+    "orchestrator.terminal.ssh",
+    "orchestrator.terminal.markers",
+    "orchestrator.terminal.remote_worker_server",
+    "orchestrator.api.routes.sessions",
+    "orchestrator.api.routes.brain",
+    "orchestrator.api.routes.files",
+    "orchestrator.api.routes.rdevs",
+    "orchestrator.api.routes.updates",
+    "orchestrator.api.routes.pr_preview",
+    "orchestrator.api.ws_terminal",
+    "orchestrator.browser.cdp_proxy",
+    "orchestrator.state.db",
+]
+
+
+class _VirtualClock:
+    """Drop-in replacement for the ``time`` module with an instant virtual clock.
+
+    ``sleep(n)`` advances the virtual clock by *n* without blocking.
+    ``time()`` returns the current virtual-clock value.
+    All other ``time.*`` attributes delegate to the real module.
+    """
+
+    def __init__(self):
+        self._clock = _real_time_module.time()
+
+    def time(self):
+        return self._clock
+
+    def sleep(self, seconds):
+        self._clock += seconds
+
+    def monotonic(self):
+        return self._clock
+
+    def __getattr__(self, name):
+        return getattr(_real_time_module, name)
+
+
+@pytest.fixture(autouse=True)
+def _fast_sleep(request, monkeypatch):
+    """Replace ``time`` in production modules with a virtual clock.
+
+    Opt out with ``@pytest.mark.allow_sleep`` for tests that need real
+    wall-clock timing (e.g. thread-coordination in race-condition tests).
+    """
+    if request.node.get_closest_marker("allow_sleep"):
+        return
+
+    clock = _VirtualClock()
+
+    for module_path in _SLEEP_MODULES:
+        try:
+            mod = importlib.import_module(module_path)
+        except ImportError:
+            continue
+        if hasattr(mod, "time"):
+            monkeypatch.setattr(mod, "time", clock)
 
 
 # ---------------------------------------------------------------------------

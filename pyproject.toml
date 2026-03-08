@@ -61,6 +61,7 @@ markers = [
     "allow_network: permit real socket connections in this test",
     "allow_subprocess: permit real subprocess calls in this test",
     "allow_threading: permit real thread creation in this test",
+    "allow_sleep: permit real time.sleep calls in production code",
 ]
 
 [tool.ruff]

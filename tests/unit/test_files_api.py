@@ -473,9 +473,11 @@ class TestRemoteDirCache:
 
     @patch("orchestrator.api.routes.files._list_remote_dir")
     def test_cache_hit_within_ttl(self, mock_list):
+        import orchestrator.api.routes.files as _files_mod
+
         entries = [FileEntry(name="a.py", path="a.py", is_dir=False, size=10)]
         _remote_dir_cache["host::/work::.::" + str(False) + "::1"] = (
-            time.monotonic(),
+            _files_mod.time.monotonic(),
             entries,
             True,
         )
@@ -490,9 +492,11 @@ class TestRemoteDirCache:
 
     @patch("orchestrator.api.routes.files._list_remote_dir")
     def test_cache_miss_after_ttl(self, mock_list):
+        import orchestrator.api.routes.files as _files_mod
+
         entries_old = [FileEntry(name="old.py", path="old.py", is_dir=False, size=10)]
         _remote_dir_cache["host::/work::.::" + str(False) + "::1"] = (
-            time.monotonic() - 120,  # expired (TTL is 60s)
+            _files_mod.time.monotonic() - 120,  # expired (TTL is 60s)
             entries_old,
             True,
         )

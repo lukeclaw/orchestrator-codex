@@ -28,7 +28,7 @@ from orchestrator.session.tunnel import (
     _TunnelEntry,
 )
 
-pytestmark = pytest.mark.allow_threading
+pytestmark = [pytest.mark.allow_threading, pytest.mark.allow_sleep]
 
 # ---------------------------------------------------------------------------
 # Helpers

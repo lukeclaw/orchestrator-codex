@@ -417,10 +417,20 @@ class TestActivateTabSkipsRedundant:
         mock_http.get = AsyncMock(return_value=mock_resp)
         mock_http_cls.return_value = mock_http
 
-        # Mock the WebSocket connection
+        # Mock the WebSocket connection — recv returns a response with the
+        # matching msg_id so the loop exits immediately (instead of waiting
+        # for the 3s deadline when the hardcoded id doesn't match).
         mock_ws = AsyncMock()
-        mock_ws.send = AsyncMock()
-        mock_ws.recv = AsyncMock(return_value=json.dumps({"id": 1, "result": {}}))
+        sent_ids = []
+        original_send = AsyncMock()
+
+        async def capture_send(data):
+            msg = json.loads(data)
+            sent_ids.append(msg.get("id"))
+            await original_send(data)
+
+        mock_ws.send = AsyncMock(side_effect=capture_send)
+        mock_ws.recv = AsyncMock(side_effect=lambda: json.dumps({"id": sent_ids[-1], "result": {}}))
         mock_ws.__aenter__ = AsyncMock(return_value=mock_ws)
         mock_ws.__aexit__ = AsyncMock(return_value=False)
         mock_ws_connect.return_value = mock_ws
@@ -1060,9 +1070,10 @@ class TestRelayCdpToClient:
         view = _make_view()
         view._zoom_percent = 100
         # Pretend we just fixed it (cooldown active)
-        import time
+        # Use the production module's time reference (may be virtual clock in tests)
+        import orchestrator.browser.cdp_proxy as _cdp_mod
 
-        view._last_viewport_fix = time.monotonic()
+        view._last_viewport_fix = _cdp_mod.time.monotonic()
         view.cdp_ws = _AsyncIterFromList([frame_msg])
         view.cdp_ws.send = AsyncMock()
 

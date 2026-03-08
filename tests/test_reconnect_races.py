@@ -978,8 +978,9 @@ class TestTriggerReconnectIntegrationRace:
                 assert r["ok"] is True
 
             # Wait for all bg threads to finish (daemon threads + lock contention)
-            # Must stay inside the patch block so bg threads see the mock
-            time.sleep(8)
+            # Must stay inside the patch block so bg threads see the mock.
+            # 3 reconnects × 0.3s work + lock overhead = ~2s max.
+            time.sleep(2)
 
         # Count how many actually started
         starts = [e for e in execution_order if e[0] == "start"]

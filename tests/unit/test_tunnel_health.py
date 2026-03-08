@@ -185,11 +185,10 @@ class TestFindTunnelPids:
 class TestKillTunnelProcesses:
     """Tests for the robust kill with SIGTERM → SIGKILL escalation."""
 
-    @patch("orchestrator.session.health.time.sleep")
     @patch("orchestrator.session.health._is_pid_alive")
     @patch("orchestrator.session.health.os.kill")
     @patch("orchestrator.session.health.find_tunnel_pids")
-    def test_kills_with_sigterm(self, mock_find, mock_kill, mock_alive, mock_sleep):
+    def test_kills_with_sigterm(self, mock_find, mock_kill, mock_alive):
         """Should send SIGTERM first and succeed if process exits."""
         from orchestrator.session.health import kill_tunnel_processes
 
@@ -202,19 +201,16 @@ class TestKillTunnelProcesses:
         assert result == 1
         mock_kill.assert_called_once_with(1234, signal.SIGTERM)
 
-    @patch("orchestrator.session.health.time.sleep")
     @patch("orchestrator.session.health._is_pid_alive")
     @patch("orchestrator.session.health.os.kill")
     @patch("orchestrator.session.health.find_tunnel_pids")
-    def test_escalates_to_sigkill(self, mock_find, mock_kill, mock_alive, mock_sleep):
+    def test_escalates_to_sigkill(self, mock_find, mock_kill, mock_alive):
         """Should escalate to SIGKILL if process survives SIGTERM."""
         from orchestrator.session.health import kill_tunnel_processes
 
         mock_find.return_value = [5678]
         # Process stays alive through all checks (SIGTERM doesn't work)
         mock_alive.return_value = True
-        # Use short timeout so we don't loop many times
-        mock_sleep.side_effect = lambda _: None
 
         result = kill_tunnel_processes("user/rdev-vm", graceful_timeout=0.1)
 
@@ -233,11 +229,10 @@ class TestKillTunnelProcesses:
 
         assert kill_tunnel_processes("user/rdev-vm") == 0
 
-    @patch("orchestrator.session.health.time.sleep")
     @patch("orchestrator.session.health._is_pid_alive")
     @patch("orchestrator.session.health.os.kill")
     @patch("orchestrator.session.health.find_tunnel_pids")
-    def test_handles_multiple_processes(self, mock_find, mock_kill, mock_alive, mock_sleep):
+    def test_handles_multiple_processes(self, mock_find, mock_kill, mock_alive):
         """Should kill all matching tunnel processes."""
         from orchestrator.session.health import kill_tunnel_processes
 
@@ -250,11 +245,10 @@ class TestKillTunnelProcesses:
         assert call(1111, signal.SIGTERM) in mock_kill.call_args_list
         assert call(2222, signal.SIGTERM) in mock_kill.call_args_list
 
-    @patch("orchestrator.session.health.time.sleep")
     @patch("orchestrator.session.health._is_pid_alive")
     @patch("orchestrator.session.health.os.kill")
     @patch("orchestrator.session.health.find_tunnel_pids")
-    def test_handles_process_lookup_error(self, mock_find, mock_kill, mock_alive, mock_sleep):
+    def test_handles_process_lookup_error(self, mock_find, mock_kill, mock_alive):
         """Should handle ProcessLookupError (process already dead)."""
         from orchestrator.session.health import kill_tunnel_processes
 

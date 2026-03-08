@@ -451,7 +451,7 @@ class TestPtyStreamPool:
 
             await pool._on_reader_eof("%5")
             # Give eager restart time
-            await asyncio.sleep(1.0)
+            await asyncio.sleep(0.1)
 
         # Reader should be removed (restart failed)
         assert "%5" not in pool._readers
