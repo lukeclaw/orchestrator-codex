@@ -556,7 +556,16 @@ export default function SessionDetailPage() {
       {/* Top bar with session info */}
       <div className="sd-topbar">
         <div className="sd-topbar-left">
-          <h2 className="sd-title">{session.name}</h2>
+          <h2
+            className="sd-title"
+            title="Click to copy"
+            style={{ cursor: 'pointer' }}
+            onClick={() => {
+              navigator.clipboard.writeText(session.name)
+                .then(() => notify('Copied worker name', 'success'))
+                .catch(() => notify('Failed to copy', 'error'))
+            }}
+          >{session.name}</h2>
           {session.host.includes('/') && <span className="sd-type-tag rdev">rdev</span>}
           {isSsh && <span className="sd-type-tag ssh">ssh</span>}
           <span className={`status-badge ${session.status}`}>{session.status}</span>
