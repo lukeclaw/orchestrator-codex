@@ -13,7 +13,7 @@ from datetime import UTC
 
 from orchestrator.api.ws_terminal import is_user_active
 from orchestrator.state.repositories import sessions as repo
-from orchestrator.terminal.manager import tmux_target
+from orchestrator.terminal.manager import ensure_window, kill_window, tmux_target, window_exists
 from orchestrator.terminal.ssh import is_remote_host
 
 logger = logging.getLogger(__name__)
@@ -748,6 +748,36 @@ def ensure_brain_tmp_health(
 # =============================================================================
 
 
+def _recycle_frozen_pane(
+    pane_preexisted: bool,
+    tmux_sess: str,
+    tmux_win: str,
+    cwd: str,
+    session_name: str,
+) -> None:
+    """Kill a pre-existing frozen tmux pane and recreate a fresh one.
+
+    When a worker is dead (SSH died for remote, Claude exited for local),
+    a pre-existing pane may be frozen — stuck with queued commands that
+    never execute.  Killing and recreating gives a clean shell for
+    reconnection.
+
+    Skips if the pane was freshly created by the health check (not frozen).
+    """
+    if not pane_preexisted:
+        return
+    try:
+        kill_window(tmux_sess, tmux_win)
+        ensure_window(tmux_sess, tmux_win, cwd=cwd)
+        logger.info("Health check: %s killed frozen tmux pane and recreated", session_name)
+    except Exception:
+        logger.debug(
+            "Health check: %s failed to kill/recreate frozen pane",
+            session_name,
+            exc_info=True,
+        )
+
+
 def check_and_update_worker_health(db, session, tunnel_manager=None) -> dict:
     """Check a single worker's health and update its DB status accordingly.
 
@@ -763,6 +793,24 @@ def check_and_update_worker_health(db, session, tunnel_manager=None) -> dict:
         {"alive": bool, "status": str, "reason": str, ...}
     """
     tmux_sess, tmux_win = tmux_target(session.name)
+
+    worker_tmp_dir = f"/tmp/orchestrator/workers/{session.name}"
+
+    # Track whether the pane already existed before health check.
+    # If the pane was pre-existing and the worker turns out dead,
+    # the pane is likely frozen (dead SSH, queued commands) and needs
+    # to be killed and recreated.  If the pane was missing, create it.
+    try:
+        pane_preexisted = window_exists(tmux_sess, tmux_win)
+        if not pane_preexisted:
+            ensure_window(tmux_sess, tmux_win, cwd=worker_tmp_dir)
+    except Exception:
+        pane_preexisted = False
+        logger.debug(
+            "Health check: %s failed to check/create tmux window",
+            session.name,
+            exc_info=True,
+        )
 
     if is_remote_host(session.host):
         screen_status, reason = check_screen_and_claude_remote(
@@ -992,6 +1040,8 @@ def check_and_update_worker_health(db, session, tunnel_manager=None) -> dict:
             }
 
         else:  # dead
+            _recycle_frozen_pane(pane_preexisted, tmux_sess, tmux_win, worker_tmp_dir, session.name)
+
             if session.status != "disconnected":
                 repo.update_session(db, session.id, status="disconnected")
                 logger.info("Health check: %s marked as disconnected (%s)", session.name, reason)
@@ -1015,6 +1065,8 @@ def check_and_update_worker_health(db, session, tunnel_manager=None) -> dict:
             tmux_win,
         )
         if not alive:
+            _recycle_frozen_pane(pane_preexisted, tmux_sess, tmux_win, worker_tmp_dir, session.name)
+
             if session.status != "disconnected":
                 repo.update_session(db, session.id, status="disconnected")
                 logger.info("Health check: %s marked as disconnected (%s)", session.name, reason)

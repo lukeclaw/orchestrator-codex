@@ -362,9 +362,13 @@ class TestDualConcurrentHealthChecks:
         # Both wrote "disconnected" -- duplicate write
         assert tracker.statuses.count("disconnected") == 2
 
+    @patch("orchestrator.session.health.window_exists", return_value=False)
+    @patch("orchestrator.session.health.ensure_window")
     @patch("orchestrator.session.health.check_claude_running_local")
     @patch("orchestrator.session.health.is_remote_host")
-    def test_concurrent_health_checks_via_threads(self, mock_is_remote, mock_check_claude):
+    def test_concurrent_health_checks_via_threads(
+        self, mock_is_remote, mock_check_claude, mock_ensure_window, mock_win_exists
+    ):
         """Threaded version: both health checks fire at the same time."""
         mock_is_remote.return_value = False
         mock_check_claude.return_value = (False, "No Claude process")
