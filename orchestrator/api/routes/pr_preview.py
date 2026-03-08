@@ -150,12 +150,26 @@ def _build_reviews(
         state = r.get("state", "").lower()
         if not user or state == "pending":
             continue
+        # Include the review-level body as a thread if non-empty
+        threads = list(user_threads.get(user, []))
+        review_body = (r.get("body") or "").strip()
+        if review_body:
+            threads.insert(
+                0,
+                {
+                    "body": review_body[:2000],
+                    "file": "",
+                    "html_url": r.get("html_url"),
+                    "original_lines": None,
+                    "replies": [],
+                },
+            )
         latest[user] = {
             "reviewer": user,
             "state": state,
             "submitted_at": r.get("submitted_at"),
             "comments": comment_counts.get(user, 0),
-            "comment_threads": user_threads.get(user, []),
+            "comment_threads": threads,
             "html_url": r.get("html_url"),
         }
 
