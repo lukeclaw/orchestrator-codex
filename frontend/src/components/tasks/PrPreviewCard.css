@@ -614,10 +614,8 @@
   line-height: 1.5;
   margin: 0;
   word-break: break-word;
-  white-space: pre-wrap;
   max-height: 300px;
   overflow-y: auto;
-  display: block;
 }
 
 .pr-thread-replies {

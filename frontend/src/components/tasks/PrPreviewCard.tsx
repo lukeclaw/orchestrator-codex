@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { api, openUrl } from '../../api/client'
 import type { PrPreviewData } from '../../api/types'
 import ConfirmPopover from '../common/ConfirmPopover'
+import { tokenize, renderTokens } from '../common/Markdown'
 import { parseDate } from '../common/TimeAgo'
 import './PrPreviewCard.css'
 
@@ -29,18 +30,11 @@ const FILE_STATUS_LABELS: Record<string, string> = {
   renamed: 'renamed',
 }
 
-/** Strip HTML tags and markdown syntax for plain-text preview */
-function previewText(text: string): string {
-  return text
-    .replace(/<[^>]+>/g, '')                    // HTML tags
-    .replace(/```[\s\S]*?```/g, '[code]')       // fenced code blocks
-    .replace(/`([^`]+)`/g, '$1')                // inline code
-    .replace(/#{1,6}\s+/g, '')                  // markdown headings
-    .replace(/\*\*([^*]+)\*\*/g, '$1')          // bold
-    .replace(/\*([^*]+)\*/g, '$1')              // italic
-    .replace(/!?\[([^\]]*)\]\([^)]+\)/g, '$1')  // links/images
-    .replace(/\n{2,}/g, '\n')                   // collapse blank lines
-    .trim()
+/** Render markdown text to HTML for comment previews */
+function renderMd(text: string): string {
+  // Strip HTML tags from GitHub API response before parsing as markdown
+  const cleaned = text.replace(/<[^>]+>/g, '')
+  return renderTokens(tokenize(cleaned))
 }
 
 function formatDate(dateStr: string): string {
@@ -318,14 +312,14 @@ export default function PrPreviewCard({ url, initialData, onDataFetched }: PrPre
                                     </div>
                                   )}
                                   <div className="pr-thread-comment pr-thread-root-comment">
-                                    <p className="pr-thread-body">{previewText(t.body)}</p>
+                                    <div className="pr-thread-body markdown-content" dangerouslySetInnerHTML={{ __html: renderMd(t.body) }} />
                                   </div>
                                   {t.replies.length > 0 && (
                                     <div className="pr-thread-replies">
                                       {t.replies.map((reply, j) => (
                                         <div key={j} className="pr-thread-comment pr-thread-reply">
                                           <span className="pr-thread-author">{reply.author}</span>
-                                          <p className="pr-thread-body">{previewText(reply.body)}</p>
+                                          <div className="pr-thread-body markdown-content" dangerouslySetInnerHTML={{ __html: renderMd(reply.body) }} />
                                         </div>
                                       ))}
                                     </div>
