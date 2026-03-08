@@ -991,7 +991,7 @@ export default function FileExplorerPanel({
                 return (
                   <React.Fragment key={node.path}>
                     <div
-                      className={`fe-node ${node.path === selectedFile ? 'fe-node--selected' : ''} ${focusIndex === i ? 'fe-node--focused' : ''} ${!node.is_dir && mergedGitStatus ? `fe-node--git-${mergedGitStatus}` : ''} ${dimmed ? 'fe-node--dimmed' : ''} ${isDragging ? 'fe-node--dragging' : ''} ${isDropTarget ? 'fe-node--drop-target' : ''}`}
+                      className={`fe-node ${node.path === selectedFile ? 'fe-node--selected' : ''} ${focusIndex === i ? 'fe-node--focused' : ''} ${!node.is_dir && mergedGitStatus || mergedGitStatus === 'ignored' ? `fe-node--git-${mergedGitStatus}` : ''} ${dimmed ? 'fe-node--dimmed' : ''} ${isDragging ? 'fe-node--dragging' : ''} ${isDropTarget ? 'fe-node--drop-target' : ''}`}
                       style={{ paddingLeft: depth * INDENT_PX + 4 }}
                       role="treeitem"
                       aria-expanded={node.is_dir ? node.expanded : undefined}
