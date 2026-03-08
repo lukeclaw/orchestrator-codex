@@ -303,11 +303,6 @@ async def stream_pane(
             if not initial_sent:
                 continue
 
-            # Skip subprocess-heavy work while user is actively typing
-            # in ANY terminal — avoids cross-session tmux contention.
-            if is_any_session_active():
-                continue
-
             # Re-check stream health after sleep (may have changed)
             now = asyncio.get_running_loop().time()
             stream_healthy = (
@@ -315,6 +310,13 @@ async def stream_pane(
                 and last_flush_time > 0
                 and (now - last_flush_time) < DRIFT_STREAM_HEALTH_TIMEOUT
             )
+
+            # Skip subprocess-heavy work while user is actively typing
+            # in ANY terminal — but ONLY when the stream is healthy.
+            # When stream is down, drift correction is the ONLY update
+            # path, so we must not defer it for user activity.
+            if stream_healthy and is_any_session_active():
+                continue
 
             # Detect healthy → unhealthy transition: force sync to correct
             # any drift that accumulated while the stream was delivering.
@@ -332,6 +334,16 @@ async def stream_pane(
                 except Exception:
                     pass
                 continue
+
+            # --- Try to restart pipe-pane if the reader died --------
+            # The pool's subscribe() is idempotent: no-op if the reader
+            # is alive (just idle), creates a fresh reader if it died.
+            if pane_id and stream_active:
+                try:
+                    pty_pool = PtyStreamPool.get_instance()
+                    await pty_pool.subscribe(pane_id, tmux_sess, tmux_win, on_stream_data)
+                except Exception:
+                    pass
 
             # --- Detect pane ID change (window destroyed & recreated) ---
             # Only check when stream is NOT healthy (EOF, no recent data, etc.)

@@ -621,3 +621,167 @@ class TestSyncBugFixes:
                 f"Expected forced sync on healthy->unhealthy transition, "
                 f"got {syncs_after_stop} syncs"
             )
+
+
+class TestDriftNotBlockedByActivityWhenUnhealthy:
+    """Verify drift correction runs despite user activity when stream is down."""
+
+    async def test_drift_runs_during_activity_when_stream_unhealthy(self):
+        """When stream is unhealthy, drift correction must NOT be blocked
+        by is_any_session_active() — it's the only update path."""
+        ws = FakeWebSocket()
+        sync_count = 0
+
+        async def counting_capture(session, window):
+            nonlocal sync_count
+            sync_count += 1
+            return ("$ ", 2, 0)
+
+        # subscribe returns False → pipe-pane fails → stream_active=False
+        stack, _ = _setup_ws_test(
+            ws,
+            subscribe_return=False,
+            capture_side_effect=counting_capture,
+        )
+
+        _ws = "orchestrator.api.ws_terminal"
+        # Simulate user actively typing in some terminal
+        stack.enter_context(patch(f"{_ws}.is_any_session_active", return_value=True))
+
+        with stack:
+            handler_task = asyncio.create_task(terminal_websocket(ws, "sess-1"))
+            await asyncio.sleep(0.05)
+
+            ws.inject_text(json.dumps({"type": "resize", "cols": 80, "rows": 24}))
+            await asyncio.sleep(0.1)
+
+            syncs_before = sync_count
+
+            # Wait for several drift correction cycles (0.02s interval)
+            await asyncio.sleep(0.3)
+
+            ws.inject_disconnect()
+            await asyncio.sleep(0.05)
+            handler_task.cancel()
+            try:
+                await handler_task
+            except (asyncio.CancelledError, Exception):
+                pass
+
+            syncs_during_activity = sync_count - syncs_before
+            assert syncs_during_activity >= 1, (
+                f"Drift correction should run when stream is unhealthy "
+                f"even during user activity, got {syncs_during_activity} syncs"
+            )
+
+    async def test_drift_skipped_during_activity_when_stream_healthy(self):
+        """When stream is healthy, drift correction should still be skipped
+        during user activity (to avoid tmux contention)."""
+        ws = FakeWebSocket()
+        captured_callback = {}
+        sync_count = 0
+
+        async def counting_capture(session, window):
+            nonlocal sync_count
+            sync_count += 1
+            return ("content", 0, 0)
+
+        stack, _ = _setup_ws_test(
+            ws,
+            captured_callback=captured_callback,
+            capture_side_effect=counting_capture,
+        )
+
+        _ws = "orchestrator.api.ws_terminal"
+        # Simulate user actively typing
+        stack.enter_context(patch(f"{_ws}.is_any_session_active", return_value=True))
+
+        with stack:
+            handler_task = asyncio.create_task(terminal_websocket(ws, "sess-1"))
+            await asyncio.sleep(0.05)
+
+            ws.inject_text(json.dumps({"type": "resize", "cols": 80, "rows": 24}))
+            await asyncio.sleep(0.1)
+
+            initial_syncs = len([m for m in ws.sent_json if m.get("type") == "sync"])
+
+            # Keep stream healthy — send data faster than health timeout
+            cb = captured_callback["cb"]
+            for _ in range(6):
+                await cb(b"keepalive\r\n")
+                await asyncio.sleep(0.05)
+
+            ws.inject_disconnect()
+            await asyncio.sleep(0.05)
+            handler_task.cancel()
+            try:
+                await handler_task
+            except (asyncio.CancelledError, Exception):
+                pass
+
+            final_syncs = len([m for m in ws.sent_json if m.get("type") == "sync"])
+            periodic_syncs = final_syncs - initial_syncs
+            assert periodic_syncs == 0, (
+                f"Expected 0 syncs while stream healthy + user active, got {periodic_syncs}"
+            )
+
+
+class TestPipePaneResubscribe:
+    """Verify drift correction re-subscribes to pipe-pane when reader dies."""
+
+    async def test_resubscribe_called_when_stream_unhealthy(self):
+        """When stream goes unhealthy, drift correction should try to
+        re-subscribe to pipe-pane to restart the dead reader."""
+        ws = FakeWebSocket()
+        captured_callback = {}
+        subscribe_calls = []
+
+        mock_pool = AsyncMock(spec=PtyStreamPool)
+
+        async def tracking_subscribe(pane_id, session, window, callback):
+            subscribe_calls.append(pane_id)
+            captured_callback["cb"] = callback
+            return True
+
+        mock_pool.subscribe = tracking_subscribe
+        mock_pool.unsubscribe = AsyncMock()
+
+        stack, _ = _setup_ws_test(
+            ws,
+            pool_override=mock_pool,
+            capture_return=("$ ", 2, 0),
+        )
+
+        with stack:
+            handler_task = asyncio.create_task(terminal_websocket(ws, "sess-1"))
+            await asyncio.sleep(0.05)
+
+            ws.inject_text(json.dumps({"type": "resize", "cols": 80, "rows": 24}))
+            await asyncio.sleep(0.1)
+
+            # Initial subscribe happened during _start_streaming
+            initial_subscribes = len(subscribe_calls)
+            assert initial_subscribes >= 1, "Initial subscribe not called"
+
+            # Keep stream healthy briefly, then let it go unhealthy
+            cb = captured_callback["cb"]
+            await cb(b"data\r\n")
+            await asyncio.sleep(0.05)
+
+            # Let stream go unhealthy (no data for > health timeout 0.15s)
+            # Wait for drift correction to attempt re-subscribe
+            await asyncio.sleep(0.5)
+
+            ws.inject_disconnect()
+            await asyncio.sleep(0.05)
+            handler_task.cancel()
+            try:
+                await handler_task
+            except (asyncio.CancelledError, Exception):
+                pass
+
+            resubscribe_calls = len(subscribe_calls) - initial_subscribes
+            assert resubscribe_calls >= 1, (
+                f"Expected drift correction to re-subscribe when stream "
+                f"unhealthy, got {resubscribe_calls} re-subscribe calls"
+            )

@@ -373,14 +373,15 @@ ground truth.
 
 ---
 
-## 6. Known Limitations (Unchanged)
+## 6. Known Limitations
 
-These are pre-existing issues not addressed by this plan:
-
-- **`is_any_session_active()` blocks all drift correction**: If user is typing
-  in any terminal, ALL terminals' drift correction is suppressed (including
-  ones with dead streams). This is by design to avoid tmux subprocess
-  contention during active typing.
+- ~~**`is_any_session_active()` blocks all drift correction**~~ **Fixed:**
+  The activity check now only defers drift correction when the stream is
+  healthy. When the stream is down (dead reader, pipe-pane failure), drift
+  correction runs immediately regardless of user activity — it's the only
+  update path and a single capture-pane is worth the minor tmux contention.
+  Additionally, drift correction now re-subscribes to pipe-pane on each
+  unhealthy tick, automatically restarting dead readers.
 
 - **Race window in `_send_sync()`**: Stream data arriving between the two
   `stream_buffer.clear()` calls (lines 192-198) is silently dropped. This is
