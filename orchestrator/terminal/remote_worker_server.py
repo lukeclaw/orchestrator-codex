@@ -84,6 +84,22 @@ _REMOTE_WORKER_SERVER_SCRIPT = textwrap.dedent("""\
         missing = [p for p in paths if not os.path.exists(p)]
         return {"missing": missing, "missing_count": len(missing)}
 
+    def handle_check_mtimes(cmd):
+        work_dir = cmd["work_dir"]
+        paths = cmd.get("paths", [])
+        norm_work = os.path.normpath(work_dir)
+        mtimes = {}
+        for p in paths:
+            target = os.path.normpath(os.path.join(work_dir, p))
+            if not target.startswith(norm_work):
+                mtimes[p] = None
+                continue
+            try:
+                mtimes[p] = os.stat(target).st_mtime
+            except OSError:
+                mtimes[p] = None
+        return {"mtimes": mtimes}
+
     def handle_list_dir(cmd):
         work_dir = cmd["work_dir"]
         rel_path = cmd["path"]
@@ -843,6 +859,7 @@ _REMOTE_WORKER_SERVER_SCRIPT = textwrap.dedent("""\
         "ping": handle_ping,
         "server_info": handle_server_info,
         "check_path": handle_check_path,
+        "check_mtimes": handle_check_mtimes,
         "list_dir": handle_list_dir,
         "read_file": handle_read_file,
         "read_file_raw": handle_read_file_raw,

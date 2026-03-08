@@ -28,6 +28,7 @@ interface FileViewerProps {
   tabs: Tab[]
   activeTabPath: string | null
   pendingClose: string | null
+  saveConflict: string | null
   onTabSelect: (path: string) => void
   onTabClose: (path: string) => boolean
   onTabPin: (path: string) => void
@@ -35,6 +36,9 @@ interface FileViewerProps {
   onCancelClose: () => void
   onContentChange: (path: string, content: string) => void
   onSave: (path: string) => Promise<boolean>
+  onResolveSaveConflict: (overwrite: boolean) => void
+  onReloadTab: (path: string) => void
+  onDismissExternalChange: (path: string) => void
   isDirty: (path: string) => boolean
 }
 
@@ -77,6 +81,7 @@ export default function FileViewer({
   tabs,
   activeTabPath,
   pendingClose,
+  saveConflict,
   onTabSelect,
   onTabClose,
   onTabPin,
@@ -84,6 +89,9 @@ export default function FileViewer({
   onCancelClose,
   onContentChange,
   onSave,
+  onResolveSaveConflict,
+  onReloadTab,
+  onDismissExternalChange,
   isDirty,
 }: FileViewerProps) {
   // For markdown files: whether showing preview (true) or editor (false)
@@ -138,12 +146,16 @@ export default function FileViewer({
             <div
               key={tab.path}
               data-tab-path={tab.path}
-              className={`fe-viewer__tab-item${active ? ' active' : ''}${tab.isPreview ? ' preview' : ''}`}
+              className={`fe-viewer__tab-item${active ? ' active' : ''}${tab.isPreview ? ' preview' : ''}${tab.externallyChanged ? ' ext-changed' : ''}`}
               onClick={() => onTabSelect(tab.path)}
               onDoubleClick={() => onTabPin(tab.path)}
               title={tab.path}
             >
-              {dirty && <span className="fe-viewer__dirty-dot" />}
+              {tab.externallyChanged ? (
+                <span className="fe-viewer__ext-dot" title="File changed on disk" />
+              ) : dirty ? (
+                <span className="fe-viewer__dirty-dot" />
+              ) : null}
               <span className="fe-viewer__tab-name">{tab.fileName}</span>
               {dirty && (
                 <button
@@ -182,6 +194,24 @@ export default function FileViewer({
           <button className="fe-viewer__close-confirm-btn save" onClick={() => { onSave(pendingClose).then(ok => { if (ok) onConfirmClose(pendingClose) }); onCancelClose() }}>Save</button>
           <button className="fe-viewer__close-confirm-btn discard" onClick={() => onConfirmClose(pendingClose)}>Discard</button>
           <button className="fe-viewer__close-confirm-btn cancel" onClick={onCancelClose}>Cancel</button>
+        </div>
+      )}
+
+      {/* Save conflict banner */}
+      {saveConflict && activeTab && saveConflict === activeTab.path && (
+        <div className="fe-viewer__conflict-banner">
+          <span>File was modified on disk. Overwrite with your changes or reload from disk?</span>
+          <button className="fe-viewer__close-confirm-btn save" onClick={() => onResolveSaveConflict(true)}>Overwrite</button>
+          <button className="fe-viewer__close-confirm-btn discard" onClick={() => onResolveSaveConflict(false)}>Reload</button>
+        </div>
+      )}
+
+      {/* External change banner */}
+      {activeTab && activeTab.externallyChanged && !saveConflict && (
+        <div className="fe-viewer__ext-change-banner">
+          <span>File changed on disk. Reload to see latest or keep your version.</span>
+          <button className="fe-viewer__close-confirm-btn save" onClick={() => onReloadTab(activeTab.path)}>Reload</button>
+          <button className="fe-viewer__close-confirm-btn cancel" onClick={() => onDismissExternalChange(activeTab.path)}>Keep</button>
         </div>
       )}
 

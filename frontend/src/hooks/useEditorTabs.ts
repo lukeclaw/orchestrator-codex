@@ -23,6 +23,10 @@ interface FileWriteResponse {
   conflict: boolean
 }
 
+interface MtimeResponse {
+  mtimes: Record<string, number | null>
+}
+
 export interface Tab {
   path: string                    // relative path (unique key)
   fileName: string                // extracted from path
@@ -39,12 +43,14 @@ export interface Tab {
   loading: boolean
   error: string | null
   saving: boolean
+  externallyChanged: boolean      // file was modified on disk while tab has unsaved edits
 }
 
 export interface EditorTabsAPI {
   tabs: Tab[]
   activeTabPath: string | null
   pendingClose: string | null
+  saveConflict: string | null
   openTab(path: string, preview?: boolean): void
   openNewFile(dirPath: string, fileName: string): Promise<boolean>
   closeTab(path: string): boolean
@@ -54,6 +60,9 @@ export interface EditorTabsAPI {
   pinTab(path: string): void
   updateContent(path: string, content: string): void
   saveTab(path: string): Promise<boolean>
+  resolveSaveConflict(overwrite: boolean): void
+  reloadTab(path: string): void
+  dismissExternalChange(path: string): void
   isDirty(path: string): boolean
   hasAnyDirty: boolean
   closeTabsByPrefix(prefix: string): void
@@ -65,6 +74,8 @@ export interface EditorTabsAPI {
 // ---------------------------------------------------------------------------
 
 const MAX_TABS = 20
+const MTIME_POLL_INTERVAL = 3000  // 3 seconds
+const MTIME_TOLERANCE = 0.5       // seconds — must match backend
 
 function extractFileName(path: string): string {
   return path.split('/').pop() || path
@@ -169,7 +180,7 @@ export function useEditorTabs(sessionId: string): EditorTabsAPI {
   const restoredRef = useRef(false)
 
   // ------- fetch content helper -------
-  const fetchTabContent = useCallback(async (path: string) => {
+  const fetchTabContent = useCallback(async (path: string, refresh = false) => {
     // Abort previous fetch for this path
     const prev = abortControllers.current.get(path)
     if (prev) prev.abort()
@@ -183,6 +194,7 @@ export function useEditorTabs(sessionId: string): EditorTabsAPI {
 
     try {
       const params = new URLSearchParams({ path, max_lines: '10000' })
+      if (refresh) params.set('refresh', 'true')
       const data = await api<FileContentResponse>(
         `/api/sessions/${sessionId}/files/content?${params}`,
         { signal: controller.signal },
@@ -201,6 +213,7 @@ export function useEditorTabs(sessionId: string): EditorTabsAPI {
             modified: data.modified,
             loading: false,
             error: null,
+            externallyChanged: false,
           } : t
         ))
       }
@@ -243,6 +256,7 @@ export function useEditorTabs(sessionId: string): EditorTabsAPI {
       loading: true,
       error: null,
       saving: false,
+      externallyChanged: false,
     }))
 
     setTabs(newTabs)
@@ -257,6 +271,60 @@ export function useEditorTabs(sessionId: string): EditorTabsAPI {
     if (!restoredRef.current) return
     saveCachedTabs(sessionId, tabs, activeTabPath)
   }, [sessionId, tabs, activeTabPath])
+
+  // ------- mtime polling for external changes -------
+  useEffect(() => {
+    const poll = async () => {
+      // Collect pollable tabs: loaded, not new, not saving, not loading,
+      // has a known mtime, and not already flagged as externally changed.
+      const targets = tabsRef.current.filter(
+        t => !t.isNew && !t.loading && !t.saving && t.modified !== null && !t.externallyChanged
+      )
+      if (targets.length === 0) return
+
+      try {
+        const resp = await api<MtimeResponse>(
+          `/api/sessions/${sessionId}/files/mtime`,
+          {
+            method: 'POST',
+            body: JSON.stringify({ paths: targets.map(t => t.path) }),
+          },
+        )
+
+        for (const target of targets) {
+          const serverMtime = resp.mtimes[target.path]
+          if (serverMtime == null) continue
+          if (Math.abs(serverMtime - target.modified!) <= MTIME_TOLERANCE) continue
+
+          // File changed on disk — check if tab is dirty
+          const tab = tabsRef.current.find(t => t.path === target.path)
+          if (!tab) continue
+
+          const dirty = tab.isNew
+            ? (tab.currentContent ?? '') !== ''
+            : tab.originalContent !== tab.currentContent
+
+          if (!dirty) {
+            // Clean tab — silently reload content (bypass remote cache)
+            fetchTabContent(tab.path, true)
+          } else {
+            // Dirty tab — mark as externally changed, update stored mtime
+            // so we don't re-trigger on the same change
+            setTabs(prev => prev.map(t =>
+              t.path === tab.path
+                ? { ...t, externallyChanged: true, modified: serverMtime }
+                : t
+            ))
+          }
+        }
+      } catch {
+        // Polling is best-effort — silently ignore errors
+      }
+    }
+
+    const id = setInterval(poll, MTIME_POLL_INTERVAL)
+    return () => clearInterval(id)
+  }, [sessionId, fetchTabContent])
 
   // ------- openTab -------
   const openTab = useCallback((path: string, preview = true) => {
@@ -315,6 +383,7 @@ export function useEditorTabs(sessionId: string): EditorTabsAPI {
         loading: true,
         error: null,
         saving: false,
+        externallyChanged: false,
       }
 
       setActiveTabPath(path)
@@ -353,6 +422,7 @@ export function useEditorTabs(sessionId: string): EditorTabsAPI {
       loading: false,
       error: null,
       saving: true,
+      externallyChanged: false,
     }
 
     setTabs(prev => [...prev, newTab])
@@ -468,7 +538,9 @@ export function useEditorTabs(sessionId: string): EditorTabsAPI {
     }))
   }, [])
 
-  // ------- saveTab -------
+  // ------- saveTab (with state-based conflict resolution) -------
+  const [saveConflict, setSaveConflict] = useState<string | null>(null)
+
   const saveTab = useCallback(async (path: string): Promise<boolean> => {
     const tab = tabs.find(t => t.path === path)
     if (!tab || tab.saving) return false
@@ -492,36 +564,8 @@ export function useEditorTabs(sessionId: string): EditorTabsAPI {
       )
 
       if (data.conflict) {
-        const choice = window.confirm(
-          'File was modified externally. Overwrite with your changes?'
-        )
-        if (choice) {
-          // Retry without mtime check
-          const retry = await api<FileWriteResponse>(
-            `/api/sessions/${sessionId}/files/content`,
-            {
-              method: 'PUT',
-              body: JSON.stringify({
-                path,
-                content: tab.currentContent ?? '',
-                expected_mtime: null,
-                create: tab.isNew,
-              }),
-            },
-          )
-          setTabs(prev => prev.map(t =>
-            t.path === path ? {
-              ...t,
-              originalContent: t.currentContent,
-              modified: retry.modified,
-              size: retry.size,
-              isNew: false,
-              saving: false,
-            } : t
-          ))
-          return true
-        }
-        // User cancelled overwrite
+        // Store conflict state — let UI show resolution banner
+        setSaveConflict(path)
         setTabs(prev => prev.map(t =>
           t.path === path ? { ...t, saving: false } : t
         ))
@@ -536,6 +580,7 @@ export function useEditorTabs(sessionId: string): EditorTabsAPI {
           size: data.size,
           isNew: false,
           saving: false,
+          externallyChanged: false,
         } : t
       ))
       return true
@@ -550,6 +595,74 @@ export function useEditorTabs(sessionId: string): EditorTabsAPI {
       return false
     }
   }, [tabs, sessionId])
+
+  // ------- resolveSaveConflict -------
+  const resolveSaveConflict = useCallback(async (overwrite: boolean) => {
+    const path = saveConflict
+    if (!path) return
+    setSaveConflict(null)
+
+    if (overwrite) {
+      // Retry save without mtime check
+      const tab = tabsRef.current.find(t => t.path === path)
+      if (!tab) return
+
+      setTabs(prev => prev.map(t =>
+        t.path === path ? { ...t, saving: true } : t
+      ))
+
+      try {
+        const data = await api<FileWriteResponse>(
+          `/api/sessions/${sessionId}/files/content`,
+          {
+            method: 'PUT',
+            body: JSON.stringify({
+              path,
+              content: tab.currentContent ?? '',
+              expected_mtime: null,
+              create: false,
+            }),
+          },
+        )
+        setTabs(prev => prev.map(t =>
+          t.path === path ? {
+            ...t,
+            originalContent: t.currentContent,
+            modified: data.modified,
+            size: data.size,
+            isNew: false,
+            saving: false,
+            externallyChanged: false,
+          } : t
+        ))
+      } catch (e) {
+        setTabs(prev => prev.map(t =>
+          t.path === path ? {
+            ...t,
+            saving: false,
+            error: e instanceof Error ? e.message : 'Save failed',
+          } : t
+        ))
+      }
+    } else {
+      // Reload from disk — discard local changes (bypass remote cache)
+      fetchTabContent(path, true)
+    }
+  }, [saveConflict, sessionId, fetchTabContent])
+
+  // ------- reloadTab (for externally changed files) -------
+  const reloadTab = useCallback((path: string) => {
+    fetchTabContent(path, true)  // bypass remote cache
+  }, [fetchTabContent])
+
+  // ------- dismissExternalChange (keep local version) -------
+  const dismissExternalChange = useCallback((path: string) => {
+    // modified was already updated to the server's new mtime when we
+    // detected the change, so the next poll won't re-trigger.
+    setTabs(prev => prev.map(t =>
+      t.path === path ? { ...t, externallyChanged: false } : t
+    ))
+  }, [])
 
   // ------- isDirty -------
   const isDirty = useCallback((path: string): boolean => {
@@ -612,6 +725,7 @@ export function useEditorTabs(sessionId: string): EditorTabsAPI {
     tabs,
     activeTabPath,
     pendingClose,
+    saveConflict,
     openTab,
     openNewFile,
     closeTab,
@@ -621,6 +735,9 @@ export function useEditorTabs(sessionId: string): EditorTabsAPI {
     pinTab,
     updateContent,
     saveTab,
+    resolveSaveConflict,
+    reloadTab,
+    dismissExternalChange,
     isDirty,
     hasAnyDirty,
     closeTabsByPrefix,

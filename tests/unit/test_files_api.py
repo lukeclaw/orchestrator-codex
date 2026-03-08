@@ -14,6 +14,7 @@ from orchestrator.api.routes.files import (
     FileEntry,
     FileWriteRequest,
     _apply_git_status,
+    _check_remote_mtimes,
     _delete_local,
     _delete_remote,
     _detect_remote_work_dir,
@@ -938,3 +939,92 @@ class TestMkdirRemote:
         with pytest.raises(HTTPException) as exc_info:
             _mkdir_remote("host", "/work", "newdir")
         assert exc_info.value.status_code == 502
+
+
+# ---------------------------------------------------------------------------
+# Mtime polling endpoint tests
+# ---------------------------------------------------------------------------
+
+
+class TestCheckMtimesLocal:
+    def test_returns_mtimes_for_existing_files(self, tmp_path):
+        f1 = tmp_path / "a.py"
+        f2 = tmp_path / "b.py"
+        f1.write_text("aaa")
+        f2.write_text("bbb")
+
+        mtime_a = os.stat(str(f1)).st_mtime
+        mtime_b = os.stat(str(f2)).st_mtime
+
+        # Simulate what the endpoint does for local files
+        paths = ["a.py", "b.py"]
+        mtimes: dict[str, float | None] = {}
+        work_dir = str(tmp_path)
+        norm_work = os.path.normpath(work_dir)
+        for p in paths:
+            abs_path = os.path.normpath(os.path.join(work_dir, p))
+            if not abs_path.startswith(norm_work):
+                mtimes[p] = None
+                continue
+            try:
+                mtimes[p] = os.stat(abs_path).st_mtime
+            except OSError:
+                mtimes[p] = None
+
+        assert abs(mtimes["a.py"] - mtime_a) < 0.01
+        assert abs(mtimes["b.py"] - mtime_b) < 0.01
+
+    def test_returns_none_for_missing_file(self, tmp_path):
+        paths = ["nonexistent.py"]
+        mtimes: dict[str, float | None] = {}
+        work_dir = str(tmp_path)
+        for p in paths:
+            abs_path = os.path.normpath(os.path.join(work_dir, p))
+            try:
+                mtimes[p] = os.stat(abs_path).st_mtime
+            except OSError:
+                mtimes[p] = None
+
+        assert mtimes["nonexistent.py"] is None
+
+    def test_detects_mtime_change_after_write(self, tmp_path):
+        f = tmp_path / "changing.py"
+        f.write_text("v1")
+        mtime_before = os.stat(str(f)).st_mtime
+
+        # Modify the file
+        import time as _time
+
+        _time.sleep(0.05)  # ensure mtime granularity
+        f.write_text("v2")
+        mtime_after = os.stat(str(f)).st_mtime
+
+        assert mtime_after > mtime_before
+
+
+class TestCheckRemoteMtimes:
+    @patch("orchestrator.api.routes.files.get_remote_worker_server")
+    def test_returns_mtimes_from_rws(self, mock_get_rws):
+        mock_rws = MagicMock()
+        mock_rws.execute.return_value = {
+            "mtimes": {"a.py": 1700000000.0, "b.py": 1700000001.0}
+        }
+        mock_get_rws.return_value = mock_rws
+        resp = _check_remote_mtimes("host", "/work", ["a.py", "b.py"])
+        assert resp.mtimes["a.py"] == 1700000000.0
+        assert resp.mtimes["b.py"] == 1700000001.0
+
+    @patch("orchestrator.api.routes.files.get_remote_worker_server")
+    def test_connection_error_returns_none_for_all(self, mock_get_rws):
+        mock_get_rws.side_effect = RuntimeError("RWS not available")
+        resp = _check_remote_mtimes("host", "/work", ["a.py", "b.py"])
+        assert resp.mtimes["a.py"] is None
+        assert resp.mtimes["b.py"] is None
+
+    @patch("orchestrator.api.routes.files.get_remote_worker_server")
+    def test_json_decode_error_returns_none(self, mock_get_rws):
+        import json
+
+        mock_get_rws.side_effect = json.JSONDecodeError("bad", "", 0)
+        resp = _check_remote_mtimes("host", "/work", ["x.py"])
+        assert resp.mtimes["x.py"] is None

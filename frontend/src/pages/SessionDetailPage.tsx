@@ -678,6 +678,7 @@ export default function SessionDetailPage() {
                   tabs={editorTabs.tabs}
                   activeTabPath={editorTabs.activeTabPath}
                   pendingClose={editorTabs.pendingClose}
+                  saveConflict={editorTabs.saveConflict}
                   onTabSelect={editorTabs.setActiveTab}
                   onTabClose={editorTabs.closeTab}
                   onTabPin={editorTabs.pinTab}
@@ -685,6 +686,9 @@ export default function SessionDetailPage() {
                   onCancelClose={editorTabs.cancelCloseTab}
                   onContentChange={editorTabs.updateContent}
                   onSave={editorTabs.saveTab}
+                  onResolveSaveConflict={editorTabs.resolveSaveConflict}
+                  onReloadTab={editorTabs.reloadTab}
+                  onDismissExternalChange={editorTabs.dismissExternalChange}
                   isDirty={editorTabs.isDirty}
                 />
               </div>

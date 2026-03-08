@@ -794,6 +794,58 @@ def read_file_content(
 _MAX_WRITE_SIZE = 2 * 1024 * 1024  # 2 MB
 
 
+class MtimeRequest(BaseModel):
+    paths: list[str]
+
+
+class MtimeResponse(BaseModel):
+    mtimes: dict[str, float | None]  # path -> mtime (None if file gone)
+
+
+@router.post("/sessions/{session_id}/files/mtime")
+def check_mtimes(
+    session_id: str,
+    body: MtimeRequest,
+    db=Depends(get_db),
+) -> MtimeResponse:
+    """Check modification times of multiple files (lightweight stat-only)."""
+    _check_rate_limit(session_id)
+    info = _resolve_session(db, session_id)
+
+    # Validate all paths
+    for p in body.paths:
+        _validate_path(p)
+
+    if info.is_remote:
+        return _check_remote_mtimes(info.host, info.work_dir, body.paths)
+
+    norm_work = os.path.normpath(info.work_dir)
+    mtimes: dict[str, float | None] = {}
+    for p in body.paths:
+        abs_path = os.path.normpath(os.path.join(info.work_dir, p))
+        if not abs_path.startswith(norm_work):
+            mtimes[p] = None
+            continue
+        try:
+            mtimes[p] = os.stat(abs_path).st_mtime
+        except OSError:
+            mtimes[p] = None
+
+    return MtimeResponse(mtimes=mtimes)
+
+
+def _check_remote_mtimes(host: str, work_dir: str, paths: list[str]) -> MtimeResponse:
+    """Check mtimes on a remote host via RWS.  Best-effort — returns None on error."""
+    try:
+        rws = get_remote_worker_server(host)
+        data = rws.execute(
+            {"action": "check_mtimes", "work_dir": work_dir, "paths": paths}
+        )
+        return MtimeResponse(mtimes=data.get("mtimes", {p: None for p in paths}))
+    except (RuntimeError, OSError, json.JSONDecodeError):
+        return MtimeResponse(mtimes={p: None for p in paths})
+
+
 class FileWriteRequest(BaseModel):
     path: str
     content: str
