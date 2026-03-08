@@ -204,6 +204,57 @@ function tokenize(text: string): Token[] {
   return tokens
 }
 
+// GitHub emoji shortcode → Unicode mapping
+const GITHUB_EMOJI: Record<string, string> = {
+  // Reactions & common
+  '+1': '👍', '-1': '👎', thumbsup: '👍', thumbsdown: '👎',
+  heart: '❤️', smile: '😄', laughing: '😆', wink: '😉', thinking: '🤔',
+  eyes: '👀', clap: '👏', raised_hands: '🙌', pray: '🙏', '100': '💯',
+  tada: '🎉', confetti_ball: '🎊', party_popper: '🎉', sparkles: '✨',
+  fire: '🔥', rocket: '🚀', zap: '⚡', boom: '💥', star: '⭐', star2: '🌟',
+  // CI / status
+  white_check_mark: '✅', heavy_check_mark: '✔️', ballot_box_with_check: '☑️',
+  x: '❌', heavy_multiplication_x: '✖️', no_entry: '⛔', no_entry_sign: '🚫',
+  warning: '⚠️', rotating_light: '🚨', construction: '🚧', stopwatch: '⏱️',
+  hourglass: '⌛', hourglass_flowing_sand: '⏳', alarm_clock: '⏰',
+  runner: '🏃', running: '🏃', checkered_flag: '🏁',
+  green_circle: '🟢', red_circle: '🔴', yellow_circle: '🟡',
+  large_blue_circle: '🔵', white_circle: '⚪', black_circle: '⚫',
+  // Dev / tools
+  bug: '🐛', wrench: '🔧', hammer: '🔨', gear: '⚙️', bulb: '💡',
+  memo: '📝', pencil: '✏️', pencil2: '✏️', clipboard: '📋',
+  package: '📦', link: '🔗', lock: '🔒', key: '🔑', shield: '🛡️',
+  mag: '🔍', mag_right: '🔎', recycle: '♻️', wastebasket: '🗑️',
+  // Arrows & symbols
+  arrow_right: '➡️', arrow_left: '⬅️', arrow_up: '⬆️', arrow_down: '⬇️',
+  arrow_upper_right: '↗️', arrow_lower_right: '↘️',
+  arrows_counterclockwise: '🔄', twisted_rightwards_arrows: '🔀', repeat: '🔁',
+  heavy_plus_sign: '➕', heavy_minus_sign: '➖',
+  exclamation: '❗', question: '❓', grey_exclamation: '❕', grey_question: '❔',
+  information_source: 'ℹ️',
+  // Communication
+  speech_balloon: '💬', thought_balloon: '💭', loudspeaker: '📢', bell: '🔔',
+  email: '📧', inbox_tray: '📥', outbox_tray: '📤',
+  // Files & documents
+  page_facing_up: '📄', file_folder: '📁', open_file_folder: '📂',
+  chart_with_upwards_trend: '📈', chart_with_downwards_trend: '📉',
+  bar_chart: '📊', calendar: '📅',
+  // People & hands
+  wave: '👋', muscle: '💪', point_right: '👉', point_left: '👈',
+  point_up: '👆', point_down: '👇', ok_hand: '👌', v: '✌️',
+  // Nature
+  sunny: '☀️', cloud: '☁️', snowflake: '❄️', ocean: '🌊', rainbow: '🌈',
+  // Misc
+  coffee: '☕', pizza: '🍕', beers: '🍻', trophy: '🏆', medal_sports: '🏅',
+  crown: '👑', gem: '💎', moneybag: '💰',
+}
+
+const EMOJI_RE = /:([a-z0-9_+-]+):/g
+
+function replaceGitHubEmoji(text: string): string {
+  return text.replace(EMOJI_RE, (match, code) => GITHUB_EMOJI[code] ?? match)
+}
+
 // Parse inline markdown (bold, italic, code, links, images)
 function parseInline(text: string): string {
   // First, protect escaped characters by replacing with placeholders
@@ -231,6 +282,9 @@ function parseInline(text: string): string {
     codeMap[placeholder] = `<code class="inline-code">${escapeHtml(content)}</code>`
     return placeholder
   })
+
+  // Replace GitHub emoji shortcodes (after code extraction so :code: in backticks is preserved)
+  processed = replaceGitHubEmoji(processed)
 
   processed = processed
     // Escape HTML (after code extraction to preserve code content)
