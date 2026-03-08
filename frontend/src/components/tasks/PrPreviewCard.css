@@ -499,11 +499,11 @@
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  padding: 6px;
+  padding: 8px;
   width: max-content;
-  min-width: 400px;
-  max-width: min(800px, 50vw);
-  max-height: 720px;
+  min-width: 360px;
+  max-width: min(600px, 40vw);
+  max-height: min(500px, 50vh);
   overflow-y: auto;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
   animation: pr-popup-enter 150ms var(--ease-decelerate);
@@ -565,7 +565,7 @@
   display: flex;
   flex-direction: column;
   gap: 6px;
-  transition: background 0.15s;
+  min-width: 0;
 }
 
 .pr-thread-card + .pr-thread-card {
@@ -573,6 +573,15 @@
   border-radius: 0;
   margin-top: 2px;
   padding-top: 12px;
+}
+
+/* Inline code comment threads (with file label) get a subtle inset look */
+.pr-thread-card:has(.pr-thread-file-label) {
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  margin-top: 4px;
+  margin-left: 10px;
 }
 
 
@@ -614,8 +623,8 @@
   line-height: 1.5;
   margin: 0;
   word-break: break-word;
-  max-height: 300px;
-  overflow-y: auto;
+  overflow-wrap: break-word;
+  min-width: 0;
 }
 
 .pr-thread-replies {

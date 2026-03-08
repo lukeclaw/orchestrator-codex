@@ -90,6 +90,15 @@ def _build_reviews(
     pr_author: str = "",
 ) -> list[dict]:
     """Build review list with latest state and per-user comment counts."""
+    # Map review_id -> review author so inline comments can be attributed
+    # to the review owner (e.g. Copilot inline comment -> copilot-reviewer[bot])
+    review_id_to_author: dict[int, str] = {}
+    for r in reviews_raw:
+        rid = r.get("id")
+        author = (r.get("user") or {}).get("login", "")
+        if rid and author:
+            review_id_to_author[rid] = author
+
     # Index review comments: top-level by id, replies grouped by parent
     top_comments: dict[int, dict] = {}  # id -> comment
     replies_by_parent: dict[int, list[dict]] = {}  # parent_id -> [replies]
@@ -105,7 +114,11 @@ def _build_reviews(
     comment_counts: Counter[str] = Counter()
     latest_comment_url: dict[str, str] = {}
     for cid, c in top_comments.items():
-        user = c.get("user", {}).get("login", "")
+        # Attribute to review author if the comment belongs to a review
+        pr_review_id = c.get("pull_request_review_id")
+        user = review_id_to_author.get(pr_review_id, "") if pr_review_id else ""
+        if not user:
+            user = c.get("user", {}).get("login", "")
         if not user:
             continue
         comment_counts[user] += 1
