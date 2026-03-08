@@ -261,7 +261,7 @@ export default function PrPreviewCard({ url, initialData, onDataFetched }: PrPre
               <div className="pr-section-title">Reviews</div>
               {data.reviews.length > 0 ? (
                 <div className="pr-reviews" ref={reviewsRef}>
-                  {data.reviews.map(r => (
+                  {[...data.reviews].sort((a, b) => (a.submitted_at ?? '9999').localeCompare(b.submitted_at ?? '9999')).map(r => (
                     <div key={r.reviewer} className="pr-review-item">
                       <span
                         className={`pr-review-label ${r.html_url ? 'pr-review-clickable' : ''}`}

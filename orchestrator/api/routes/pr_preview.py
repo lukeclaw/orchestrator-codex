@@ -193,12 +193,16 @@ def _build_reviews(
     # Add users who only left comments but no formal review
     for user, count in comment_counts.items():
         if user not in latest:
+            threads = user_threads.get(user, [])
+            # Use the earliest comment timestamp as the review timestamp
+            thread_dates = [t["created_at"] for t in threads if t.get("created_at")]
+            submitted_at = min(thread_dates) if thread_dates else None
             latest[user] = {
                 "reviewer": user,
                 "state": "commented",
-                "submitted_at": None,
+                "submitted_at": submitted_at,
                 "comments": count,
-                "comment_threads": user_threads.get(user, []),
+                "comment_threads": threads,
                 "html_url": latest_comment_url.get(user),
             }
 
