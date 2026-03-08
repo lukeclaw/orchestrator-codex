@@ -39,7 +39,20 @@ function getPrStatusChips(data: PrPreviewData): Array<{ label: string; color: st
       chips.push({ label: 'Open', color: 'green' })
     }
 
-    if (data.reviews && data.reviews.length > 0) {
+    // Check for approval gate in CI checks — when present, it's the
+    // authoritative signal and we suppress review-based approval chips
+    // to avoid contradictions (e.g. reviewer approved an old commit but
+    // the gate reset to pending after new commits were pushed).
+    const approvalGate = data.checks?.find(c => APPROVAL_GATE_RE.test(c.name))
+
+    if (approvalGate) {
+      if (approvalGate.conclusion === 'success') {
+        chips.push({ label: 'Owner approved', color: 'green' })
+      } else if (approvalGate.status === 'in_progress' || approvalGate.status === 'queued' || !approvalGate.conclusion) {
+        chips.push({ label: 'Owner approval pending', color: 'yellow' })
+      }
+    } else if (data.reviews && data.reviews.length > 0) {
+      // No approval gate — fall back to review-based approval status
       const hasApproval = data.reviews.some(r => r.state === 'approved')
       const hasChangesRequested = data.reviews.some(r => r.state === 'changes_requested')
       if (hasChangesRequested) {
@@ -50,15 +63,6 @@ function getPrStatusChips(data: PrPreviewData): Array<{ label: string; color: st
     }
 
     if (data.checks && data.checks.length > 0) {
-      const approvalGate = data.checks.find(c => APPROVAL_GATE_RE.test(c.name))
-
-      if (approvalGate) {
-        if (approvalGate.conclusion === 'success') {
-          chips.push({ label: 'Owner approved', color: 'green' })
-        } else if (approvalGate.status === 'in_progress' || approvalGate.status === 'queued' || !approvalGate.conclusion) {
-          chips.push({ label: 'Owner approval pending', color: 'yellow' })
-        }
-      }
 
       // Filter out approval gates and skipped/cancelled/neutral checks (same as PrPreviewCard)
       const skippedConclusions = new Set(['cancelled', 'skipped', 'neutral'])
