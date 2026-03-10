@@ -20,6 +20,8 @@ pre, code, .markdown-wrapper, .markdown-content, .markdown-content * {
 
 html, body, #root {
   height: 100%;
+  overflow: hidden;
+  overscroll-behavior: none;
 }
 
 body {
@@ -111,6 +113,7 @@ select:focus {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
+  overscroll-behavior: contain;
   scrollbar-gutter: stable;
   padding: 20px 24px;
 }
