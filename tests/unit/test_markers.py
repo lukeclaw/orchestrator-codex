@@ -80,13 +80,15 @@ __END__"""
         """End marker on its own line in command echo (terminal wrapping) should be ignored."""
         # When a long command wraps, the end marker can land on its own line
         # in the command echo, BEFORE the actual start marker output.
-        output = """$ echo __SCREEN_VFY_START_22848__ && (which screen) && echo YES || echo NO && echo
-__SCREEN_VFY_END_22848__
-__SCREEN_VFY_START_22848__
-/usr/bin/screen
-YES
-__SCREEN_VFY_END_22848__
-[yuqiu@zen-dinosaur voyager-api-premium]$"""
+        output = (
+            "$ echo __SCREEN_VFY_START_22848__ && (which screen) && echo YES || echo NO && echo\n"
+            "__SCREEN_VFY_END_22848__\n"
+            "__SCREEN_VFY_START_22848__\n"
+            "/usr/bin/screen\n"
+            "YES\n"
+            "__SCREEN_VFY_END_22848__\n"
+            "[yuqiu@zen-dinosaur voyager-api-premium]$"
+        )
         result = parse_between_markers(
             output, "__SCREEN_VFY_START_22848__", "__SCREEN_VFY_END_22848__"
         )
@@ -129,10 +131,12 @@ __END__"""
 
     def test_ignores_value_in_command_echo(self):
         """Should NOT match value that only appears in command echo."""
-        output = """$ echo __START__ && (which screen && echo INSTALLED || echo NOT_FOUND) && echo __END__
-__START__
-NOT_FOUND
-__END__"""
+        output = (
+            "$ echo __START__ && (which screen && echo INSTALLED || echo NOT_FOUND) && echo __END__\n"  # noqa: E501
+            "__START__\n"
+            "NOT_FOUND\n"
+            "__END__"
+        )
         # INSTALLED appears in command echo but not in result
         assert check_result_contains(output, "__START__", "__END__", "INSTALLED") is False
         assert check_result_contains(output, "__START__", "__END__", "NOT_FOUND") is True
@@ -328,10 +332,12 @@ __CHK_END_{marker_id}__"""
             if match:
                 marker_id = match.group(1)
                 # Command echo contains YES but result is NO
-                return f"""$ echo __CHK_START_{marker_id}__ && (which screen && echo YES || echo NO) && echo __CHK_END_{marker_id}__
-__CHK_START_{marker_id}__
-NO
-__CHK_END_{marker_id}__"""
+                return (
+                    f"$ echo __CHK_START_{marker_id}__ && (which screen && echo YES || echo NO) && echo __CHK_END_{marker_id}__\n"  # noqa: E501
+                    f"__CHK_START_{marker_id}__\n"
+                    f"NO\n"
+                    f"__CHK_END_{marker_id}__"
+                )
             return ""
 
         mock_capture = MagicMock(side_effect=capture_side_effect)

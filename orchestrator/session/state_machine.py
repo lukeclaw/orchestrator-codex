@@ -4,10 +4,10 @@ Defines all valid session statuses and the allowed transitions between them.
 This ensures consistent status management across the codebase.
 """
 
-from enum import Enum
+from enum import StrEnum
 
 
-class SessionStatus(str, Enum):
+class SessionStatus(StrEnum):
     """All valid session statuses."""
 
     IDLE = "idle"
@@ -89,7 +89,8 @@ class InvalidTransitionError(Exception):
         self.target = target
         super().__init__(
             f"Invalid status transition: {current.value} -> {target.value}. "
-            f"Allowed transitions from {current.value}: {[s.value for s in VALID_TRANSITIONS.get(current, set())]}"
+            f"Allowed transitions from {current.value}: "
+            f"{[s.value for s in VALID_TRANSITIONS.get(current, set())]}"
         )
 
 

@@ -165,7 +165,6 @@ class TestPtyStreamReader:
         # Verify the naming convention:
         assert reader._safe_pane_id == "5"
         # Construct what the FIFO path would be
-        expected_path = os.path.join(tmp_fifo_dir, expected_name)
         # Verify by creating the FIFO via the reader's internals
         set_tmux_version_cache(3, 4)
         os.makedirs(tmp_fifo_dir, mode=0o700, exist_ok=True)
@@ -444,10 +443,10 @@ class TestPtyStreamPool:
         # Simulate EOF — patch PtyStreamReader to fail restart
         with patch(
             "orchestrator.terminal.pty_stream.PtyStreamReader",
-        ) as MockReader:
+        ) as mock_reader_cls:
             restart_reader = AsyncMock(spec=PtyStreamReader)
             restart_reader.start = AsyncMock(return_value=False)
-            MockReader.return_value = restart_reader
+            mock_reader_cls.return_value = restart_reader
 
             await pool._on_reader_eof("%5")
             # Give eager restart time
@@ -472,7 +471,7 @@ class TestPtyStreamPool:
         our_fifo = fifo_dir / f"6_{os.getpid()}.fifo"
         os.mkfifo(str(our_fifo), 0o600)
 
-        pool = PtyStreamPool()
+        PtyStreamPool()
 
         assert not stale_fifo.exists()
         assert our_fifo.exists()

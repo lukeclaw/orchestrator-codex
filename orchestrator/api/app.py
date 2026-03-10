@@ -11,13 +11,13 @@ from pathlib import Path
 
 # Prevent Python from scanning /etc/ or other system paths
 mimetypes.init(files=[])
-from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
+from fastapi import FastAPI  # noqa: E402
+from fastapi.middleware.cors import CORSMiddleware  # noqa: E402
+from fastapi.staticfiles import StaticFiles  # noqa: E402
 
-from orchestrator import paths
-from orchestrator.state.db import ConnectionFactory, get_connection
-from orchestrator.state.migrations.runner import apply_migrations
+from orchestrator import paths  # noqa: E402
+from orchestrator.state.db import ConnectionFactory, get_connection  # noqa: E402
+from orchestrator.state.migrations.runner import apply_migrations  # noqa: E402
 
 logger = logging.getLogger(__name__)
 

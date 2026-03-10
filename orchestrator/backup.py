@@ -187,9 +187,7 @@ def list_backups(backup_dir: str | Path) -> list[dict]:
     for f in sorted(backup_dir.iterdir(), key=lambda f: f.name, reverse=True):
         m = _BACKUP_PATTERN.match(f.name)
         if m:
-            # Convert filename timestamp back to readable format
-            ts = m.group(1).replace("-", ":", 3)  # partial — reconstruct below
-            # Actually, just store the raw filename timestamp
+            # Store the raw filename timestamp
             results.append(
                 {
                     "filename": f.name,

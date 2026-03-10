@@ -69,7 +69,8 @@ def create_session(
     id = str(uuid.uuid4())
     now = utc_now_iso()
     conn.execute(
-        """INSERT INTO sessions (id, name, host, work_dir, session_type, last_status_changed_at, claude_session_id)
+        """INSERT INTO sessions
+           (id, name, host, work_dir, session_type, last_status_changed_at, claude_session_id)
            VALUES (?, ?, ?, ?, ?, ?, ?)""",
         (id, name, host, work_dir, session_type, now, id),
     )

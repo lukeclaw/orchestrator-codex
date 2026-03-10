@@ -200,7 +200,14 @@ class TestHealthCheckAutoReconnectTunnel:
     @patch("orchestrator.session.health.is_remote_host")
     @patch("orchestrator.api.routes.sessions.repo")
     def test_health_check_auto_reconnects_tunnel(
-        self, mock_route_repo, mock_is_remote, mock_screen_claude, mock_health_repo, mock_tui, mock_win_exists, db
+        self,
+        mock_route_repo,
+        mock_is_remote,
+        mock_screen_claude,
+        mock_health_repo,
+        mock_tui,
+        mock_win_exists,
+        db,
     ):
         """Health check should auto-reconnect tunnel when Claude running but tunnel dead."""
         from orchestrator.api.routes.sessions import health_check_session
@@ -238,7 +245,14 @@ class TestHealthCheckAutoReconnectTunnel:
     @patch("orchestrator.session.health.is_remote_host")
     @patch("orchestrator.api.routes.sessions.repo")
     def test_health_check_reports_failure_when_tunnel_reconnect_fails(
-        self, mock_route_repo, mock_is_remote, mock_screen_claude, mock_health_repo, mock_tui, mock_win_exists, db
+        self,
+        mock_route_repo,
+        mock_is_remote,
+        mock_screen_claude,
+        mock_health_repo,
+        mock_tui,
+        mock_win_exists,
+        db,
     ):
         """Health check should report failure if tunnel auto-reconnect fails."""
         from orchestrator.api.routes.sessions import health_check_session
@@ -275,7 +289,14 @@ class TestHealthCheckAutoReconnectTunnel:
     @patch("orchestrator.session.health.is_remote_host")
     @patch("orchestrator.api.routes.sessions.repo")
     def test_health_check_includes_tunnel_error_on_failure(
-        self, mock_route_repo, mock_is_remote, mock_screen_claude, mock_health_repo, mock_tui, mock_win_exists, db
+        self,
+        mock_route_repo,
+        mock_is_remote,
+        mock_screen_claude,
+        mock_health_repo,
+        mock_tui,
+        mock_win_exists,
+        db,
     ):
         """Health check response should include tunnel_failures and tunnel_error."""
         from orchestrator.api.routes.sessions import health_check_session

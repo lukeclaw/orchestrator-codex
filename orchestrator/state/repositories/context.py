@@ -56,7 +56,8 @@ def create_context_item(
 ) -> ContextItem:
     id = str(uuid.uuid4())
     conn.execute(
-        """INSERT INTO context_items (id, scope, project_id, title, description, content, category, source, metadata)
+        """INSERT INTO context_items
+           (id, scope, project_id, title, description, content, category, source, metadata)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (id, scope, project_id, title, description, content, category, source, metadata),
     )

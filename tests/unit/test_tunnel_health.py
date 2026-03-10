@@ -128,9 +128,9 @@ class TestFindTunnelPids:
 
         ps_output = (
             "USER       PID  %CPU %MEM COMMAND\n"
-            "yuqiu    11111   0.0  0.0 ssh -o StrictHostKeyChecking=no -N -R 8093:127.0.0.1:8093 user/rdev-vm\n"
-            "yuqiu    22222   0.0  0.0 ssh -N -L 4200:localhost:4200 user/rdev-vm\n"  # -L not -R
-            "yuqiu    33333   0.0  0.0 ssh -o Foo=bar -N -R 9093:127.0.0.1:9093 other/host\n"  # different host
+            "yuqiu    11111   0.0  0.0 ssh -o StrictHostKeyChecking=no -N -R 8093:127.0.0.1:8093 user/rdev-vm\n"  # noqa: E501
+            "yuqiu    22222   0.0  0.0 ssh -N -L 4200:localhost:4200 user/rdev-vm\n"  # noqa: E501  -L not -R
+            "yuqiu    33333   0.0  0.0 ssh -o Foo=bar -N -R 9093:127.0.0.1:9093 other/host\n"  # noqa: E501
         )
         mock_run.return_value = MagicMock(stdout=ps_output, returncode=0)
 

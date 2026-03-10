@@ -574,7 +574,6 @@ async def capture_pane_with_history_async(
             if len(parts) >= 2:
                 cursor_x = int(parts[0])
                 cursor_y = int(parts[1])
-                history_size = int(parts[2]) if len(parts) >= 3 else 0
                 total_lines = content.count("\n") + 1
                 return content, cursor_x, cursor_y, total_lines
 

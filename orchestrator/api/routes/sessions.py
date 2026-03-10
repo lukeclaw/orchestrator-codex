@@ -767,7 +767,7 @@ def continue_session(session_id: str, db=Depends(get_db)):
 
 @router.post("/sessions/{session_id}/stop")
 def stop_session(session_id: str, db=Depends(get_db)):
-    """Stop a worker session: send Escape, then /clear, unassign task (leave status unchanged), go to idle."""
+    """Stop a worker session: send Escape, then /clear, unassign task, go to idle."""
     s = _resolve_session(db, session_id)
     if s is None:
         raise HTTPException(404, "Session not found")

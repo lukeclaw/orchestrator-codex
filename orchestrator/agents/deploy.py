@@ -99,7 +99,9 @@ WORKER_DIR="$ORCH_WORKER_DIR"
 load_task_info() {{
     local http_code
     local tasks_json
-    tasks_json=$(curl -s -w "\\n%{{http_code}}" --connect-timeout 5 "$API_BASE/api/tasks?assigned_session_id=$SESSION_ID")
+    tasks_json=$(curl -s -w "\\n%{{http_code}}" \\
+        --connect-timeout 5 \\
+        "$API_BASE/api/tasks?assigned_session_id=$SESSION_ID")
     http_code=$(echo "$tasks_json" | tail -n1)
     tasks_json=$(echo "$tasks_json" | sed '$d')
 
@@ -218,7 +220,10 @@ build_json() {{
         if [[ "$first" != true ]]; then
             json="$json,"
         fi
-        if [[ "$value" =~ ^[0-9]+$ ]] || [[ "$value" == "true" ]] || [[ "$value" == "false" ]] || [[ "$value" == "null" ]]; then
+        if [[ "$value" =~ ^[0-9]+$ ]] || \\
+           [[ "$value" == "true" ]] || \\
+           [[ "$value" == "false" ]] || \\
+           [[ "$value" == "null" ]]; then
             json="$json\\"$key\\": $value"
         else
             local escaped_value=$(json_encode "$value")
@@ -760,7 +765,7 @@ def deploy_brain_tmp_contents(
         created.append("CLAUDE.md")
 
     # 3. Hooks + settings
-    settings_path = generate_brain_hooks(brain_dir, api_base)
+    generate_brain_hooks(brain_dir, api_base)
     created += [
         "hooks/inject-focus.sh",
         "hooks/check-command.sh",

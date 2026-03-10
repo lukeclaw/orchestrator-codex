@@ -45,7 +45,7 @@ class TestSetupRemoteWorker:
         mock_tunnel_manager = MagicMock()
         mock_tunnel_manager.start_tunnel.return_value = None  # Tunnel start fails
 
-        result = setup_remote_worker(
+        setup_remote_worker(
             db,
             "session-id-789",
             "w3",

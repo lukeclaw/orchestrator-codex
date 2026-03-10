@@ -49,7 +49,8 @@ def seed_projects(conn: sqlite3.Connection) -> dict[str, str]:
             "id": _id(),
             "name": "Notifications Service Extraction",
             "description": (
-                "Extract the notifications module from the monolith into a standalone gRPC service. "
+                "Extract the notifications module from the monolith into a standalone "
+                "gRPC service. "
                 "The module currently handles user notification preferences, email/push delivery, "
                 "and real-time delivery status — all tightly coupled to the shared database and "
                 "imported as a library by a dozen API consumers.\n\n"
@@ -273,7 +274,11 @@ def seed_tasks(conn: sqlite3.Connection, proj: dict, sess: dict) -> dict[str, st
             "- Record delivery status in the delivery log\n"
             "- Return per-recipient results for batch sends"
         ),
-        notes="SendGrid integration done. Working on FCM — their v1 API requires OAuth2 service account auth instead of the old server key. Updating the auth flow.",
+        notes=(
+            "SendGrid integration done. Working on FCM — their v1 API requires"
+            " OAuth2 service account auth instead of the old server key."
+            " Updating the auth flow."
+        ),
         status="in_progress",
         parent_task_id=None,
         priority="H",
@@ -362,7 +367,8 @@ def seed_tasks(conn: sqlite3.Connection, proj: dict, sess: dict) -> dict[str, st
             "- Drop the shared database tables (preferences, templates, delivery_log)\n"
             "- Remove the CDC stream\n"
             "- Update the monolith's dependency graph\n\n"
-            "This is the final cleanup. Only start after all consumers are verified on the new service."
+            "This is the final cleanup. Only start after all consumers are "
+            "verified on the new service."
         ),
         status="blocked",
         priority="L",
@@ -695,7 +701,8 @@ def seed_context_items(conn: sqlite3.Connection, proj: dict):
                 "5. Test locally with `LOG_FORMAT=pretty` for readable output\n"
                 "6. Deploy to staging and verify JSON output in Kibana\n\n"
                 "## Watch out for\n"
-                "- Custom appenders (NFS, metrics, etc.) — don't remove without checking consumers\n"
+                "- Custom appenders (NFS, metrics, etc.) — don't remove "
+                "without checking consumers\n"
                 "- Log format parsing in monitoring tools — update dashboards and alerts\n"
                 "- Access log formats used by WAF or security tools\n"
                 "- Performance: structured JSON adds ~2% overhead at high throughput"
@@ -752,7 +759,11 @@ def seed_notifications(conn: sqlite3.Connection, tasks: dict, sess: dict):
             "id": _id(),
             "task_id": tasks["log5"],
             "session_id": sess["logging-2"],
-            "message": "logging-2 needs a decision: search-service has a custom metrics appender that parses latency from logs. Migrate to proper metrics instrumentation, or preserve the log format?",
+            "message": (
+                "logging-2 needs a decision: search-service has a custom"
+                " metrics appender that parses latency from logs. Migrate to"
+                " proper metrics instrumentation, or preserve the log format?"
+            ),
             "notification_type": "warning",
             "dismissed": 0,
         },

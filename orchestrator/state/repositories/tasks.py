@@ -10,7 +10,10 @@ from orchestrator.state.models import Task
 logger = logging.getLogger(__name__)
 
 # Explicit column list to avoid loading deprecated columns
-TASK_COLUMNS = "id, project_id, title, description, status, priority, assigned_session_id, created_at, updated_at, parent_task_id, notes, links, task_index"
+TASK_COLUMNS = (
+    "id, project_id, title, description, status, priority, assigned_session_id,"
+    " created_at, updated_at, parent_task_id, notes, links, task_index"
+)
 
 
 def get_task(conn: sqlite3.Connection, id: str) -> Task | None:
@@ -77,13 +80,15 @@ def _get_next_task_index(
     if parent_task_id:
         # For subtasks, count existing subtasks under the parent
         row = conn.execute(
-            "SELECT COALESCE(MAX(task_index), 0) + 1 as next_idx FROM tasks WHERE parent_task_id = ?",
+            "SELECT COALESCE(MAX(task_index), 0) + 1 as next_idx"
+            " FROM tasks WHERE parent_task_id = ?",
             (parent_task_id,),
         ).fetchone()
     else:
         # For top-level tasks, count existing top-level tasks in the project
         row = conn.execute(
-            "SELECT COALESCE(MAX(task_index), 0) + 1 as next_idx FROM tasks WHERE project_id = ? AND parent_task_id IS NULL",
+            "SELECT COALESCE(MAX(task_index), 0) + 1 as next_idx"
+            " FROM tasks WHERE project_id = ? AND parent_task_id IS NULL",
             (project_id,),
         ).fetchone()
     return row["next_idx"] if row else 1

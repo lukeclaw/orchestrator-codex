@@ -294,7 +294,7 @@ def manage_task_link(task_id: str, body: TaskLinkAction, db=Depends(get_db)):
 
     if body.action == "add":
         # Check if link already exists
-        existing = next((l for l in links if l.get("url") == body.url), None)
+        existing = next((lnk for lnk in links if lnk.get("url") == body.url), None)
         if existing:
             raise HTTPException(400, f"Link already exists: {body.url}")
         tag = body.tag or derive_tag_from_url(body.url)
@@ -303,7 +303,7 @@ def manage_task_link(task_id: str, body: TaskLinkAction, db=Depends(get_db)):
             new_link["tag"] = tag
         links.append(new_link)
     elif body.action == "update":
-        existing = next((l for l in links if l.get("url") == body.url), None)
+        existing = next((lnk for lnk in links if lnk.get("url") == body.url), None)
         if not existing:
             raise HTTPException(404, f"Link not found: {body.url}")
         if body.title:
@@ -312,7 +312,7 @@ def manage_task_link(task_id: str, body: TaskLinkAction, db=Depends(get_db)):
             existing["type"] = body.link_type
     elif body.action == "delete":
         original_len = len(links)
-        links = [l for l in links if l.get("url") != body.url]
+        links = [lnk for lnk in links if lnk.get("url") != body.url]
         if len(links) == original_len:
             raise HTTPException(404, f"Link not found: {body.url}")
     else:

@@ -126,7 +126,7 @@ async def _check_all_tunnels(
     if checked > 0:
         msg = "Tunnel monitor: checked %d tunnels, restarted %d"
         if deep_probe:
-            msg += " (deep probe: %d probed)" % len(needs_probe)
+            msg += f" (deep probe: {len(needs_probe)} probed)"
         logger.debug(msg, checked, restarted)
 
 

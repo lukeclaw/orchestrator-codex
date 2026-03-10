@@ -29,7 +29,7 @@ class TestRegexPatternEdgeCases:
 
     def test_standard_tunnel_command(self):
         """Should match standard tunnel command."""
-        line = "yuqiu    12345   0.0  0.0 408628368   1234 s000  S+   10:00AM   0:00.01 ssh -N -L 4200:localhost:4200 user/rdev-vm"
+        line = "yuqiu    12345   0.0  0.0 408628368   1234 s000  S+   10:00AM   0:00.01 ssh -N -L 4200:localhost:4200 user/rdev-vm"  # noqa: E501
         match = self.pattern.search(line)
         assert match is not None
         assert match.group(1) == "4200"
@@ -38,7 +38,7 @@ class TestRegexPatternEdgeCases:
 
     def test_tunnel_with_ssh_options(self):
         """Should match tunnel with SSH options like -o."""
-        line = "yuqiu    12345   0.0  0.0 408628368   1234 s000  S+   10:00AM   0:00.01 ssh -N -L 4200:localhost:4200 -o StrictHostKeyChecking=no user/rdev-vm"
+        line = "yuqiu    12345   0.0  0.0 408628368   1234 s000  S+   10:00AM   0:00.01 ssh -N -L 4200:localhost:4200 -o StrictHostKeyChecking=no user/rdev-vm"  # noqa: E501
         match = self.pattern.search(line)
         assert match is not None
         assert match.group(1) == "4200"
@@ -46,33 +46,33 @@ class TestRegexPatternEdgeCases:
 
     def test_tunnel_with_different_local_remote_ports(self):
         """Should correctly parse different local and remote ports."""
-        line = "yuqiu    12345   0.0  0.0 408628368   1234 s000  S+   10:00AM   0:00.01 ssh -N -L 8080:localhost:4200 user/rdev-vm"
+        line = "yuqiu    12345   0.0  0.0 408628368   1234 s000  S+   10:00AM   0:00.01 ssh -N -L 8080:localhost:4200 user/rdev-vm"  # noqa: E501
         match = self.pattern.search(line)
         assert match is not None
         assert match.group(1) == "8080"  # local port
         assert match.group(2) == "4200"  # remote port
 
-    def test_tunnel_with_options_before_N(self):
+    def test_tunnel_with_options_before_N(self):  # noqa: N802
         """Should match when options come before -N."""
-        line = "yuqiu    12345   0.0  0.0 408628368   1234 s000  S+   10:00AM   0:00.01 ssh -o Option=value -N -L 4200:localhost:4200 user/rdev-vm"
+        line = "yuqiu    12345   0.0  0.0 408628368   1234 s000  S+   10:00AM   0:00.01 ssh -o Option=value -N -L 4200:localhost:4200 user/rdev-vm"  # noqa: E501
         match = self.pattern.search(line)
         assert match is not None
 
     def test_does_not_match_reverse_tunnel(self):
         """Should NOT match reverse tunnels (-R instead of -L)."""
-        line = "yuqiu    12345   0.0  0.0 408628368   1234 s000  S+   10:00AM   0:00.01 ssh -N -R 8093:127.0.0.1:8093 user/rdev-vm"
+        line = "yuqiu    12345   0.0  0.0 408628368   1234 s000  S+   10:00AM   0:00.01 ssh -N -R 8093:127.0.0.1:8093 user/rdev-vm"  # noqa: E501
         match = self.pattern.search(line)
         assert match is None
 
     def test_does_not_match_non_blocking_ssh(self):
         """Should NOT match SSH without -N flag."""
-        line = "yuqiu    12345   0.0  0.0 408628368   1234 s000  S+   10:00AM   0:00.01 ssh -L 4200:localhost:4200 user/rdev-vm"
+        line = "yuqiu    12345   0.0  0.0 408628368   1234 s000  S+   10:00AM   0:00.01 ssh -L 4200:localhost:4200 user/rdev-vm"  # noqa: E501
         match = self.pattern.search(line)
         assert match is None
 
     def test_host_with_special_characters(self):
         """Should match hosts with hyphens and underscores."""
-        line = "yuqiu    12345   0.0  0.0 408628368   1234 s000  S+   10:00AM   0:00.01 ssh -N -L 4200:localhost:4200 my-project_mt/sleepy-franklin-123"
+        line = "yuqiu    12345   0.0  0.0 408628368   1234 s000  S+   10:00AM   0:00.01 ssh -N -L 4200:localhost:4200 my-project_mt/sleepy-franklin-123"  # noqa: E501
         match = self.pattern.search(line)
         assert match is not None
         assert match.group(3) == "my-project_mt/sleepy-franklin-123"
@@ -102,9 +102,10 @@ class TestPortConflictDetection:
 
     def test_dead_process_allows_port_reuse(self):
         """Should allow reusing port if previous tunnel process is dead."""
-        ps_output = """USER       PID  %CPU %MEM      VSZ    RSS   TT  STAT STARTED      TIME COMMAND
-yuqiu    12345   0.0  0.0 408628368   1234 s000  S+   10:00AM   0:00.01 ssh -N -L 4200:localhost:4200 user/rdev-vm
-"""
+        ps_output = (
+            "USER       PID  %CPU %MEM      VSZ    RSS   TT  STAT STARTED      TIME COMMAND\n"
+            "yuqiu    12345   0.0  0.0 408628368   1234 s000  S+   10:00AM   0:00.01 ssh -N -L 4200:localhost:4200 user/rdev-vm\n"  # noqa: E501
+        )
 
         def run_side_effect(cmd, **kwargs):
             # ps aux → return tunnel process list
@@ -141,10 +142,11 @@ class TestCleanupEdgeCases:
 
     def test_cleanup_handles_mixed_success_failure(self):
         """Should continue cleanup even if some kills fail."""
-        ps_output = """USER       PID  %CPU %MEM      VSZ    RSS   TT  STAT STARTED      TIME COMMAND
-yuqiu    12345   0.0  0.0 408628368   1234 s000  S+   10:00AM   0:00.01 ssh -N -L 4200:localhost:4200 user/rdev-vm
-yuqiu    12346   0.0  0.0 408628368   1234 s000  S+   10:00AM   0:00.01 ssh -N -L 3000:localhost:3000 user/rdev-vm
-"""
+        ps_output = (
+            "USER       PID  %CPU %MEM      VSZ    RSS   TT  STAT STARTED      TIME COMMAND\n"
+            "yuqiu    12345   0.0  0.0 408628368   1234 s000  S+   10:00AM   0:00.01 ssh -N -L 4200:localhost:4200 user/rdev-vm\n"  # noqa: E501
+            "yuqiu    12346   0.0  0.0 408628368   1234 s000  S+   10:00AM   0:00.01 ssh -N -L 3000:localhost:3000 user/rdev-vm\n"  # noqa: E501
+        )
         with patch("subprocess.run") as mock_run, patch("os.kill") as mock_kill:
             mock_run.return_value = MagicMock(stdout=ps_output, returncode=0)
 
@@ -162,9 +164,10 @@ class TestCacheEdgeCases:
 
     def test_cache_returns_copy_not_reference(self):
         """Should return a copy of cache to prevent external modification."""
-        ps_output = """USER       PID  %CPU %MEM      VSZ    RSS   TT  STAT STARTED      TIME COMMAND
-yuqiu    12345   0.0  0.0 408628368   1234 s000  S+   10:00AM   0:00.01 ssh -N -L 4200:localhost:4200 user/rdev-vm
-"""
+        ps_output = (
+            "USER       PID  %CPU %MEM      VSZ    RSS   TT  STAT STARTED      TIME COMMAND\n"
+            "yuqiu    12345   0.0  0.0 408628368   1234 s000  S+   10:00AM   0:00.01 ssh -N -L 4200:localhost:4200 user/rdev-vm\n"  # noqa: E501
+        )
         with patch("subprocess.run") as mock_run:
             mock_run.return_value = MagicMock(stdout=ps_output, returncode=0)
 

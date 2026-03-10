@@ -39,7 +39,10 @@ class TestVerifyMessageSent:
         """Long message with tail visible in last line should be detected as stuck."""
         from orchestrator.terminal.session import _verify_message_sent
 
-        long_message = "This is a very long task description that spans multiple words and contains detailed instructions for the worker to follow carefully."
+        long_message = (
+            "This is a very long task description that spans multiple words"
+            " and contains detailed instructions for the worker to follow carefully."
+        )
         # Simulate the message being stuck - last line shows end of the message
         mock_tmux.capture_output.return_value = f"Previous output\n> {long_message[-60:]}"
 
@@ -53,7 +56,10 @@ class TestVerifyMessageSent:
         """Successfully sent message - Claude processing, no message tail visible."""
         from orchestrator.terminal.session import _verify_message_sent
 
-        long_message = "This is a very long task description that spans multiple words and contains detailed instructions for the worker to follow carefully."
+        long_message = (
+            "This is a very long task description that spans multiple words"
+            " and contains detailed instructions for the worker to follow carefully."
+        )
         # Claude is now processing - shows thinking indicator, not the message
         mock_tmux.capture_output.return_value = "⏳ Thinking..."
 

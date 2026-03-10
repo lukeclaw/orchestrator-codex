@@ -20,7 +20,8 @@ def insert_event(
 ) -> None:
     """Insert a status change event. Does NOT commit — caller handles that."""
     conn.execute(
-        """INSERT INTO status_events (entity_type, entity_id, old_status, new_status, is_subtask, session_type, timestamp)
+        """INSERT INTO status_events
+           (entity_type, entity_id, old_status, new_status, is_subtask, session_type, timestamp)
            VALUES (?, ?, ?, ?, ?, ?, ?)""",
         (
             entity_type,

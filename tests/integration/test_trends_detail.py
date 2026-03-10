@@ -1,23 +1,13 @@
 """Integration tests for trends detail drill-down feature.
 
 Tests cover:
-- Repository-level query functions (query_throughput_detail, query_worker_hours_detail, query_heatmap_detail)
+- Repository-level query functions
+  (query_throughput_detail, query_worker_hours_detail, query_heatmap_detail)
 - API endpoint (GET /api/trends/detail) with all chart types and error handling
 """
 
 from datetime import UTC, datetime, timedelta
 from unittest.mock import patch
-
-
-def _local_today() -> str:
-    """Get today's date in local timezone as YYYY-MM-DD."""
-    return datetime.now().astimezone().strftime("%Y-%m-%d")
-
-
-def _local_yesterday() -> str:
-    """Get yesterday's date in local timezone as YYYY-MM-DD."""
-    return (datetime.now().astimezone() - timedelta(days=1)).strftime("%Y-%m-%d")
-
 
 import pytest
 from fastapi.testclient import TestClient
@@ -31,6 +21,16 @@ from orchestrator.state.repositories import (
     status_events,
     tasks,
 )
+
+
+def _local_today() -> str:
+    """Get today's date in local timezone as YYYY-MM-DD."""
+    return datetime.now().astimezone().strftime("%Y-%m-%d")
+
+
+def _local_yesterday() -> str:
+    """Get yesterday's date in local timezone as YYYY-MM-DD."""
+    return (datetime.now().astimezone() - timedelta(days=1)).strftime("%Y-%m-%d")
 
 
 @pytest.fixture
@@ -136,7 +136,8 @@ class TestQueryThroughputDetail:
         """Events referencing deleted tasks should still return results."""
         # Insert an event manually referencing a non-existent task
         db.execute(
-            """INSERT INTO status_events (entity_type, entity_id, old_status, new_status, is_subtask, timestamp)
+            """INSERT INTO status_events
+               (entity_type, entity_id, old_status, new_status, is_subtask, timestamp)
                VALUES ('task', 'deleted-task-id', 'in_progress', 'done', 0, ?)""",
             (datetime.now(UTC).isoformat(),),
         )

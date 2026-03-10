@@ -27,9 +27,10 @@ class TestDiscoverActiveTunnels:
 
     def test_discovers_single_tunnel(self):
         """Should discover a single SSH tunnel from ps output."""
-        ps_output = """USER       PID  %CPU %MEM      VSZ    RSS   TT  STAT STARTED      TIME COMMAND
-yuqiu    12345   0.0  0.0 408628368   1234 s000  S+   10:00AM   0:00.01 ssh -N -L 4200:localhost:4200 user/rdev-vm
-"""
+        ps_output = (
+            "USER       PID  %CPU %MEM      VSZ    RSS   TT  STAT STARTED      TIME COMMAND\n"
+            "yuqiu    12345   0.0  0.0 408628368   1234 s000  S+   10:00AM   0:00.01 ssh -N -L 4200:localhost:4200 user/rdev-vm\n"  # noqa: E501
+        )
         with patch("subprocess.run") as mock_run:
             mock_run.return_value = MagicMock(stdout=ps_output, returncode=0)
 
@@ -42,10 +43,11 @@ yuqiu    12345   0.0  0.0 408628368   1234 s000  S+   10:00AM   0:00.01 ssh -N -
 
     def test_discovers_multiple_tunnels(self):
         """Should discover multiple SSH tunnels."""
-        ps_output = """USER       PID  %CPU %MEM      VSZ    RSS   TT  STAT STARTED      TIME COMMAND
-yuqiu    12345   0.0  0.0 408628368   1234 s000  S+   10:00AM   0:00.01 ssh -N -L 4200:localhost:4200 user/rdev-vm
-yuqiu    12346   0.0  0.0 408628368   1234 s000  S+   10:00AM   0:00.01 ssh -N -L 3000:localhost:3000 other/rdev-host
-"""
+        ps_output = (
+            "USER       PID  %CPU %MEM      VSZ    RSS   TT  STAT STARTED      TIME COMMAND\n"
+            "yuqiu    12345   0.0  0.0 408628368   1234 s000  S+   10:00AM   0:00.01 ssh -N -L 4200:localhost:4200 user/rdev-vm\n"  # noqa: E501
+            "yuqiu    12346   0.0  0.0 408628368   1234 s000  S+   10:00AM   0:00.01 ssh -N -L 3000:localhost:3000 other/rdev-host\n"  # noqa: E501
+        )
         with patch("subprocess.run") as mock_run:
             mock_run.return_value = MagicMock(stdout=ps_output, returncode=0)
 
@@ -57,10 +59,11 @@ yuqiu    12346   0.0  0.0 408628368   1234 s000  S+   10:00AM   0:00.01 ssh -N -
 
     def test_ignores_non_tunnel_ssh(self):
         """Should ignore SSH processes that aren't tunnels."""
-        ps_output = """USER       PID  %CPU %MEM      VSZ    RSS   TT  STAT STARTED      TIME COMMAND
-yuqiu    12345   0.0  0.0 408628368   1234 s000  S+   10:00AM   0:00.01 ssh user@host
-yuqiu    12346   0.0  0.0 408628368   1234 s000  S+   10:00AM   0:00.01 ssh -N -L 4200:localhost:4200 user/rdev-vm
-"""
+        ps_output = (
+            "USER       PID  %CPU %MEM      VSZ    RSS   TT  STAT STARTED      TIME COMMAND\n"
+            "yuqiu    12345   0.0  0.0 408628368   1234 s000  S+   10:00AM   0:00.01 ssh user@host\n"  # noqa: E501
+            "yuqiu    12346   0.0  0.0 408628368   1234 s000  S+   10:00AM   0:00.01 ssh -N -L 4200:localhost:4200 user/rdev-vm\n"  # noqa: E501
+        )
         with patch("subprocess.run") as mock_run:
             mock_run.return_value = MagicMock(stdout=ps_output, returncode=0)
 
@@ -71,10 +74,11 @@ yuqiu    12346   0.0  0.0 408628368   1234 s000  S+   10:00AM   0:00.01 ssh -N -
 
     def test_ignores_grep_processes(self):
         """Should ignore grep processes in ps output."""
-        ps_output = """USER       PID  %CPU %MEM      VSZ    RSS   TT  STAT STARTED      TIME COMMAND
-yuqiu    12345   0.0  0.0 408628368   1234 s000  S+   10:00AM   0:00.01 grep ssh -N -L
-yuqiu    12346   0.0  0.0 408628368   1234 s000  S+   10:00AM   0:00.01 ssh -N -L 4200:localhost:4200 user/rdev-vm
-"""
+        ps_output = (
+            "USER       PID  %CPU %MEM      VSZ    RSS   TT  STAT STARTED      TIME COMMAND\n"
+            "yuqiu    12345   0.0  0.0 408628368   1234 s000  S+   10:00AM   0:00.01 grep ssh -N -L\n"  # noqa: E501
+            "yuqiu    12346   0.0  0.0 408628368   1234 s000  S+   10:00AM   0:00.01 ssh -N -L 4200:localhost:4200 user/rdev-vm\n"  # noqa: E501
+        )
         with patch("subprocess.run") as mock_run:
             mock_run.return_value = MagicMock(stdout=ps_output, returncode=0)
 
@@ -85,9 +89,10 @@ yuqiu    12346   0.0  0.0 408628368   1234 s000  S+   10:00AM   0:00.01 ssh -N -
 
     def test_empty_ps_output(self):
         """Should return empty dict when no tunnels found."""
-        ps_output = """USER       PID  %CPU %MEM      VSZ    RSS   TT  STAT STARTED      TIME COMMAND
-yuqiu    12345   0.0  0.0 408628368   1234 s000  S+   10:00AM   0:00.01 vim file.py
-"""
+        ps_output = (
+            "USER       PID  %CPU %MEM      VSZ    RSS   TT  STAT STARTED      TIME COMMAND\n"
+            "yuqiu    12345   0.0  0.0 408628368   1234 s000  S+   10:00AM   0:00.01 vim file.py\n"
+        )
         with patch("subprocess.run") as mock_run:
             mock_run.return_value = MagicMock(stdout=ps_output, returncode=0)
 
@@ -97,9 +102,10 @@ yuqiu    12345   0.0  0.0 408628368   1234 s000  S+   10:00AM   0:00.01 vim file
 
     def test_uses_cache_within_ttl(self):
         """Should use cached results within TTL."""
-        ps_output = """USER       PID  %CPU %MEM      VSZ    RSS   TT  STAT STARTED      TIME COMMAND
-yuqiu    12345   0.0  0.0 408628368   1234 s000  S+   10:00AM   0:00.01 ssh -N -L 4200:localhost:4200 user/rdev-vm
-"""
+        ps_output = (
+            "USER       PID  %CPU %MEM      VSZ    RSS   TT  STAT STARTED      TIME COMMAND\n"
+            "yuqiu    12345   0.0  0.0 408628368   1234 s000  S+   10:00AM   0:00.01 ssh -N -L 4200:localhost:4200 user/rdev-vm\n"  # noqa: E501
+        )
         with patch("subprocess.run") as mock_run:
             mock_run.return_value = MagicMock(stdout=ps_output, returncode=0)
 
@@ -115,9 +121,10 @@ yuqiu    12345   0.0  0.0 408628368   1234 s000  S+   10:00AM   0:00.01 ssh -N -
 
     def test_force_refresh_bypasses_cache(self):
         """Should bypass cache when force_refresh=True."""
-        ps_output = """USER       PID  %CPU %MEM      VSZ    RSS   TT  STAT STARTED      TIME COMMAND
-yuqiu    12345   0.0  0.0 408628368   1234 s000  S+   10:00AM   0:00.01 ssh -N -L 4200:localhost:4200 user/rdev-vm
-"""
+        ps_output = (
+            "USER       PID  %CPU %MEM      VSZ    RSS   TT  STAT STARTED      TIME COMMAND\n"
+            "yuqiu    12345   0.0  0.0 408628368   1234 s000  S+   10:00AM   0:00.01 ssh -N -L 4200:localhost:4200 user/rdev-vm\n"  # noqa: E501
+        )
         with patch("subprocess.run") as mock_run:
             mock_run.return_value = MagicMock(stdout=ps_output, returncode=0)
 
@@ -152,10 +159,11 @@ class TestGetTunnelsForHost:
 
     def test_filters_by_host(self):
         """Should return only tunnels for the specified host."""
-        ps_output = """USER       PID  %CPU %MEM      VSZ    RSS   TT  STAT STARTED      TIME COMMAND
-yuqiu    12345   0.0  0.0 408628368   1234 s000  S+   10:00AM   0:00.01 ssh -N -L 4200:localhost:4200 user/rdev-vm
-yuqiu    12346   0.0  0.0 408628368   1234 s000  S+   10:00AM   0:00.01 ssh -N -L 3000:localhost:3000 other/host
-"""
+        ps_output = (
+            "USER       PID  %CPU %MEM      VSZ    RSS   TT  STAT STARTED      TIME COMMAND\n"
+            "yuqiu    12345   0.0  0.0 408628368   1234 s000  S+   10:00AM   0:00.01 ssh -N -L 4200:localhost:4200 user/rdev-vm\n"  # noqa: E501
+            "yuqiu    12346   0.0  0.0 408628368   1234 s000  S+   10:00AM   0:00.01 ssh -N -L 3000:localhost:3000 other/host\n"  # noqa: E501
+        )
         with patch("subprocess.run") as mock_run:
             mock_run.return_value = MagicMock(stdout=ps_output, returncode=0)
 
@@ -167,9 +175,10 @@ yuqiu    12346   0.0  0.0 408628368   1234 s000  S+   10:00AM   0:00.01 ssh -N -
 
     def test_returns_empty_for_unknown_host(self):
         """Should return empty dict for host with no tunnels."""
-        ps_output = """USER       PID  %CPU %MEM      VSZ    RSS   TT  STAT STARTED      TIME COMMAND
-yuqiu    12345   0.0  0.0 408628368   1234 s000  S+   10:00AM   0:00.01 ssh -N -L 4200:localhost:4200 user/rdev-vm
-"""
+        ps_output = (
+            "USER       PID  %CPU %MEM      VSZ    RSS   TT  STAT STARTED      TIME COMMAND\n"
+            "yuqiu    12345   0.0  0.0 408628368   1234 s000  S+   10:00AM   0:00.01 ssh -N -L 4200:localhost:4200 user/rdev-vm\n"  # noqa: E501
+        )
         with patch("subprocess.run") as mock_run:
             mock_run.return_value = MagicMock(stdout=ps_output, returncode=0)
 
@@ -183,9 +192,10 @@ class TestFindTunnelByPort:
 
     def test_finds_existing_tunnel(self):
         """Should find tunnel info for existing port."""
-        ps_output = """USER       PID  %CPU %MEM      VSZ    RSS   TT  STAT STARTED      TIME COMMAND
-yuqiu    12345   0.0  0.0 408628368   1234 s000  S+   10:00AM   0:00.01 ssh -N -L 4200:localhost:4200 user/rdev-vm
-"""
+        ps_output = (
+            "USER       PID  %CPU %MEM      VSZ    RSS   TT  STAT STARTED      TIME COMMAND\n"
+            "yuqiu    12345   0.0  0.0 408628368   1234 s000  S+   10:00AM   0:00.01 ssh -N -L 4200:localhost:4200 user/rdev-vm\n"  # noqa: E501
+        )
         with patch("subprocess.run") as mock_run:
             mock_run.return_value = MagicMock(stdout=ps_output, returncode=0)
 
@@ -197,9 +207,10 @@ yuqiu    12345   0.0  0.0 408628368   1234 s000  S+   10:00AM   0:00.01 ssh -N -
 
     def test_returns_none_for_nonexistent_port(self):
         """Should return None for port without tunnel."""
-        ps_output = """USER       PID  %CPU %MEM      VSZ    RSS   TT  STAT STARTED      TIME COMMAND
-yuqiu    12345   0.0  0.0 408628368   1234 s000  S+   10:00AM   0:00.01 ssh -N -L 4200:localhost:4200 user/rdev-vm
-"""
+        ps_output = (
+            "USER       PID  %CPU %MEM      VSZ    RSS   TT  STAT STARTED      TIME COMMAND\n"
+            "yuqiu    12345   0.0  0.0 408628368   1234 s000  S+   10:00AM   0:00.01 ssh -N -L 4200:localhost:4200 user/rdev-vm\n"  # noqa: E501
+        )
         with patch("subprocess.run") as mock_run:
             mock_run.return_value = MagicMock(stdout=ps_output, returncode=0)
 
@@ -346,9 +357,10 @@ class TestCreateTunnel:
 
     def test_returns_existing_tunnel_for_same_host(self):
         """Should return existing tunnel info if same host/port already tunneled."""
-        ps_output = """USER       PID  %CPU %MEM      VSZ    RSS   TT  STAT STARTED      TIME COMMAND
-yuqiu    12345   0.0  0.0 408628368   1234 s000  S+   10:00AM   0:00.01 ssh -N -L 4200:localhost:4200 user/rdev-vm
-"""
+        ps_output = (
+            "USER       PID  %CPU %MEM      VSZ    RSS   TT  STAT STARTED      TIME COMMAND\n"
+            "yuqiu    12345   0.0  0.0 408628368   1234 s000  S+   10:00AM   0:00.01 ssh -N -L 4200:localhost:4200 user/rdev-vm\n"  # noqa: E501
+        )
         with patch("subprocess.run") as mock_run, patch("os.kill") as mock_kill:
             mock_run.return_value = MagicMock(stdout=ps_output, returncode=0)
             mock_kill.return_value = None  # Process is alive
@@ -469,9 +481,10 @@ class TestCloseTunnel:
 
     def test_closes_existing_tunnel(self):
         """Should send SIGTERM to tunnel process."""
-        ps_output = """USER       PID  %CPU %MEM      VSZ    RSS   TT  STAT STARTED      TIME COMMAND
-yuqiu    12345   0.0  0.0 408628368   1234 s000  S+   10:00AM   0:00.01 ssh -N -L 4200:localhost:4200 user/rdev-vm
-"""
+        ps_output = (
+            "USER       PID  %CPU %MEM      VSZ    RSS   TT  STAT STARTED      TIME COMMAND\n"
+            "yuqiu    12345   0.0  0.0 408628368   1234 s000  S+   10:00AM   0:00.01 ssh -N -L 4200:localhost:4200 user/rdev-vm\n"  # noqa: E501
+        )
         with patch("subprocess.run") as mock_run, patch("os.kill") as mock_kill:
             mock_run.return_value = MagicMock(stdout=ps_output, returncode=0)
 
@@ -492,9 +505,10 @@ yuqiu    12345   0.0  0.0 408628368   1234 s000  S+   10:00AM   0:00.01 ssh -N -
 
     def test_verifies_host_ownership(self):
         """Should reject closing tunnel owned by different host."""
-        ps_output = """USER       PID  %CPU %MEM      VSZ    RSS   TT  STAT STARTED      TIME COMMAND
-yuqiu    12345   0.0  0.0 408628368   1234 s000  S+   10:00AM   0:00.01 ssh -N -L 4200:localhost:4200 other/host
-"""
+        ps_output = (
+            "USER       PID  %CPU %MEM      VSZ    RSS   TT  STAT STARTED      TIME COMMAND\n"
+            "yuqiu    12345   0.0  0.0 408628368   1234 s000  S+   10:00AM   0:00.01 ssh -N -L 4200:localhost:4200 other/host\n"  # noqa: E501
+        )
         with patch("subprocess.run") as mock_run:
             mock_run.return_value = MagicMock(stdout=ps_output, returncode=0)
 
@@ -505,9 +519,10 @@ yuqiu    12345   0.0  0.0 408628368   1234 s000  S+   10:00AM   0:00.01 ssh -N -
 
     def test_handles_dead_process(self):
         """Should succeed even if process already dead."""
-        ps_output = """USER       PID  %CPU %MEM      VSZ    RSS   TT  STAT STARTED      TIME COMMAND
-yuqiu    12345   0.0  0.0 408628368   1234 s000  S+   10:00AM   0:00.01 ssh -N -L 4200:localhost:4200 user/rdev-vm
-"""
+        ps_output = (
+            "USER       PID  %CPU %MEM      VSZ    RSS   TT  STAT STARTED      TIME COMMAND\n"
+            "yuqiu    12345   0.0  0.0 408628368   1234 s000  S+   10:00AM   0:00.01 ssh -N -L 4200:localhost:4200 user/rdev-vm\n"  # noqa: E501
+        )
         with patch("subprocess.run") as mock_run, patch("os.kill") as mock_kill:
             mock_run.return_value = MagicMock(stdout=ps_output, returncode=0)
             mock_kill.side_effect = ProcessLookupError()
@@ -523,11 +538,12 @@ class TestCleanupTunnelsForHost:
 
     def test_kills_all_tunnels_for_host(self):
         """Should kill all tunnels belonging to the specified host."""
-        ps_output = """USER       PID  %CPU %MEM      VSZ    RSS   TT  STAT STARTED      TIME COMMAND
-yuqiu    12345   0.0  0.0 408628368   1234 s000  S+   10:00AM   0:00.01 ssh -N -L 4200:localhost:4200 user/rdev-vm
-yuqiu    12346   0.0  0.0 408628368   1234 s000  S+   10:00AM   0:00.01 ssh -N -L 3000:localhost:3000 user/rdev-vm
-yuqiu    12347   0.0  0.0 408628368   1234 s000  S+   10:00AM   0:00.01 ssh -N -L 8080:localhost:8080 other/host
-"""
+        ps_output = (
+            "USER       PID  %CPU %MEM      VSZ    RSS   TT  STAT STARTED      TIME COMMAND\n"
+            "yuqiu    12345   0.0  0.0 408628368   1234 s000  S+   10:00AM   0:00.01 ssh -N -L 4200:localhost:4200 user/rdev-vm\n"  # noqa: E501
+            "yuqiu    12346   0.0  0.0 408628368   1234 s000  S+   10:00AM   0:00.01 ssh -N -L 3000:localhost:3000 user/rdev-vm\n"  # noqa: E501
+            "yuqiu    12347   0.0  0.0 408628368   1234 s000  S+   10:00AM   0:00.01 ssh -N -L 8080:localhost:8080 other/host\n"  # noqa: E501
+        )
         with patch("subprocess.run") as mock_run, patch("os.kill") as mock_kill:
             mock_run.return_value = MagicMock(stdout=ps_output, returncode=0)
 

@@ -63,7 +63,8 @@ def create_skill(
     # Validate name format
     if not re.match(r"^[a-z][a-z0-9-]*$", name):
         raise ValueError(
-            "Name must start with a lowercase letter and contain only lowercase letters, digits, and hyphens"
+            "Name must start with a lowercase letter and contain only"
+            " lowercase letters, digits, and hyphens"
         )
     if len(name) > 50:
         raise ValueError("Name must be 50 characters or less")
@@ -102,7 +103,8 @@ def update_skill(
     if name is not None:
         if not re.match(r"^[a-z][a-z0-9-]*$", name):
             raise ValueError(
-                "Name must start with a lowercase letter and contain only lowercase letters, digits, and hyphens"
+                "Name must start with a lowercase letter and contain only"
+                " lowercase letters, digits, and hyphens"
             )
         if len(name) > 50:
             raise ValueError("Name must be 50 characters or less")

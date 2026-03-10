@@ -38,7 +38,8 @@ def main():
     for proj in projects:
         # Get top-level tasks ordered by created_at
         tasks = conn.execute(
-            "SELECT id, title, task_index FROM tasks WHERE project_id = ? AND parent_task_id IS NULL ORDER BY created_at",
+            "SELECT id, title, task_index FROM tasks"
+            " WHERE project_id = ? AND parent_task_id IS NULL ORDER BY created_at",
             (proj["id"],),
         ).fetchall()
 
@@ -58,7 +59,8 @@ def main():
 
         for parent in parent_tasks:
             subtasks = conn.execute(
-                "SELECT id, title, task_index FROM tasks WHERE parent_task_id = ? ORDER BY created_at",
+                "SELECT id, title, task_index FROM tasks"
+                " WHERE parent_task_id = ? ORDER BY created_at",
                 (parent["id"],),
             ).fetchall()
 
@@ -69,8 +71,10 @@ def main():
                         "UPDATE tasks SET task_index = ? WHERE id = ?", (sub_idx, st["id"])
                     )
                     title_preview = st["title"][:25] if len(st["title"]) > 25 else st["title"]
+                    parent_idx = parent["task_index"]
                     print(
-                        f'    Subtask "{title_preview}" -> {proj["task_prefix"]}-{parent["task_index"]}-{sub_idx}'
+                        f'    Subtask "{title_preview}"'
+                        f" -> {proj['task_prefix']}-{parent_idx}-{sub_idx}"
                     )
                 sub_idx += 1
 

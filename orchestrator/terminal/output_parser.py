@@ -132,7 +132,9 @@ def parse_hostname_from_markers(output: str, start_marker: str, end_marker: str)
     if start_line_idx is None or end_line_idx is None:
         return None
 
-    hostname_lines = [l.strip() for l in lines[start_line_idx + 1 : end_line_idx] if l.strip()]
+    hostname_lines = [
+        line.strip() for line in lines[start_line_idx + 1 : end_line_idx] if line.strip()
+    ]
     if hostname_lines:
         return hostname_lines[0]
     return None

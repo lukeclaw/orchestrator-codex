@@ -471,7 +471,9 @@ class TestErrorHandling:
         async def fail_auth(*args, **kwargs):
             from fastapi import HTTPException
 
-            raise HTTPException(401, "GitHub CLI not authenticated. Run `gh auth login` in a terminal to fix this.")
+            raise HTTPException(
+                401, "GitHub CLI not authenticated. Run `gh auth login` in a terminal to fix this."
+            )
 
         with patch.object(pr_preview, "_run_gh", new_callable=AsyncMock) as mock_gh:
             mock_gh.side_effect = fail_auth

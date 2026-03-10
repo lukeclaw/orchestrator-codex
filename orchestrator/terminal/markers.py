@@ -106,7 +106,8 @@ def parse_between_markers(output: str, start_marker: str, end_marker: str) -> st
     """Extract content between start and end markers.
 
     This is the SAFE way to parse terminal output. It ignores command echo lines
-    and only returns content that appears AFTER the start marker line and BEFORE the end marker line.
+    and only returns content that appears AFTER the start marker line
+    and BEFORE the end marker line.
 
     IMPORTANT: We only match markers when they appear as the ENTIRE line (stripped).
     This prevents both:

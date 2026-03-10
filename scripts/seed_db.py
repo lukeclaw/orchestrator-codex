@@ -8,10 +8,10 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from orchestrator.state.db import get_connection
-from orchestrator.state.migrations.runner import apply_migrations
-from orchestrator.state.repositories import config as config_repo
-from orchestrator.state.repositories import context as context_repo
+from orchestrator.state.db import get_connection  # noqa: E402
+from orchestrator.state.migrations.runner import apply_migrations  # noqa: E402
+from orchestrator.state.repositories import config as config_repo  # noqa: E402
+from orchestrator.state.repositories import context as context_repo  # noqa: E402
 
 
 def seed_config(conn):
@@ -115,15 +115,19 @@ jobs-mt             epic-turing        RUNNING
 rdev ssh MP_NAME/SESSION_NAME --non-tmux
 ```
 
-The `--non-tmux` flag opens a plain SSH session instead of attaching to a tmux session inside the VM.
+The `--non-tmux` flag opens a plain SSH session instead of
+attaching to a tmux session inside the VM.
 
-Inside the VM, Claude Code can be run with `claude --dangerously-skip-permissions` (safe because rdev VMs are isolated sandboxes).""",
+Inside the VM, Claude Code can be run with
+`claude --dangerously-skip-permissions`
+(safe because rdev VMs are isolated sandboxes).""",
             "knowledge",
             "rdev",
         ),
         (
             "Creating rdev Workers",
-            """To create a worker on an rdev VM, call the session API with the rdev session path as the host:
+            """To create a worker on an rdev VM, call the session API
+with the rdev session path as the host:
 
 ```bash
 curl -s -X POST http://127.0.0.1:8093/api/sessions \\
@@ -137,7 +141,8 @@ The API automatically handles the full setup:
 3. Launches Claude Code with `--dangerously-skip-permissions`
 4. Sends the worker instructions as the first chat message
 
-The host format `MP_NAME/SESSION_NAME` (with a forward slash) triggers rdev mode. For local workers, use `host: "localhost"`.
+The host format `MP_NAME/SESSION_NAME` (with a forward slash)
+triggers rdev mode. For local workers, use `host: "localhost"`.
 
 Use `rdev list` to discover available rdev sessions before creating workers.""",
             "guideline",

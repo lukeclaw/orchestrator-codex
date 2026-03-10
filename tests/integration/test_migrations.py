@@ -13,7 +13,8 @@ def test_fresh_migration():
     applied = apply_migrations(conn)
     # Migrations: 1=initial, 2=remove_cost, 3=context, 4=subtasks, 5=tunnel_pane,
     # 6=task_links, 7=session_type, 8=remove_current_task_id, 9=rename_mp_path_to_work_dir,
-    # 10=task_index, 11=priority_to_string, 12=drop_pr_tables, 13=context_description, 14=timestamps,
+    # 10=task_index, 11=priority_to_string, 12=drop_pr_tables,
+    # 13=context_description, 14=timestamps,
     # 15=notifications, 16=last_viewed_at, 17=last_status_changed_at, 18=tunnel_pid,
     # 19=drop_tunnel_pane, 20=drop_skill_templates, 21=drop_tmux_window,
     # 22=drop_dead_tables, 24=notification_metadata, 25=auto_reconnect,
@@ -165,12 +166,14 @@ def test_migration_030_simplify_categories():
     # Insert items with old categories
     for cat in ("requirement", "convention", "instruction", "reference", "note", "worker_note"):
         conn.execute(
-            "INSERT INTO context_items (id, title, content, scope, category) VALUES (?, ?, ?, 'global', ?)",
+            "INSERT INTO context_items (id, title, content, scope, category)"
+            " VALUES (?, ?, ?, 'global', ?)",
             (f"test-{cat}", f"Test {cat}", f"Content for {cat}", cat),
         )
     # Also one with NULL category
     conn.execute(
-        "INSERT INTO context_items (id, title, content, scope, category) VALUES ('test-null', 'Test null', 'No cat', 'global', NULL)"
+        "INSERT INTO context_items (id, title, content, scope, category)"
+        " VALUES ('test-null', 'Test null', 'No cat', 'global', NULL)"
     )
     conn.commit()
 
@@ -200,7 +203,8 @@ def test_indexes_created():
     conn = get_memory_connection()
     apply_migrations(conn)
     indexes = conn.execute(
-        "SELECT name FROM sqlite_master WHERE type='index' AND (name LIKE 'idx_%' OR name LIKE 'ux_%')"
+        "SELECT name FROM sqlite_master WHERE type='index'"
+        " AND (name LIKE 'idx_%' OR name LIKE 'ux_%')"
     ).fetchall()
     index_names = {r["name"] for r in indexes}
     assert "idx_tasks_project" in index_names

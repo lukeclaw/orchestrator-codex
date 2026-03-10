@@ -838,9 +838,7 @@ def _check_remote_mtimes(host: str, work_dir: str, paths: list[str]) -> MtimeRes
     """Check mtimes on a remote host via RWS.  Best-effort — returns None on error."""
     try:
         rws = get_remote_worker_server(host)
-        data = rws.execute(
-            {"action": "check_mtimes", "work_dir": work_dir, "paths": paths}
-        )
+        data = rws.execute({"action": "check_mtimes", "work_dir": work_dir, "paths": paths})
         return MtimeResponse(mtimes=data.get("mtimes", {p: None for p in paths}))
     except (RuntimeError, OSError, json.JSONDecodeError):
         return MtimeResponse(mtimes={p: None for p in paths})

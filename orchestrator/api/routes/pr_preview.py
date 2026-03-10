@@ -42,8 +42,15 @@ async def _run_gh(*args: str, cache: str | None = None) -> dict | list:
     if proc.returncode != 0:
         err = stderr.decode().strip()
         err_lower = err.lower()
-        if "auth" in err_lower or "login" in err_lower or "token" in err_lower or "not logged" in err_lower:
-            raise HTTPException(401, "GitHub CLI not authenticated. Run `gh auth login` in a terminal to fix this.")
+        if (
+            "auth" in err_lower
+            or "login" in err_lower
+            or "token" in err_lower
+            or "not logged" in err_lower
+        ):
+            raise HTTPException(
+                401, "GitHub CLI not authenticated. Run `gh auth login` in a terminal to fix this."
+            )
         if "404" in err or "Not Found" in err:
             raise HTTPException(404, "PR not found on GitHub")
         if "rate limit" in err_lower:

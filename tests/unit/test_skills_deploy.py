@@ -150,7 +150,10 @@ class TestStripContentHeader:
     def test_strips_multiline_paragraph(self):
         from orchestrator.api.routes.skills import _strip_content_header
 
-        content = "# PR Workflow\n\nFull PR lifecycle: creation,\nreview handling, and merge.\n\n---\n\n## Steps\n"
+        content = (
+            "# PR Workflow\n\nFull PR lifecycle: creation,\n"
+            "review handling, and merge.\n\n---\n\n## Steps\n"
+        )
         result = _strip_content_header(content)
         assert "# PR Workflow" not in result
         assert "Full PR lifecycle" not in result
