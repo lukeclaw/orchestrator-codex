@@ -57,12 +57,13 @@ orch-browser --close               # Close browser + dashboard view
 orch-browser --status              # Check if browser is running
 orch-browser --minimize            # Minimize browser view overlay
 orch-browser --restore             # Restore browser view overlay
-orch-browser --install             # Install Playwright Chromium if missing
 ```
 
 After `--start`, Playwright MCP tools (browser_navigate, browser_click, etc.)
 connect to the same browser the operator sees in the dashboard.
 Always start the browser before using Playwright MCP tools.
+**First-time start may take up to 3 minutes** (Chromium download + install).
+Use a **300000ms timeout** on the Bash tool for `orch-browser --start`.
 
 ### `orch-interactive` — User-Facing Terminal
 **Always use instead of raw tmux** for user interaction (passwords, MFA, interactive tools, monitoring). Opens a floating terminal in the dashboard — no manual tmux attach needed. Don't send input while the user is typing.

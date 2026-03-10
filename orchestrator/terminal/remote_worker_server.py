@@ -461,7 +461,7 @@ _REMOTE_WORKER_SERVER_SCRIPT = textwrap.dedent("""\
                 [npx, "playwright", "install", "chromium"],
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
-                timeout=120,
+                timeout=300,
             )
         except (subprocess.TimeoutExpired, OSError):
             return None

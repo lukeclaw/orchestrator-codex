@@ -137,7 +137,7 @@ def _auto_start_browser_local(session_id: str, cdp_port: int) -> int:
 
     if not chromium_bin:
         raise RuntimeError(
-            "Chrome/Chromium not found. Install Google Chrome or run: orch-browser --install"
+            "Chrome/Chromium not found. Install Google Chrome or run: orch-browser --start"
         )
 
     pid_dir = "/tmp/orchestrator"

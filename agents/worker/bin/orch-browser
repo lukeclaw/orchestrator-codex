@@ -14,7 +14,6 @@
 #   orch-browser --status               Check browser/view status
 #   orch-browser --minimize             Minimize browser view overlay
 #   orch-browser --restore              Restore browser view overlay
-#   orch-browser --install              Install Playwright Chromium browser
 #   orch-browser -h, --help             Show this help message
 
 set -e
@@ -38,7 +37,6 @@ show_help() {
     echo "  --status               Check if browser and view are running"
     echo "  --minimize             Minimize browser view overlay in dashboard"
     echo "  --restore              Restore browser view overlay in dashboard"
-    echo "  --install              Install Playwright Chromium if missing"
     echo "  -h, --help             Show this help"
     echo ""
     echo "After --start, Playwright MCP tools (browser_navigate, browser_click, etc.)"
@@ -245,7 +243,7 @@ daemon_start_browser() {
     local result
     local http_code
 
-    result=$(curl -s -w "\n%{http_code}" --connect-timeout 5 \
+    result=$(curl -s -w "\n%{http_code}" --connect-timeout 5 --max-time 300 \
         -X POST "$API_BASE/api/sessions/$SESSION_ID/browser-start" \
         -H "Content-Type: application/json" \
         -d "{\"port\": $port}")
@@ -451,13 +449,6 @@ do_restore() {
     echo "Browser view restored."
 }
 
-do_install() {
-    echo "Installing Playwright Chromium..." >&2
-    npx playwright install chromium
-    ensure_fonts
-    echo "Playwright Chromium installed."
-}
-
 # ----- Main dispatch -----
 
 case "${1:-}" in
@@ -479,9 +470,6 @@ case "${1:-}" in
         ;;
     --restore)
         do_restore
-        ;;
-    --install)
-        do_install
         ;;
     *)
         show_help
