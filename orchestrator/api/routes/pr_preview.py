@@ -41,9 +41,12 @@ async def _run_gh(*args: str, cache: str | None = None) -> dict | list:
     stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=_GH_TIMEOUT)
     if proc.returncode != 0:
         err = stderr.decode().strip()
+        err_lower = err.lower()
+        if "auth" in err_lower or "login" in err_lower or "token" in err_lower or "not logged" in err_lower:
+            raise HTTPException(401, "GitHub CLI not authenticated. Run `gh auth login` in a terminal to fix this.")
         if "404" in err or "Not Found" in err:
             raise HTTPException(404, "PR not found on GitHub")
-        if "rate limit" in err.lower():
+        if "rate limit" in err_lower:
             raise HTTPException(429, "GitHub API rate limit exceeded")
         raise HTTPException(502, f"gh api error: {err}")
     return json.loads(stdout)

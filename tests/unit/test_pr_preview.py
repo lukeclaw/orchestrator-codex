@@ -467,6 +467,19 @@ class TestErrorHandling:
 
         assert resp.status_code == 429
 
+    def test_gh_auth_error_returns_401(self, client):
+        async def fail_auth(*args, **kwargs):
+            from fastapi import HTTPException
+
+            raise HTTPException(401, "GitHub CLI not authenticated. Run `gh auth login` in a terminal to fix this.")
+
+        with patch.object(pr_preview, "_run_gh", new_callable=AsyncMock) as mock_gh:
+            mock_gh.side_effect = fail_auth
+            resp = client.get("/api/pr-preview?url=https://github.com/org/repo/pull/42")
+
+        assert resp.status_code == 401
+        assert "gh auth login" in resp.json()["detail"]
+
     def test_checks_failure_nonfatal(self, client):
         """If check-runs fetch fails, the response should still return with empty checks."""
 

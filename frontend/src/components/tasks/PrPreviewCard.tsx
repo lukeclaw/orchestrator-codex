@@ -130,9 +130,14 @@ export default function PrPreviewCard({ url, initialData, onDataFetched }: PrPre
   }
 
   if (error) {
+    const isAuthError = error.includes('401') && error.includes('gh auth login')
     return (
       <div className="pr-preview-card pr-preview-error">
-        <span>{error}</span>
+        {isAuthError ? (
+          <span>GitHub CLI not authenticated. Run <code>gh auth login</code> in a terminal to fix this.</span>
+        ) : (
+          <span>{error}</span>
+        )}
         <button className="pr-preview-retry" onClick={fetchData}>Retry</button>
       </div>
     )
