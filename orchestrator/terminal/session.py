@@ -26,6 +26,11 @@ logger = logging.getLogger(__name__)
 
 _SOURCE_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 
+# Shell one-liner: skip `claude plugin install` if plugin already present.
+_PW_INSTALL_CMD = (
+    "claude plugin list 2>/dev/null | grep -q 'playwright@' || claude plugin install playwright"
+)
+
 
 def create_session(
     conn: sqlite3.Connection,
@@ -653,8 +658,8 @@ def setup_remote_worker(
             time.sleep(0.3)
             logger.info("Deployed skills to %s for rdev worker %s", global_skills_dest, name)
 
-        # 8. Install Playwright plugin and configure CDP endpoint (inside screen)
-        tmux.send_keys(tmux_session, name, "claude plugin install playwright", enter=True)
+        # 8. Install Playwright plugin (skip if already installed) and configure CDP endpoint
+        tmux.send_keys(tmux_session, name, _PW_INSTALL_CMD, enter=True)
         time.sleep(3)  # Wait for plugin install
 
         # Configure Playwright MCP via env var — the built-in Playwright plugin
@@ -777,7 +782,7 @@ def setup_local_worker(
             cmd_parts.append(f"cd {work_dir}")
 
         cmd_parts.append("volta install node@24")  # Ensure Node 24 for npx
-        cmd_parts.append("claude plugin install playwright")  # Ensure Playwright plugin
+        cmd_parts.append(_PW_INSTALL_CMD)  # Ensure Playwright plugin
 
         # Configure Playwright plugin to connect via per-worker CDP proxy.
         # Each worker gets its own proxy port so Playwright only sees its tab.

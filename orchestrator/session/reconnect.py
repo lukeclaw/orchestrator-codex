@@ -47,6 +47,11 @@ from orchestrator.terminal.session import (
 
 logger = logging.getLogger(__name__)
 
+# Shell one-liner: skip `claude plugin install` if plugin already present.
+_PW_INSTALL_CMD = (
+    "claude plugin list 2>/dev/null | grep -q 'playwright@' || claude plugin install playwright"
+)
+
 
 # =============================================================================
 # TUI Safety Guard
@@ -486,8 +491,8 @@ def _launch_claude_in_screen(
         session_arg,
     )
 
-    # Install Playwright plugin and configure CDP endpoint
-    send_keys(tmux_sess, tmux_win, "claude plugin install playwright", enter=True)
+    # Install Playwright plugin (skip if already installed) and configure CDP endpoint
+    send_keys(tmux_sess, tmux_win, _PW_INSTALL_CMD, enter=True)
     time.sleep(3)
 
     send_keys(
@@ -1273,8 +1278,8 @@ def reconnect_local_worker(
         safe_send_keys(tmux_sess, tmux_win, "volta install node@24", enter=True)
         time.sleep(3)
 
-        # Ensure the official Playwright plugin is installed
-        safe_send_keys(tmux_sess, tmux_win, "claude plugin install playwright", enter=True)
+        # Ensure the official Playwright plugin is installed (skip if already present)
+        safe_send_keys(tmux_sess, tmux_win, _PW_INSTALL_CMD, enter=True)
         time.sleep(2)
 
         path_export = get_path_export_command(os.path.join(tmp_dir, "bin"))
