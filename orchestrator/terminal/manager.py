@@ -254,44 +254,53 @@ def dismiss_trust_prompt(
     session_name: str,
     window_name: str,
     session_id: str | None = None,
-    presses: int = 3,
+    max_checks: int = 3,
     delay: float = 1.0,
     initial_wait: float = 3.0,
 ) -> None:
-    """Send Enter key presses to dismiss any trust-folder prompt after Claude launch.
+    """Dismiss the "trust this folder" prompt if it appears after Claude launch.
 
-    Claude Code sometimes shows a "Yes, trust this folder" prompt even with
-    ``--dangerously-skip-permissions``.  Pressing Enter dismisses it.  If the
-    prompt is not present, empty Enter presses are harmless (Claude ignores
-    them and shell prompts just echo a blank line).
+    Polls the pane content up to *max_checks* times.  Only sends Enter when the
+    captured text actually contains the trust-folder prompt.  This avoids
+    blindly pressing Enter which can select wrong options in other Claude
+    prompts (e.g. project picker, model selector).
 
-    If *session_id* is provided, each press checks whether the user has
-    attached to the terminal and is actively typing.  If so, the remaining
-    presses are skipped to avoid injecting keystrokes into a live session.
+    If *session_id* is provided, each check verifies the user hasn't started
+    typing in the pane, and bails early if so.
     """
     # Lazy import to avoid circular dependency (ws_terminal → manager)
     from orchestrator.api.ws_terminal import is_user_active
 
+    trust_markers = ("trust this folder", "trust this project")
+
     time.sleep(initial_wait)
-    sent = 0
-    for i in range(presses):
+    for i in range(max_checks):
         if session_id and is_user_active(session_id):
             logger.debug(
                 "Skipping trust-prompt dismiss for %s:%s — user active in pane",
                 session_name,
                 window_name,
             )
-            break
-        send_keys(session_name, window_name, "", enter=True)
-        sent += 1
-        if i < presses - 1:
+            return
+
+        content = capture_output(session_name, window_name, lines=20).lower()
+        if any(marker in content for marker in trust_markers):
+            send_keys(session_name, window_name, "", enter=True)
+            logger.info(
+                "Dismissed trust-folder prompt in %s:%s",
+                session_name,
+                window_name,
+            )
+            return
+
+        if i < max_checks - 1:
             time.sleep(delay)
+
     logger.debug(
-        "Sent %d/%d Enter presses to %s:%s to dismiss potential trust prompt",
-        sent,
-        presses,
+        "No trust-folder prompt detected in %s:%s after %d checks — skipping",
         session_name,
         window_name,
+        max_checks,
     )
 
 
