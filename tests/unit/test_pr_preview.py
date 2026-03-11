@@ -570,6 +570,63 @@ class TestEndpointSkipping:
             assert call.kwargs.get("cache") == pr_preview._GH_HTTP_CACHE
 
 
+class TestRefreshBypassesCache:
+    def test_refresh_bypasses_inmemory_cache(self, client):
+        """refresh=true should skip the in-memory cache and re-fetch from gh."""
+        with patch.object(pr_preview, "_run_gh", new_callable=AsyncMock) as mock_gh:
+            mock_gh.side_effect = _mock_gh_side_effect()
+            client.get("/api/pr-preview?url=https://github.com/org/repo/pull/42")
+            first_count = mock_gh.call_count
+
+        # Normal second call should hit cache (0 new calls)
+        with patch.object(pr_preview, "_run_gh", new_callable=AsyncMock) as mock_gh:
+            mock_gh.side_effect = _mock_gh_side_effect()
+            client.get("/api/pr-preview?url=https://github.com/org/repo/pull/42")
+        assert mock_gh.call_count == 0
+
+        # refresh=true should bypass cache and re-fetch
+        with patch.object(pr_preview, "_run_gh", new_callable=AsyncMock) as mock_gh:
+            mock_gh.side_effect = _mock_gh_side_effect()
+            resp = client.get(
+                "/api/pr-preview?url=https://github.com/org/repo/pull/42&refresh=true"
+            )
+        assert resp.status_code == 200
+        assert mock_gh.call_count == first_count  # same number of calls as a fresh fetch
+
+    def test_refresh_updates_cache(self, client):
+        """After refresh, the cache should contain the new data."""
+        with patch.object(pr_preview, "_run_gh", new_callable=AsyncMock) as mock_gh:
+            mock_gh.side_effect = _mock_gh_side_effect()
+            client.get("/api/pr-preview?url=https://github.com/org/repo/pull/42")
+
+        # Refresh with updated title
+        updated_pr = {**SAMPLE_PR, "title": "Updated title"}
+        with patch.object(pr_preview, "_run_gh", new_callable=AsyncMock) as mock_gh:
+            mock_gh.side_effect = _mock_gh_side_effect(pr_data=updated_pr)
+            resp = client.get(
+                "/api/pr-preview?url=https://github.com/org/repo/pull/42&refresh=true"
+            )
+        assert resp.json()["title"] == "Updated title"
+
+        # Subsequent normal call should return the updated cached data
+        with patch.object(pr_preview, "_run_gh", new_callable=AsyncMock) as mock_gh:
+            mock_gh.side_effect = _mock_gh_side_effect()
+            resp = client.get("/api/pr-preview?url=https://github.com/org/repo/pull/42")
+        assert mock_gh.call_count == 0  # served from cache
+        assert resp.json()["title"] == "Updated title"
+
+    def test_refresh_false_uses_cache(self, client):
+        """refresh=false (default) should use the cache normally."""
+        with patch.object(pr_preview, "_run_gh", new_callable=AsyncMock) as mock_gh:
+            mock_gh.side_effect = _mock_gh_side_effect()
+            client.get("/api/pr-preview?url=https://github.com/org/repo/pull/42")
+
+        with patch.object(pr_preview, "_run_gh", new_callable=AsyncMock) as mock_gh:
+            mock_gh.side_effect = _mock_gh_side_effect()
+            client.get("/api/pr-preview?url=https://github.com/org/repo/pull/42&refresh=false")
+        assert mock_gh.call_count == 0
+
+
 class TestHelperFunctions:
     def test_parse_pr_url_standard(self):
         owner, repo, number = pr_preview._parse_pr_url("https://github.com/myorg/myrepo/pull/123")

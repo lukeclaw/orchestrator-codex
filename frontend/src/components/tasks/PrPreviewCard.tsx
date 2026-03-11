@@ -82,7 +82,7 @@ export default function PrPreviewCard({ url, initialData, onDataFetched }: PrPre
     return () => document.removeEventListener('mousedown', handler)
   }, [openReviewPopup])
 
-  const fetchData = async () => {
+  const fetchData = async (refresh?: boolean) => {
     abortRef.current?.abort()
     const controller = new AbortController()
     abortRef.current = controller
@@ -90,8 +90,9 @@ export default function PrPreviewCard({ url, initialData, onDataFetched }: PrPre
     setLoading(true)
     setError(null)
     try {
+      const qs = `/api/pr-preview?url=${encodeURIComponent(url)}${refresh ? '&refresh=true' : ''}`
       const result = await api<PrPreviewData>(
-        `/api/pr-preview?url=${encodeURIComponent(url)}`,
+        qs,
         { signal: controller.signal }
       )
       if (!controller.signal.aborted) {
@@ -138,7 +139,7 @@ export default function PrPreviewCard({ url, initialData, onDataFetched }: PrPre
         ) : (
           <span>{error}</span>
         )}
-        <button className="pr-preview-retry" onClick={fetchData}>Retry</button>
+        <button className="pr-preview-retry" onClick={() => fetchData(true)}>Retry</button>
       </div>
     )
   }
@@ -210,7 +211,7 @@ export default function PrPreviewCard({ url, initialData, onDataFetched }: PrPre
           <div className="pr-preview-header-actions">
             <button
               className={`pr-preview-refresh ${loading ? 'refreshing' : ''}`}
-              onClick={fetchData}
+              onClick={() => fetchData(true)}
               disabled={loading}
               data-tooltip="Refresh"
             >

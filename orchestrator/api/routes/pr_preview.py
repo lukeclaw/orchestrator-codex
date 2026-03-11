@@ -24,7 +24,7 @@ _MAX_CACHE_SIZE = 50
 _PR_URL_RE = re.compile(r"github\.com/([^/]+)/([^/]+)/pull/(\d+)")
 
 _GH_TIMEOUT = 15  # seconds per subprocess call
-_GH_HTTP_CACHE = "120s"  # gh CLI-level HTTP cache for ETag revalidation
+_GH_HTTP_CACHE = "1s"  # short TTL forces ETag revalidation (304s are free)
 
 
 async def _run_gh(*args: str, cache: str | None = None) -> dict | list:
@@ -308,13 +308,16 @@ def _get_skips(cache_key: str) -> set[str]:
 
 
 @router.get("/pr-preview")
-async def get_pr_preview(url: str = Query(..., description="GitHub PR URL")):
+async def get_pr_preview(
+    url: str = Query(..., description="GitHub PR URL"),
+    refresh: bool = Query(False, description="Bypass in-memory cache"),
+):
     """Fetch a GitHub PR preview with metadata, reviews, and CI checks."""
     owner, repo, number = _parse_pr_url(url)
     cache_key = f"{owner}/{repo}/{number}"
 
-    # Check cache — state-aware TTL
-    if cache_key in _pr_cache:
+    # Check cache — state-aware TTL (skipped on explicit refresh)
+    if not refresh and cache_key in _pr_cache:
         ts, data = _pr_cache[cache_key]
         state = data.get("state", "open")
         ttl = _PR_CACHE_TTL_CLOSED if state in ("merged", "closed") else _PR_CACHE_TTL_OPEN
