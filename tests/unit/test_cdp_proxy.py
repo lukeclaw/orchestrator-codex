@@ -1126,6 +1126,26 @@ class TestMonitorTabs:
 
     @patch("orchestrator.browser.cdp_proxy.discover_browser_targets")
     @pytest.mark.asyncio
+    async def test_switches_to_new_tab_when_it_appears(self, mock_discover):
+        """When a new tab appears, switch to it immediately."""
+        view = _make_view()
+        view.target_id = "tab-old"
+        view.page_url = "https://example.com"
+        view._known_tab_ids = {"tab-old"}
+
+        async def fake_discover(port, retries=1):
+            return [
+                {"id": "tab-old", "type": "page", "url": "https://example.com"},
+                {"id": "tab-new", "type": "page", "url": "https://apple.com"},
+            ]
+
+        mock_discover.side_effect = fake_discover
+
+        result = await monitor_tabs(view, interval=0.01)
+        assert result == "tab-new"
+
+    @patch("orchestrator.browser.cdp_proxy.discover_browser_targets")
+    @pytest.mark.asyncio
     async def test_switches_to_content_tab_when_current_is_blank(
         self, mock_discover
     ):
@@ -1133,15 +1153,10 @@ class TestMonitorTabs:
         view = _make_view()
         view.target_id = "tab-blank"
         view.page_url = "about:blank"
-
-        # First call: only one tab (no switch), second call: two tabs
-        call_count = 0
+        # Both tabs already known — so new-tab detection won't fire
+        view._known_tab_ids = {"tab-blank", "tab-content"}
 
         async def fake_discover(port, retries=1):
-            nonlocal call_count
-            call_count += 1
-            if call_count == 1:
-                return [{"id": "tab-blank", "type": "page", "url": "about:blank"}]
             return [
                 {"id": "tab-blank", "type": "page", "url": "about:blank"},
                 {"id": "tab-content", "type": "page", "url": "https://example.com"},
@@ -1150,16 +1165,18 @@ class TestMonitorTabs:
         mock_discover.side_effect = fake_discover
 
         result = await monitor_tabs(view, interval=0.01)
-
         assert result == "tab-content"
 
     @patch("orchestrator.browser.cdp_proxy.discover_browser_targets")
     @pytest.mark.asyncio
-    async def test_no_switch_when_current_has_content(self, mock_discover):
-        """When current tab has content, do nothing (non-destructive)."""
+    async def test_no_switch_when_all_tabs_known_and_current_has_content(
+        self, mock_discover
+    ):
+        """No switch when all tabs are known and current has content."""
         view = _make_view()
         view.target_id = "tab-main"
         view.page_url = "https://example.com"
+        view._known_tab_ids = {"tab-main", "tab-extra"}
 
         async def fake_discover(port, retries=1):
             return [
@@ -1169,7 +1186,6 @@ class TestMonitorTabs:
 
         mock_discover.side_effect = fake_discover
 
-        # Monitor should keep looping without switching or closing anything.
         task = asyncio.create_task(monitor_tabs(view, interval=0.01))
         await asyncio.sleep(0.05)
         task.cancel()
@@ -1177,7 +1193,6 @@ class TestMonitorTabs:
             await task
         except asyncio.CancelledError:
             pass
-        # No assertions needed — the key point is it didn't return/switch
 
     @patch("orchestrator.browser.cdp_proxy.discover_browser_targets")
     @pytest.mark.asyncio
@@ -1186,6 +1201,7 @@ class TestMonitorTabs:
         view = _make_view()
         view.target_id = "tab-only"
         view.page_url = "about:blank"
+        view._known_tab_ids = {"tab-only"}
 
         async def fake_discover(port, retries=1):
             return [{"id": "tab-only", "type": "page", "url": "about:blank"}]
@@ -1202,24 +1218,29 @@ class TestMonitorTabs:
 
     @patch("orchestrator.browser.cdp_proxy.discover_browser_targets")
     @pytest.mark.asyncio
-    async def test_switches_to_first_content_tab(self, mock_discover):
-        """When current is blank and multiple content tabs exist, pick the first."""
+    async def test_seeds_known_tabs_from_current_target(self, mock_discover):
+        """First poll seeds _known_tab_ids; new tab on second poll triggers switch."""
         view = _make_view()
-        view.target_id = "tab-blank1"
-        view.page_url = "about:blank"
+        view.target_id = "tab-1"
+        view.page_url = "https://example.com"
+        view._known_tab_ids = set()  # empty — will be seeded
+
+        call_count = 0
 
         async def fake_discover(port, retries=1):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                return [{"id": "tab-1", "type": "page", "url": "https://example.com"}]
             return [
-                {"id": "tab-blank1", "type": "page", "url": "about:blank"},
-                {"id": "tab-blank2", "type": "page", "url": "about:blank"},
-                {"id": "tab-content", "type": "page", "url": "https://example.com"},
+                {"id": "tab-1", "type": "page", "url": "https://example.com"},
+                {"id": "tab-2", "type": "page", "url": "https://apple.com"},
             ]
 
         mock_discover.side_effect = fake_discover
 
         result = await monitor_tabs(view, interval=0.01)
-
-        assert result == "tab-content"
+        assert result == "tab-2"
 
     @patch("orchestrator.browser.cdp_proxy.discover_browser_targets")
     @pytest.mark.asyncio
@@ -1228,6 +1249,7 @@ class TestMonitorTabs:
         view = _make_view()
         view.target_id = "tab-1"
         view.page_url = "about:blank"
+        view._known_tab_ids = {"tab-1"}
 
         call_count = 0
 

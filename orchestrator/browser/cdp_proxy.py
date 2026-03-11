@@ -71,6 +71,7 @@ class BrowserViewSession:
     # The WS handler loop reads this to perform the actual switch.
     _switch_target: str = field(default="", repr=False)
     _close_after_switch: str = field(default="", repr=False)
+    _known_tab_ids: set = field(default_factory=set, repr=False)
 
 
 # In-memory registry: session_id -> BrowserViewSession
@@ -1047,12 +1048,12 @@ async def monitor_tabs(
 ) -> str | None:
     """Monitor the remote browser for extra tabs created by Playwright MCP.
 
-    When Playwright creates a new tab (e.g. via browser_navigate on a fresh
-    CDP connection), the browser view may be stuck on the original about:blank
-    tab.  This coroutine periodically checks for multiple page targets and:
+    Auto-switches the browser view in two cases:
 
-    - If the current view tab is about:blank but another tab has content,
-      returns the new target ID so the caller can switch the view to it.
+    1. **New tab detected**: Playwright opened a tab we haven't seen before.
+       Switch to it immediately since the worker wants to use that tab.
+    2. **Stuck on about:blank**: Current view tab is about:blank but another
+       tab has real content (e.g. after the initial tab was never navigated).
 
     This function is non-destructive: it never closes tabs.  Tab management
     is left to the user via the tabs dropdown in the UI.
@@ -1060,6 +1061,10 @@ async def monitor_tabs(
     Returns the new target_id to switch to, or None if cancelled.
     Only useful for remote workers (one worker per Chrome instance).
     """
+    # Seed with current tab so we don't immediately switch away from it
+    if not view._known_tab_ids:
+        view._known_tab_ids = {view.target_id}
+
     while True:
         await asyncio.sleep(interval)
         try:
@@ -1067,12 +1072,27 @@ async def monitor_tabs(
         except Exception:
             continue
 
+        target_ids = {t.get("id", "") for t in targets} - {""}
+
+        # Case 1: Detect newly created tabs (not seen before)
+        new_ids = target_ids - view._known_tab_ids
+        view._known_tab_ids = target_ids
+
+        if new_ids:
+            # Switch to the new tab — Playwright just opened it
+            new_id = next(iter(new_ids))
+            logger.info(
+                "New tab %s detected, auto-switching for session %s",
+                new_id,
+                view.session_id,
+            )
+            return new_id
+
         if len(targets) <= 1:
             continue
 
+        # Case 2: Current tab is about:blank — switch to one with content
         current_id = view.target_id
-
-        # Check if the current view tab is about:blank (stuck on empty page)
         current_url = ""
         for t in targets:
             if t.get("id") == current_id:
@@ -1080,10 +1100,8 @@ async def monitor_tabs(
                 break
 
         if current_url and current_url not in ("about:blank", ""):
-            # Current tab has real content — nothing to do
             continue
 
-        # Current tab is about:blank — look for a tab with real content
         content_tabs = [
             t
             for t in targets
