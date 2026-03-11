@@ -7,7 +7,6 @@
   "autoMemoryEnabled": false,
   "spinnerTipsEnabled": false,
   "terminalProgressBarEnabled": false,
-  "autoUpdatesChannel": "stable",
   "permissions": {
     "allow": [
       "Bash(orch-tasks *)",
