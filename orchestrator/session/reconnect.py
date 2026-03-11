@@ -498,6 +498,16 @@ def _launch_claude_in_screen(
     )
     time.sleep(0.3)
 
+    # Optionally update Claude Code before launching
+    if conn:
+        from orchestrator.terminal.claude_update import (
+            run_claude_update,
+            should_update_before_start,
+        )
+
+        if should_update_before_start(conn):
+            run_claude_update(send_keys, capture_output, tmux_sess, tmux_win)
+
     # Launch Claude with skills from the remote .claude directory
     settings_file = f"{remote_tmp_dir}/configs/settings.json"
     claude_args = [
@@ -1289,6 +1299,16 @@ def reconnect_local_worker(
             enter=True,
         )
         time.sleep(0.3)
+
+        # Optionally update Claude Code before launching
+        if conn:
+            from orchestrator.terminal.claude_update import (
+                run_claude_update,
+                should_update_before_start,
+            )
+
+            if should_update_before_start(conn):
+                run_claude_update(safe_send_keys, capture_output, tmux_sess, tmux_win)
 
         if session.work_dir:
             safe_send_keys(tmux_sess, tmux_win, f"cd {shlex.quote(session.work_dir)}", enter=True)

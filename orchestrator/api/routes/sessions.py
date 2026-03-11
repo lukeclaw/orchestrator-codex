@@ -288,6 +288,11 @@ def create_session(body: SessionCreate, request: Request, db=Depends(get_db)):
             name for name, _ in skills_repo.list_disabled_builtin_skills(db, "worker")
         }
 
+        # Read claude update setting before spawning background thread
+        from orchestrator.terminal.claude_update import should_update_before_start
+
+        remote_update_before_start = should_update_before_start(db)
+
         def _background_setup():
             from orchestrator.state.db import get_connection
             from orchestrator.terminal.session import setup_remote_worker
@@ -306,6 +311,7 @@ def create_session(body: SessionCreate, request: Request, db=Depends(get_db)):
                     tunnel_manager=tunnel_manager,
                     custom_skills=remote_custom_skills_dicts,
                     disabled_builtin_names=remote_disabled_builtins,
+                    update_before_start=remote_update_before_start,
                 )
                 if result["ok"]:
                     # Detect work_dir if not provided at creation
@@ -373,6 +379,10 @@ def create_session(body: SessionCreate, request: Request, db=Depends(get_db)):
                 name for name, _ in skills_repo.list_disabled_builtin_skills(db, "worker")
             }
 
+            from orchestrator.terminal.claude_update import should_update_before_start
+
+            local_update_before_start = should_update_before_start(db)
+
             setup_local_worker(
                 db,
                 s.id,
@@ -383,6 +393,7 @@ def create_session(body: SessionCreate, request: Request, db=Depends(get_db)):
                 tmp_dir=tmp_dir,
                 custom_skills=custom_skills_dicts,
                 disabled_builtin_names=disabled_builtins,
+                update_before_start=local_update_before_start,
             )
             if body.task_id:
                 from orchestrator.state.repositories import tasks

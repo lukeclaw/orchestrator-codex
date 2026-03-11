@@ -39,7 +39,7 @@ const BACKUPS_PER_PAGE = 10
 type SettingsTab = 'updates' | 'backup'
 
 export default function SettingsPage() {
-  const { loading } = useSettings()
+  const { loading, getValue, save } = useSettings()
   const notify = useNotify()
   const { setUpdateAvailable } = useApp()
   const [activeTab, setActiveTab] = useState<SettingsTab>('updates')
@@ -65,6 +65,23 @@ export default function SettingsPage() {
     runBackup,
     restoreBackup,
   } = useBackup()
+
+  const [claudeUpdateBeforeStart, setClaudeUpdateBeforeStart] = useState(true)
+
+  // Sync claude update setting from DB
+  useEffect(() => {
+    if (!loading) {
+      const val = getValue('claude.update_before_start')
+      // Default to true if not set
+      setClaudeUpdateBeforeStart(val === null ? true : Boolean(val))
+    }
+  }, [loading, getValue])
+
+  const handleClaudeUpdateToggle = async () => {
+    const newValue = !claudeUpdateBeforeStart
+    setClaudeUpdateBeforeStart(newValue)
+    await save({ 'claude.update_before_start': newValue })
+  }
 
   const [backupDir, setBackupDir] = useState('')
   const [backupPassword, setBackupPassword] = useState('')
@@ -170,7 +187,7 @@ export default function SettingsPage() {
       />
 
       {/* ── Updates Tab ── */}
-      {activeTab === 'updates' && (
+      {activeTab === 'updates' && (<>
         <div className="settings-content panel">
           <div className="panel-header">
             <h2>Software Update</h2>
@@ -287,7 +304,32 @@ export default function SettingsPage() {
             )}
           </div>
         </div>
-      )}
+
+        {/* Claude Code update-before-start toggle */}
+        <div className="settings-content panel">
+          <div className="panel-header">
+            <h2>Claude Code</h2>
+          </div>
+          <div className="panel-body">
+            <div className="settings-toggle-row">
+              <div>
+                <div className="settings-toggle-label">Update before start</div>
+                <div className="settings-toggle-desc">
+                  Run <code>claude update</code> before each launch
+                </div>
+              </div>
+              <div
+                className={`sd-toggle-switch ${claudeUpdateBeforeStart ? 'on' : ''}`}
+                onClick={handleClaudeUpdateToggle}
+                role="switch"
+                aria-checked={claudeUpdateBeforeStart}
+              >
+                <div className="sd-toggle-knob" />
+              </div>
+            </div>
+          </div>
+        </div>
+      </>)}
 
       {/* ── Backup Tab ── */}
       {activeTab === 'backup' && (

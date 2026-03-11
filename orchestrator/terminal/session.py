@@ -496,6 +496,7 @@ def setup_remote_worker(
     tunnel_manager=None,
     custom_skills: list[dict] | None = None,
     disabled_builtin_names: set[str] | None = None,
+    update_before_start: bool = False,
 ) -> dict:
     """Set up a full remote worker: tunnel, SSH, screen, Claude, prompt.
 
@@ -666,7 +667,13 @@ def setup_remote_worker(
         )
         time.sleep(0.3)
 
-        # 9. Launch Claude (inside screen)
+        # 9. Optionally update Claude Code before launching
+        if update_before_start:
+            from orchestrator.terminal.claude_update import run_claude_update
+
+            run_claude_update(tmux.send_keys, tmux.capture_output, tmux_session, name)
+
+        # 10. Launch Claude (inside screen)
         settings_file = f"{remote_tmp_dir}/configs/settings.json"
 
         claude_args = [
@@ -714,6 +721,7 @@ def setup_local_worker(
     tmp_dir: str | None = None,
     custom_skills: list[dict] | None = None,
     disabled_builtin_names: set[str] | None = None,
+    update_before_start: bool = False,
 ) -> dict:
     """Set up a local worker: deploy scripts, hooks, skills, prompt, launch Claude.
 
@@ -784,6 +792,11 @@ def setup_local_worker(
 
         path_export = get_path_export_command(os.path.join(local_tmp_dir, "bin"))
         cmd_parts.append(path_export)
+
+        if update_before_start:
+            from orchestrator.terminal.claude_update import get_claude_update_chain_command
+
+            cmd_parts.append(get_claude_update_chain_command())
 
         settings_file = os.path.join(local_tmp_dir, "configs", "settings.json")
         claude_args = [

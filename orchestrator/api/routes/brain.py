@@ -140,6 +140,18 @@ def start_brain(db=Depends(get_db)):
         tmux.send_keys(tmux.TMUX_SESSION, BRAIN_SESSION_NAME, f"cd {brain_dir}")
         tmux.send_keys(tmux.TMUX_SESSION, BRAIN_SESSION_NAME, path_export)
 
+        # Optionally update Claude Code before launching
+        from orchestrator.terminal.claude_update import (
+            run_claude_update,
+            should_update_before_start,
+        )
+
+        if should_update_before_start(db):
+            time.sleep(0.3)
+            run_claude_update(
+                tmux.send_keys, tmux.capture_output, tmux.TMUX_SESSION, BRAIN_SESSION_NAME
+            )
+
         time.sleep(0.5)
         tmux.send_keys(
             tmux.TMUX_SESSION,
