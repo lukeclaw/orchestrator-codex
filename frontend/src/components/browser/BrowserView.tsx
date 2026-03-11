@@ -602,8 +602,8 @@ export default function BrowserView({ sessionId, minimized = false, isRemote = f
                         onClick={() => handleSwitchTab(tab.id)}
                         title={tab.url}
                       >
-                        <span className="bv-tab-title">{tab.title || tab.url || 'about:blank'}</span>
                         {tab.id === activeTabId && <span className="bv-tab-active-dot" />}
+                        <span className="bv-tab-title">{tab.title || tab.url || 'about:blank'}</span>
                         <button
                           className="bv-tab-close"
                           onClick={(e) => { e.stopPropagation(); handleCloseTab(tab.id) }}
