@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
+import { Link } from 'react-router-dom'
 import Modal from '../common/Modal'
 import { api } from '../../api/client'
 import { pickFolder } from '../../api/pickFolder'
@@ -363,7 +364,7 @@ export default function AddSessionModal({ open, onClose }: Props) {
               {loadingRdevs ? (
                 <div className="rdev-loading">Loading rdev instances...</div>
               ) : rdevs.length === 0 ? (
-                <div className="rdev-empty">No rdev instances found. Create one with <code>rdev create</code></div>
+                <div className="rdev-empty">No rdev instances found.<br /><Link to="/workers/rdevs" className="rdev-manage-link" onClick={onClose}>Create and manage rdevs →</Link></div>
               ) : (
                 <>
                 <div className="rdev-list" role="listbox" aria-label="rdev instances">
@@ -387,6 +388,7 @@ export default function AddSessionModal({ open, onClose }: Props) {
                   )}
                 </div>
                   {rdevError2 && <div className="field-error">{rdevError2}</div>}
+                  <div className="rdev-manage-hint"><Link to="/workers/rdevs" onClick={onClose}>Manage rdevs →</Link></div>
                 </>
               )}
             </div>
