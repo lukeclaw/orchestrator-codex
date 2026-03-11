@@ -421,18 +421,41 @@ class TestCreateTunnel:
         assert success is False
         assert "Port must be" in result["error"]
 
-    def test_rejects_reserved_port_8093(self):
-        """Should reject port 8093 which is used for reverse tunnel."""
-        success, result = tunnel.create_tunnel("user/rdev-vm", 8093)
-        assert success is False
-        assert "reserved" in result["error"].lower()
-        assert "8093" in result["error"]
+    def test_reserved_port_auto_assigns_alternative(self):
+        """Reserved ports (8093, 9222) should auto-assign the next available port."""
+        with (
+            patch("subprocess.run") as mock_run,
+            patch("subprocess.Popen") as mock_popen,
+            patch.object(tunnel, "is_port_available", return_value=True),
+            patch.object(tunnel, "find_available_port", return_value=8094),
+        ):
+            mock_run.return_value = MagicMock(stdout="", returncode=0)
+            mock_proc = MagicMock()
+            mock_proc.pid = 12345
+            mock_proc.poll.return_value = None
+            mock_popen.return_value = mock_proc
 
-    def test_rejects_reserved_port_as_local_port(self):
-        """Should reject reserved port even when specified as local_port."""
-        success, result = tunnel.create_tunnel("user/rdev-vm", 4200, local_port=8093)
-        assert success is False
-        assert "reserved" in result["error"].lower()
+            success, result = tunnel.create_tunnel("user/rdev-vm", 8093)
+            assert success is True
+            assert result["local_port"] == 8094
+
+    def test_reserved_local_port_auto_assigns_alternative(self):
+        """Reserved port as explicit local_port should auto-assign."""
+        with (
+            patch("subprocess.run") as mock_run,
+            patch("subprocess.Popen") as mock_popen,
+            patch.object(tunnel, "is_port_available", return_value=True),
+            patch.object(tunnel, "find_available_port", return_value=8094),
+        ):
+            mock_run.return_value = MagicMock(stdout="", returncode=0)
+            mock_proc = MagicMock()
+            mock_proc.pid = 12345
+            mock_proc.poll.return_value = None
+            mock_popen.return_value = mock_proc
+
+            success, result = tunnel.create_tunnel("user/rdev-vm", 4200, local_port=8093)
+            assert success is True
+            assert result["local_port"] == 8094
 
     def test_handles_ssh_failure(self):
         """Should handle SSH process failing to start."""

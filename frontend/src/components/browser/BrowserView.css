@@ -148,6 +148,63 @@
   background: var(--surface-hover);
 }
 
+/* Section label for tabs, etc. */
+.bv-settings-section-label {
+  padding: 4px 10px 2px;
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.bv-settings-divider {
+  height: 1px;
+  background: var(--border-subtle);
+  margin: 4px 0;
+}
+
+/* Tab items in the dropdown */
+.bv-tab-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 4px 10px;
+  font-size: 11px;
+  color: var(--text-secondary);
+  background: none;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+  gap: 6px;
+}
+
+.bv-tab-item:hover {
+  background: var(--surface-hover);
+  color: var(--text-primary);
+}
+
+.bv-tab-item.active {
+  color: var(--accent, #58a6ff);
+}
+
+.bv-tab-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+  flex: 1;
+}
+
+.bv-tab-active-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--accent, #58a6ff);
+  flex-shrink: 0;
+}
+
 .bv-stepper {
   display: flex;
   align-items: center;

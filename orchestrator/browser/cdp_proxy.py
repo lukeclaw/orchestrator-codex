@@ -67,6 +67,9 @@ class BrowserViewSession:
     # for detecting when another CDP client (Playwright) overrides them.
     _zoom_percent: int = field(default=100, repr=False)
     _last_viewport_fix: float = field(default=0, repr=False)
+    # Set by the client input relay when the user requests a tab switch.
+    # The WS handler loop reads this to perform the actual switch.
+    _switch_target: str = field(default="", repr=False)
 
 
 # In-memory registry: session_id -> BrowserViewSession
@@ -243,6 +246,19 @@ async def activate_browser_tab(cdp_port: int, target_id: str) -> None:
     _active_tab_target[cdp_port] = target_id
 
 
+async def bring_browser_to_front(cdp_port: int, target_id: str) -> None:
+    """Bring the Chrome window to the OS foreground.
+
+    Uses the HTTP /json/activate endpoint which triggers OS-level window
+    activation (unlike Target.activateTarget which only switches tabs).
+    Use this for local workers where the user needs to see the actual
+    browser window (e.g. for auth popups).
+    """
+    async with httpx.AsyncClient(timeout=5.0) as client:
+        await client.get(f"http://localhost:{cdp_port}/json/activate/{target_id}")
+    _active_tab_target[cdp_port] = target_id
+
+
 async def close_browser_tab(cdp_port: int, target_id: str) -> None:
     """Close a browser tab via CDP HTTP API."""
     async with httpx.AsyncClient(timeout=5.0) as client:
@@ -409,12 +425,17 @@ async def start_browser_view(
         raise RuntimeError("Target has no webSocketDebuggerUrl")
 
     # Activate the tab so Chrome renders it — inactive tabs produce black
-    # screencast frames.  The HTTP /json/activate endpoint reliably switches
-    # the foreground tab (Page.bringToFront via WebSocket does not).
+    # screencast frames.
     target_id_val = target.get("id", "")
     if target_id_val:
         try:
-            await activate_browser_tab(local_port, target_id_val)
+            if is_remote_host(host):
+                # Remote: switch tab without stealing OS focus (Chrome is on remote host)
+                await activate_browser_tab(local_port, target_id_val)
+            else:
+                # Local: bring Chrome window to the foreground so the user can see it
+                # (needed for auth popups and direct interaction)
+                await bring_browser_to_front(local_port, target_id_val)
         except Exception:
             pass  # Best-effort; screencast may still work
 
@@ -1019,6 +1040,173 @@ async def _navigate_history(view: BrowserViewSession, forward: bool = False) -> 
         logger.warning("History navigation failed: %s", e)
 
 
+async def monitor_tabs(
+    view: BrowserViewSession,
+    interval: float = 2.0,
+) -> str | None:
+    """Monitor the remote browser for extra tabs created by Playwright MCP.
+
+    When Playwright creates a new tab (e.g. via browser_navigate on a fresh
+    CDP connection), the browser view may be stuck on the original about:blank
+    tab.  This coroutine periodically checks for multiple page targets and:
+
+    - If the current view tab is about:blank but another tab has content,
+      returns the new target ID so the caller can switch the view to it.
+
+    This function is non-destructive: it never closes tabs.  Tab management
+    is left to the user via the tabs dropdown in the UI.
+
+    Returns the new target_id to switch to, or None if cancelled.
+    Only useful for remote workers (one worker per Chrome instance).
+    """
+    while True:
+        await asyncio.sleep(interval)
+        try:
+            targets = await discover_browser_targets(view.tunnel_local_port, retries=1)
+        except Exception:
+            continue
+
+        if len(targets) <= 1:
+            continue
+
+        current_id = view.target_id
+
+        # Check if the current view tab is about:blank (stuck on empty page)
+        current_url = ""
+        for t in targets:
+            if t.get("id") == current_id:
+                current_url = t.get("url", "")
+                break
+
+        if current_url and current_url not in ("about:blank", ""):
+            # Current tab has real content — nothing to do
+            continue
+
+        # Current tab is about:blank — look for a tab with real content
+        content_tabs = [
+            t
+            for t in targets
+            if t.get("url", "about:blank") not in ("about:blank", "") and t.get("id") != current_id
+        ]
+        if content_tabs:
+            keep_id = content_tabs[0].get("id", "")
+            if keep_id:
+                logger.info(
+                    "Auto-switching from about:blank to tab %s (%s) for session %s",
+                    keep_id,
+                    content_tabs[0].get("url", ""),
+                    view.session_id,
+                )
+                return keep_id
+
+    return None  # unreachable; for type-checkers
+
+
+async def switch_to_tab(view: BrowserViewSession, new_target_id: str) -> None:
+    """Switch the browser view to a different browser tab.
+
+    Closes the old CDP WebSocket, opens a new one to the target tab,
+    re-enables page events / dark theme, and restarts the screencast.
+    """
+    old_ws = view.cdp_ws
+
+    # Close old CDP WebSocket
+    try:
+        await old_ws.close()
+    except Exception:
+        pass
+
+    # Activate new tab so Chrome renders it
+    try:
+        await activate_browser_tab(view.tunnel_local_port, new_target_id)
+    except Exception:
+        pass
+
+    # Connect to the new target's page-level CDP WebSocket
+    ws_url = f"ws://127.0.0.1:{view.tunnel_local_port}/devtools/page/{new_target_id}"
+    cdp_ws = await websockets.asyncio.client.connect(
+        ws_url,
+        max_size=16 * 1024 * 1024,
+        open_timeout=10,
+        ping_interval=None,
+    )
+    view.cdp_ws = cdp_ws
+    view.target_id = new_target_id
+
+    # Re-enable page events and dark theme
+    await _cdp_send(cdp_ws, "Page.enable")
+    await _cdp_send(
+        cdp_ws,
+        "Emulation.setEmulatedMedia",
+        {"features": [{"name": "prefers-color-scheme", "value": "dark"}]},
+    )
+    await _cdp_send(
+        cdp_ws,
+        "Emulation.setDefaultBackgroundColorOverride",
+        {"color": {"r": 30, "g": 30, "b": 30, "a": 1}},
+    )
+
+    # Restore viewport
+    view._zoom_percent = 100
+    await _cdp_send_and_wait(
+        cdp_ws,
+        "Emulation.setDeviceMetricsOverride",
+        {
+            "width": view.viewport_width,
+            "height": view.viewport_height,
+            "deviceScaleFactor": 1,
+            "mobile": False,
+        },
+    )
+
+    # Start screencast
+    await _cdp_send(
+        cdp_ws,
+        "Page.startScreencast",
+        {
+            "format": "jpeg",
+            "quality": view.quality,
+            "maxWidth": view.viewport_width,
+            "maxHeight": view.viewport_height,
+            "everyNthFrame": 1,
+        },
+    )
+
+    # Fetch the new tab's URL and title
+    try:
+        resp = await _cdp_send_and_wait(
+            cdp_ws,
+            "Runtime.evaluate",
+            {
+                "expression": "JSON.stringify({url: location.href, title: document.title})",
+                "returnByValue": True,
+            },
+        )
+        value = resp.get("result", {}).get("result", {}).get("value", "")
+        if value:
+            data = json.loads(value)
+            view.page_url = data.get("url", "")
+            view.page_title = data.get("title", "")
+    except Exception:
+        pass
+
+    # Update persistent tab tracking
+    if not is_remote_host(view.host):
+        _session_tab_targets[view.session_id] = new_target_id
+        from orchestrator.browser.cdp_worker_proxy import _worker_proxies
+
+        proxy_info = _worker_proxies.get(view.session_id)
+        if proxy_info:
+            proxy_info.target_id = new_target_id
+
+    logger.info(
+        "Switched browser view for %s to tab %s (%s)",
+        view.session_id,
+        new_target_id,
+        view.page_url,
+    )
+
+
 async def handle_client_input(view: BrowserViewSession, msg: dict) -> None:
     """Handle an input event from the dashboard client.
 
@@ -1070,6 +1258,14 @@ async def handle_client_input(view: BrowserViewSession, msg: dict) -> None:
         url = msg.get("url", "")
         if url:
             await _cdp_send(view.cdp_ws, "Page.navigate", {"url": url})
+
+    elif msg_type == "switchTab":
+        target_id = msg.get("targetId", "")
+        if target_id and target_id != view.target_id:
+            # Signal the WS handler loop to perform the switch.
+            # We can't do it here because it requires cancelling the
+            # relay tasks and reopening the CDP WebSocket.
+            view._switch_target = target_id
 
     elif msg_type in ("goBack", "goForward"):
         await _navigate_history(view, forward=(msg_type == "goForward"))

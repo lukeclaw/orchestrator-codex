@@ -22,14 +22,18 @@ from fastapi import WebSocket, WebSocketDisconnect
 
 from orchestrator.browser.cdp_proxy import (
     cleanup_stale_view,
+    close_browser_tab,
     get_active_view,
     handle_client_input,
     is_view_alive,
+    monitor_tabs,
     poll_url,
     reconnect_cdp,
     relay_cdp_to_client,
     restart_screencast,
+    switch_to_tab,
 )
+from orchestrator.terminal.ssh import is_remote_host
 
 logger = logging.getLogger(__name__)
 
@@ -110,6 +114,7 @@ async def ws_browser_view(websocket: WebSocket, session_id: str):
             "type": "metadata",
             "url": view.page_url,
             "title": view.page_title,
+            "targetId": view.target_id,
             "viewport": {
                 "width": view.viewport_width,
                 "height": view.viewport_height,
@@ -130,66 +135,138 @@ async def ws_browser_view(websocket: WebSocket, session_id: str):
         except Exception:
             raise
 
-    # Task 1: Relay CDP screencast frames to the dashboard client
-    cdp_relay_task = asyncio.create_task(relay_cdp_to_client(view, send_binary, send_json))
+    # Main streaming loop — restarts when a tab switch is detected.
+    tasks: list[asyncio.Task] = []
+    while True:
+        # Task 1: Relay CDP screencast frames to the dashboard client
+        cdp_relay_task = asyncio.create_task(relay_cdp_to_client(view, send_binary, send_json))
 
-    # Task 2: Read client input and dispatch to CDP
-    client_input_task = asyncio.create_task(_relay_client_input(websocket, view))
+        # Task 2: Read client input and dispatch to CDP
+        client_input_task = asyncio.create_task(_relay_client_input(websocket, view))
 
-    # Task 3: Poll browser URL to keep the address bar in sync
-    url_poll_task = asyncio.create_task(poll_url(view, send_json))
+        # Task 3: Poll browser URL to keep the address bar in sync
+        url_poll_task = asyncio.create_task(poll_url(view, send_json))
 
-    # Task 4: Send keepalive pings to prevent idle WS drops
-    keepalive_task = asyncio.create_task(_keepalive(websocket))
+        # Task 4: Send keepalive pings to prevent idle WS drops
+        keepalive_task = asyncio.create_task(_keepalive(websocket))
 
-    # Track tasks that read from the CDP WebSocket so the next client
-    # connection can cancel them before starting its own recv() loop.
-    view._cdp_reader_tasks = [cdp_relay_task, url_poll_task]
+        # Track tasks that read from the CDP WebSocket so the next client
+        # connection can cancel them before starting its own recv() loop.
+        view._cdp_reader_tasks = [cdp_relay_task, url_poll_task]
 
-    tasks = [cdp_relay_task, client_input_task, url_poll_task, keepalive_task]
+        tasks = [cdp_relay_task, client_input_task, url_poll_task, keepalive_task]
 
-    try:
-        # Wait for any task to complete (first one wins)
-        done, pending = await asyncio.wait(
-            tasks,
-            return_when=asyncio.FIRST_COMPLETED,
-        )
+        # Task 5 (remote only): Monitor for extra tabs created by Playwright MCP.
+        # Remote workers have one Chrome per worker (no CDP proxy filtering),
+        # so Playwright may open a new tab that the view doesn't track.
+        tab_monitor_task: asyncio.Task | None = None
+        if is_remote_host(view.host):
+            tab_monitor_task = asyncio.create_task(monitor_tabs(view))
+            tasks.append(tab_monitor_task)
 
-        # Cancel remaining tasks
-        for task in pending:
-            task.cancel()
-            try:
-                await task
-            except (asyncio.CancelledError, Exception):
-                pass
+        # Task 6: Watch for user-initiated tab switch (set via handle_client_input).
+        # The switchTab message sets view._switch_target; this task exits when set.
+        view._switch_target = ""
+        switch_watch_task = asyncio.create_task(_watch_switch_target(view))
+        tasks.append(switch_watch_task)
 
-        # Check if the CDP relay ended (browser closed)
-        for task in done:
-            exc = task.exception() if not task.cancelled() else None
-            if exc:
-                logger.error(
-                    "Browser view task failed for session %s: %s",
-                    session_id,
-                    exc,
-                )
+        try:
+            # Wait for any task to complete (first one wins)
+            done, pending = await asyncio.wait(
+                tasks,
+                return_when=asyncio.FIRST_COMPLETED,
+            )
 
-    except Exception as e:
-        logger.error("Browser view WebSocket error for session %s: %s", session_id, e)
-    finally:
-        # Clean up: cancel any remaining local tasks
-        for task in tasks:
-            if not task.done():
+            # Cancel remaining tasks
+            for task in pending:
                 task.cancel()
                 try:
                     await task
                 except (asyncio.CancelledError, Exception):
                     pass
 
-        # NOTE: We intentionally do NOT call stop_browser_view() here.
-        # The CDP connection to Chrome survives client WS disconnects so
-        # new clients can reattach without re-creating the view.
-        # We also do NOT clear view._cdp_reader_tasks — if a new client
-        # is already connecting, it needs to see and cancel these tasks.
+            # Check for tab switch — either from monitor or user request
+            new_target_id: str | None = None
+            close_old_tab = False
+
+            # Automatic switch from tab monitor (closes old about:blank tab)
+            if (
+                tab_monitor_task is not None
+                and tab_monitor_task in done
+                and not tab_monitor_task.cancelled()
+            ):
+                try:
+                    new_target_id = tab_monitor_task.result()
+                    close_old_tab = True
+                except Exception:
+                    pass
+
+            # User-initiated switch via dropdown
+            if not new_target_id and switch_watch_task in done:
+                new_target_id = view._switch_target or None
+
+            if new_target_id:
+                old_target_id = view.target_id
+                try:
+                    await switch_to_tab(view, new_target_id)
+                    # Close the old tab only for auto-detected switches
+                    # (user-initiated keeps old tabs for manual management)
+                    if close_old_tab and old_target_id:
+                        try:
+                            await close_browser_tab(view.tunnel_local_port, old_target_id)
+                        except Exception:
+                            pass
+                    # Notify the client of the new page
+                    await websocket.send_json(
+                        {
+                            "type": "metadata",
+                            "url": view.page_url,
+                            "title": view.page_title,
+                            "targetId": view.target_id,
+                            "viewport": {
+                                "width": view.viewport_width,
+                                "height": view.viewport_height,
+                            },
+                        }
+                    )
+                    logger.info(
+                        "Tab switch complete for session %s, restarting relay",
+                        session_id,
+                    )
+                    continue  # Restart loop with new relay tasks
+                except Exception as e:
+                    logger.warning("Tab switch failed for session %s: %s", session_id, e)
+                    # Fall through to normal exit
+
+            # Normal exit — check for task errors
+            for task in done:
+                exc = task.exception() if not task.cancelled() else None
+                if exc:
+                    logger.error(
+                        "Browser view task failed for session %s: %s",
+                        session_id,
+                        exc,
+                    )
+
+        except Exception as e:
+            logger.error("Browser view WebSocket error for session %s: %s", session_id, e)
+
+        break  # Exit the loop on normal completion or error
+
+    # Clean up: cancel any remaining local tasks
+    for task in tasks:
+        if not task.done():
+            task.cancel()
+            try:
+                await task
+            except (asyncio.CancelledError, Exception):
+                pass
+
+    # NOTE: We intentionally do NOT call stop_browser_view() here.
+    # The CDP connection to Chrome survives client WS disconnects so
+    # new clients can reattach without re-creating the view.
+    # We also do NOT clear view._cdp_reader_tasks — if a new client
+    # is already connecting, it needs to see and cancel these tasks.
 
 
 async def _keepalive(websocket: WebSocket) -> None:
@@ -200,6 +277,16 @@ async def _keepalive(websocket: WebSocket) -> None:
             await websocket.send_json({"type": "ping"})
     except (WebSocketDisconnect, Exception):
         pass
+
+
+async def _watch_switch_target(view) -> None:
+    """Poll view._switch_target and exit when the user requests a tab switch.
+
+    This is intentionally a fast poll (100ms) so the UI feels responsive.
+    The actual tab switch is performed by the main WS handler loop.
+    """
+    while not view._switch_target:
+        await asyncio.sleep(0.1)
 
 
 async def _relay_client_input(websocket: WebSocket, view) -> None:

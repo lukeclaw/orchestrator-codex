@@ -30,7 +30,8 @@ CACHE_TTL = 5.0  # seconds
 
 # Reserved ports that cannot be used for forward tunnels
 # 8093 is used for the reverse tunnel (API access from rdev to local orchestrator)
-RESERVED_PORTS = {8093}
+# 9222 is reserved for the local shared Chrome instance (CDP debugging port)
+RESERVED_PORTS = {8093, 9222}
 
 
 def get_reserved_ports() -> set:
@@ -212,29 +213,11 @@ def create_tunnel(host: str, remote_port: int, local_port: int | None = None) ->
     if not (1 <= local_port <= 65535) or not (1 <= remote_port <= 65535):
         return False, {"error": "Port must be between 1 and 65535"}
 
-    # Check for reserved ports (e.g., 8093 used by reverse tunnel for API)
-    if local_port in RESERVED_PORTS:
-        return False, {
-            "error": f"Port {local_port} is reserved for orchestrator internal use (reverse tunnel)"
-        }
-
-    # Check if an existing SSH tunnel already covers this exact request
-    existing = find_tunnel_by_port(local_port)
-    if existing:
-        if is_process_alive(existing["pid"]):
-            if existing["host"] == host and existing["remote_port"] == remote_port:
-                # Same host, same port - tunnel already exists
-                return True, {
-                    "local_port": local_port,
-                    "remote_port": existing["remote_port"],
-                    "pid": existing["pid"],
-                    "host": host,
-                    "existing": True,
-                }
-
     # Check if there's already a tunnel to the same host+remote_port on a
-    # different local port (e.g. requested port 9222 was occupied by local
+    # different local port (e.g. requested port 9222 was reserved for local
     # Chrome, so a previous call allocated 9223).  Reuse it to avoid leaks.
+    # This check runs BEFORE the reserved-port gate so we can still find and
+    # reuse an existing tunnel even when the requested port is reserved.
     for port, info in get_tunnels_for_host(host).items():
         if info["remote_port"] == remote_port and is_process_alive(info["pid"]):
             logger.info(
@@ -251,6 +234,32 @@ def create_tunnel(host: str, remote_port: int, local_port: int | None = None) ->
                 "host": host,
                 "existing": True,
             }
+
+    # Check for reserved ports — auto-assign a different local port instead
+    # of rejecting outright (e.g. 9222 reserved for local Chrome, 8093 for
+    # the reverse tunnel).
+    if local_port in RESERVED_PORTS:
+        new_port = find_available_port(local_port + 1)
+        if new_port is None:
+            return False, {
+                "error": f"Port {local_port} is reserved and no available port found nearby"
+            }
+        logger.info("Port %d is reserved, using %d instead", local_port, new_port)
+        local_port = new_port
+
+    # Check if an existing SSH tunnel already covers this exact request
+    existing = find_tunnel_by_port(local_port)
+    if existing:
+        if is_process_alive(existing["pid"]):
+            if existing["host"] == host and existing["remote_port"] == remote_port:
+                # Same host, same port - tunnel already exists
+                return True, {
+                    "local_port": local_port,
+                    "remote_port": existing["remote_port"],
+                    "pid": existing["pid"],
+                    "host": host,
+                    "existing": True,
+                }
 
     # Check if the local port is actually available (any process, not just SSH tunnels)
     if not is_port_available(local_port):

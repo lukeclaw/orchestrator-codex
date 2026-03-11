@@ -21,12 +21,14 @@ from orchestrator.browser.cdp_proxy import (
     get_active_view,
     handle_client_input,
     is_view_alive,
+    monitor_tabs,
     reconnect_cdp,
     relay_cdp_to_client,
     restart_screencast,
     start_browser_view,
     stop_browser_view,
     stop_browser_view_sync,
+    switch_to_tab,
 )
 
 
@@ -307,14 +309,14 @@ class TestActivateTabOnConnect:
         mock_activate.assert_awaited_once_with(9222, "page1")
         _active_views.pop("sess-activate", None)
 
-    @patch("orchestrator.browser.cdp_proxy.activate_browser_tab")
+    @patch("orchestrator.browser.cdp_proxy.bring_browser_to_front")
     @patch("orchestrator.browser.cdp_proxy.websockets.asyncio.client.connect")
     @patch("orchestrator.browser.cdp_proxy.create_browser_tab")
     @pytest.mark.asyncio
-    async def test_activates_tab_for_local_new_tab(
-        self, mock_create_tab, mock_connect, mock_activate
+    async def test_brings_browser_to_front_for_local_new_tab(
+        self, mock_create_tab, mock_connect, mock_bring_to_front
     ):
-        """Local workers also activate newly created tabs."""
+        """Local workers bring Chrome to the OS foreground for auth popups."""
         mock_create_tab.return_value = {
             "id": "new-tab-1",
             "type": "page",
@@ -339,20 +341,20 @@ class TestActivateTabOnConnect:
 
         await start_browser_view("sess-local-act", "localhost", cdp_port=9222)
 
-        mock_activate.assert_awaited_once_with(9222, "new-tab-1")
+        mock_bring_to_front.assert_awaited_once_with(9222, "new-tab-1")
         _active_views.pop("sess-local-act", None)
 
     @patch(
-        "orchestrator.browser.cdp_proxy.activate_browser_tab",
+        "orchestrator.browser.cdp_proxy.bring_browser_to_front",
         side_effect=Exception("fail"),
     )
     @patch("orchestrator.browser.cdp_proxy.websockets.asyncio.client.connect")
     @patch("orchestrator.browser.cdp_proxy.create_browser_tab")
     @pytest.mark.asyncio
     async def test_activation_failure_is_non_fatal(
-        self, mock_create_tab, mock_connect, mock_activate
+        self, mock_create_tab, mock_connect, mock_bring_to_front
     ):
-        """If activate fails, screencast still proceeds (best-effort)."""
+        """If bring_browser_to_front fails, screencast still proceeds (best-effort)."""
         mock_create_tab.return_value = {
             "id": "tab-x",
             "type": "page",
@@ -1117,3 +1119,281 @@ class TestRelayCdpToClient:
         methods = [json.loads(c[0][0]).get("method") for c in sent_calls]
         assert methods == ["Page.screencastFrameAck"]
         send_binary.assert_called_once()
+
+
+class TestMonitorTabs:
+    """Tests for monitor_tabs — detects extra tabs created by Playwright MCP."""
+
+    @patch("orchestrator.browser.cdp_proxy.discover_browser_targets")
+    @pytest.mark.asyncio
+    async def test_switches_to_content_tab_when_current_is_blank(
+        self, mock_discover
+    ):
+        """When current tab is about:blank and another has content, return new ID."""
+        view = _make_view()
+        view.target_id = "tab-blank"
+        view.page_url = "about:blank"
+
+        # First call: only one tab (no switch), second call: two tabs
+        call_count = 0
+
+        async def fake_discover(port, retries=1):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                return [{"id": "tab-blank", "type": "page", "url": "about:blank"}]
+            return [
+                {"id": "tab-blank", "type": "page", "url": "about:blank"},
+                {"id": "tab-content", "type": "page", "url": "https://example.com"},
+            ]
+
+        mock_discover.side_effect = fake_discover
+
+        result = await monitor_tabs(view, interval=0.01)
+
+        assert result == "tab-content"
+
+    @patch("orchestrator.browser.cdp_proxy.discover_browser_targets")
+    @pytest.mark.asyncio
+    async def test_no_switch_when_current_has_content(self, mock_discover):
+        """When current tab has content, do nothing (non-destructive)."""
+        view = _make_view()
+        view.target_id = "tab-main"
+        view.page_url = "https://example.com"
+
+        async def fake_discover(port, retries=1):
+            return [
+                {"id": "tab-main", "type": "page", "url": "https://example.com"},
+                {"id": "tab-extra", "type": "page", "url": "about:blank"},
+            ]
+
+        mock_discover.side_effect = fake_discover
+
+        # Monitor should keep looping without switching or closing anything.
+        task = asyncio.create_task(monitor_tabs(view, interval=0.01))
+        await asyncio.sleep(0.05)
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+        # No assertions needed — the key point is it didn't return/switch
+
+    @patch("orchestrator.browser.cdp_proxy.discover_browser_targets")
+    @pytest.mark.asyncio
+    async def test_no_switch_when_single_tab(self, mock_discover):
+        """No action when there's only one tab."""
+        view = _make_view()
+        view.target_id = "tab-only"
+        view.page_url = "about:blank"
+
+        async def fake_discover(port, retries=1):
+            return [{"id": "tab-only", "type": "page", "url": "about:blank"}]
+
+        mock_discover.side_effect = fake_discover
+
+        task = asyncio.create_task(monitor_tabs(view, interval=0.01))
+        await asyncio.sleep(0.05)
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+
+    @patch("orchestrator.browser.cdp_proxy.discover_browser_targets")
+    @pytest.mark.asyncio
+    async def test_switches_to_first_content_tab(self, mock_discover):
+        """When current is blank and multiple content tabs exist, pick the first."""
+        view = _make_view()
+        view.target_id = "tab-blank1"
+        view.page_url = "about:blank"
+
+        async def fake_discover(port, retries=1):
+            return [
+                {"id": "tab-blank1", "type": "page", "url": "about:blank"},
+                {"id": "tab-blank2", "type": "page", "url": "about:blank"},
+                {"id": "tab-content", "type": "page", "url": "https://example.com"},
+            ]
+
+        mock_discover.side_effect = fake_discover
+
+        result = await monitor_tabs(view, interval=0.01)
+
+        assert result == "tab-content"
+
+    @patch("orchestrator.browser.cdp_proxy.discover_browser_targets")
+    @pytest.mark.asyncio
+    async def test_survives_discovery_errors(self, mock_discover):
+        """Errors from discover_browser_targets are silently ignored."""
+        view = _make_view()
+        view.target_id = "tab-1"
+        view.page_url = "about:blank"
+
+        call_count = 0
+
+        async def fake_discover(port, retries=1):
+            nonlocal call_count
+            call_count += 1
+            if call_count <= 2:
+                raise Exception("connection refused")
+            return [
+                {"id": "tab-1", "type": "page", "url": "about:blank"},
+                {"id": "tab-2", "type": "page", "url": "https://example.com"},
+            ]
+
+        mock_discover.side_effect = fake_discover
+
+        result = await monitor_tabs(view, interval=0.01)
+        assert result == "tab-2"
+        assert call_count == 3
+
+
+class TestSwitchToTab:
+    """Tests for switch_to_tab — reconnects CDP to a different browser tab."""
+
+    @patch("orchestrator.browser.cdp_proxy.activate_browser_tab")
+    @patch("orchestrator.browser.cdp_proxy.websockets.asyncio.client.connect")
+    @pytest.mark.asyncio
+    async def test_switches_ws_and_restarts_screencast(self, mock_connect, mock_activate):
+        """switch_to_tab closes old WS, opens new one, sets up screencast."""
+        old_ws = AsyncMock()
+        view = _make_view()
+        view.cdp_ws = old_ws
+        view.target_id = "old-tab"
+
+        new_ws = AsyncMock()
+        new_ws.send = AsyncMock()
+
+        # _cdp_send_and_wait reads via recv(), return matching responses
+        recv_calls = 0
+
+        async def fake_recv():
+            nonlocal recv_calls
+            recv_calls += 1
+            last_call = new_ws.send.call_args
+            sent_msg = json.loads(last_call[0][0])
+            # Return URL/title for Runtime.evaluate
+            if sent_msg.get("method") == "Runtime.evaluate":
+                return json.dumps(
+                    {
+                        "id": sent_msg["id"],
+                        "result": {
+                            "result": {
+                                "value": json.dumps(
+                                    {
+                                        "url": "https://new-page.com",
+                                        "title": "New Page",
+                                    }
+                                )
+                            }
+                        },
+                    }
+                )
+            return json.dumps({"id": sent_msg["id"], "result": {}})
+
+        new_ws.recv = fake_recv
+
+        async def fake_connect(*args, **kwargs):
+            return new_ws
+
+        mock_connect.side_effect = fake_connect
+
+        await switch_to_tab(view, "new-tab")
+
+        # Old WS was closed
+        old_ws.close.assert_called_once()
+
+        # View now points to new tab
+        assert view.cdp_ws is new_ws
+        assert view.target_id == "new-tab"
+        assert view.page_url == "https://new-page.com"
+        assert view.page_title == "New Page"
+
+        # Tab was activated
+        mock_activate.assert_called_once_with(9222, "new-tab")
+
+        # Verify CDP setup calls
+        sent_methods = [json.loads(call[0][0])["method"] for call in new_ws.send.call_args_list]
+        assert "Page.enable" in sent_methods
+        assert "Emulation.setEmulatedMedia" in sent_methods
+        assert "Emulation.setDefaultBackgroundColorOverride" in sent_methods
+        assert "Emulation.setDeviceMetricsOverride" in sent_methods
+        assert "Page.startScreencast" in sent_methods
+        assert "Runtime.evaluate" in sent_methods
+
+        # Verify WS URL targets the new tab
+        connect_url = mock_connect.call_args[0][0]
+        assert "devtools/page/new-tab" in connect_url
+
+    @patch("orchestrator.browser.cdp_proxy.activate_browser_tab")
+    @patch("orchestrator.browser.cdp_proxy.websockets.asyncio.client.connect")
+    @pytest.mark.asyncio
+    async def test_survives_activation_failure(self, mock_connect, mock_activate):
+        """Tab activation failure is non-fatal."""
+        view = _make_view()
+        view.target_id = "old-tab"
+        mock_activate.side_effect = Exception("activation failed")
+
+        new_ws = AsyncMock()
+        new_ws.send = AsyncMock()
+
+        async def fake_recv():
+            last_call = new_ws.send.call_args
+            sent_msg = json.loads(last_call[0][0])
+            if sent_msg.get("method") == "Runtime.evaluate":
+                return json.dumps(
+                    {
+                        "id": sent_msg["id"],
+                        "result": {"result": {"value": '{"url":"","title":""}'}},
+                    }
+                )
+            return json.dumps({"id": sent_msg["id"], "result": {}})
+
+        new_ws.recv = fake_recv
+        mock_connect.side_effect = lambda *a, **kw: asyncio.coroutine(lambda: new_ws)()
+
+        async def fake_connect(*args, **kwargs):
+            return new_ws
+
+        mock_connect.side_effect = fake_connect
+
+        # Should not raise
+        await switch_to_tab(view, "new-tab")
+        assert view.target_id == "new-tab"
+
+    @patch("orchestrator.browser.cdp_proxy.activate_browser_tab")
+    @patch("orchestrator.browser.cdp_proxy.websockets.asyncio.client.connect")
+    @pytest.mark.asyncio
+    async def test_old_ws_close_failure_is_non_fatal(self, mock_connect, mock_activate):
+        """If closing the old WS fails, switch still proceeds."""
+        old_ws = AsyncMock()
+        old_ws.close = AsyncMock(side_effect=Exception("already dead"))
+        view = _make_view()
+        view.cdp_ws = old_ws
+        view.target_id = "old-tab"
+
+        new_ws = AsyncMock()
+        new_ws.send = AsyncMock()
+
+        async def fake_recv():
+            last_call = new_ws.send.call_args
+            sent_msg = json.loads(last_call[0][0])
+            if sent_msg.get("method") == "Runtime.evaluate":
+                return json.dumps(
+                    {
+                        "id": sent_msg["id"],
+                        "result": {"result": {"value": '{"url":"x","title":"y"}'}},
+                    }
+                )
+            return json.dumps({"id": sent_msg["id"], "result": {}})
+
+        new_ws.recv = fake_recv
+
+        async def fake_connect(*args, **kwargs):
+            return new_ws
+
+        mock_connect.side_effect = fake_connect
+
+        await switch_to_tab(view, "new-tab")
+        assert view.cdp_ws is new_ws
+        assert view.target_id == "new-tab"

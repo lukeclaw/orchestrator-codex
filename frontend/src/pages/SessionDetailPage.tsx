@@ -744,6 +744,7 @@ export default function SessionDetailPage() {
             <BrowserView
               sessionId={id}
               minimized={bvMinimized}
+              isRemote={isRemote}
               onMinimizedChange={(min) => {
                 setBvMinimized(min)
                 if (min) terminalFocusRef.current?.()

@@ -22,6 +22,7 @@ function BrowserSkeleton({ label }: { label: string }) {
 interface Props {
   sessionId: string
   minimized?: boolean
+  isRemote?: boolean
   onMinimizedChange?: (minimized: boolean) => void
   onClose: () => void
 }
@@ -35,7 +36,7 @@ function getModifiers(e: React.MouseEvent | React.KeyboardEvent): number {
   return m
 }
 
-export default function BrowserView({ sessionId, minimized = false, onMinimizedChange, onClose }: Props) {
+export default function BrowserView({ sessionId, minimized = false, isRemote = false, onMinimizedChange, onClose }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const wsRef = useRef<WebSocket | null>(null)
   const [pageUrl, setPageUrl] = useState('')
@@ -54,6 +55,10 @@ export default function BrowserView({ sessionId, minimized = false, onMinimizedC
   const settingsRef = useRef<HTMLDivElement>(null)
   const [urlInput, setUrlInput] = useState('')
   const [urlFocused, setUrlFocused] = useState(false)
+  // Browser tabs state
+  const [browserTabs, setBrowserTabs] = useState<{ id: string; title: string; url: string }[]>([])
+  const [activeTabId, setActiveTabId] = useState('')
+  const [loadingTabs, setLoadingTabs] = useState(false)
   // Track actual frame dimensions for coordinate scaling
   const frameSizeRef = useRef({ width: 1280, height: 960 })
   // Reconnection state
@@ -129,6 +134,7 @@ export default function BrowserView({ sessionId, minimized = false, onMinimizedC
           } else if (msg.type === 'metadata') {
             if (msg.url) setPageUrl(msg.url)
             if (msg.title) setPageTitle(msg.title)
+            if (msg.targetId) setActiveTabId(msg.targetId)
             if (msg.viewport?.width && msg.viewport?.height) {
               const r = msg.viewport.width / msg.viewport.height
               aspectRatioRef.current = r
@@ -408,6 +414,36 @@ export default function BrowserView({ sessionId, minimized = false, onMinimizedC
     ws.send(JSON.stringify({ type: 'navigate', url: normalized }))
   }, [])
 
+  // Fetch browser tabs when settings dropdown opens
+  const fetchTabs = useCallback(async () => {
+    setLoadingTabs(true)
+    try {
+      const data = await api<{ targets: { id: string; title: string; url: string }[] }>(`/api/sessions/${sessionId}/browser-view/targets`)
+      if (data.targets) {
+        setBrowserTabs(data.targets)
+      }
+    } catch {
+      // Ignore — tabs are best-effort
+    } finally {
+      setLoadingTabs(false)
+    }
+  }, [sessionId])
+
+  const handleSwitchTab = useCallback((targetId: string) => {
+    const ws = wsRef.current
+    if (!ws || ws.readyState !== WebSocket.OPEN) return
+    ws.send(JSON.stringify({ type: 'switchTab', targetId }))
+    setActiveTabId(targetId)
+    setShowSettings(false)
+  }, [])
+
+  // Fetch tabs when dropdown opens (remote only)
+  useEffect(() => {
+    if (showSettings && isRemote) {
+      fetchTabs()
+    }
+  }, [showSettings, isRemote, fetchTabs])
+
   // Sync pageUrl into urlInput when not focused
   useEffect(() => {
     if (!urlFocused && pageUrl) {
@@ -545,6 +581,31 @@ export default function BrowserView({ sessionId, minimized = false, onMinimizedC
             </button>
             {showSettings && (
               <div className="bv-settings-dropdown" onClick={(e) => e.stopPropagation()}>
+                {isRemote && (
+                  <>
+                    <div className="bv-settings-section-label">
+                      Tabs{!loadingTabs && browserTabs.length > 0 ? ` (${browserTabs.length})` : ''}
+                      {loadingTabs && '...'}
+                    </div>
+                    {browserTabs.map((tab) => (
+                      <button
+                        key={tab.id}
+                        className={`bv-tab-item${tab.id === activeTabId ? ' active' : ''}`}
+                        onClick={() => handleSwitchTab(tab.id)}
+                        title={tab.url}
+                      >
+                        <span className="bv-tab-title">{tab.title || tab.url || 'about:blank'}</span>
+                        {tab.id === activeTabId && <span className="bv-tab-active-dot" />}
+                      </button>
+                    ))}
+                    {!loadingTabs && browserTabs.length === 0 && (
+                      <div className="bv-tab-item" style={{ opacity: 0.5, cursor: 'default' }}>
+                        <span className="bv-tab-title">No tabs found</span>
+                      </div>
+                    )}
+                    <div className="bv-settings-divider" />
+                  </>
+                )}
                 <div className="bv-settings-row">
                   <span>Zoom</span>
                   <div className="bv-stepper">
