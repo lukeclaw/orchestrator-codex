@@ -1048,15 +1048,12 @@ async def monitor_tabs(
 ) -> str | None:
     """Monitor the remote browser for extra tabs created by Playwright MCP.
 
-    Auto-switches the browser view in two cases:
+    When Playwright opens a new tab, the browser view should follow it.
+    This coroutine tracks known tab IDs and returns the new target ID
+    as soon as an unseen tab appears.
 
-    1. **New tab detected**: Playwright opened a tab we haven't seen before.
-       Switch to it immediately since the worker wants to use that tab.
-    2. **Stuck on about:blank**: Current view tab is about:blank but another
-       tab has real content (e.g. after the initial tab was never navigated).
-
-    This function is non-destructive: it never closes tabs.  Tab management
-    is left to the user via the tabs dropdown in the UI.
+    Non-destructive: never closes tabs.  Tab management is left to the
+    user via the tabs dropdown in the UI.
 
     Returns the new target_id to switch to, or None if cancelled.
     Only useful for remote workers (one worker per Chrome instance).
@@ -1074,12 +1071,11 @@ async def monitor_tabs(
 
         target_ids = {t.get("id", "") for t in targets} - {""}
 
-        # Case 1: Detect newly created tabs (not seen before)
+        # Detect newly created tabs (not seen before)
         new_ids = target_ids - view._known_tab_ids
         view._known_tab_ids = target_ids
 
         if new_ids:
-            # Switch to the new tab — Playwright just opened it
             new_id = next(iter(new_ids))
             logger.info(
                 "New tab %s detected, auto-switching for session %s",
@@ -1087,36 +1083,6 @@ async def monitor_tabs(
                 view.session_id,
             )
             return new_id
-
-        if len(targets) <= 1:
-            continue
-
-        # Case 2: Current tab is about:blank — switch to one with content
-        current_id = view.target_id
-        current_url = ""
-        for t in targets:
-            if t.get("id") == current_id:
-                current_url = t.get("url", "")
-                break
-
-        if current_url and current_url not in ("about:blank", ""):
-            continue
-
-        content_tabs = [
-            t
-            for t in targets
-            if t.get("url", "about:blank") not in ("about:blank", "") and t.get("id") != current_id
-        ]
-        if content_tabs:
-            keep_id = content_tabs[0].get("id", "")
-            if keep_id:
-                logger.info(
-                    "Auto-switching from about:blank to tab %s (%s) for session %s",
-                    keep_id,
-                    content_tabs[0].get("url", ""),
-                    view.session_id,
-                )
-                return keep_id
 
     return None  # unreachable; for type-checkers
 

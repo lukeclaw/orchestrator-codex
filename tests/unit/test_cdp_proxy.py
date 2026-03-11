@@ -1146,36 +1146,10 @@ class TestMonitorTabs:
 
     @patch("orchestrator.browser.cdp_proxy.discover_browser_targets")
     @pytest.mark.asyncio
-    async def test_switches_to_content_tab_when_current_is_blank(
-        self, mock_discover
-    ):
-        """When current tab is about:blank and another has content, return new ID."""
-        view = _make_view()
-        view.target_id = "tab-blank"
-        view.page_url = "about:blank"
-        # Both tabs already known — so new-tab detection won't fire
-        view._known_tab_ids = {"tab-blank", "tab-content"}
-
-        async def fake_discover(port, retries=1):
-            return [
-                {"id": "tab-blank", "type": "page", "url": "about:blank"},
-                {"id": "tab-content", "type": "page", "url": "https://example.com"},
-            ]
-
-        mock_discover.side_effect = fake_discover
-
-        result = await monitor_tabs(view, interval=0.01)
-        assert result == "tab-content"
-
-    @patch("orchestrator.browser.cdp_proxy.discover_browser_targets")
-    @pytest.mark.asyncio
-    async def test_no_switch_when_all_tabs_known_and_current_has_content(
-        self, mock_discover
-    ):
-        """No switch when all tabs are known and current has content."""
+    async def test_no_switch_when_all_tabs_known(self, mock_discover):
+        """No switch when all tabs are already known."""
         view = _make_view()
         view.target_id = "tab-main"
-        view.page_url = "https://example.com"
         view._known_tab_ids = {"tab-main", "tab-extra"}
 
         async def fake_discover(port, retries=1):
