@@ -209,11 +209,17 @@ async def ws_browser_view(websocket: WebSocket, session_id: str):
                 old_target_id = view.target_id
                 try:
                     await switch_to_tab(view, new_target_id)
-                    # Close the old tab only for auto-detected switches
-                    # (user-initiated keeps old tabs for manual management)
+                    # Close the old tab for auto-detected switches (about:blank)
+                    # or when the user explicitly requested closing via closeTab
+                    close_target = None
                     if close_old_tab and old_target_id:
+                        close_target = old_target_id
+                    elif view._close_after_switch:
+                        close_target = view._close_after_switch
+                        view._close_after_switch = ""
+                    if close_target:
                         try:
-                            await close_browser_tab(view.tunnel_local_port, old_target_id)
+                            await close_browser_tab(view.tunnel_local_port, close_target)
                         except Exception:
                             pass
                     # Notify the client of the new page

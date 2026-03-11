@@ -70,6 +70,7 @@ class BrowserViewSession:
     # Set by the client input relay when the user requests a tab switch.
     # The WS handler loop reads this to perform the actual switch.
     _switch_target: str = field(default="", repr=False)
+    _close_after_switch: str = field(default="", repr=False)
 
 
 # In-memory registry: session_id -> BrowserViewSession
@@ -1266,6 +1267,26 @@ async def handle_client_input(view: BrowserViewSession, msg: dict) -> None:
             # We can't do it here because it requires cancelling the
             # relay tasks and reopening the CDP WebSocket.
             view._switch_target = target_id
+
+    elif msg_type == "closeTab":
+        target_id = msg.get("targetId", "")
+        if target_id and target_id != view.target_id:
+            # Close a non-active tab directly via CDP HTTP API
+            try:
+                await close_browser_tab(view.tunnel_local_port, target_id)
+            except Exception:
+                pass
+        elif target_id and target_id == view.target_id:
+            # Closing the active tab — find another tab to switch to first
+            try:
+                targets = await discover_browser_targets(view.tunnel_local_port, retries=1)
+                other = [t for t in targets if t.get("id") and t["id"] != target_id]
+                if other:
+                    # Switch to another tab, then close the old one
+                    view._switch_target = other[0]["id"]
+                    view._close_after_switch = target_id
+            except Exception:
+                pass
 
     elif msg_type in ("goBack", "goForward"):
         await _navigate_history(view, forward=(msg_type == "goForward"))

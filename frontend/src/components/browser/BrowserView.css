@@ -205,6 +205,32 @@
   flex-shrink: 0;
 }
 
+.bv-tab-close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  border-radius: 3px;
+  cursor: pointer;
+  flex-shrink: 0;
+  padding: 0;
+  opacity: 0;
+  transition: opacity 0.1s, color 0.1s, background 0.1s;
+}
+
+.bv-tab-item:hover .bv-tab-close {
+  opacity: 1;
+}
+
+.bv-tab-close:hover {
+  color: var(--red, #ff7b72);
+  background: rgba(255, 123, 114, 0.15);
+}
+
 .bv-stepper {
   display: flex;
   align-items: center;

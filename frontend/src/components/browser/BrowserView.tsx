@@ -437,6 +437,14 @@ export default function BrowserView({ sessionId, minimized = false, isRemote = f
     setShowSettings(false)
   }, [])
 
+  const handleCloseTab = useCallback((targetId: string) => {
+    const ws = wsRef.current
+    if (!ws || ws.readyState !== WebSocket.OPEN) return
+    ws.send(JSON.stringify({ type: 'closeTab', targetId }))
+    // Remove from local list immediately for snappy UI
+    setBrowserTabs(prev => prev.filter(t => t.id !== targetId))
+  }, [])
+
   // Fetch tabs when dropdown opens (remote only)
   useEffect(() => {
     if (showSettings && isRemote) {
@@ -588,7 +596,7 @@ export default function BrowserView({ sessionId, minimized = false, isRemote = f
                       {loadingTabs && '...'}
                     </div>
                     {browserTabs.map((tab) => (
-                      <button
+                      <div
                         key={tab.id}
                         className={`bv-tab-item${tab.id === activeTabId ? ' active' : ''}`}
                         onClick={() => handleSwitchTab(tab.id)}
@@ -596,7 +604,16 @@ export default function BrowserView({ sessionId, minimized = false, isRemote = f
                       >
                         <span className="bv-tab-title">{tab.title || tab.url || 'about:blank'}</span>
                         {tab.id === activeTabId && <span className="bv-tab-active-dot" />}
-                      </button>
+                        <button
+                          className="bv-tab-close"
+                          onClick={(e) => { e.stopPropagation(); handleCloseTab(tab.id) }}
+                          title="Close tab"
+                        >
+                          <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                            <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+                          </svg>
+                        </button>
+                      </div>
                     ))}
                     {!loadingTabs && browserTabs.length === 0 && (
                       <div className="bv-tab-item" style={{ opacity: 0.5, cursor: 'default' }}>
