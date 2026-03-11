@@ -4,6 +4,21 @@ import './BrowserView.css'
 
 const MAX_RECONNECT_ATTEMPTS = 5
 
+function BrowserSkeleton({ label }: { label: string }) {
+  return (
+    <div className="bv-skeleton">
+      <div className="bv-skeleton-content">
+        <div className="bv-skeleton-bar" style={{ width: '70%', height: 14 }} />
+        <div className="bv-skeleton-bar" style={{ width: '50%', height: 10 }} />
+        <div className="bv-skeleton-bar" style={{ width: '85%', height: 10 }} />
+        <div className="bv-skeleton-bar" style={{ width: '40%', height: 10 }} />
+        <div className="bv-skeleton-bar" style={{ width: '60%', height: 10 }} />
+      </div>
+      <span className="bv-skeleton-label">{label}</span>
+    </div>
+  )
+}
+
 interface Props {
   sessionId: string
   minimized?: boolean
@@ -68,6 +83,9 @@ export default function BrowserView({ sessionId, minimized = false, onMinimizedC
 
   // Connect WebSocket and wire up handlers. Returns cleanup function.
   const connectWs = useCallback(() => {
+    // Clear stale errors so skeleton shows during connection attempts
+    setError('')
+
     // Cancel any pending reconnect timer
     if (reconnectTimerRef.current) {
       clearTimeout(reconnectTimerRef.current)
@@ -189,7 +207,8 @@ export default function BrowserView({ sessionId, minimized = false, onMinimizedC
   }, [sessionId, connectWs])
 
   const scheduleReconnect = useCallback(() => {
-    // Small delay to avoid hammering on rapid close
+    setReconnecting(true)  // Show "Reconnecting..." immediately, not after 1s delay
+    setError('')  // Clear stale errors so skeleton shows, not error UI
     if (reconnectTimerRef.current) {
       clearTimeout(reconnectTimerRef.current)
     }
@@ -554,11 +573,11 @@ export default function BrowserView({ sessionId, minimized = false, onMinimizedC
             <button className="bv-error-close" onClick={handleClose}>Close</button>
           </div>
         ) : !connected ? (
-          <div className="bv-connecting">
-            {reconnecting
+          <BrowserSkeleton
+            label={reconnecting
               ? `Reconnecting${reconnectAttempt > 0 ? ` (attempt ${reconnectAttempt + 1})` : ''}...`
               : 'Connecting to browser...'}
-          </div>
+          />
         ) : (
           <canvas
             ref={canvasRef}
