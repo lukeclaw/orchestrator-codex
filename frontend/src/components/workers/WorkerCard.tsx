@@ -173,29 +173,17 @@ export default function WorkerCard({
     }
     setActionPending(true)
     try {
-      // Get brain session ID first
+      // Get brain status to verify it's running
       const brainStatus = await api<{ session_id: string | null; running: boolean }>('/api/brain/status')
       if (!brainStatus.running || !brainStatus.session_id) {
         notify('Brain is not running. Start the brain first.', 'error')
         return
       }
-      // Cancel any existing input and clear the line
-      // Ctrl-C to cancel, then Ctrl-U to clear line buffer
-      await api(`/api/sessions/${brainStatus.session_id}/send`, {
+      // Use /api/brain/command which sends Ctrl-C + Escape + Ctrl-U as raw
+      // tmux keys (no Enter), then types the command — avoids empty messages.
+      await api('/api/brain/command', {
         method: 'POST',
-        body: JSON.stringify({ message: '\x03' }),  // Ctrl-C
-      })
-      await new Promise(resolve => setTimeout(resolve, 50))
-      await api(`/api/sessions/${brainStatus.session_id}/send`, {
-        method: 'POST',
-        body: JSON.stringify({ message: '\x15' }),  // Ctrl-U to clear line
-      })
-      await new Promise(resolve => setTimeout(resolve, 50))
-      // Send check_worker command to brain for this specific worker
-      const message = `/check_worker ${session.id}`
-      await api(`/api/sessions/${brainStatus.session_id}/send`, {
-        method: 'POST',
-        body: JSON.stringify({ message }),
+        body: JSON.stringify({ command: `/check_worker ${session.id}` }),
       })
     } catch (e) {
       notify(e instanceof Error ? e.message : 'Failed to check progress', 'error')
