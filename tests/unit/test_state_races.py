@@ -625,6 +625,11 @@ class TestReconnectExceptionHandling:
             patch("orchestrator.session.reconnect.safe_send_keys"),
             patch("orchestrator.session.reconnect.time.sleep"),
             patch("orchestrator.session.reconnect.ensure_rdev_node"),
+            # Skip RWS PTY migration attempt for legacy session
+            patch(
+                "orchestrator.session.health.check_screen_and_claude_remote",
+                return_value=("alive", "mocked"),
+            ),
         ):
             mock_repo = MagicMock()
             mock_repo.update_session = tracker.update_session
@@ -662,6 +667,11 @@ class TestReconnectExceptionHandling:
                 "orchestrator.terminal.manager.ensure_window",
                 side_effect=RuntimeError("tmux crash"),
             ),
+            # Skip RWS PTY migration attempt for legacy session
+            patch(
+                "orchestrator.session.health.check_screen_and_claude_remote",
+                return_value=("alive", "mocked"),
+            ),
         ):
             mock_repo2 = MagicMock()
             mock_repo2.update_session = tracker2.update_session
@@ -696,6 +706,11 @@ class TestReconnectExceptionHandling:
             patch(
                 "orchestrator.terminal.manager.ensure_window",
                 side_effect=RuntimeError("tmux broke"),
+            ),
+            # Skip RWS PTY migration attempt for legacy session
+            patch(
+                "orchestrator.session.health.check_screen_and_claude_remote",
+                return_value=("alive", "mocked"),
             ),
         ):
             mock_repo = MagicMock()
@@ -756,6 +771,11 @@ class TestReconnectExceptionHandling:
             ),
             patch("orchestrator.session.reconnect.time.sleep"),
             patch("orchestrator.session.reconnect.ensure_rdev_node"),
+            # Skip RWS PTY migration attempt for legacy session
+            patch(
+                "orchestrator.session.health.check_screen_and_claude_remote",
+                return_value=("alive", "mocked"),
+            ),
         ):
             mock_repo = MagicMock()
             mock_repo.update_session = tracker.update_session

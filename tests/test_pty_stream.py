@@ -529,7 +529,7 @@ class FakeWebSocket:
 
 
 def _make_db_row(name="test"):
-    return {"name": name, "id": "sess-1"}
+    return {"name": name, "id": "sess-1", "rws_pty_id": None, "host": "localhost"}
 
 
 class TestWsTerminalPipePanePath:

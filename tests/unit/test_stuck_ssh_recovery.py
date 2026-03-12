@@ -30,6 +30,7 @@ def _make_session(**overrides):
         "work_dir": "/tmp/work",
         "claude_session_id": None,
         "auto_reconnect": False,
+        "rws_pty_id": None,
     }
     defaults.update(overrides)
     s = MagicMock()
@@ -215,8 +216,13 @@ class TestReconnectStep3Retry:
     @patch("orchestrator.session.reconnect._ensure_tunnel")
     @patch("orchestrator.session.reconnect.check_tui_running_in_pane", return_value=False)
     @patch("orchestrator.session.reconnect.ensure_rdev_node")
+    @patch(
+        "orchestrator.session.health.check_screen_and_claude_remote",
+        return_value=("alive", "mocked"),
+    )
     def test_retries_with_kill_on_first_timeout(
         self,
+        mock_screen_claude,
         mock_node,
         mock_tui,
         mock_tunnel,
@@ -276,8 +282,13 @@ class TestReconnectStep3Retry:
     @patch("orchestrator.session.reconnect._clean_pane_for_ssh")
     @patch("orchestrator.session.reconnect._ensure_tunnel")
     @patch("orchestrator.session.reconnect.check_tui_running_in_pane", return_value=False)
+    @patch(
+        "orchestrator.session.health.check_screen_and_claude_remote",
+        return_value=("alive", "mocked"),
+    )
     def test_raises_after_both_attempts_fail(
         self,
+        mock_screen_claude,
         mock_tui,
         mock_tunnel,
         mock_clean,
@@ -325,37 +336,33 @@ class TestReconnectStep3Retry:
 
 
 class TestSetupRemoteWorkerRetry:
-    """Test retry-with-kill in setup_remote_worker."""
+    """Test setup_remote_worker with the new RWS PTY architecture.
 
-    def test_retries_with_kill_on_first_timeout(self):
-        """First wait_for_prompt fails → kill+recreate → retry succeeds."""
+    setup_remote_worker now uses SSH subprocess calls, deploy_worker_tmp_contents,
+    _copy_dir_to_remote_ssh, and RWS PTY creation instead of the old
+    remote_connect/wait_for_prompt/screen flow.
+    """
+
+    def test_setup_succeeds_with_rws_pty(self):
+        """Full RWS PTY setup path succeeds when all dependencies are mocked."""
         from orchestrator.terminal.session import setup_remote_worker
 
         conn = MagicMock()
-        wait_results = iter([False, True])  # First fails, second succeeds
+        mock_rws = MagicMock()
+        mock_rws.create_pty.return_value = "pty-123"
+        mock_rws.execute.return_value = {"ptys": [{"pty_id": "pty-123", "alive": True}]}
 
         with (
-            patch("orchestrator.terminal.ssh.remote_connect"),
-            patch(
-                "orchestrator.terminal.ssh.wait_for_prompt",
-                side_effect=lambda *a, **kw: next(wait_results),
-            ),
-            patch("orchestrator.terminal.ssh.is_rdev_host", return_value=False),
-            patch("orchestrator.terminal.manager.send_keys"),
-            patch("orchestrator.terminal.manager.kill_window") as mock_kill,
-            patch("orchestrator.terminal.manager.ensure_window"),
-            patch(
-                "orchestrator.terminal.session._install_screen_if_needed",
-                return_value=True,
-            ),
-            patch("orchestrator.terminal.session._kill_orphaned_screen"),
             patch("orchestrator.terminal.session._copy_dir_to_remote_ssh", return_value=True),
             patch(
                 "orchestrator.agents.deploy.deploy_worker_tmp_contents",
                 return_value=["bin/lib.sh"],
             ),
-            patch("orchestrator.terminal.session.get_path_export_command", return_value=""),
+            patch("orchestrator.terminal.session.subprocess.run"),
+            patch("orchestrator.terminal.session._ensure_rws_ready", return_value=mock_rws),
             patch("orchestrator.terminal.session.time"),
+            patch("orchestrator.terminal.session.is_rdev_host", return_value=False),
+            patch("orchestrator.state.repositories.sessions.update_session"),
         ):
             result = setup_remote_worker(
                 conn,
@@ -366,25 +373,23 @@ class TestSetupRemoteWorkerRetry:
             )
 
         assert result["ok"] is True
-        # kill_window should have been called during the retry
-        mock_kill.assert_called_once()
+        mock_rws.create_pty.assert_called_once()
 
-    def test_raises_after_both_attempts_fail(self):
-        """Both attempts fail → RuntimeError with retry message."""
+    def test_returns_error_when_ssh_copy_fails(self):
+        """setup_remote_worker returns error when SSH copy fails."""
         from orchestrator.terminal.session import setup_remote_worker
 
         conn = MagicMock()
 
         with (
-            patch("orchestrator.terminal.ssh.remote_connect"),
+            patch("orchestrator.terminal.session._copy_dir_to_remote_ssh", return_value=False),
             patch(
-                "orchestrator.terminal.ssh.wait_for_prompt",
-                return_value=False,  # Always times out
+                "orchestrator.agents.deploy.deploy_worker_tmp_contents",
+                return_value=["bin/lib.sh"],
             ),
-            patch("orchestrator.terminal.manager.send_keys"),
-            patch("orchestrator.terminal.manager.kill_window"),
-            patch("orchestrator.terminal.manager.ensure_window"),
+            patch("orchestrator.terminal.session.subprocess.run"),
             patch("orchestrator.terminal.session.time"),
+            patch("orchestrator.terminal.session.is_rdev_host", return_value=False),
         ):
             result = setup_remote_worker(
                 conn,
@@ -395,4 +400,4 @@ class TestSetupRemoteWorkerRetry:
             )
 
         assert result["ok"] is False
-        assert "after kill+recreate retry" in result["error"]
+        assert "Failed to copy files" in result["error"]

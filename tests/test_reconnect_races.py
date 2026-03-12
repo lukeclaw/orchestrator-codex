@@ -77,6 +77,7 @@ def _make_mock_session(
     s.claude_session_id = None
     s.last_status_changed_at = "2025-01-01T00:00:00Z"
     s.session_type = "worker"
+    s.rws_pty_id = None
     return s
 
 
@@ -411,8 +412,13 @@ class TestReconnectVsTunnelHealthLoopRace:
     @patch("orchestrator.session.reconnect._kill_orphaned_screen")
     @patch("orchestrator.terminal.manager.subprocess")
     @patch("orchestrator.terminal.manager.ensure_window")
+    @patch(
+        "orchestrator.session.health.check_screen_and_claude_remote",
+        return_value=("alive", "mocked"),
+    )
     def test_reconnect_worker_restarts_dead_tunnel(
         self,
+        mock_screen_claude,
         mock_ensure_window,
         mock_subprocess,
         mock_kill_orphaned,

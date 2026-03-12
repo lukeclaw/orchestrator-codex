@@ -245,6 +245,7 @@ class TestStatusTransitions:
         mock_session.name = "test-rdev"
         mock_session.host = "user/rdev-vm"
         mock_session.status = "working"
+        mock_session.rws_pty_id = None
 
         mock_route_repo.get_session.return_value = mock_session
 
@@ -286,6 +287,7 @@ class TestStatusTransitions:
         mock_session.name = "test-rdev"
         mock_session.host = "user/rdev-vm"
         mock_session.status = "working"
+        mock_session.rws_pty_id = None
 
         mock_route_repo.get_session.return_value = mock_session
 

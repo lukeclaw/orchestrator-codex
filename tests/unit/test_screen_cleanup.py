@@ -69,6 +69,7 @@ class TestReconnectStep6PidReattach:
         s.work_dir = "/home/user/project"
         s.claude_session_id = None
         s.status = "disconnected"
+        s.rws_pty_id = None
         return s
 
     @patch("orchestrator.session.reconnect._launch_claude_in_screen")
@@ -88,8 +89,13 @@ class TestReconnectStep6PidReattach:
     @patch("orchestrator.session.reconnect.os.makedirs")
     @patch("orchestrator.terminal.manager.ensure_window")
     @patch("orchestrator.session.reconnect.ensure_rdev_node")
+    @patch(
+        "orchestrator.session.health.check_screen_and_claude_remote",
+        return_value=("alive", "mocked"),
+    )
     def test_screen_exists_claude_running_reattaches_by_pid(
         self,
+        mock_screen_claude,
         mock_node,
         mock_ensure_win,
         mock_makedirs,
@@ -148,8 +154,13 @@ class TestReconnectStep6PidReattach:
     @patch("orchestrator.session.reconnect.os.makedirs")
     @patch("orchestrator.terminal.manager.ensure_window")
     @patch("orchestrator.session.reconnect.ensure_rdev_node")
+    @patch(
+        "orchestrator.session.health.check_screen_and_claude_remote",
+        return_value=("alive", "mocked"),
+    )
     def test_screen_exists_pid_none_falls_back_to_name(
         self,
+        mock_screen_claude,
         mock_node,
         mock_ensure_win,
         mock_makedirs,
@@ -204,8 +215,13 @@ class TestReconnectStep6PidReattach:
     @patch("orchestrator.session.reconnect.os.makedirs")
     @patch("orchestrator.terminal.manager.ensure_window")
     @patch("orchestrator.session.reconnect.ensure_rdev_node")
+    @patch(
+        "orchestrator.session.health.check_screen_and_claude_remote",
+        return_value=("alive", "mocked"),
+    )
     def test_no_screen_kills_orphans_before_creating(
         self,
+        mock_screen_claude,
         mock_node,
         mock_ensure_win,
         mock_makedirs,

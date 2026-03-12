@@ -43,7 +43,7 @@ _REMOTE_WORKER_SERVER_SCRIPT = textwrap.dedent("""\
     LISTEN_HOST = "127.0.0.1"
     LISTEN_PORT = 9741
     INACTIVITY_TIMEOUT = 3600  # 60 min
-    RINGBUFFER_MAX = 65536     # 64 KB per PTY
+    RINGBUFFER_MAX = 524288    # 512 KB per PTY
 
     # Set by bootstrap; used for version-aware daemon replacement
     SCRIPT_VERSION = os.environ.get("_RWS_VERSION", "unknown")
@@ -694,6 +694,7 @@ _REMOTE_WORKER_SERVER_SCRIPT = textwrap.dedent("""\
         cols = cmd.get("cols", 80)
         rows = cmd.get("rows", 24)
         session_id = cmd.get("session_id")
+        env_vars = cmd.get("env")  # dict or None
         pty_id = uuid.uuid4().hex[:12]
 
         master_fd, slave_fd = pty_mod.openpty()
@@ -726,11 +727,16 @@ _REMOTE_WORKER_SERVER_SCRIPT = textwrap.dedent("""\
                 pass
             # Ensure TERM is set so programs output colors
             os.environ["TERM"] = "xterm-256color"
-            # Login shell
+            # Apply custom environment variables
+            if env_vars and isinstance(env_vars, dict):
+                for k, v in env_vars.items():
+                    os.environ[k] = str(v)
+            # Login shell wrapping: when cmd is a command string (not /bin/bash),
+            # wrap in login shell so PATH, VOLTA_HOME, etc. from profiles are loaded.
             if shell_cmd == "/bin/bash":
                 os.execvp("/bin/bash", ["bash", "-l"])
             else:
-                os.execvp(shell_cmd, [shell_cmd])
+                os.execvp("/bin/bash", ["bash", "-l", "-c", shell_cmd])
 
         # Parent
         os.close(slave_fd)
@@ -1224,7 +1230,30 @@ _REMOTE_WORKER_SERVER_SCRIPT = textwrap.dedent("""\
                     pass
 
                 if old_version != SCRIPT_VERSION:
-                    # Version mismatch — kill old daemon for upgrade
+                    # Version mismatch — check if PTYs are active before killing
+                    try:
+                        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                        s.settimeout(3)
+                        s.connect((LISTEN_HOST, LISTEN_PORT))
+                        s.sendall(json.dumps({"type": "command"}).encode() + b"\\n")
+                        ack = b""
+                        while b"\\n" not in ack:
+                            ack += s.recv(4096)
+                        s.sendall(json.dumps({"action": "pty_list"}).encode() + b"\\n")
+                        resp = b""
+                        while b"\\n" not in resp:
+                            resp += s.recv(4096)
+                        result = json.loads(resp.split(b"\\n")[0].decode())
+                        s.close()
+                        ptys = result.get("ptys", [])
+                        alive_ptys = [p for p in ptys if p.get("alive")]
+                        if alive_ptys:
+                            # Defer upgrade — reuse old daemon to avoid killing active PTYs
+                            log("Deferring daemon upgrade: %d active PTYs" % len(alive_ptys))
+                            return old_pid
+                    except Exception:
+                        pass  # Can't connect — safe to kill
+                    # No active PTYs (or can't connect) — kill and replace
                     _kill_pid(old_pid)
                     for f_path in (pid_file, ver_file):
                         try:
@@ -1709,6 +1738,7 @@ class RemoteWorkerServer:
         cols: int = 80,
         rows: int = 24,
         session_id: str | None = None,
+        env: dict[str, str] | None = None,
     ) -> str:
         """Create a new PTY session on the remote daemon. Returns pty_id."""
         request: dict[str, Any] = {
@@ -1721,6 +1751,8 @@ class RemoteWorkerServer:
             request["cwd"] = cwd
         if session_id:
             request["session_id"] = session_id
+        if env:
+            request["env"] = env
         resp = self.execute(request)
         if "error" in resp:
             raise RuntimeError(f"PTY create failed on {self.host}: {resp['error']}")

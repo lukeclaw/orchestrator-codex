@@ -25,6 +25,7 @@ class TestReconnectTunnelOnly:
         mock_session.name = "test-worker"
         mock_session.host = "subs-mt/test-vm"
         mock_session.id = "test-session-id"
+        mock_session.rws_pty_id = None
 
         mock_repo = MagicMock()
         mock_tm = MagicMock()
@@ -48,6 +49,7 @@ class TestReconnectTunnelOnly:
         mock_session.name = "test-worker"
         mock_session.host = "subs-mt/test-vm"
         mock_session.id = "test-session-id"
+        mock_session.rws_pty_id = None
 
         mock_repo = MagicMock()
         mock_tm = MagicMock()
@@ -68,6 +70,7 @@ class TestReconnectTunnelOnly:
         mock_session.name = "test-worker"
         mock_session.host = "subs-mt/test-vm"
         mock_session.id = "test-session-id"
+        mock_session.rws_pty_id = None
 
         mock_repo = MagicMock()
 
@@ -85,6 +88,7 @@ class TestReconnectTunnelOnly:
         mock_session.name = "test-worker"
         mock_session.host = "subs-mt/test-vm"
         mock_session.id = "test-session-id"
+        mock_session.rws_pty_id = None
 
         mock_repo = MagicMock()
         mock_tm = MagicMock()
@@ -123,6 +127,7 @@ class TestReconnectRemoteWorkerTunnelOnlyPath:
         mock_session.host = "subs-mt/test-vm"
         mock_session.id = "test-session-id"
         mock_session.work_dir = "/home/user/code"
+        mock_session.rws_pty_id = None
 
         mock_repo = MagicMock()
         mock_tm = MagicMock()
@@ -151,8 +156,13 @@ class TestReconnectRemoteWorkerTunnelOnlyPath:
     @patch("orchestrator.terminal.ssh.wait_for_prompt", return_value=False)
     @patch("orchestrator.session.health.check_worker_ssh_alive", return_value=False)
     @patch("orchestrator.session.reconnect.time.sleep")
+    @patch(
+        "orchestrator.session.health.check_screen_and_claude_remote",
+        return_value=("alive", "mocked"),
+    )
     def test_full_reconnect_when_ssh_dead(
         self,
+        mock_screen_claude,
         mock_sleep,
         mock_ssh_alive,
         mock_wait_prompt,
@@ -172,6 +182,7 @@ class TestReconnectRemoteWorkerTunnelOnlyPath:
         mock_session.host = "subs-mt/test-vm"
         mock_session.id = "test-session-id"
         mock_session.work_dir = "/home/user/code"
+        mock_session.rws_pty_id = None
 
         mock_repo = MagicMock()
         mock_tm = MagicMock()
@@ -219,6 +230,7 @@ class TestHealthCheckAutoReconnectTunnel:
         mock_session.id = "test-session-id"
         mock_session.name = "test-worker"
         mock_session.host = "subs-mt/test-vm"
+        mock_session.rws_pty_id = None
 
         mock_session.status = "waiting"
         mock_route_repo.get_session.return_value = mock_session
@@ -264,6 +276,7 @@ class TestHealthCheckAutoReconnectTunnel:
         mock_session.id = "test-session-id"
         mock_session.name = "test-worker"
         mock_session.host = "subs-mt/test-vm"
+        mock_session.rws_pty_id = None
 
         mock_session.status = "waiting"
         mock_route_repo.get_session.return_value = mock_session
@@ -309,6 +322,7 @@ class TestHealthCheckAutoReconnectTunnel:
         mock_session.name = "test-worker"
         mock_session.host = "subs-mt/test-vm"
         mock_session.status = "waiting"
+        mock_session.rws_pty_id = None
         mock_route_repo.get_session.return_value = mock_session
 
         mock_tm = MagicMock()

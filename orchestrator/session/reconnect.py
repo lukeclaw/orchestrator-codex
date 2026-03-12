@@ -984,6 +984,114 @@ def _reconnect_rws_for_host(session) -> None:
 # =============================================================================
 
 
+def _reconnect_rws_pty_worker(conn, session, repo, tunnel_manager):
+    """Reconnect a session using RWS PTY architecture."""
+    from orchestrator.terminal.session import (
+        _build_claude_command,
+        _ensure_rws_ready,
+    )
+
+    remote_tmp_dir = f"/tmp/orchestrator/workers/{session.name}"
+    tmp_dir = f"/tmp/orchestrator/workers/{session.name}"
+    api_base = "http://127.0.0.1:8093"
+
+    # 1. Ensure reverse tunnel alive
+    if tunnel_manager and not tunnel_manager.is_alive(session.id):
+        _ensure_tunnel(session, tunnel_manager, repo, conn)
+
+    # 2. Ensure RWS daemon connected
+    rws = _ensure_rws_ready(session.host, timeout=30)
+
+    # 3. Reconnect RWS forward tunnel if needed
+    _reconnect_rws_for_host(session)
+
+    # 4. Check PTY status
+    try:
+        resp = rws.execute({"action": "pty_list"}, timeout=5)
+        ptys = resp.get("ptys", [])
+    except Exception:
+        ptys = []
+
+    our_pty = next((p for p in ptys if p["pty_id"] == session.rws_pty_id), None)
+
+    if our_pty and our_pty["alive"]:
+        # PTY still running — nothing to do! Browser will auto-reconnect.
+        repo.update_session(conn, session.id, status="waiting")
+        logger.info("Reconnect RWS %s: PTY still alive, nothing to do", session.name)
+        return
+
+    if our_pty and not our_pty["alive"]:
+        try:
+            rws.execute({"action": "pty_destroy", "pty_id": session.rws_pty_id})
+        except Exception:
+            pass
+
+    # 5. PTY dead or gone — redeploy files and recreate
+    _ensure_local_configs_exist(tmp_dir, session.id, api_base, conn=conn)
+    _copy_configs_to_remote(session.host, tmp_dir, remote_tmp_dir, session.name)
+
+    # 6. Create new PTY
+    target_id = session.claude_session_id or session.id
+    session_exists = _check_claude_session_exists_remote(session.host, target_id)
+    claude_cmd = _build_claude_command(
+        session.id,
+        session.host,
+        remote_tmp_dir,
+        session.work_dir,
+        claude_session_id=session.claude_session_id,
+        is_resume=session_exists,
+    )
+    pty_id = rws.create_pty(
+        cmd=claude_cmd,
+        cwd=session.work_dir or os.path.expanduser("~"),
+        session_id=session.id,
+    )
+    repo.update_session(conn, session.id, rws_pty_id=pty_id, status="working")
+    logger.info("Reconnect RWS %s: created new PTY %s", session.name, pty_id)
+
+    # 7. Verify
+    time.sleep(3)
+    try:
+        resp = rws.execute({"action": "pty_list"}, timeout=5)
+        ptys = resp.get("ptys", [])
+        alive = any(p["pty_id"] == pty_id and p["alive"] for p in ptys)
+    except Exception:
+        alive = True  # Assume alive if we can't check
+
+    if not alive:
+        logger.warning(
+            "Reconnect RWS %s: PTY died after creation, retrying with fresh session",
+            session.name,
+        )
+        # Retry with --session-id (new conversation)
+        _cleanup_stale_claude_session_remote(session.host, target_id)
+        claude_cmd = _build_claude_command(
+            session.id,
+            session.host,
+            remote_tmp_dir,
+            session.work_dir,
+            claude_session_id=session.claude_session_id,
+            is_resume=False,
+        )
+        pty_id = rws.create_pty(
+            cmd=claude_cmd,
+            cwd=session.work_dir or os.path.expanduser("~"),
+            session_id=session.id,
+        )
+        repo.update_session(conn, session.id, rws_pty_id=pty_id, status="working")
+        logger.info("Reconnect RWS %s: retry created PTY %s", session.name, pty_id)
+
+    # Detect work_dir if not set
+    if not session.work_dir:
+        from orchestrator.api.routes.files import _detect_remote_work_dir
+
+        time.sleep(3)
+        detected = _detect_remote_work_dir(session.host, session.id)
+        if detected:
+            repo.update_session(conn, session.id, work_dir=detected)
+            logger.info("Reconnect RWS %s: detected work_dir: %s", session.name, detected)
+
+
 def reconnect_remote_worker(
     conn,
     session,
@@ -1023,6 +1131,65 @@ def reconnect_remote_worker(
         return
 
     try:
+        # ── RWS PTY path: if session has rws_pty_id, use new architecture ──
+        if session.rws_pty_id:
+            _reconnect_rws_pty_worker(conn, session, repo, tunnel_manager)
+            return
+
+        # ── Migration opportunity: legacy session with dead Claude → migrate to RWS PTY
+        if not session.rws_pty_id:
+            try:
+                from orchestrator.session.health import check_screen_and_claude_remote as _check_sc
+                from orchestrator.terminal.session import (
+                    _build_claude_command,
+                    _ensure_rws_ready,
+                )
+
+                sc_status, _reason = _check_sc(
+                    session.host,
+                    session.id,
+                    tmux_sess=None,
+                    tmux_win=None,
+                    claude_session_id=session.claude_session_id,
+                )
+                if sc_status != "alive":
+                    # Claude dead → try migrating to RWS PTY
+                    rws = _ensure_rws_ready(session.host, timeout=15)
+                    remote_tmp_dir_m = f"/tmp/orchestrator/workers/{session.name}"
+                    api_base_m = f"http://127.0.0.1:{api_port}"
+                    _ensure_local_configs_exist(tmp_dir, session.id, api_base_m, conn=conn)
+                    _copy_configs_to_remote(session.host, tmp_dir, remote_tmp_dir_m, session.name)
+                    target_id = session.claude_session_id or session.id
+                    sess_exists = _check_claude_session_exists_remote(session.host, target_id)
+                    claude_cmd = _build_claude_command(
+                        session.id,
+                        session.host,
+                        remote_tmp_dir_m,
+                        session.work_dir,
+                        claude_session_id=session.claude_session_id,
+                        is_resume=sess_exists,
+                    )
+                    pty_id = rws.create_pty(
+                        cmd=claude_cmd,
+                        cwd=session.work_dir or os.path.expanduser("~"),
+                        session_id=session.id,
+                    )
+                    repo.update_session(conn, session.id, rws_pty_id=pty_id, status="working")
+                    logger.info(
+                        "Reconnect %s: migrated from screen to RWS PTY %s",
+                        session.name,
+                        pty_id,
+                    )
+                    # Re-establish RWS forward tunnel
+                    _reconnect_rws_for_host(session)
+                    return
+            except Exception:
+                logger.warning(
+                    "Reconnect %s: migration to RWS PTY failed, falling back to screen",
+                    session.name,
+                    exc_info=True,
+                )
+
         os.makedirs(tmp_dir, exist_ok=True)
         ensure_window(tmux_sess, tmux_win, cwd=tmp_dir)
 

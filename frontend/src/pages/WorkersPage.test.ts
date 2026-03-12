@@ -53,6 +53,7 @@ function makeWorker(overrides: Partial<Session> & { host: string }): Session {
     last_viewed_at: null,
     session_type: 'worker',
     auto_reconnect: false,
+    rws_pty_id: null,
     ...overrides,
   }
 }

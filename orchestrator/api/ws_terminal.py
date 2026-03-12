@@ -517,13 +517,17 @@ async def stream_pane(
 
 async def terminal_websocket(websocket: WebSocket, session_id: str):
     """Stream terminal output and relay input for a session."""
+    from orchestrator.terminal.ssh import is_remote_host
+
     await websocket.accept()
 
-    # Look up the session name from DB to derive the tmux target
+    # Look up session details from DB to determine routing
     db_conn = _get_conn(websocket)
     owns_conn = getattr(websocket.app.state, "conn_factory", None) is not None
     try:
-        row = db_conn.execute("SELECT name FROM sessions WHERE id = ?", (session_id,)).fetchone()
+        row = db_conn.execute(
+            "SELECT name, rws_pty_id, host FROM sessions WHERE id = ?", (session_id,)
+        ).fetchone()
 
         if not row:
             await websocket.send_json(
@@ -535,26 +539,36 @@ async def terminal_websocket(websocket: WebSocket, session_id: str):
             await websocket.close()
             return
 
-        tmux_sess, tmux_win = tmux_target(row["name"])
-
-        # Auto-create tmux session and window if they don't exist
-        try:
-            worker_tmp_dir = os.path.join("/tmp/orchestrator/workers", row["name"])
-            target = ensure_window(tmux_sess, tmux_win, cwd=worker_tmp_dir)
-            logger.info("Terminal ready: %s", target)
-        except Exception as e:
-            logger.exception("Failed to create tmux session/window")
-            await websocket.send_json(
-                {
-                    "type": "error",
-                    "message": f"Failed to create terminal: {e}",
-                }
-            )
-            await websocket.close()
-            return
+        rws_pty_id = row["rws_pty_id"]
+        host = row["host"]
+        session_name = row["name"]
     finally:
         if owns_conn:
             db_conn.close()
+
+    # Route: RWS PTY path for new-architecture remote sessions
+    if rws_pty_id and is_remote_host(host):
+        await stream_remote_pty(websocket, session_id, rws_pty_id, host)
+        return
+
+    # Legacy: tmux-based streaming (local workers + old remote sessions)
+    tmux_sess, tmux_win = tmux_target(session_name)
+
+    # Auto-create tmux session and window if they don't exist
+    try:
+        worker_tmp_dir = os.path.join("/tmp/orchestrator/workers", session_name)
+        target = ensure_window(tmux_sess, tmux_win, cwd=worker_tmp_dir)
+        logger.info("Terminal ready: %s", target)
+    except Exception as e:
+        logger.exception("Failed to create tmux session/window")
+        await websocket.send_json(
+            {
+                "type": "error",
+                "message": f"Failed to create terminal: {e}",
+            }
+        )
+        await websocket.close()
+        return
 
     await stream_pane(websocket, tmux_sess, tmux_win, session_id=session_id)
 
@@ -577,10 +591,17 @@ async def stream_remote_pty(
 
     from orchestrator.terminal.remote_worker_server import get_remote_worker_server
 
-    try:
-        rws = get_remote_worker_server(rws_host)
-    except RuntimeError as e:
-        await websocket.send_json({"type": "error", "message": f"RWS not available: {e}"})
+    # Wait for RWS daemon connection (may need to establish SSH forward tunnel)
+    rws = None
+    for attempt in range(15):  # up to ~30s
+        try:
+            rws = get_remote_worker_server(rws_host)
+            break
+        except RuntimeError:
+            if attempt < 14:
+                await asyncio.sleep(2)
+    if rws is None:
+        await websocket.send_json({"type": "error", "message": f"RWS not available for {rws_host}"})
         await websocket.close(code=4004)
         return
 
@@ -707,6 +728,20 @@ async def stream_remote_pty(
                 await websocket.send_json({"type": "pty_exit"})
             except Exception:
                 pass
+            # Clear rws_pty_id so health check knows Claude exited
+            if session_id:
+                try:
+                    from orchestrator.state.repositories import sessions as _repo
+
+                    _db = _get_conn(websocket)
+                    _owns = getattr(websocket.app.state, "conn_factory", None) is not None
+                    try:
+                        _repo.update_session(_db, session_id, rws_pty_id=None, status="idle")
+                    finally:
+                        if _owns:
+                            _db.close()
+                except Exception:
+                    pass
         if session_id:
             clear_user_activity(session_id)
 

@@ -312,6 +312,7 @@ class TestSessionDelete:
         mock_session.id = "test-session-id"
         mock_session.name = "test-rdev"
         mock_session.host = "user/rdev-vm"
+        mock_session.rws_pty_id = None  # Legacy screen path
 
         mock_repo.get_session.return_value = mock_session
 

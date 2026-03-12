@@ -1,4 +1,4 @@
-"""Tests for remote worker setup orchestration."""
+"""Tests for remote worker setup orchestration (RWS PTY architecture)."""
 
 from unittest.mock import MagicMock, patch
 
@@ -7,14 +7,12 @@ from scripts.seed_db import seed_all
 
 
 class TestSetupRemoteWorker:
-    @patch("orchestrator.terminal.session.time.sleep")  # Mock sleep to speed up tests
-    @patch("orchestrator.terminal.session.tmux")
-    @patch("orchestrator.terminal.session.ssh")
-    def test_ssh_prompt_timeout(self, mock_ssh, mock_tmux, _sleep, db):
+    @patch("orchestrator.terminal.session.time.sleep")
+    @patch("orchestrator.terminal.session._copy_dir_to_remote_ssh", return_value=False)
+    @patch("orchestrator.terminal.session.subprocess")
+    def test_ssh_copy_failure(self, mock_subprocess, mock_copy, _sleep, db):
+        """Setup should fail if SSH file copy fails."""
         seed_all(db)
-        mock_tmux.send_keys.return_value = True
-        mock_ssh.remote_connect.return_value = True
-        mock_ssh.wait_for_prompt.return_value = False
 
         mock_tunnel_manager = MagicMock()
         mock_tunnel_manager.start_tunnel.return_value = 99999
@@ -30,22 +28,27 @@ class TestSetupRemoteWorker:
         )
 
         assert result["ok"] is False
-        assert "timeout" in result["error"].lower() or "prompt" in result["error"].lower()
+        assert "copy" in result["error"].lower() or "ssh" in result["error"].lower()
         # Tunnel should be cleaned up via tunnel_manager
         mock_tunnel_manager.stop_tunnel.assert_called_once_with("session-id-456")
 
+    @patch("orchestrator.terminal.session.time.sleep")
+    @patch("orchestrator.terminal.session._ensure_rws_ready")
     @patch("orchestrator.terminal.session._copy_dir_to_remote_ssh", return_value=True)
-    @patch("orchestrator.terminal.session._install_screen_if_needed", return_value=True)
-    @patch("orchestrator.terminal.session.time.sleep")  # Mock sleep to speed up tests
-    @patch("orchestrator.terminal.session.tmux")
-    @patch("orchestrator.terminal.session.ssh")
-    def test_tunnel_start_failure(self, mock_ssh, mock_tmux, _sleep, _screen, _copy, db):
+    @patch("orchestrator.terminal.session.subprocess")
+    def test_tunnel_start_failure(self, mock_subprocess, mock_copy, mock_rws_ready, _sleep, db):
+        """Setup should continue even if tunnel start fails."""
         seed_all(db)
+
+        mock_rws = MagicMock()
+        mock_rws.create_pty.return_value = "pty-abc123"
+        mock_rws.execute.return_value = {"ptys": [{"pty_id": "pty-abc123", "alive": True}]}
+        mock_rws_ready.return_value = mock_rws
 
         mock_tunnel_manager = MagicMock()
         mock_tunnel_manager.start_tunnel.return_value = None  # Tunnel start fails
 
-        setup_remote_worker(
+        result = setup_remote_worker(
             db,
             "session-id-789",
             "w3",
@@ -55,18 +58,16 @@ class TestSetupRemoteWorker:
             tunnel_manager=mock_tunnel_manager,
         )
 
-        # Setup should continue even if tunnel fails (tunnel is retried by monitor)
-        # The SSH connection attempt should still happen
-        mock_ssh.remote_connect.assert_called_once()
+        # Setup should succeed even without tunnel (tunnel is retried by health monitor)
+        assert result["ok"] is True
+        assert result["tunnel_pid"] is None
 
     @patch("orchestrator.terminal.session.time.sleep")
-    @patch("orchestrator.terminal.session.tmux")
-    @patch("orchestrator.terminal.session.ssh")
-    def test_no_tunnel_manager(self, mock_ssh, mock_tmux, _sleep, db):
+    @patch("orchestrator.terminal.session._copy_dir_to_remote_ssh", return_value=False)
+    @patch("orchestrator.terminal.session.subprocess")
+    def test_no_tunnel_manager(self, mock_subprocess, mock_copy, _sleep, db):
         """Setup should work without tunnel_manager (tunnel skipped with warning)."""
         seed_all(db)
-        mock_ssh.remote_connect.return_value = True
-        mock_ssh.wait_for_prompt.return_value = False  # Let it fail early
 
         result = setup_remote_worker(
             db,
@@ -78,5 +79,42 @@ class TestSetupRemoteWorker:
             # No tunnel_manager provided
         )
 
-        # Should still attempt setup (tunnel_pid will be None)
-        assert result["ok"] is False  # Fails on SSH prompt timeout
+        # Should fail on SSH copy (no real host), but tunnel step doesn't crash
+        assert result["ok"] is False
+
+    @patch("orchestrator.terminal.session.time.sleep")
+    @patch("orchestrator.terminal.session._ensure_rws_ready")
+    @patch("orchestrator.terminal.session._copy_dir_to_remote_ssh", return_value=True)
+    @patch("orchestrator.terminal.session.subprocess")
+    def test_rws_pty_created_on_success(
+        self, mock_subprocess, mock_copy, mock_rws_ready, _sleep, db
+    ):
+        """Successful setup should create an RWS PTY and store the pty_id."""
+        seed_all(db)
+
+        mock_rws = MagicMock()
+        mock_rws.create_pty.return_value = "pty-xyz789"
+        mock_rws.execute.return_value = {"ptys": [{"pty_id": "pty-xyz789", "alive": True}]}
+        mock_rws_ready.return_value = mock_rws
+
+        mock_tunnel_manager = MagicMock()
+        mock_tunnel_manager.start_tunnel.return_value = 12345
+
+        result = setup_remote_worker(
+            db,
+            "session-id-success",
+            "w5",
+            "subs-mt/test",
+            "orchestrator",
+            8093,
+            work_dir="/home/user/code",
+            tunnel_manager=mock_tunnel_manager,
+        )
+
+        assert result["ok"] is True
+        assert result["tunnel_pid"] == 12345
+
+        # Verify create_pty was called with session_id
+        mock_rws.create_pty.assert_called_once()
+        call_kwargs = mock_rws.create_pty.call_args
+        assert call_kwargs.kwargs.get("session_id") == "session-id-success"

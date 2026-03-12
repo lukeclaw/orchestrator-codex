@@ -21,6 +21,7 @@ from orchestrator.state.models import Session
 from orchestrator.state.repositories import sessions as sessions_repo
 from orchestrator.terminal import manager as tmux
 from orchestrator.terminal import ssh
+from orchestrator.terminal.ssh import is_rdev_host
 
 logger = logging.getLogger(__name__)
 
@@ -489,6 +490,86 @@ def ensure_rdev_node(tmux_session: str, window_name: str, remote_tmp_dir: str):
     logger.info("Ensured Node 24 symlinks at %s", node_bin_dir)
 
 
+def _ensure_rws_ready(host: str, timeout: float = 30.0):
+    """Synchronously ensure RWS daemon is deployed and connected.
+
+    Polls get_remote_worker_server() with retries until ready or timeout.
+    Returns the RemoteWorkerServer instance.
+    """
+    from orchestrator.terminal.remote_worker_server import get_remote_worker_server
+
+    deadline = time.time() + timeout
+    last_err = None
+    while time.time() < deadline:
+        try:
+            return get_remote_worker_server(host)
+        except RuntimeError as e:
+            last_err = e
+            time.sleep(2)
+    raise RuntimeError(f"RWS daemon not ready for {host} after {timeout}s: {last_err}")
+
+
+def _build_claude_command(
+    session_id: str,
+    host: str,
+    remote_tmp_dir: str,
+    work_dir: str | None,
+    claude_session_id: str | None = None,
+    is_resume: bool = False,
+) -> str:
+    """Build full bash command chain for Claude in RWS PTY.
+
+    Returns a single shell command string that sets up PATH, installs
+    plugins, configures environment, and launches Claude.
+    """
+    parts = []
+
+    # PATH setup — on rdev, include node-bin for Node 24 symlinks
+    if is_rdev_host(host):
+        parts.append(
+            f'export PATH="{remote_tmp_dir}/node-bin:{remote_tmp_dir}/bin:$HOME/.local/bin:$PATH"'
+        )
+    else:
+        parts.append(get_path_export_command(f"{remote_tmp_dir}/bin"))
+
+    # Make scripts executable
+    parts.append(f"chmod +x {remote_tmp_dir}/bin/* 2>/dev/null || true")
+    parts.append(f"chmod +x {remote_tmp_dir}/configs/hooks/*.sh 2>/dev/null || true")
+
+    # Install Playwright plugin (skip if already installed)
+    parts.append(_PW_INSTALL_CMD)
+
+    # Configure Playwright MCP via env var
+    parts.append("export PLAYWRIGHT_MCP_CDP_ENDPOINT=http://localhost:9222")
+
+    # cd to work_dir
+    if work_dir:
+        parts.append(f"cd {work_dir}")
+
+    # Build Claude command
+    settings_file = f"{remote_tmp_dir}/configs/settings.json"
+    target_id = claude_session_id or session_id
+
+    if is_resume:
+        session_arg = f"-r {target_id}"
+    else:
+        session_arg = f"--session-id {session_id}"
+
+    claude_args = [
+        session_arg,
+        f"--settings {settings_file}",
+        "--dangerously-skip-permissions",
+    ]
+
+    # Load prompt from file if it exists
+    remote_prompt_path = f"{remote_tmp_dir}/prompt.md"
+    claude_args.append(f'--append-system-prompt "$(cat {remote_prompt_path} 2>/dev/null || true)"')
+
+    parts.append(f"claude {' '.join(claude_args)}")
+
+    return " && ".join(parts)
+
+
 def setup_remote_worker(
     conn: sqlite3.Connection,
     session_id: str,
@@ -503,29 +584,27 @@ def setup_remote_worker(
     disabled_builtin_names: set[str] | None = None,
     update_before_start: bool = False,
 ) -> dict:
-    """Set up a full remote worker: tunnel, SSH, screen, Claude, prompt.
+    """Set up a full remote worker via RWS PTY (new architecture).
 
-    Works for both rdev and generic SSH hosts. The 3 rdev-specific steps
-    (rdev ssh connect, PATH fixup, claude update) are conditionally applied
-    based on ``ssh.is_rdev_host(host)``.
+    Replaces the legacy Screen+tmux path. Claude runs in a PTY managed by
+    the RWS daemon on the remote host, giving full scrollback and eliminating
+    the need for GNU Screen.
+
+    Falls back to legacy screen path only if RWS PTY setup fails.
 
     Returns {"ok": True, "tunnel_pid": ...} on success,
     or {"ok": False, "error": "..."} on failure.
-
-    Args:
-        work_dir: Where Claude Code runs (user's codebase). If None, uses home dir.
-        tmp_dir: Local tmp directory for generating scripts/configs before copying to remote.
-        tunnel_manager: ReverseTunnelManager for subprocess-based tunnel management.
-
-    Claude Code runs inside a GNU Screen session to survive SSH disconnections.
-    Screen session name: claude-{session_id}
     """
+    from orchestrator.session.reconnect import get_reconnect_lock
+
     remote_tmp_dir = f"/tmp/orchestrator/workers/{name}"
     local_tmp_dir = tmp_dir or f"/tmp/orchestrator/workers/{name}"
-    screen_name = _get_screen_session_name(session_id)
+
+    lock = get_reconnect_lock(session_id)
+    lock.acquire(timeout=5)
 
     try:
-        # 1. Start reverse SSH tunnel via subprocess (no tmux window needed)
+        # 1. Start reverse SSH tunnel via subprocess (for API callbacks)
         tunnel_pid = None
         if tunnel_manager:
             tunnel_pid = tunnel_manager.start_tunnel(session_id, name, host)
@@ -542,49 +621,7 @@ def setup_remote_worker(
             logger.warning("No tunnel_manager provided, skipping tunnel setup for %s", name)
         time.sleep(2)  # Give tunnel a moment to establish
 
-        # 2. Connect to remote host (rdev ssh or plain ssh)
-        ssh.remote_connect(tmux_session, name, host)
-        logger.info("Connecting to remote host for %s: %s", name, host)
-
-        # 3. Wait for shell prompt
-        if not ssh.wait_for_prompt(tmux_session, name, timeout=30):
-            # First attempt failed — kill pane and retry once with a clean slate
-            logger.warning(
-                "setup_remote_worker %s: first SSH timed out, killing pane and retrying", name
-            )
-            tmux.kill_window(tmux_session, name)
-            tmux.ensure_window(tmux_session, name, cwd=local_tmp_dir)
-            ssh.remote_connect(tmux_session, name, host)
-            if not ssh.wait_for_prompt(tmux_session, name, timeout=30):
-                raise RuntimeError(
-                    f"Timed out waiting for shell prompt on {host} (after kill+recreate retry)"
-                )
-
-        # 3b. Ensure Node 24 for Playwright
-        if ssh.is_rdev_host(host):
-            ensure_rdev_node(tmux_session, name, remote_tmp_dir)
-            logger.info("Installed Node 24 for rdev worker %s", name)
-        else:
-            # Plain SSH: ensure Node 24 via volta (needed for Playwright plugin's npx)
-            tmux.send_keys(tmux_session, name, "volta install node@24", enter=True)
-            time.sleep(3)
-            logger.info("Installed Node 24 via volta for SSH worker %s", name)
-
-        # 3c. Install screen if needed
-        if not _install_screen_if_needed(tmux_session, name):
-            logger.warning("Screen not available, falling back to direct execution")
-            # Continue without screen - less resilient but still functional
-
-        # 3d. Kill any orphaned screen session from previous runs
-        _kill_orphaned_screen(tmux_session, name, screen_name)
-
-        # 4. Enter screen session early - all remaining commands run inside screen
-        # This protects the entire setup process from SSH disconnections
-        tmux.send_keys(tmux_session, name, f"screen -S {screen_name}", enter=True)
-        time.sleep(1)  # Wait for screen to start
-        logger.info("Entered screen session '%s' for worker %s", screen_name, name)
-
-        # 5. Deploy all files locally via SOT function
+        # 2. Deploy all files locally via SOT function
         from orchestrator.agents.deploy import deploy_worker_tmp_contents
 
         deploy_worker_tmp_contents(
@@ -597,111 +634,88 @@ def setup_remote_worker(
             disabled_builtin_names=disabled_builtin_names,
         )
         logger.info("Deployed worker tmp contents for remote worker %s", name)
-        remote_prompt_path = f"{remote_tmp_dir}/prompt.md"
-        worker_prompt = os.path.exists(os.path.join(local_tmp_dir, "prompt.md"))
 
-        # 6. Copy entire directory to remote via direct SSH (bypasses tmux/screen)
+        # 3. Copy entire directory to remote via direct SSH (bypasses tmux/screen)
         if not _copy_dir_to_remote_ssh(local_tmp_dir, host, remote_tmp_dir):
             raise RuntimeError(f"Failed to copy files to remote via SSH: {host}:{remote_tmp_dir}")
-
         logger.info("Copied files to remote via direct SSH: %s", remote_tmp_dir)
 
-        # Make scripts executable
-        tmux.send_keys(tmux_session, name, f"chmod +x {remote_tmp_dir}/bin/*", enter=True)
-        time.sleep(0.3)
-        tmux.send_keys(
-            tmux_session,
-            name,
-            f"chmod +x {remote_tmp_dir}/configs/hooks/*.sh 2>/dev/null || true",
-            enter=True,
+        # 4. Copy skills to ~/.claude/commands/ via SSH subprocess
+        skills_copy_cmd = (
+            "rm -f ~/.claude/commands/*.md 2>/dev/null;"
+            " mkdir -p ~/.claude/commands"
+            f" && cp {remote_tmp_dir}/.claude/commands/*.md"
+            " ~/.claude/commands/ 2>/dev/null || true"
         )
-        time.sleep(0.3)
-
-        # Export PATH — on rdev, put our Node 24 symlinks first so they
-        # take precedence over the LinkedIn wrapper that force-pins Node 16.
-        path_export = get_path_export_command(f"{remote_tmp_dir}/bin")
-        if ssh.is_rdev_host(host):
-            path_export = (
-                f'export PATH="{remote_tmp_dir}/node-bin:{remote_tmp_dir}/bin'
-                ':$HOME/.local/bin:$PATH"'
-            )
-        tmux.send_keys(tmux_session, name, path_export, enter=True)
-        time.sleep(0.5)
-        logger.info("Copied all files to remote via tar+base64 and updated PATH")
-
-        # 7. cd to work_dir if specified (inside screen)
-        if work_dir:
-            tmux.send_keys(tmux_session, name, f"cd {work_dir}", enter=True)
-            time.sleep(0.3)
-
-        # Deploy skills to ~/.claude/commands/ (global user skills directory)
-        # NOTE: --add-dir flag doesn't work reliably in recent Claude Code versions,
-        # so we copy skills directly to the user's global ~/.claude/commands/ folder
-        # which Claude always loads regardless of working directory.
-        if os.path.isdir(os.path.join(local_tmp_dir, ".claude", "commands")):
-            global_skills_dest = "~/.claude/commands"
-            # Clear stale skills, then copy current set
-            tmux.send_keys(
-                tmux_session,
-                name,
-                f"rm -f {global_skills_dest}/*.md 2>/dev/null; mkdir -p {global_skills_dest}",
-                enter=True,
-            )
-            time.sleep(0.2)
-            tmux.send_keys(
-                tmux_session,
-                name,
-                f"cp {remote_tmp_dir}/.claude/commands/*.md"
-                f" {global_skills_dest}/ 2>/dev/null || true",
-                enter=True,
-            )
-            time.sleep(0.3)
-            logger.info("Deployed skills to %s for rdev worker %s", global_skills_dest, name)
-
-        # 8. Install Playwright plugin (skip if already installed) and configure CDP endpoint
-        tmux.send_keys(tmux_session, name, _PW_INSTALL_CMD, enter=True)
-        time.sleep(3)  # Wait for plugin install
-
-        # Configure Playwright MCP via env var — the built-in Playwright plugin
-        # reads PLAYWRIGHT_MCP_CDP_ENDPOINT from its environment.
-        tmux.send_keys(
-            tmux_session,
-            name,
-            "export PLAYWRIGHT_MCP_CDP_ENDPOINT=http://localhost:9222",
-            enter=True,
+        subprocess.run(
+            ["ssh", "-o", "ConnectTimeout=10", "-o", "BatchMode=yes", host, skills_copy_cmd],
+            capture_output=True,
+            timeout=30,
         )
-        time.sleep(0.3)
+        logger.info("Deployed skills to ~/.claude/commands/ for %s", name)
 
-        # 9. Optionally update Claude Code before launching
-        if update_before_start:
-            from orchestrator.terminal.claude_update import run_claude_update
+        # 5. Install Node 24 via SSH subprocess (needed for Playwright)
+        if is_rdev_host(host):
+            # On rdev, create node-bin symlinks for Node 24
+            node_cmd = (
+                "volta install node@24"
+                f" && mkdir -p {remote_tmp_dir}/node-bin"
+                f" && ln -sf $(volta which node) {remote_tmp_dir}/node-bin/node"
+                f" && ln -sf $(volta which npx) {remote_tmp_dir}/node-bin/npx"
+                f" && ln -sf $(volta which npm) {remote_tmp_dir}/node-bin/npm"
+            )
+        else:
+            node_cmd = "volta install node@24 2>/dev/null || true"
+        subprocess.run(
+            ["ssh", "-o", "ConnectTimeout=10", "-o", "BatchMode=yes", host, node_cmd],
+            capture_output=True,
+            timeout=60,
+        )
+        logger.info("Ensured Node 24 on %s for %s", host, name)
 
-            run_claude_update(tmux.send_keys, tmux.capture_output, tmux_session, name)
+        # 6. Ensure RWS daemon is running
+        rws = _ensure_rws_ready(host, timeout=30)
 
-        # 10. Launch Claude (inside screen)
-        settings_file = f"{remote_tmp_dir}/configs/settings.json"
-
-        claude_args = [
-            f"--settings {settings_file}",
-            "--dangerously-skip-permissions",
-            f"--session-id {session_id}",
-        ]
-
-        # Use $(cat prompt.md) to load prompt from file instead of pasting content
-        if worker_prompt:
-            claude_args.append(f'--append-system-prompt "$(cat {remote_prompt_path})"')
-
-        claude_cmd = f"claude {' '.join(claude_args)}"
-        tmux.send_keys(tmux_session, name, claude_cmd, enter=True)
-        logger.info(
-            "Launched Claude Code in screen session '%s' for remote worker %s (work_dir=%s)",
-            screen_name,
-            name,
+        # 7. Build Claude command and create PTY
+        claude_cmd = _build_claude_command(
+            session_id,
+            host,
+            remote_tmp_dir,
             work_dir,
+            claude_session_id=None,
+            is_resume=False,
         )
 
-        # Dismiss any "trust this folder" prompt that may appear after launch
-        tmux.dismiss_trust_prompt(tmux_session, name, session_id=session_id)
+        pty_id = rws.create_pty(
+            cmd=claude_cmd,
+            cwd=work_dir or os.path.expanduser("~"),
+            cols=120,
+            rows=40,
+            session_id=session_id,
+        )
+        logger.info("Created RWS PTY %s for worker %s", pty_id, name)
+
+        # 8. Store pty_id
+        sessions_repo.update_session(conn, session_id, rws_pty_id=pty_id, status="working")
+
+        # 9. Verify PTY alive after a few seconds
+        time.sleep(3)
+        try:
+            resp = rws.execute({"action": "pty_list"})
+            ptys = resp.get("ptys", [])
+            alive = any(p["pty_id"] == pty_id and p["alive"] for p in ptys)
+            if not alive:
+                # PTY died — read ringbuffer for error info
+                try:
+                    cap = rws.execute({"action": "pty_capture", "pty_id": pty_id, "lines": 30})
+                    error_output = cap.get("data", "")
+                except Exception:
+                    error_output = "(could not read PTY output)"
+                raise RuntimeError(f"Claude failed to start in RWS PTY: {error_output[:300]}")
+        except RuntimeError:
+            raise
+        except Exception:
+            logger.warning("Could not verify PTY status for %s, continuing", name)
 
         return {"ok": True, "tunnel_pid": tunnel_pid}
 
@@ -714,6 +728,11 @@ def setup_remote_worker(
             except Exception:
                 pass
         return {"ok": False, "error": str(e)}
+    finally:
+        try:
+            lock.release()
+        except RuntimeError:
+            pass
 
 
 def setup_local_worker(

@@ -71,7 +71,7 @@ class FakeWebSocket:
 
 def _make_db_row(name="test"):
     """Simulate a sqlite3.Row with dict-like access."""
-    row = {"name": name, "id": "sess-1"}
+    row = {"name": name, "id": "sess-1", "rws_pty_id": None, "host": "localhost"}
     return row
 
 

@@ -778,6 +778,162 @@ def _recycle_frozen_pane(
         )
 
 
+def _check_rws_pty_health(db, session, tunnel_manager=None) -> dict:
+    """Health check for sessions using RWS PTY architecture.
+
+    Checks:
+    1. Reverse tunnel (for API callbacks)
+    2. RWS daemon PTY status
+    3. Fallback: SSH subprocess check for Claude process
+    """
+    from orchestrator.terminal.remote_worker_server import _SCRIPT_HASH, _server_pool
+
+    # 1. Check reverse tunnel
+    tunnel_alive = tunnel_manager.is_alive(session.id) if tunnel_manager else False
+    tunnel_reconnected = False
+    if not tunnel_alive and tunnel_manager:
+        new_pid = tunnel_manager.restart_tunnel(session.id, session.name, session.host)
+        if new_pid:
+            repo.update_session(db, session.id, tunnel_pid=new_pid)
+            tunnel_alive = True
+            tunnel_reconnected = True
+            logger.info("Health check RWS: %s tunnel restarted (pid=%d)", session.name, new_pid)
+
+    # 2. Check RWS PTY via daemon
+    rws = _server_pool.get(session.host)
+    if rws is not None:
+        try:
+            resp = rws.execute({"action": "pty_list"}, timeout=5)
+            ptys = resp.get("ptys", [])
+            our_pty = next((p for p in ptys if p["pty_id"] == session.rws_pty_id), None)
+
+            if our_pty and our_pty["alive"]:
+                # PTY alive — all good
+                # Check for work_dir detection
+                if not session.work_dir:
+                    from orchestrator.api.routes.files import _detect_remote_work_dir
+
+                    detected = _detect_remote_work_dir(session.host, session.id)
+                    if detected:
+                        repo.update_session(db, session.id, work_dir=detected)
+
+                # Ensure local+remote tmp dirs are healthy
+                tmp_dir = f"/tmp/orchestrator/workers/{session.name}"
+                api_base = f"http://127.0.0.1:{DEFAULT_API_PORT}"
+                try:
+                    tmp_result = ensure_tmp_dir_health(
+                        tmp_dir,
+                        session.id,
+                        api_base=api_base,
+                        cdp_port=9222,
+                        browser_headless=True,
+                        conn=db,
+                    )
+                    if tmp_result.get("regenerated"):
+                        from orchestrator.session.reconnect import _copy_configs_to_remote
+
+                        remote_tmp_dir = f"/tmp/orchestrator/workers/{session.name}"
+                        try:
+                            _copy_configs_to_remote(
+                                session.host, tmp_dir, remote_tmp_dir, session.name
+                            )
+                        except Exception:
+                            logger.warning(
+                                "Health check RWS: %s failed to re-push configs",
+                                session.name,
+                                exc_info=True,
+                            )
+                except Exception:
+                    logger.debug(
+                        "Health check RWS: %s tmp dir check failed",
+                        session.name,
+                        exc_info=True,
+                    )
+
+                # Check RWS daemon version
+                try:
+                    info = rws.execute({"action": "server_info"}, timeout=5)
+                    daemon_version = info.get("version", "")
+                    if daemon_version != _SCRIPT_HASH:
+                        logger.warning(
+                            "Health check RWS: %s daemon outdated, will upgrade on next reconnect",
+                            session.name,
+                        )
+                except Exception:
+                    pass
+
+                current_status = session.status
+                if current_status in ("screen_detached", "error", "disconnected", "connecting"):
+                    repo.update_session(db, session.id, status="waiting")
+                    current_status = "waiting"
+
+                result = {
+                    "alive": True,
+                    "status": current_status,
+                    "reason": "RWS PTY alive",
+                    "tunnel_alive": tunnel_alive,
+                }
+                if tunnel_reconnected:
+                    result["tunnel_reconnected"] = True
+                return result
+
+            # PTY dead or gone
+            logger.info(
+                "Health check RWS: %s PTY %s is dead/gone, marking disconnected",
+                session.name,
+                session.rws_pty_id,
+            )
+            repo.update_session(db, session.id, status="disconnected", rws_pty_id=None)
+            return {
+                "alive": False,
+                "status": "disconnected",
+                "reason": "RWS PTY dead",
+                "needs_reconnect": True,
+            }
+        except Exception:
+            logger.debug(
+                "Health check RWS: %s could not query daemon",
+                session.name,
+                exc_info=True,
+            )
+
+    # 3. Fallback: SSH subprocess check (Claude process alive?)
+    try:
+        check_cmd = (
+            "ps aux | grep -v grep | grep -E 'claude (-r|--|--settings)'"
+            f" | grep -q '{session.id}' && echo ALIVE || echo DEAD"
+        )
+        result = subprocess.run(
+            ["ssh", "-o", "ConnectTimeout=10", "-o", "BatchMode=yes", session.host, check_cmd],
+            capture_output=True,
+            text=True,
+            timeout=15,
+        )
+        if "ALIVE" in result.stdout:
+            if session.status in ("disconnected", "error"):
+                repo.update_session(db, session.id, status="waiting")
+            return {
+                "alive": True,
+                "status": "waiting",
+                "reason": "Claude alive (SSH fallback)",
+                "tunnel_alive": tunnel_alive,
+            }
+    except Exception:
+        logger.debug(
+            "Health check RWS: %s SSH fallback failed",
+            session.name,
+            exc_info=True,
+        )
+
+    repo.update_session(db, session.id, status="disconnected", rws_pty_id=None)
+    return {
+        "alive": False,
+        "status": "disconnected",
+        "reason": "RWS unavailable and SSH fallback failed",
+        "needs_reconnect": True,
+    }
+
+
 def check_and_update_worker_health(db, session, tunnel_manager=None) -> dict:
     """Check a single worker's health and update its DB status accordingly.
 
@@ -823,6 +979,11 @@ def check_and_update_worker_health(db, session, tunnel_manager=None) -> dict:
         }
 
     if is_remote_host(session.host):
+        # RWS PTY architecture — use daemon-based health check
+        if session.rws_pty_id:
+            return _check_rws_pty_health(db, session, tunnel_manager)
+
+        # Legacy screen-based check
         screen_status, reason = check_screen_and_claude_remote(
             session.host,
             session.id,

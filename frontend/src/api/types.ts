@@ -11,6 +11,7 @@ export interface Session {
   session_type: 'worker' | 'brain' | 'system'
   preview?: string
   auto_reconnect: boolean
+  rws_pty_id: string | null
 }
 
 export interface WorkerDetail {

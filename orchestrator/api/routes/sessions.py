@@ -117,6 +117,7 @@ def _serialize_session(s):
         "session_type": s.session_type,
         "last_viewed_at": s.last_viewed_at,
         "auto_reconnect": s.auto_reconnect,
+        "rws_pty_id": s.rws_pty_id,
     }
 
 
@@ -471,8 +472,19 @@ def _delete_session_inner(s, session_id: str, request: Request, db):
 
     tmux_sess, tmux_win = tmux_target(s.name)
 
-    # For remote workers, clean up screen session and remote directory before killing window
-    if is_remote:
+    # For remote workers, clean up RWS PTY or legacy screen session
+    if is_remote and s.rws_pty_id:
+        # RWS PTY architecture — destroy PTY via daemon
+        try:
+            from orchestrator.terminal.remote_worker_server import get_remote_worker_server
+
+            rws = get_remote_worker_server(s.host)
+            rws.execute({"action": "pty_destroy", "pty_id": s.rws_pty_id})
+            logger.info("Destroyed RWS PTY %s for session %s", s.rws_pty_id, s.name)
+        except Exception:
+            logger.debug("Could not destroy RWS PTY for session %s", s.name)
+    elif is_remote:
+        # Legacy screen cleanup
         try:
             import subprocess
 
