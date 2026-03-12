@@ -830,3 +830,125 @@ class TestStreamRemotePtyNotFound:
         mock_update.assert_not_called()
 
         assert ws.closed
+
+
+class TestStreamRemotePtyCleanup:
+    """Verify stream cleanup only sends pty_exit when PTY is confirmed dead."""
+
+    async def test_tunnel_death_does_not_send_pty_exit(self):
+        """When stream EOF is caused by tunnel death (daemon unreachable),
+        do NOT send pty_exit or clear DB — the PTY may still be alive."""
+        from orchestrator.api.ws_terminal import stream_remote_pty
+
+        ws = FakeWebSocket()
+        ws.accepted = True
+
+        # Simulate: connect_pty_stream succeeds, then recv returns b"" (EOF)
+        fake_sock = MagicMock()
+        mock_rws = MagicMock()
+        mock_rws.connect_pty_stream.return_value = (fake_sock, b"")
+        # After stream closes, daemon is unreachable (tunnel died)
+        mock_rws.execute.side_effect = RuntimeError("connection refused")
+
+        mock_update = MagicMock()
+
+        with (
+            patch(
+                "orchestrator.terminal.remote_worker_server.get_remote_worker_server",
+                return_value=mock_rws,
+            ),
+            patch(
+                "orchestrator.state.repositories.sessions.update_session",
+                mock_update,
+            ),
+            patch(
+                "orchestrator.api.ws_terminal._blocking_recv",
+                return_value=b"",  # EOF — stream socket closed
+            ),
+        ):
+            await stream_remote_pty(ws, "sess-1", "pty-abc", "user/rdev-vm")
+
+        # Should NOT send pty_exit — daemon was unreachable, PTY might still live
+        assert not any(m.get("type") == "pty_exit" for m in ws.sent_json), (
+            f"Should not send pty_exit on tunnel death, got: {ws.sent_json}"
+        )
+        # Should NOT clear DB
+        mock_update.assert_not_called()
+
+    async def test_confirmed_dead_pty_sends_pty_exit(self):
+        """When daemon confirms PTY is dead, send pty_exit and clear DB."""
+        from orchestrator.api.ws_terminal import stream_remote_pty
+
+        ws = FakeWebSocket()
+        ws.accepted = True
+
+        fake_sock = MagicMock()
+        mock_rws = MagicMock()
+        mock_rws.connect_pty_stream.return_value = (fake_sock, b"")
+        # After stream closes, daemon says PTY is dead
+        mock_rws.execute.return_value = {"ptys": [{"pty_id": "pty-abc", "alive": False}]}
+
+        mock_update = MagicMock()
+
+        with (
+            patch(
+                "orchestrator.terminal.remote_worker_server.get_remote_worker_server",
+                return_value=mock_rws,
+            ),
+            patch(
+                "orchestrator.state.repositories.sessions.update_session",
+                mock_update,
+            ),
+            patch("orchestrator.api.ws_terminal._get_conn") as mock_get_conn,
+            patch(
+                "orchestrator.api.ws_terminal._blocking_recv",
+                return_value=b"",
+            ),
+        ):
+            db_conn = MagicMock()
+            mock_get_conn.return_value = db_conn
+            ws.app.state.conn_factory = None
+            ws.app.state.conn = db_conn
+
+            await stream_remote_pty(ws, "sess-1", "pty-abc", "user/rdev-vm")
+
+        # Should send pty_exit — PTY confirmed dead
+        assert any(m.get("type") == "pty_exit" for m in ws.sent_json), (
+            f"Expected pty_exit for confirmed dead PTY, got: {ws.sent_json}"
+        )
+        # Should clear DB
+        mock_update.assert_called_once_with(db_conn, "sess-1", rws_pty_id=None, status="idle")
+
+    async def test_pty_still_alive_no_pty_exit(self):
+        """When daemon confirms PTY is still alive, do NOT send pty_exit."""
+        from orchestrator.api.ws_terminal import stream_remote_pty
+
+        ws = FakeWebSocket()
+        ws.accepted = True
+
+        fake_sock = MagicMock()
+        mock_rws = MagicMock()
+        mock_rws.connect_pty_stream.return_value = (fake_sock, b"")
+        # Daemon says PTY is alive (tunnel died, not the PTY)
+        mock_rws.execute.return_value = {"ptys": [{"pty_id": "pty-abc", "alive": True}]}
+
+        mock_update = MagicMock()
+
+        with (
+            patch(
+                "orchestrator.terminal.remote_worker_server.get_remote_worker_server",
+                return_value=mock_rws,
+            ),
+            patch(
+                "orchestrator.state.repositories.sessions.update_session",
+                mock_update,
+            ),
+            patch(
+                "orchestrator.api.ws_terminal._blocking_recv",
+                return_value=b"",
+            ),
+        ):
+            await stream_remote_pty(ws, "sess-1", "pty-abc", "user/rdev-vm")
+
+        assert not any(m.get("type") == "pty_exit" for m in ws.sent_json)
+        mock_update.assert_not_called()

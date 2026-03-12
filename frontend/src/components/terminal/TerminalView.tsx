@@ -457,10 +457,28 @@ export default function TerminalView({ sessionId, wsPath, sendPath, sessionStatu
   const handleRetry = useCallback(() => {
     if (terminalRef.current) {
       reconnectAttemptRef.current = 0
+      ptyExitedRef.current = false
       setConnectionState('reconnecting')
       connectWebSocket(terminalRef.current)
     }
   }, [connectWebSocket])
+
+  // Auto-reconnect when session transitions to an active state while the
+  // terminal WebSocket is disconnected (e.g. worker reconnected after a
+  // tunnel death that exhausted retries or triggered pty_exit).
+  const prevStatusRef = useRef(sessionStatus)
+  useEffect(() => {
+    const prev = prevStatusRef.current
+    prevStatusRef.current = sessionStatus
+    const isActive = sessionStatus === 'working' || sessionStatus === 'waiting'
+    const wasInactive = !prev || prev === 'disconnected' || prev === 'connecting' || prev === 'error' || prev === 'idle'
+    if (isActive && wasInactive && connectionState !== 'connected' && terminalRef.current) {
+      ptyExitedRef.current = false
+      reconnectAttemptRef.current = 0
+      setConnectionState('reconnecting')
+      connectWebSocket(terminalRef.current)
+    }
+  }, [sessionStatus, connectionState, connectWebSocket])
 
   // Before first successful connection: always show skeleton, never show errors.
   // After first connection: show content; overlay only if connection is lost.

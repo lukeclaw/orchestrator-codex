@@ -551,7 +551,17 @@ async def terminal_websocket(websocket: WebSocket, session_id: str):
         await stream_remote_pty(websocket, session_id, rws_pty_id, host)
         return
 
-    # Legacy: tmux-based streaming (local workers + old remote sessions)
+    # Remote worker without rws_pty_id — PTY not attached yet (reconnecting).
+    # Don't fall back to tmux (would show an empty shell); tell the frontend
+    # so it can show a proper "connecting" / "disconnected" overlay.
+    if is_remote_host(host):
+        await websocket.send_json(
+            {"type": "error", "message": "Remote session is reconnecting — PTY not attached yet"}
+        )
+        await websocket.close(code=4004)
+        return
+
+    # Legacy: tmux-based streaming (local workers only)
     tmux_sess, tmux_win = tmux_target(session_name)
 
     # Auto-create tmux session and window if they don't exist
@@ -646,7 +656,7 @@ async def stream_remote_pty(
     stream_buffer = bytearray()
     flush_event = asyncio.Event()
     stream_closed = asyncio.Event()
-    pty_exited = False  # True when the PTY process exits (EOF on stream)
+    pty_exited = False  # True when the PTY child process actually exits
 
     async def read_pty_output():
         """Read raw bytes from PTY stream socket and batch-send to WebSocket."""
@@ -744,26 +754,41 @@ async def stream_remote_pty(
             stream_sock.close()
         except OSError:
             pass
-        # Notify the client that the PTY process exited (not just a WS drop)
+        # Determine if the PTY child process actually exited, or if the
+        # stream socket closed for another reason (e.g. SSH tunnel death).
+        # Only send pty_exit and clear DB state when the PTY is truly gone.
         if pty_exited:
+            confirmed_dead = False
             try:
-                await websocket.send_json({"type": "pty_exit"})
+                _rws = get_remote_worker_server(rws_host)
+                resp = _rws.execute({"action": "pty_list"}, timeout=5)
+                ptys = resp.get("ptys", [])
+                alive = any(p.get("pty_id") == pty_id and p.get("alive") for p in ptys)
+                confirmed_dead = not alive
             except Exception:
-                pass
-            # Clear rws_pty_id so health check knows Claude exited
-            if session_id:
-                try:
-                    from orchestrator.state.repositories import sessions as _repo
+                # Daemon unreachable (tunnel died) — PTY may still be alive,
+                # don't assume it exited.  Health check will sort it out.
+                confirmed_dead = False
 
-                    _db = _get_conn(websocket)
-                    _owns = getattr(websocket.app.state, "conn_factory", None) is not None
-                    try:
-                        _repo.update_session(_db, session_id, rws_pty_id=None, status="idle")
-                    finally:
-                        if _owns:
-                            _db.close()
+            if confirmed_dead:
+                try:
+                    await websocket.send_json({"type": "pty_exit"})
                 except Exception:
                     pass
+                # Clear rws_pty_id so health check knows Claude exited
+                if session_id:
+                    try:
+                        from orchestrator.state.repositories import sessions as _repo
+
+                        _db = _get_conn(websocket)
+                        _owns = getattr(websocket.app.state, "conn_factory", None) is not None
+                        try:
+                            _repo.update_session(_db, session_id, rws_pty_id=None, status="idle")
+                        finally:
+                            if _owns:
+                                _db.close()
+                    except Exception:
+                        pass
         if session_id:
             clear_user_activity(session_id)
 

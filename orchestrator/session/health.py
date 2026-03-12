@@ -595,7 +595,25 @@ def _check_rws_pty_health(db, session, tunnel_manager=None) -> dict:
         try:
             resp = rws.execute({"action": "pty_list"}, timeout=5)
             ptys = resp.get("ptys", [])
-            our_pty = next((p for p in ptys if p["pty_id"] == session.rws_pty_id), None)
+
+            # Look up our PTY by ID first, then fall back to session_id
+            # (handles cases where rws_pty_id was cleared but PTY is alive)
+            our_pty = None
+            if session.rws_pty_id:
+                our_pty = next((p for p in ptys if p["pty_id"] == session.rws_pty_id), None)
+            if not our_pty:
+                our_pty = next(
+                    (p for p in ptys if p.get("session_id") == session.id and p.get("alive")),
+                    None,
+                )
+                if our_pty and our_pty["pty_id"] != session.rws_pty_id:
+                    # Re-attach: found alive PTY by session_id, restore rws_pty_id
+                    repo.update_session(db, session.id, rws_pty_id=our_pty["pty_id"])
+                    logger.info(
+                        "Health check RWS: %s re-attached to PTY %s via session_id",
+                        session.name,
+                        our_pty["pty_id"],
+                    )
 
             if our_pty and our_pty["alive"]:
                 # PTY alive — all good
@@ -745,8 +763,9 @@ def check_and_update_worker_health(db, session, tunnel_manager=None) -> dict:
 
     worker_tmp_dir = f"/tmp/orchestrator/workers/{session.name}"
 
-    # RWS PTY remote sessions don't use tmux windows — check via daemon first
-    if is_remote_host(session.host) and session.rws_pty_id:
+    # All remote sessions use RWS PTY health check (daemon + SSH fallback).
+    # The check handles rws_pty_id being None by searching for PTY via session_id.
+    if is_remote_host(session.host):
         return _check_rws_pty_health(db, session, tunnel_manager)
 
     # Check whether the pane exists.  If it does and the worker turns out
@@ -765,11 +784,6 @@ def check_and_update_worker_health(db, session, tunnel_manager=None) -> dict:
         )
 
     if not pane_preexisted:
-        # Remote sessions without rws_pty_id may be legacy or mid-setup —
-        # for remote hosts, route to RWS PTY health check instead of
-        # immediately marking disconnected.
-        if is_remote_host(session.host):
-            return _check_rws_pty_health(db, session, tunnel_manager)
         if session.status != "disconnected":
             repo.update_session(db, session.id, status="disconnected")
             logger.info("Health check: %s has no tmux window, marking disconnected", session.name)
@@ -780,60 +794,54 @@ def check_and_update_worker_health(db, session, tunnel_manager=None) -> dict:
             "needs_reconnect": True,
         }
 
-    if is_remote_host(session.host):
-        # All remote sessions use RWS PTY health check (legacy screen path removed)
-        return _check_rws_pty_health(db, session, tunnel_manager)
-    else:
-        # Local worker: use pane-based process tree detection (primary)
-        # with ps aux fallback checking both orchestrator and Claude IDs.
-        # After /clear or /compact, Claude's internal session ID changes
-        # but the process command line retains the original --session-id,
-        # so relying solely on claude_session_id causes false disconnects.
-        alive, reason = check_claude_running_local(
+    # Local worker: use pane-based process tree detection (primary)
+    # with ps aux fallback checking both orchestrator and Claude IDs.
+    # After /clear or /compact, Claude's internal session ID changes
+    # but the process command line retains the original --session-id,
+    # so relying solely on claude_session_id causes false disconnects.
+    alive, reason = check_claude_running_local(
+        session.id,
+        session.claude_session_id,
+        tmux_sess,
+        tmux_win,
+    )
+    if not alive:
+        _recycle_frozen_pane(pane_preexisted, tmux_sess, tmux_win, worker_tmp_dir, session.name)
+
+        if session.status != "disconnected":
+            repo.update_session(db, session.id, status="disconnected")
+            logger.info("Health check: %s marked as disconnected (%s)", session.name, reason)
+        return {
+            "alive": False,
+            "status": "disconnected",
+            "reason": reason,
+            "needs_reconnect": True,
+        }
+
+    # --- Local alive: ensure tmp dir is healthy ---
+    tmp_dir = f"/tmp/orchestrator/workers/{session.name}"
+    try:
+        tmp_result = ensure_tmp_dir_health(
+            tmp_dir,
             session.id,
-            session.claude_session_id,
-            tmux_sess,
-            tmux_win,
+            api_base=f"http://127.0.0.1:{DEFAULT_API_PORT}",
+            browser_headless=False,
+            conn=db,
         )
-        if not alive:
-            _recycle_frozen_pane(pane_preexisted, tmux_sess, tmux_win, worker_tmp_dir, session.name)
+        if tmp_result.get("regenerated"):
+            logger.warning("Health check: %s regenerated local tmp dir", session.name)
+    except Exception:
+        logger.debug(
+            "Health check: %s tmp dir check failed",
+            session.name,
+            exc_info=True,
+        )
 
-            if session.status != "disconnected":
-                repo.update_session(db, session.id, status="disconnected")
-                logger.info("Health check: %s marked as disconnected (%s)", session.name, reason)
-            return {
-                "alive": False,
-                "status": "disconnected",
-                "reason": reason,
-                "needs_reconnect": True,
-            }
-
-        # --- Local alive: ensure tmp dir is healthy ---
-        tmp_dir = f"/tmp/orchestrator/workers/{session.name}"
-        try:
-            tmp_result = ensure_tmp_dir_health(
-                tmp_dir,
-                session.id,
-                api_base=f"http://127.0.0.1:{DEFAULT_API_PORT}",
-                browser_headless=False,
-                conn=db,
-            )
-            if tmp_result.get("regenerated"):
-                logger.warning("Health check: %s regenerated local tmp dir", session.name)
-        except Exception:
-            logger.debug(
-                "Health check: %s tmp dir check failed",
-                session.name,
-                exc_info=True,
-            )
-
-        if session.status in ("disconnected", "error"):
-            repo.update_session(db, session.id, status="waiting")
-            logger.info(
-                "Health check: %s recovered from %s to waiting", session.name, session.status
-            )
-            return {"alive": True, "status": "waiting", "reason": reason}
-        return {"alive": True, "status": session.status, "reason": reason}
+    if session.status in ("disconnected", "error"):
+        repo.update_session(db, session.id, status="waiting")
+        logger.info("Health check: %s recovered from %s to waiting", session.name, session.status)
+        return {"alive": True, "status": "waiting", "reason": reason}
+    return {"alive": True, "status": session.status, "reason": reason}
 
 
 def check_all_workers_health(
