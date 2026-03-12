@@ -20,16 +20,6 @@ worker_id="$1"
 shift
 message="$*"
 
-# Get worker's tmux session info
-worker_info=$(curl -s "$API_BASE/api/sessions/$worker_id")
-tmux_session=$(echo "$worker_info" | jq -r '.name // empty')
-tmux_window=$(echo "$worker_info" | jq -r '.tmux_window // empty')
-
-if [[ -z "$tmux_session" ]]; then
-    echo "Error: Could not find worker $worker_id" >&2
-    exit 1
-fi
-
 # Send message via orchestrator API
 escaped_message=$(json_encode "$message")
 curl -s -X POST "$API_BASE/api/sessions/$worker_id/send" \

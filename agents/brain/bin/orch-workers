@@ -14,6 +14,7 @@ show_help() {
     echo "  stop <name-or-id>             Stop worker: Escape, /clear, unassign task, set idle"
     echo "  reconnect <name-or-id>        Reconnect a disconnected worker"
     echo "  preview <name-or-id>          Show worker terminal preview (raw text)"
+    echo "  type <name-or-id> <text>      Type text into worker terminal (no Enter)"
     echo "  pause <name-or-id>            Pause a worker (Escape + Ctrl-C)"
     echo "  continue <name-or-id>         Continue a paused worker"
     echo "  prepare <name-or-id>          Prepare worker for new task (/clear)"
@@ -165,6 +166,24 @@ cmd_preview() {
     curl -s "$API_BASE/api/sessions/$id/preview" | jq -r '.content // .'
 }
 
+cmd_type() {
+    local id="$1"
+    if [[ -z "$id" ]]; then
+        echo "Error: Worker name or ID required" >&2
+        exit 1
+    fi
+    shift
+    local text="$*"
+    if [[ -z "$text" ]]; then
+        echo "Error: Text to type is required" >&2
+        exit 1
+    fi
+    local escaped_text=$(json_encode "$text")
+    curl -s -X POST "$API_BASE/api/sessions/$id/type" \
+        -H 'Content-Type: application/json' \
+        -d "{\"text\": \"$escaped_text\"}" | pp
+}
+
 cmd_pause() {
     local id="$1"
     if [[ -z "$id" ]]; then
@@ -210,6 +229,7 @@ case "$1" in
     stop) shift; cmd_stop "$@" ;;
     reconnect) shift; cmd_reconnect "$@" ;;
     preview) shift; cmd_preview "$@" ;;
+    type) shift; cmd_type "$@" ;;
     pause) shift; cmd_pause "$@" ;;
     continue) shift; cmd_continue "$@" ;;
     prepare) shift; cmd_prepare "$@" ;;

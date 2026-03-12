@@ -29,7 +29,7 @@ If zero non-idle workers, report "All workers idle — nothing to check" and sto
 ### 2. Capture terminal for each non-idle worker
 
 ```bash
-tmux capture-pane -p -t orchestrator:<worker-name> -S -50
+orch-workers preview <worker-name>
 ```
 
 Classify prompt state before deciding actions:
@@ -113,7 +113,7 @@ User can approve by group letter, skip a group, or cherry-pick numbers.
 
 ### 6. Execute and recap
 
-After approval, execute actions. Verify each with `orch-workers show <id> | jq '.status'`. If still "waiting" after sending a message, retry with `tmux send-keys -t orchestrator:<worker-name> Enter`.
+After approval, execute actions. Verify each with `orch-workers show <id> | jq '.status'`. If still "waiting" after sending a message, check `orch-workers preview <worker-name>` and retry with `orch-send <worker-id> "continue"` if needed.
 
 Print recap grouped by action type. Include follow-up suggestions (e.g., "Check rdev-worker again in 2h").
 
@@ -145,4 +145,4 @@ orch-workers stop <worker-id>
 - **Self-report ≠ done** — a worker claiming completion is a signal to verify, not evidence to act on. Always route through Slow Path and confirm the deliverable externally before suggesting "mark done + stop"
 - **Act on facts only** — if unsure, put "Needs human" rather than guessing
 - **Batch PR checks** — `orch-prs --repo <owner/repo> <pr1> <pr2> ...` (extract exact org/repo from the PR URL, e.g. `github.com/ORG/REPO/pull/N` → `--repo ORG/REPO N` — never guess the org name)
-- **For special keys** (arrow keys for selection menus): use `tmux send-keys Up/Down`
+- **For special keys** (arrow keys for selection menus): use `orch-workers type <worker-name> $'\x1b[A'` (Up) or `$'\x1b[B'` (Down)
