@@ -121,8 +121,39 @@ def _serialize_session(s):
     }
 
 
+def _write_to_rws_pty(session, data: str) -> bool:
+    """Write data to a remote session's RWS PTY. Returns True on success."""
+    from orchestrator.terminal.remote_worker_server import get_remote_worker_server
+
+    try:
+        rws = get_remote_worker_server(session.host)
+        rws.write_to_pty(session.rws_pty_id, data)
+        return True
+    except RuntimeError:
+        logger.warning(
+            "Could not write to RWS PTY for session %s",
+            session.name,
+            exc_info=True,
+        )
+        return False
+
+
+def _capture_rws_pty(session, lines: int = 30) -> str:
+    """Capture terminal output from a remote session's RWS PTY."""
+    from orchestrator.terminal.remote_worker_server import get_remote_worker_server
+
+    try:
+        rws = get_remote_worker_server(session.host)
+        return rws.capture_pty(session.rws_pty_id, lines=lines)
+    except RuntimeError:
+        return ""
+
+
 def _capture_preview(s) -> str:
     """Capture terminal preview for a session (plain text, ANSI stripped)."""
+    if is_remote_host(s.host) and s.rws_pty_id:
+        return _capture_rws_pty(s)
+
     tmux_sess, tmux_win = tmux_target(s.name)
     try:
         content = capture_pane_with_escapes(tmux_sess, tmux_win, lines=0)
@@ -607,10 +638,13 @@ def send_message(session_id: str, body: SendMessage, request: Request, db=Depend
     if s is None:
         raise HTTPException(404, "Session not found")
 
-    from orchestrator.terminal.manager import TMUX_SESSION
-    from orchestrator.terminal.session import send_to_session
+    if is_remote_host(s.host) and s.rws_pty_id:
+        success = _write_to_rws_pty(s, body.message + "\n")
+    else:
+        from orchestrator.terminal.manager import TMUX_SESSION
+        from orchestrator.terminal.session import send_to_session
 
-    success = send_to_session(s.name, body.message, TMUX_SESSION)
+        success = send_to_session(s.name, body.message, TMUX_SESSION)
     if not success:
         raise HTTPException(500, "Failed to send message")
     return {"ok": True, "session": s.name}
@@ -632,9 +666,12 @@ def type_text(session_id: str, body: TypeText, request: Request, db=Depends(get_
     if s is None:
         raise HTTPException(404, "Session not found")
 
-    from orchestrator.terminal.manager import TMUX_SESSION, send_keys_literal
+    if is_remote_host(s.host) and s.rws_pty_id:
+        success = _write_to_rws_pty(s, body.text)
+    else:
+        from orchestrator.terminal.manager import TMUX_SESSION, send_keys_literal
 
-    success = send_keys_literal(TMUX_SESSION, s.name, body.text)
+        success = send_keys_literal(TMUX_SESSION, s.name, body.text)
     if not success:
         raise HTTPException(500, "Failed to type text")
     return {"ok": True, "session": s.name}
@@ -653,9 +690,13 @@ def paste_to_pane_endpoint(session_id: str, body: TypeText, request: Request, db
     if s is None:
         raise HTTPException(404, "Session not found")
 
-    from orchestrator.terminal.manager import TMUX_SESSION, paste_to_pane
+    if is_remote_host(s.host) and s.rws_pty_id:
+        bracketed = f"\x1b[200~{body.text}\x1b[201~"
+        success = _write_to_rws_pty(s, bracketed)
+    else:
+        from orchestrator.terminal.manager import TMUX_SESSION, paste_to_pane
 
-    success = paste_to_pane(TMUX_SESSION, s.name, body.text)
+        success = paste_to_pane(TMUX_SESSION, s.name, body.text)
     if not success:
         raise HTTPException(500, "Failed to paste text")
     return {"ok": True, "session": s.name}
@@ -753,13 +794,14 @@ def pause_session(session_id: str, db=Depends(get_db)):
         raise HTTPException(404, "Session not found")
     session_id = s.id
 
-    tmux_sess, tmux_win = tmux_target(s.name)
-
-    try:
-        # Send Escape to pause claude code
-        send_keys(tmux_sess, tmux_win, "Escape", enter=False)
-    except Exception:
-        logger.warning("Could not send Escape to session %s", s.name, exc_info=True)
+    if is_remote_host(s.host) and s.rws_pty_id:
+        _write_to_rws_pty(s, "\x1b")
+    else:
+        tmux_sess, tmux_win = tmux_target(s.name)
+        try:
+            send_keys(tmux_sess, tmux_win, "Escape", enter=False)
+        except Exception:
+            logger.warning("Could not send Escape to session %s", s.name, exc_info=True)
 
     repo.update_session(db, session_id, status="paused")
     return {"ok": True, "message": f"Session {s.name} paused"}
@@ -773,16 +815,17 @@ def continue_session(session_id: str, db=Depends(get_db)):
         raise HTTPException(404, "Session not found")
     session_id = s.id
 
-    tmux_sess, tmux_win = tmux_target(s.name)
+    if is_remote_host(s.host) and s.rws_pty_id:
+        _write_to_rws_pty(s, "continue\n")
+    else:
+        tmux_sess, tmux_win = tmux_target(s.name)
+        try:
+            from orchestrator.terminal.manager import send_keys_literal
 
-    try:
-        from orchestrator.terminal.manager import send_keys_literal
-
-        # Send "continue" message to claude code
-        send_keys_literal(tmux_sess, tmux_win, "continue")
-        send_keys(tmux_sess, tmux_win, "", enter=True)
-    except Exception:
-        logger.warning("Could not send continue to session %s", s.name, exc_info=True)
+            send_keys_literal(tmux_sess, tmux_win, "continue")
+            send_keys(tmux_sess, tmux_win, "", enter=True)
+        except Exception:
+            logger.warning("Could not send continue to session %s", s.name, exc_info=True)
 
     repo.update_session(db, session_id, status="working")
     return {"ok": True, "message": f"Session {s.name} continued"}
@@ -796,21 +839,25 @@ def stop_session(session_id: str, db=Depends(get_db)):
         raise HTTPException(404, "Session not found")
     session_id = s.id
 
-    tmux_sess, tmux_win = tmux_target(s.name)
-
-    import time
-
-    try:
-        # Send Escape to stop current operation
-        send_keys(tmux_sess, tmux_win, "Escape", enter=False)
+    if is_remote_host(s.host) and s.rws_pty_id:
+        _write_to_rws_pty(s, "\x1b")
         time.sleep(0.5)
-        # Send /clear to reset context
-        from orchestrator.terminal.manager import send_keys_literal
+        _write_to_rws_pty(s, "/clear\n")
+    else:
+        tmux_sess, tmux_win = tmux_target(s.name)
+        try:
+            send_keys(tmux_sess, tmux_win, "Escape", enter=False)
+            time.sleep(0.5)
+            from orchestrator.terminal.manager import send_keys_literal
 
-        send_keys_literal(tmux_sess, tmux_win, "/clear")
-        send_keys(tmux_sess, tmux_win, "", enter=True)
-    except Exception:
-        logger.warning("Could not send stop commands to session %s", s.name, exc_info=True)
+            send_keys_literal(tmux_sess, tmux_win, "/clear")
+            send_keys(tmux_sess, tmux_win, "", enter=True)
+        except Exception:
+            logger.warning(
+                "Could not send stop commands to session %s",
+                s.name,
+                exc_info=True,
+            )
 
     # Unassign any tasks assigned to this session
     from orchestrator.state.repositories import tasks as tasks_repo
@@ -849,35 +896,33 @@ def prepare_session_for_task(session_id: str, db=Depends(get_db)):
     if s.status in disconnected_statuses:
         raise HTTPException(400, f"Session is not connected (status: {s.status})")
 
-    tmux_sess, tmux_win = tmux_target(s.name)
-
-    import time
-
-    try:
-        # 1. Send Escape to exit any mode/stop current action
-        send_keys(tmux_sess, tmux_win, "Escape", enter=False)
+    if is_remote_host(s.host) and s.rws_pty_id:
+        _write_to_rws_pty(s, "\x1b")
         time.sleep(0.3)
-
-        # 2. Send Ctrl-C to cancel any running terminal command
+        _write_to_rws_pty(s, "\x03")
+        time.sleep(0.5)
+        _write_to_rws_pty(s, "/clear\n")
+        logger.info("Prepared session %s for new task assignment", s.name)
+    else:
         import subprocess
 
-        subprocess.run(
-            ["tmux", "send-keys", "-t", f"{tmux_sess}:{tmux_win}", "C-c"],
-            capture_output=True,
-            timeout=2,
-        )
-        time.sleep(0.5)
+        tmux_sess, tmux_win = tmux_target(s.name)
+        try:
+            send_keys(tmux_sess, tmux_win, "Escape", enter=False)
+            time.sleep(0.3)
+            subprocess.run(
+                ["tmux", "send-keys", "-t", f"{tmux_sess}:{tmux_win}", "C-c"],
+                capture_output=True,
+                timeout=2,
+            )
+            time.sleep(0.5)
+            from orchestrator.terminal.manager import send_keys_literal
 
-        # 3. Send /clear to reset Claude Code context
-        from orchestrator.terminal.manager import send_keys_literal
-
-        send_keys_literal(tmux_sess, tmux_win, "/clear")
-        send_keys(tmux_sess, tmux_win, "", enter=True)
-
-        logger.info("Prepared session %s for new task assignment", s.name)
-    except Exception:
-        logger.warning("Could not fully prepare session %s", s.name, exc_info=True)
-        # Don't fail - partial preparation is still useful
+            send_keys_literal(tmux_sess, tmux_win, "/clear")
+            send_keys(tmux_sess, tmux_win, "", enter=True)
+            logger.info("Prepared session %s for new task assignment", s.name)
+        except Exception:
+            logger.warning("Could not fully prepare session %s", s.name, exc_info=True)
 
     return {"ok": True, "message": f"Session {s.name} prepared for new task"}
 

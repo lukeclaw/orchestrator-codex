@@ -20,7 +20,9 @@ from orchestrator.api.websocket import (
 )
 from orchestrator.state.repositories import sessions as sessions_repo
 from orchestrator.terminal import manager as tmux
+from orchestrator.terminal.remote_worker_server import get_remote_worker_server
 from orchestrator.terminal.session import send_to_session
+from orchestrator.terminal.ssh import is_remote_host
 
 logger = logging.getLogger(__name__)
 
@@ -230,11 +232,18 @@ def brain_sync(db=Depends(get_db)):
     for s in active_workers:
         parts.append(f"## Worker: {s.name} (status: {s.status}, id: {s.id})")
         # Capture terminal preview
-        ts, tw = tmux.tmux_target(s.name)
-        try:
-            preview = tmux.capture_output(ts, tw, lines=30)
-        except Exception:
-            preview = "(could not capture terminal)"
+        if is_remote_host(s.host) and s.rws_pty_id:
+            try:
+                rws = get_remote_worker_server(s.host)
+                preview = rws.capture_pty(s.rws_pty_id, lines=30)
+            except Exception:
+                preview = "(could not capture terminal)"
+        else:
+            ts, tw = tmux.tmux_target(s.name)
+            try:
+                preview = tmux.capture_output(ts, tw, lines=30)
+            except Exception:
+                preview = "(could not capture terminal)"
         parts.append("```")
         parts.append(preview.rstrip())
         parts.append("```")

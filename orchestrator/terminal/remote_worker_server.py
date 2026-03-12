@@ -1811,6 +1811,19 @@ class RemoteWorkerServer:
         resp = self.execute({"action": "pty_list"})
         return resp.get("ptys", [])
 
+    def write_to_pty(self, pty_id: str, data: str) -> None:
+        """Write data to a PTY's stdin via the command socket."""
+        resp = self.execute({"action": "pty_input", "pty_id": pty_id, "data": data})
+        if "error" in resp:
+            raise RuntimeError(f"PTY input failed on {self.host}: {resp['error']}")
+
+    def capture_pty(self, pty_id: str, lines: int = 30) -> str:
+        """Capture the last N lines of PTY output (ANSI-stripped)."""
+        resp = self.execute({"action": "pty_capture", "pty_id": pty_id, "lines": lines})
+        if "error" in resp:
+            raise RuntimeError(f"PTY capture failed on {self.host}: {resp['error']}")
+        return resp.get("output", "")
+
     def start_browser(
         self,
         session_id: str,
