@@ -51,7 +51,6 @@ export default function SessionDetailPage() {
   const [actionPending, setActionPending] = useState(false)
   const [pasting, setPasting] = useState(false)
   const [ctxPasting, setCtxPasting] = useState(false)
-  const [hintDismissed, setHintDismissed] = useState(false)
   const [showAssignTask, setShowAssignTask] = useState(false)
   const [feConnecting, setFeConnecting] = useState(false)
   const [icliActiveLocal, setIcliActiveLocal] = useState(false)
@@ -710,15 +709,7 @@ export default function SessionDetailPage() {
             {fe.open && editorTabs.tabs.length > 0 && (
               <div className="sd-terminal-header">TERMINAL</div>
             )}
-            {/* Screen copy mode hint for legacy remote sessions (no RWS PTY) */}
-            {isRemote && !session.rws_pty_id && !hintDismissed && ['idle', 'working', 'waiting', 'paused'].includes(session.status) && (
-              <div className="sd-rdev-hint">
-                <span className="sd-rdev-hint-icon">💡</span>
-                <span>Remote claude code runs in screen. To view history: <kbd>Ctrl-A</kbd> + <kbd>[</kbd> to enter copy mode, <kbd>PageUp</kbd>/<kbd>PageDown</kbd> to scroll, <kbd>Esc</kbd> to exit</span>
-                <button className="sd-rdev-hint-dismiss" onClick={() => setHintDismissed(true)} title="Dismiss">✕</button>
-              </div>
-            )}
-            <TerminalView sessionId={session.id} sessionStatus={session.status} disableScrollback={isRemote && !session.rws_pty_id} onFocusRef={(fn) => { terminalFocusRef.current = fn }} onImagePaste={handleImagePaste} onTextPaste={handleTextPaste} onPastingChange={setCtxPasting} />
+            <TerminalView sessionId={session.id} sessionStatus={session.status} disableScrollback={false} onFocusRef={(fn) => { terminalFocusRef.current = fn }} onImagePaste={handleImagePaste} onTextPaste={handleTextPaste} onPastingChange={setCtxPasting} />
           </div>
 
           {/* Interactive CLI overlay — inside right pane so it follows terminal position */}
