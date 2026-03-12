@@ -608,7 +608,29 @@ async def stream_remote_pty(
     try:
         stream_sock, initial_data = rws.connect_pty_stream(pty_id)
     except RuntimeError as e:
-        await websocket.send_json({"type": "error", "message": f"PTY stream failed: {e}"})
+        err_msg = str(e)
+        pty_gone = "PTY not found" in err_msg
+        if pty_gone:
+            # PTY is definitively gone — clear stale DB state and tell frontend
+            # to stop retrying (pty_exit suppresses reconnection attempts).
+            try:
+                from orchestrator.state.repositories import sessions as _repo
+
+                _db = _get_conn(websocket)
+                _owns = getattr(websocket.app.state, "conn_factory", None) is not None
+                try:
+                    _repo.update_session(_db, session_id, rws_pty_id=None, status="disconnected")
+                finally:
+                    if _owns:
+                        _db.close()
+            except Exception:
+                pass
+            try:
+                await websocket.send_json({"type": "pty_exit"})
+            except Exception:
+                pass
+        else:
+            await websocket.send_json({"type": "error", "message": f"PTY stream failed: {e}"})
         await websocket.close(code=4004)
         return
 

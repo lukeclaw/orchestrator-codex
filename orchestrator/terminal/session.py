@@ -441,8 +441,8 @@ def _build_claude_command(
     parts.append(f"chmod +x {remote_tmp_dir}/bin/* 2>/dev/null || true")
     parts.append(f"chmod +x {remote_tmp_dir}/configs/hooks/*.sh 2>/dev/null || true")
 
-    # Install Playwright plugin (skip if already installed)
-    parts.append(_PW_INSTALL_CMD)
+    # Install Playwright plugin (skip if already installed; failure is non-fatal)
+    parts.append(f"({_PW_INSTALL_CMD} || true)")
 
     # Configure Playwright MCP via env var
     parts.append("export PLAYWRIGHT_MCP_CDP_ENDPOINT=http://localhost:9222")
@@ -706,7 +706,7 @@ def setup_local_worker(
             cmd_parts.append(f"cd {work_dir}")
 
         cmd_parts.append("volta install node@24")  # Ensure Node 24 for npx
-        cmd_parts.append(_PW_INSTALL_CMD)  # Ensure Playwright plugin
+        cmd_parts.append(f"({_PW_INSTALL_CMD} || true)")  # Ensure Playwright plugin
 
         # Configure Playwright plugin to connect via per-worker CDP proxy.
         # Each worker gets its own proxy port so Playwright only sees its tab.

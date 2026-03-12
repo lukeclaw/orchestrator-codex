@@ -510,8 +510,9 @@ class FakeWebSocket:
     async def send_bytes(self, data: bytes):
         self.sent_bytes.append(data)
 
-    async def close(self):
+    async def close(self, code=None):
         self.closed = True
+        self.close_code = code
 
     async def receive(self) -> dict:
         msg = await self._incoming.get()
@@ -733,3 +734,99 @@ class TestWsTerminalPipePanePath:
 
             recovery_syncs = sync_count - initial_syncs
             assert recovery_syncs >= 1, f"Expected snapshot recovery sync, got {recovery_syncs}"
+
+
+# ---------------------------------------------------------------------------
+# stream_remote_pty: PTY-not-found clears stale DB state
+# ---------------------------------------------------------------------------
+
+
+def _make_remote_db_row(name="rws-test", pty_id="pty-abc"):
+    return {"name": name, "id": "sess-1", "rws_pty_id": pty_id, "host": "user/rdev-vm"}
+
+
+class TestStreamRemotePtyNotFound:
+    """When the daemon reports PTY not found, clear DB state and send pty_exit."""
+
+    async def test_pty_not_found_sends_pty_exit_and_clears_db(self):
+        from orchestrator.api.ws_terminal import terminal_websocket
+
+        ws = FakeWebSocket()
+        mock_rws = MagicMock()
+        mock_rws.connect_pty_stream.side_effect = RuntimeError(
+            "PTY stream connect failed: PTY not found"
+        )
+
+        mock_update = MagicMock()
+
+        with (
+            patch("orchestrator.api.ws_terminal._get_conn") as mock_get_conn,
+            patch(
+                "orchestrator.terminal.remote_worker_server.get_remote_worker_server",
+                return_value=mock_rws,
+            ),
+            patch("orchestrator.terminal.ssh.is_remote_host", return_value=True),
+            patch(
+                "orchestrator.state.repositories.sessions.update_session",
+                mock_update,
+            ),
+        ):
+            db_conn = MagicMock()
+            db_conn.execute.return_value.fetchone.return_value = _make_remote_db_row()
+            mock_get_conn.return_value = db_conn
+            ws.app.state.conn_factory = None
+            ws.app.state.conn = db_conn
+
+            await terminal_websocket(ws, "sess-1")
+
+        # Should send pty_exit (not a generic error), suppressing frontend retries
+        assert any(m.get("type") == "pty_exit" for m in ws.sent_json), (
+            f"Expected pty_exit message, got: {ws.sent_json}"
+        )
+        assert not any(m.get("type") == "error" for m in ws.sent_json), (
+            "Should not send error message when PTY is gone"
+        )
+
+        # Should clear stale rws_pty_id in DB
+        mock_update.assert_called_once_with(
+            db_conn, "sess-1", rws_pty_id=None, status="disconnected"
+        )
+
+        assert ws.closed
+        assert ws.close_code == 4004
+
+    async def test_transient_error_sends_error_not_pty_exit(self):
+        """Non-'PTY not found' errors should send a generic error (allow retries)."""
+        from orchestrator.api.ws_terminal import terminal_websocket
+
+        ws = FakeWebSocket()
+        mock_rws = MagicMock()
+        mock_rws.connect_pty_stream.side_effect = RuntimeError(
+            "PTY stream handshake failed for pty-abc on user/rdev-vm"
+        )
+
+        with (
+            patch("orchestrator.api.ws_terminal._get_conn") as mock_get_conn,
+            patch(
+                "orchestrator.terminal.remote_worker_server.get_remote_worker_server",
+                return_value=mock_rws,
+            ),
+            patch("orchestrator.terminal.ssh.is_remote_host", return_value=True),
+            patch("orchestrator.state.repositories.sessions.update_session") as mock_update,
+        ):
+            db_conn = MagicMock()
+            db_conn.execute.return_value.fetchone.return_value = _make_remote_db_row()
+            mock_get_conn.return_value = db_conn
+            ws.app.state.conn_factory = None
+            ws.app.state.conn = db_conn
+
+            await terminal_websocket(ws, "sess-1")
+
+        # Should send generic error (frontend can retry)
+        assert any(m.get("type") == "error" for m in ws.sent_json)
+        assert not any(m.get("type") == "pty_exit" for m in ws.sent_json)
+
+        # Should NOT clear DB — error may be transient
+        mock_update.assert_not_called()
+
+        assert ws.closed
