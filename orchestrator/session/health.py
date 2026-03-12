@@ -952,6 +952,10 @@ def check_and_update_worker_health(db, session, tunnel_manager=None) -> dict:
 
     worker_tmp_dir = f"/tmp/orchestrator/workers/{session.name}"
 
+    # RWS PTY remote sessions don't use tmux windows — check via daemon first
+    if is_remote_host(session.host) and session.rws_pty_id:
+        return _check_rws_pty_health(db, session, tunnel_manager)
+
     # Check whether the pane exists.  If it does and the worker turns out
     # dead, the pane is likely frozen (dead SSH, queued commands) and needs
     # to be killed and recreated.  If the pane is missing, the worker is
@@ -968,6 +972,11 @@ def check_and_update_worker_health(db, session, tunnel_manager=None) -> dict:
         )
 
     if not pane_preexisted:
+        # Remote sessions without rws_pty_id may be legacy or mid-setup —
+        # for remote hosts, route to RWS PTY health check instead of
+        # immediately marking disconnected.
+        if is_remote_host(session.host):
+            return _check_rws_pty_health(db, session, tunnel_manager)
         if session.status != "disconnected":
             repo.update_session(db, session.id, status="disconnected")
             logger.info("Health check: %s has no tmux window, marking disconnected", session.name)
@@ -979,250 +988,8 @@ def check_and_update_worker_health(db, session, tunnel_manager=None) -> dict:
         }
 
     if is_remote_host(session.host):
-        # RWS PTY architecture — use daemon-based health check
-        if session.rws_pty_id:
-            return _check_rws_pty_health(db, session, tunnel_manager)
-
-        # Legacy screen-based check
-        screen_status, reason = check_screen_and_claude_remote(
-            session.host,
-            session.id,
-            tmux_sess,
-            tmux_win,
-            claude_session_id=session.claude_session_id,
-        )
-
-        tunnel_alive = tunnel_manager.is_alive(session.id) if tunnel_manager else False
-
-        if screen_status == "alive":
-            # --- Ensure tunnel is alive ---
-            tunnel_reconnected = False
-            if not tunnel_alive:
-                logger.info(
-                    "Health check: %s has Claude running but tunnel dead, restarting tunnel",
-                    session.name,
-                )
-                if tunnel_manager:
-                    new_pid = tunnel_manager.restart_tunnel(session.id, session.name, session.host)
-                    if new_pid:
-                        repo.update_session(db, session.id, tunnel_pid=new_pid)
-                        logger.info(
-                            "Health check: %s tunnel restarted (pid=%d)", session.name, new_pid
-                        )
-                        tunnel_alive = True
-                        tunnel_reconnected = True
-                        # Don't return — fall through to TUI check
-
-                if not tunnel_alive:
-                    # Tunnel dead and could not be restarted
-                    tunnel_failures = 0
-                    tunnel_error = None
-                    if tunnel_manager:
-                        tunnel_failures, tunnel_error = tunnel_manager.get_failure_info(session.id)
-                    error_detail = f" ({tunnel_error})" if tunnel_error else ""
-                    reason = f"{reason}, but tunnel is dead and restart failed{error_detail}"
-                    if session.status not in ("screen_detached", "connecting"):
-                        repo.update_session(db, session.id, status="screen_detached")
-                    return {
-                        "alive": False,
-                        "status": "screen_detached",
-                        "reason": reason,
-                        "screen_status": screen_status,
-                        "tunnel_alive": False,
-                        "needs_reconnect": True,
-                        "tunnel_failures": tunnel_failures,
-                        "tunnel_error": tunnel_error,
-                    }
-
-            # --- Tunnel alive. Check if pane is attached to screen ---
-            # On remote workers, alternate_on=1 means inside GNU Screen,
-            # alternate_on=0 means at shell prompt (screen detached).
-            tui_active = check_tui_running_in_pane(tmux_sess, tmux_win)
-            if not tui_active:
-                if session.status not in ("screen_detached", "connecting"):
-                    repo.update_session(db, session.id, status="screen_detached")
-                    logger.info(
-                        "Health check: %s alive but pane not attached to screen, "
-                        "marking screen_detached for auto-reattach",
-                        session.name,
-                    )
-                return {
-                    "alive": False,
-                    "status": "screen_detached",
-                    "reason": f"{reason} — pane not attached to screen",
-                    "screen_status": screen_status,
-                    "tunnel_alive": tunnel_alive,
-                    "needs_reconnect": True,
-                    "tunnel_reconnected": tunnel_reconnected,
-                }
-
-            # --- All good: screen + Claude alive, tunnel alive, pane attached ---
-            # Safety net: detect work_dir if still missing
-            if not session.work_dir:
-                from orchestrator.api.routes.files import _detect_remote_work_dir
-
-                detected = _detect_remote_work_dir(session.host, session.id)
-                if detected:
-                    repo.update_session(db, session.id, work_dir=detected)
-                    logger.info(
-                        "Health check: %s detected missing work_dir: %s", session.name, detected
-                    )
-
-            # --- Ensure local tmp dir is healthy (manifest-based) ---
-            tmp_dir = f"/tmp/orchestrator/workers/{session.name}"
-            api_base = f"http://127.0.0.1:{DEFAULT_API_PORT}"
-            try:
-                tmp_result = ensure_tmp_dir_health(
-                    tmp_dir,
-                    session.id,
-                    api_base=api_base,
-                    cdp_port=9222,
-                    browser_headless=True,
-                    conn=db,
-                )
-                if tmp_result.get("regenerated"):
-                    logger.warning("Health check: %s regenerated local tmp dir", session.name)
-                    # Re-push to remote after local regeneration
-                    from orchestrator.session.reconnect import _copy_configs_to_remote
-
-                    remote_tmp_dir = f"/tmp/orchestrator/workers/{session.name}"
-                    try:
-                        _copy_configs_to_remote(session.host, tmp_dir, remote_tmp_dir, session.name)
-                    except Exception:
-                        logger.warning(
-                            "Health check: %s failed to re-push configs to remote",
-                            session.name,
-                            exc_info=True,
-                        )
-            except Exception:
-                logger.debug(
-                    "Health check: %s tmp dir check failed",
-                    session.name,
-                    exc_info=True,
-                )
-
-            # --- Check remote-side tmp via RWS check_path ---
-            try:
-                from orchestrator.terminal.remote_worker_server import (
-                    _SCRIPT_HASH,
-                    _server_pool,
-                    force_restart_server,
-                )
-
-                rws = _server_pool.get(session.host)
-                if rws is not None:
-                    remote_sentinel = (
-                        f"/tmp/orchestrator/workers/{session.name}/configs/settings.json"
-                    )
-                    resp = rws.execute(
-                        {"action": "check_path", "paths": [remote_sentinel]},
-                        timeout=5,
-                    )
-                    if resp.get("missing_count", 0) > 0:
-                        logger.warning(
-                            "Health check: %s remote tmp missing, re-pushing",
-                            session.name,
-                        )
-                        # Ensure local side is fresh, then push
-                        ensure_tmp_dir_health(
-                            tmp_dir,
-                            session.id,
-                            api_base=api_base,
-                            cdp_port=9222,
-                            browser_headless=True,
-                            conn=db,
-                        )
-                        from orchestrator.session.reconnect import _copy_configs_to_remote
-
-                        remote_tmp_dir = f"/tmp/orchestrator/workers/{session.name}"
-                        _copy_configs_to_remote(session.host, tmp_dir, remote_tmp_dir, session.name)
-
-                    # Check RWS daemon version — redeploy if outdated
-                    try:
-                        info = rws.execute({"action": "server_info"}, timeout=5)
-                        daemon_version = info.get("version", "")
-                        if daemon_version != _SCRIPT_HASH:
-                            logger.warning(
-                                "Health check: %s RWS daemon outdated "
-                                "(daemon=%s, expected=%s), redeploying",
-                                session.name,
-                                daemon_version[:8],
-                                _SCRIPT_HASH[:8],
-                            )
-                            force_restart_server(session.host)
-                    except Exception:
-                        logger.debug(
-                            "Health check: %s RWS version check failed",
-                            session.name,
-                            exc_info=True,
-                        )
-            except Exception:
-                logger.debug(
-                    "Health check: %s remote tmp check failed",
-                    session.name,
-                    exc_info=True,
-                )
-
-            current_status = session.status
-            if current_status in ("screen_detached", "error", "disconnected"):
-                repo.update_session(db, session.id, status="waiting")
-                current_status = "waiting"
-                logger.info(
-                    "Health check: %s recovered from %s to waiting", session.name, session.status
-                )
-            result = {
-                "alive": True,
-                "status": current_status,
-                "reason": reason,
-                "screen_status": screen_status,
-                "tunnel_alive": True,
-            }
-            if tunnel_reconnected:
-                result["tunnel_reconnected"] = True
-                result["status"] = "waiting"
-            return result
-
-        elif screen_status == "screen_detached":
-            if session.status not in ("screen_detached", "connecting"):
-                repo.update_session(db, session.id, status="screen_detached")
-                logger.info("Health check: %s marked as screen_detached (%s)", session.name, reason)
-            return {
-                "alive": False,
-                "status": "screen_detached",
-                "reason": reason,
-                "screen_status": screen_status,
-                "needs_reconnect": True,
-            }
-
-        elif screen_status == "screen_only":
-            if session.status != "error":
-                repo.update_session(db, session.id, status="error")
-                logger.info(
-                    "Health check: %s marked as error - Claude crashed in screen (%s)",
-                    session.name,
-                    reason,
-                )
-            return {
-                "alive": False,
-                "status": "error",
-                "reason": reason,
-                "screen_status": screen_status,
-                "needs_reconnect": True,
-            }
-
-        else:  # dead
-            _recycle_frozen_pane(pane_preexisted, tmux_sess, tmux_win, worker_tmp_dir, session.name)
-
-            if session.status != "disconnected":
-                repo.update_session(db, session.id, status="disconnected")
-                logger.info("Health check: %s marked as disconnected (%s)", session.name, reason)
-            return {
-                "alive": False,
-                "status": "disconnected",
-                "reason": reason,
-                "screen_status": screen_status,
-                "needs_reconnect": True,
-            }
+        # All remote sessions use RWS PTY health check (legacy screen path removed)
+        return _check_rws_pty_health(db, session, tunnel_manager)
     else:
         # Local worker: use pane-based process tree detection (primary)
         # with ps aux fallback checking both orchestrator and Claude IDs.

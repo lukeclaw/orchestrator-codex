@@ -578,65 +578,49 @@ class TestReconnectExceptionHandling:
     NOT updated -- it stays at whatever was last written.
     """
 
-    def test_status_stuck_at_waiting_after_step6_exception(self):
-        """Status set to 'waiting' at Step 6 line 703, then a later
-        exception in the same try block does NOT reset status.
+    def test_status_set_on_success_and_error_on_exception(self):
+        """Verify reconnect_remote_worker sets status correctly on success
+        and on exception.
 
-        Scenario: Step 6 (screen_exists + claude_running) calls
-        safe_send_keys (succeeds), sets status="waiting" at line 703,
-        then the log statement or any subsequent code in the try block
-        raises an unexpected error. The generic except (line 724) re-raises
-        but never resets status from "waiting" to "error"/"disconnected".
-
-        We simulate this by making repo.update_session set the status
-        to "waiting" the first time, then raise on a second hypothetical call.
-        In practice the risk is that _launch_claude_in_screen sets status to
-        "waiting" (line 334) and then the caller re-raises without cleanup.
+        Success path: creates RWS PTY and sets status to "working".
+        Error path: exception during RWS setup sets status to "error".
         """
         tracker = StatusTracker()
         conn = MagicMock()
         session = _make_remote_session(status="disconnected")
 
+        mock_rws = MagicMock()
+        mock_rws.create_pty.return_value = "pty-test"
+
         with (
-            patch("orchestrator.session.reconnect.os.makedirs"),
-            patch("orchestrator.terminal.manager.ensure_window"),
             patch(
-                "orchestrator.session.reconnect.check_tui_running_in_pane",
-                return_value=False,
+                "orchestrator.terminal.session._ensure_rws_ready",
+                return_value=mock_rws,
             ),
-            patch(
-                "orchestrator.session.health.check_worker_ssh_alive",
-                return_value=False,
-            ),
-            patch("orchestrator.session.reconnect._clean_pane_for_ssh"),
-            patch("orchestrator.terminal.ssh.remote_connect"),
-            patch("orchestrator.terminal.ssh.wait_for_prompt", return_value=True),
+            patch("orchestrator.session.reconnect._ensure_tunnel"),
+            patch("orchestrator.session.reconnect._reconnect_rws_for_host"),
             patch("orchestrator.session.reconnect._ensure_local_configs_exist"),
             patch("orchestrator.session.reconnect._copy_configs_to_remote"),
             patch(
-                "orchestrator.terminal.session._install_screen_if_needed",
-                return_value=True,
+                "orchestrator.session.reconnect._check_claude_session_exists_remote",
+                return_value=False,
             ),
-            # Step 5: screen_exists=True, claude_running=True, screen_pid
             patch(
-                "orchestrator.session.reconnect.check_screen_exists_via_tmux",
-                return_value=(True, True, "12345.claude-test"),
+                "orchestrator.terminal.session._build_claude_command",
+                return_value="claude --session-id test",
             ),
-            patch("orchestrator.session.reconnect.safe_send_keys"),
+            patch(
+                "orchestrator.session.reconnect.get_screen_session_name",
+                return_value="claude-test",
+            ),
+            patch("orchestrator.session.reconnect.subprocess"),
             patch("orchestrator.session.reconnect.time.sleep"),
-            patch("orchestrator.session.reconnect.ensure_rdev_node"),
-            # Skip RWS PTY migration attempt for legacy session
-            patch(
-                "orchestrator.session.health.check_screen_and_claude_remote",
-                return_value=("alive", "mocked"),
-            ),
         ):
             mock_repo = MagicMock()
             mock_repo.update_session = tracker.update_session
 
             from orchestrator.session.reconnect import reconnect_remote_worker
 
-            # This succeeds: Step 6 sets status="waiting" at line 703
             reconnect_remote_worker(
                 conn,
                 session,
@@ -647,36 +631,30 @@ class TestReconnectExceptionHandling:
                 mock_repo,
             )
 
-        # Status was set to "waiting" -- this is the success path.
-        # The race condition is: if the calling trigger_reconnect's bg thread
-        # (lines 909-914) then gets an exception AFTER this returns, it
-        # writes "disconnected" over the "waiting". And the generic except
-        # handler (line 724) does NOT set any status, just re-raises.
-        assert "waiting" in tracker.statuses
+        # Status was set to "working" -- this is the success path.
+        assert "working" in tracker.statuses
 
-        # Now simulate what happens if a generic exception occurs in the
-        # try block BEFORE the status was set.  The finally block only
-        # releases the lock -- no status cleanup.
+        # Now simulate what happens if _ensure_rws_ready raises an exception.
         tracker2 = StatusTracker()
         conn2 = MagicMock()
         session2 = _make_remote_session(status="disconnected")
 
         with (
-            patch("orchestrator.session.reconnect.os.makedirs"),
             patch(
-                "orchestrator.terminal.manager.ensure_window",
-                side_effect=RuntimeError("tmux crash"),
+                "orchestrator.terminal.session._ensure_rws_ready",
+                side_effect=RuntimeError("RWS deploy failed"),
             ),
-            # Skip RWS PTY migration attempt for legacy session
             patch(
-                "orchestrator.session.health.check_screen_and_claude_remote",
-                return_value=("alive", "mocked"),
+                "orchestrator.session.reconnect.get_screen_session_name",
+                return_value="claude-test",
             ),
+            patch("orchestrator.session.reconnect.subprocess"),
+            patch("orchestrator.session.reconnect.time.sleep"),
         ):
             mock_repo2 = MagicMock()
             mock_repo2.update_session = tracker2.update_session
 
-            with pytest.raises(RuntimeError, match="tmux crash"):
+            with pytest.raises(RuntimeError, match="RWS deploy failed"):
                 reconnect_remote_worker(
                     conn2,
                     session2,
@@ -694,30 +672,30 @@ class TestReconnectExceptionHandling:
     def test_generic_exception_sets_error_status(self):
         """FIXED (RC-05): Generic exceptions now set status to 'error'.
 
-        Previously only TUIActiveError set status='error'. Now all exceptions
-        in reconnect_remote_worker reset status to prevent stuck sessions.
+        All exceptions in reconnect_remote_worker set status to 'error'
+        to prevent stuck sessions.
         """
         tracker = StatusTracker()
         conn = MagicMock()
         session = _make_remote_session(status="connecting")
 
         with (
-            patch("orchestrator.session.reconnect.os.makedirs"),
             patch(
-                "orchestrator.terminal.manager.ensure_window",
-                side_effect=RuntimeError("tmux broke"),
+                "orchestrator.terminal.session._ensure_rws_ready",
+                side_effect=RuntimeError("RWS deploy failed"),
             ),
-            # Skip RWS PTY migration attempt for legacy session
             patch(
-                "orchestrator.session.health.check_screen_and_claude_remote",
-                return_value=("alive", "mocked"),
+                "orchestrator.session.reconnect.get_screen_session_name",
+                return_value="claude-test",
             ),
+            patch("orchestrator.session.reconnect.subprocess"),
+            patch("orchestrator.session.reconnect.time.sleep"),
         ):
             mock_repo = MagicMock()
             mock_repo.update_session = tracker.update_session
             from orchestrator.session.reconnect import reconnect_remote_worker
 
-            with pytest.raises(RuntimeError, match="tmux broke"):
+            with pytest.raises(RuntimeError, match="RWS deploy failed"):
                 reconnect_remote_worker(
                     conn,
                     session,
@@ -731,68 +709,43 @@ class TestReconnectExceptionHandling:
         # FIXED: status is now set to "error" on generic exceptions
         assert "error" in tracker.statuses
 
-    def test_tui_active_error_sets_error_status(self):
-        """TUIActiveError correctly sets status to 'error'."""
-        from orchestrator.session.reconnect import TUIActiveError
+    def test_any_exception_sets_error_status(self):
+        """Any exception in reconnect_remote_worker sets status to 'error'.
 
+        The new RWS PTY code path catches all exceptions and sets error status.
+        """
         tracker = StatusTracker()
         conn = MagicMock()
         session = _make_remote_session(status="disconnected")
 
         with (
-            patch("orchestrator.session.reconnect.os.makedirs"),
-            patch("orchestrator.terminal.manager.ensure_window"),
             patch(
-                "orchestrator.session.reconnect.check_tui_running_in_pane",
-                return_value=False,
+                "orchestrator.terminal.session._ensure_rws_ready",
+                side_effect=ConnectionError("SSH tunnel broken"),
             ),
             patch(
-                "orchestrator.session.health.check_worker_ssh_alive",
-                return_value=False,
+                "orchestrator.session.reconnect.get_screen_session_name",
+                return_value="claude-test",
             ),
-            patch("orchestrator.session.reconnect._clean_pane_for_ssh"),
-            patch("orchestrator.terminal.ssh.remote_connect"),
-            patch("orchestrator.terminal.ssh.wait_for_prompt", return_value=True),
-            patch("orchestrator.session.reconnect._ensure_local_configs_exist"),
-            patch("orchestrator.session.reconnect._copy_configs_to_remote"),
-            patch(
-                "orchestrator.terminal.session._install_screen_if_needed",
-                return_value=True,
-            ),
-            patch(
-                "orchestrator.session.reconnect.check_screen_exists_via_tmux",
-                return_value=(False, False, None),
-            ),
-            patch("orchestrator.session.reconnect._kill_orphaned_screen"),
-            # safe_send_keys raises TUIActiveError
-            patch(
-                "orchestrator.session.reconnect.safe_send_keys",
-                side_effect=TUIActiveError("TUI active"),
-            ),
+            patch("orchestrator.session.reconnect.subprocess"),
             patch("orchestrator.session.reconnect.time.sleep"),
-            patch("orchestrator.session.reconnect.ensure_rdev_node"),
-            # Skip RWS PTY migration attempt for legacy session
-            patch(
-                "orchestrator.session.health.check_screen_and_claude_remote",
-                return_value=("alive", "mocked"),
-            ),
         ):
             mock_repo = MagicMock()
             mock_repo.update_session = tracker.update_session
             from orchestrator.session.reconnect import reconnect_remote_worker
 
-            # Should NOT raise -- TUIActiveError is caught internally
-            reconnect_remote_worker(
-                conn,
-                session,
-                "orchestrator",
-                "rdev-worker",
-                8093,
-                "/tmp/test",
-                mock_repo,
-            )
+            with pytest.raises(ConnectionError, match="SSH tunnel broken"):
+                reconnect_remote_worker(
+                    conn,
+                    session,
+                    "orchestrator",
+                    "rdev-worker",
+                    8093,
+                    "/tmp/test",
+                    mock_repo,
+                )
 
-        # TUIActiveError handler sets status="error" (line 723)
+        # Status should be set to "error"
         assert "error" in tracker.statuses
 
 

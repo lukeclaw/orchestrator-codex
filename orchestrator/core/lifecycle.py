@@ -26,12 +26,17 @@ def startup_check(conn: sqlite3.Connection, tmux_session: str = "orchestrator"):
         tmux.create_session(tmux_session)
         logger.info("Created tmux session: %s", tmux_session)
 
-    # Reconcile: check if DB sessions still have tmux windows
+    # Reconcile: check if DB sessions still have tmux windows.
+    # Skip remote sessions — they use RWS PTY (no tmux window).
+    from orchestrator.terminal.ssh import is_remote_host
+
     db_sessions = sessions.list_sessions(conn)
     tmux_windows = tmux.list_windows(tmux_session)
     window_names = {w.name for w in tmux_windows}
 
     for s in db_sessions:
+        if is_remote_host(s.host):
+            continue  # Remote workers use RWS PTY, not tmux windows
         if s.name not in window_names and s.status != "disconnected":
             logger.warning("Session %s has no tmux window, marking disconnected", s.name)
             sessions.update_session(conn, s.id, status="disconnected")

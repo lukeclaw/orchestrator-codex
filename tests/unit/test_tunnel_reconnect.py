@@ -1,17 +1,10 @@
-"""Tests for tunnel-only reconnect functionality.
+"""Tests for tunnel-only reconnect and RWS PTY reconnect functionality.
 
-Updated for subprocess-based tunnel management via ReverseTunnelManager.
-When SSH/screen/Claude are all running fine but the tunnel disconnects,
-we should only reconnect the tunnel without typing into the Claude console.
+Updated for RWS PTY-based reconnection. When the tunnel disconnects,
+we reconnect via RWS PTY instead of the legacy screen/tmux-based flow.
 """
 
-import subprocess
 from unittest.mock import MagicMock, patch
-
-import pytest
-
-# Default return value for mocked subprocess.run — tmux commands succeed.
-_TMUX_OK = subprocess.CompletedProcess(args=["tmux"], returncode=0, stdout="", stderr="")
 
 
 class TestReconnectTunnelOnly:
@@ -101,94 +94,49 @@ class TestReconnectTunnelOnly:
         assert result is False
 
 
-class TestReconnectRemoteWorkerTunnelOnlyPath:
-    """Test that reconnect_remote_worker takes the tunnel-only path when appropriate.
+class TestReconnectRemoteWorkerRWSPath:
+    """Test that reconnect_remote_worker uses RWS PTY for reconnection.
 
-    Updated for the sequential pipeline design where Step 1 checks TUI + SSH
-    non-intrusively and returns early if everything is alive.
+    The new reconnect_remote_worker always creates an RWS PTY instead of
+    the legacy screen/tmux-based reconnect.
     """
 
-    @patch("orchestrator.terminal.manager.subprocess.run")
-    @patch("orchestrator.session.reconnect.check_tui_running_in_pane", return_value=True)
-    @patch("orchestrator.session.health.check_worker_ssh_alive", return_value=True)
-    @patch("orchestrator.session.health.check_screen_and_claude_remote")
-    @patch("orchestrator.session.reconnect.time.sleep")
-    def test_tunnel_only_path_when_claude_running(
-        self, mock_sleep, mock_screen_claude, mock_ssh_alive, mock_tui, mock_tmux_run, db
-    ):
-        """When TUI active + SSH alive + remote alive, only fix tunnel and return."""
-        from orchestrator.session.reconnect import reconnect_remote_worker
-
-        mock_tmux_run.return_value = _TMUX_OK
-        mock_screen_claude.return_value = ("alive", "Screen session exists and Claude is running")
-
-        mock_session = MagicMock()
-        mock_session.name = "test-worker"
-        mock_session.host = "subs-mt/test-vm"
-        mock_session.id = "test-session-id"
-        mock_session.work_dir = "/home/user/code"
-        mock_session.rws_pty_id = None
-
-        mock_repo = MagicMock()
-        mock_tm = MagicMock()
-        mock_tm.is_alive.return_value = False  # Tunnel dead
-
-        reconnect_remote_worker(
-            db,
-            mock_session,
-            "orchestrator",
-            "test-worker",
-            8093,
-            "/tmp",
-            mock_repo,
-            tunnel_manager=mock_tm,
-        )
-
-        # Step 1 detects TUI+SSH alive, subprocess confirms "alive" → _ensure_tunnel called
-        mock_tm.restart_tunnel.assert_called_once()
-        mock_repo.update_session.assert_any_call(db, "test-session-id", status="waiting")
-
-    @patch("orchestrator.terminal.manager.subprocess.run")
-    @patch("orchestrator.session.reconnect.check_tui_running_in_pane", return_value=False)
-    @patch("orchestrator.session.reconnect.send_keys")
-    @patch("orchestrator.session.reconnect.kill_window")
-    @patch("orchestrator.terminal.ssh.remote_connect")
-    @patch("orchestrator.terminal.ssh.wait_for_prompt", return_value=False)
-    @patch("orchestrator.session.health.check_worker_ssh_alive", return_value=False)
-    @patch("orchestrator.session.reconnect.time.sleep")
-    @patch(
-        "orchestrator.session.health.check_screen_and_claude_remote",
-        return_value=("alive", "mocked"),
-    )
-    def test_full_reconnect_when_ssh_dead(
+    @patch("orchestrator.session.reconnect._copy_configs_to_remote")
+    @patch("orchestrator.session.reconnect._ensure_local_configs_exist")
+    @patch("orchestrator.session.reconnect.subprocess")
+    def test_rws_pty_path_when_pty_id_set(
         self,
-        mock_screen_claude,
-        mock_sleep,
-        mock_ssh_alive,
-        mock_wait_prompt,
-        mock_remote_connect,
-        mock_kill_window,
-        mock_send_keys,
-        mock_tui,
-        mock_tmux_run,
+        mock_reconnect_subprocess,
+        mock_configs,
+        mock_copy,
         db,
     ):
-        """When SSH process is dead (no TUI), should go through full pipeline."""
+        """When session has rws_pty_id, reconnect calls _reconnect_rws_pty_worker."""
         from orchestrator.session.reconnect import reconnect_remote_worker
 
-        mock_tmux_run.return_value = _TMUX_OK
         mock_session = MagicMock()
         mock_session.name = "test-worker"
         mock_session.host = "subs-mt/test-vm"
         mock_session.id = "test-session-id"
         mock_session.work_dir = "/home/user/code"
-        mock_session.rws_pty_id = None
+        mock_session.rws_pty_id = "pty-existing-123"
+        mock_session.claude_session_id = None
 
         mock_repo = MagicMock()
         mock_tm = MagicMock()
-        mock_tm.is_alive.return_value = False
+        mock_tm.is_alive.return_value = True
 
-        with pytest.raises(RuntimeError, match="Timed out waiting for shell prompt"):
+        mock_rws = MagicMock()
+        mock_rws.execute.return_value = {"ptys": [{"pty_id": "pty-existing-123", "alive": True}]}
+
+        with (
+            patch(
+                "orchestrator.terminal.session._ensure_rws_ready",
+                return_value=mock_rws,
+            ),
+            patch("orchestrator.session.reconnect._reconnect_rws_for_host"),
+            patch("orchestrator.session.reconnect.time.sleep"),
+        ):
             reconnect_remote_worker(
                 db,
                 mock_session,
@@ -199,6 +147,75 @@ class TestReconnectRemoteWorkerTunnelOnlyPath:
                 mock_repo,
                 tunnel_manager=mock_tm,
             )
+
+        # PTY still alive -- should set status to waiting
+        mock_repo.update_session.assert_any_call(db, "test-session-id", status="waiting")
+
+    @patch("orchestrator.session.reconnect._copy_configs_to_remote")
+    @patch("orchestrator.session.reconnect._ensure_local_configs_exist")
+    @patch("orchestrator.session.reconnect.subprocess")
+    def test_creates_new_rws_pty_when_no_pty_id(
+        self,
+        mock_reconnect_subprocess,
+        mock_configs,
+        mock_copy,
+        db,
+    ):
+        """When session has no rws_pty_id, reconnect creates a new RWS PTY."""
+        from orchestrator.session.reconnect import reconnect_remote_worker
+
+        mock_session = MagicMock()
+        mock_session.name = "test-worker"
+        mock_session.host = "subs-mt/test-vm"
+        mock_session.id = "test-session-id"
+        mock_session.work_dir = "/home/user/code"
+        mock_session.rws_pty_id = None
+        mock_session.claude_session_id = None
+
+        mock_repo = MagicMock()
+        mock_tm = MagicMock()
+        mock_tm.is_alive.return_value = False
+
+        mock_rws = MagicMock()
+        mock_rws.create_pty.return_value = "pty-new-456"
+
+        with (
+            patch(
+                "orchestrator.terminal.session._ensure_rws_ready",
+                return_value=mock_rws,
+            ),
+            patch("orchestrator.session.reconnect._ensure_tunnel"),
+            patch("orchestrator.session.reconnect._reconnect_rws_for_host"),
+            patch(
+                "orchestrator.session.reconnect._check_claude_session_exists_remote",
+                return_value=False,
+            ),
+            patch(
+                "orchestrator.terminal.session._build_claude_command",
+                return_value="claude --session-id test-session-id",
+            ),
+            patch(
+                "orchestrator.session.reconnect.get_screen_session_name",
+                return_value="claude-test-session-id",
+            ),
+            patch("orchestrator.session.reconnect.time.sleep"),
+        ):
+            reconnect_remote_worker(
+                db,
+                mock_session,
+                "orchestrator",
+                "test-worker",
+                8093,
+                "/tmp",
+                mock_repo,
+                tunnel_manager=mock_tm,
+            )
+
+        # Should have created a new PTY
+        mock_rws.create_pty.assert_called_once()
+        # Should have updated session with pty_id
+        update_calls = [str(c) for c in mock_repo.update_session.call_args_list]
+        assert any("pty-new-456" in c for c in update_calls)
 
 
 class TestHealthCheckAutoReconnectTunnel:

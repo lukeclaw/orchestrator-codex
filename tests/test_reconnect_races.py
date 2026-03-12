@@ -396,74 +396,75 @@ class TestReconnectVsTunnelHealthLoopRace:
         assert final.tunnel_pid == 1002, "Last writer wins for tunnel_pid"
 
     @patch("orchestrator.session.reconnect.time.sleep")
-    @patch("orchestrator.session.reconnect.check_tui_running_in_pane", return_value=False)
-    @patch("orchestrator.session.health.check_worker_ssh_alive", return_value=False)
-    @patch("orchestrator.terminal.ssh.remote_connect")
-    @patch("orchestrator.terminal.ssh.wait_for_prompt", return_value=True)
     @patch("orchestrator.session.reconnect._ensure_local_configs_exist")
     @patch("orchestrator.session.reconnect._copy_configs_to_remote")
-    @patch("orchestrator.terminal.session._install_screen_if_needed", return_value=True)
-    @patch(
-        "orchestrator.session.reconnect.check_screen_exists_via_tmux",
-        return_value=(False, False, None),
-    )
-    @patch("orchestrator.session.reconnect.safe_send_keys")
-    @patch("orchestrator.session.reconnect._launch_claude_in_screen")
-    @patch("orchestrator.session.reconnect._kill_orphaned_screen")
-    @patch("orchestrator.terminal.manager.subprocess")
-    @patch("orchestrator.terminal.manager.ensure_window")
-    @patch(
-        "orchestrator.session.health.check_screen_and_claude_remote",
-        return_value=("alive", "mocked"),
-    )
+    @patch("orchestrator.session.reconnect.subprocess")
     def test_reconnect_worker_restarts_dead_tunnel(
         self,
-        mock_screen_claude,
-        mock_ensure_window,
-        mock_subprocess,
-        mock_kill_orphaned,
-        mock_launch,
-        mock_safe_send,
-        mock_screen_check,
-        mock_install_screen,
+        mock_reconnect_subprocess,
         mock_copy_configs,
         mock_ensure_configs,
-        mock_wait_prompt,
-        mock_remote_connect,
-        mock_ssh_alive,
-        mock_tui,
         mock_sleep,
         race_db,
         worker_session,
     ):
-        """reconnect_remote_worker restarts a dead tunnel in Step 2 and writes
-        the new tunnel_pid to the DB via the repo."""
+        """reconnect_remote_worker restarts a dead tunnel and creates an RWS PTY,
+        writing the new tunnel_pid to the DB via the repo."""
         from orchestrator.session.reconnect import reconnect_remote_worker
 
         mock_tm = MagicMock()
         mock_tm.restart_tunnel.return_value = 5555
         mock_tm.is_alive.return_value = False
 
+        mock_rws = MagicMock()
+        mock_rws.create_pty.return_value = "pty-test"
+
         mock_repo = MagicMock()
 
-        reconnect_remote_worker(
-            race_db,
-            worker_session,
-            "orchestrator",
-            "worker-1",
-            8093,
-            "/tmp/orchestrator/workers/worker-1",
-            mock_repo,
-            tunnel_manager=mock_tm,
-        )
+        with (
+            patch(
+                "orchestrator.terminal.session._ensure_rws_ready",
+                return_value=mock_rws,
+            ),
+            patch("orchestrator.session.reconnect._reconnect_rws_for_host"),
+            patch(
+                "orchestrator.session.reconnect._check_claude_session_exists_remote",
+                return_value=False,
+            ),
+            patch(
+                "orchestrator.terminal.session._build_claude_command",
+                return_value="claude --session-id test",
+            ),
+            patch(
+                "orchestrator.session.reconnect.get_screen_session_name",
+                return_value="claude-test",
+            ),
+        ):
+            reconnect_remote_worker(
+                race_db,
+                worker_session,
+                "orchestrator",
+                "worker-1",
+                8093,
+                "/tmp/orchestrator/workers/worker-1",
+                mock_repo,
+                tunnel_manager=mock_tm,
+            )
 
-        # Verify that restart_tunnel was called (Step 2: fix tunnel if dead)
+        # Verify that restart_tunnel was called (tunnel was dead)
         assert mock_tm.restart_tunnel.called, "Reconnect should restart dead tunnel"
         # Verify the tunnel_pid was written to the DB via repo.update_session
         tunnel_update_calls = [
             c for c in mock_repo.update_session.call_args_list if "tunnel_pid" in str(c)
         ]
         assert len(tunnel_update_calls) >= 1, "Should update tunnel_pid in DB"
+        # Verify RWS PTY was created
+        mock_rws.create_pty.assert_called_once()
+        # Verify rws_pty_id was written to session
+        pty_update_calls = [
+            c for c in mock_repo.update_session.call_args_list if "pty-test" in str(c)
+        ]
+        assert len(pty_update_calls) >= 1, "Should update rws_pty_id in DB"
 
 
 # ============================================================================

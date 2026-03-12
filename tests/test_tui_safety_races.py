@@ -6,15 +6,14 @@ are mocked so no live tmux session is needed.
 
 Race conditions tested
 ----------------------
-1. TOCTOU in safe_send_keys: check returns False → TUI activates → send_keys
+1. TOCTOU in safe_send_keys: check returns False -> TUI activates -> send_keys
    types into Claude's input instead of the shell.
 2. POST /send while reconnect is resending commands to the same pane.
 3. delete_session sends "exit" while reconnect is in progress.
 4. Terminal WebSocket input interleaved with reconnect send_keys.
-5. _clean_pane_for_ssh kills/recreates window but reconnect holds old ref.
-6. check_tui_running_in_pane returns stale result vs. screen changes.
-7. Two simultaneous send_message calls — paste operations interleave.
-8. delete_session cleanup races with reconnect that restarts SSH.
+5. check_tui_running_in_pane returns stale result vs. screen changes.
+6. Two simultaneous send_message calls -- paste operations interleave.
+7. delete_session cleanup races with reconnect that restarts SSH.
 """
 
 from __future__ import annotations
@@ -30,7 +29,6 @@ import pytest
 from orchestrator.api import ws_terminal as _ws_terminal_mod  # noqa: F401
 from orchestrator.session.reconnect import (
     TUIActiveError,
-    _clean_pane_for_ssh,
     cleanup_reconnect_lock,
     get_reconnect_lock,
     safe_send_keys,
@@ -517,156 +515,7 @@ class TestWebSocketInputDuringReconnect:
 
 
 # ---------------------------------------------------------------------------
-# 5. _clean_pane_for_ssh kills/recreates window, but reconnect holds old ref
-# ---------------------------------------------------------------------------
-
-
-class TestCleanPaneWindowRecreation:
-    """Race: _clean_pane_for_ssh kills the window and calls ensure_window
-    to recreate it, but the caller (reconnect_remote_worker) may still hold
-    a stale reference to the old window name or state.
-
-    Bug: After kill_window + ensure_window, the window index may differ,
-    and any parallel tmux operations targeting the old pane ID will fail.
-    Severity: Stuck state — reconnect pipeline breaks mid-way.
-    Fix: After _clean_pane_for_ssh, re-resolve the tmux target. Or pass
-    the window name (not index) everywhere, since tmux names are stable.
-    """
-
-    def test_clean_pane_kills_and_recreates(self):
-        """Verify _clean_pane_for_ssh kills the TUI-stuck pane and recreates."""
-        call_seq = CallRecorder()
-        check_results = iter([True, True])  # TUI active both times → kills window
-
-        def mock_check_tui(sess, win):
-            result = next(check_results)
-            call_seq.record(f"check_tui={result}")
-            return result
-
-        def mock_send_keys(sess, win, text, enter=True):
-            call_seq.record(f"send_keys:{text}")
-            return True
-
-        def mock_kill_window(sess, win):
-            call_seq.record(f"kill_window:{sess}:{win}")
-            return True
-
-        def mock_ensure_window(sess, win, cwd=None):
-            call_seq.record(f"ensure_window:{sess}:{win}")
-            return f"{sess}:{win}"
-
-        with (
-            patch(
-                "orchestrator.session.reconnect.check_tui_running_in_pane",
-                side_effect=mock_check_tui,
-            ),
-            patch(
-                "orchestrator.session.reconnect.send_keys",
-                side_effect=mock_send_keys,
-            ),
-            patch(
-                "orchestrator.session.reconnect.kill_window",
-                side_effect=mock_kill_window,
-            ),
-            patch(
-                "orchestrator.terminal.manager.ensure_window",
-                side_effect=mock_ensure_window,
-            ),
-        ):
-            _clean_pane_for_ssh("orch", "w1", cwd="/tmp")
-
-        seq = call_seq.snapshot()
-        # Should have: check_tui=True → Ctrl-C → check_tui=True → kill → ensure
-        assert "kill_window:orch:w1" in seq
-        assert "ensure_window:orch:w1" in seq
-
-    def test_stale_window_reference_after_recreation(self):
-        """After _clean_pane_for_ssh recreates the window, the old tmux
-        pane ID is invalid. Subsequent send_keys using the window NAME
-        (not pane ID) should still work since tmux resolves by name.
-        """
-        window_versions = {"version": 0}
-
-        def mock_check_tui(sess, win):
-            return window_versions["version"] == 0  # First call: TUI active
-
-        def mock_send_keys(sess, win, text, enter=True):
-            # After recreation, send_keys targets the same name
-            return True
-
-        def mock_kill_window(sess, win):
-            window_versions["version"] += 1
-            return True
-
-        def mock_ensure_window(sess, win, cwd=None):
-            return f"{sess}:{win}"
-
-        with (
-            patch(
-                "orchestrator.session.reconnect.check_tui_running_in_pane",
-                side_effect=mock_check_tui,
-            ),
-            patch(
-                "orchestrator.session.reconnect.send_keys",
-                side_effect=mock_send_keys,
-            ),
-            patch(
-                "orchestrator.session.reconnect.kill_window",
-                side_effect=mock_kill_window,
-            ),
-            patch(
-                "orchestrator.terminal.manager.ensure_window",
-                side_effect=mock_ensure_window,
-            ),
-        ):
-            _clean_pane_for_ssh("orch", "w1", cwd="/tmp")
-
-        # The window was recreated (version incremented)
-        assert window_versions["version"] == 1
-
-    def test_parallel_reconnect_during_window_recreation(self):
-        """Two reconnect attempts: one kills/recreates the window while
-        the other tries to use it. The per-session lock should serialize.
-        """
-        session_id = "sess-parallel-clean"
-        lock = get_reconnect_lock(session_id)
-        order = CallRecorder()
-
-        def reconnect_a():
-            with lock:
-                order.record("A:start")
-                time.sleep(0.1)  # Simulates kill + recreate
-                order.record("A:end")
-
-        def reconnect_b():
-            time.sleep(0.02)
-            acquired = lock.acquire(timeout=5)
-            if acquired:
-                try:
-                    order.record("B:start")
-                    order.record("B:end")
-                finally:
-                    lock.release()
-            else:
-                order.record("B:skipped")
-
-        t1 = threading.Thread(target=reconnect_a)
-        t2 = threading.Thread(target=reconnect_b)
-        t1.start()
-        t2.start()
-        t1.join(timeout=5)
-        t2.join(timeout=5)
-
-        seq = order.snapshot()
-        assert seq.index("A:end") < seq.index("B:start"), (
-            f"Expected A to complete before B starts: {seq}"
-        )
-
-        cleanup_reconnect_lock(session_id)
-
-
-# ---------------------------------------------------------------------------
-# 6. check_tui_running_in_pane returns stale result
+# 5. check_tui_running_in_pane returns stale result
 # ---------------------------------------------------------------------------
 
 
@@ -1053,127 +902,6 @@ class TestReconnectLockRegistry:
         """Cleaning up a non-existent lock should not error."""
         cleanup_reconnect_lock("sess-nonexistent")
         cleanup_reconnect_lock("sess-nonexistent")
-
-
-# ---------------------------------------------------------------------------
-# Integration: _clean_pane_for_ssh full flow
-# ---------------------------------------------------------------------------
-
-
-class TestCleanPaneFullFlow:
-    """Test _clean_pane_for_ssh's decision tree with various pane states."""
-
-    def test_clean_pane_no_tui_sends_ctrlc(self):
-        """When no TUI, just send Ctrl-C + Enter to clear prompt."""
-        calls = []
-
-        def mock_check_tui(sess, win):
-            return False
-
-        def mock_send_keys(sess, win, text, enter=True):
-            calls.append((text, enter))
-            return True
-
-        with (
-            patch(
-                "orchestrator.session.reconnect.check_tui_running_in_pane",
-                side_effect=mock_check_tui,
-            ),
-            patch(
-                "orchestrator.session.reconnect.send_keys",
-                side_effect=mock_send_keys,
-            ),
-            patch(
-                "orchestrator.session.reconnect._verify_pane_responsive",
-                return_value=True,
-            ),
-        ):
-            _clean_pane_for_ssh("orch", "w1")
-
-        # Should send Ctrl-C (no enter) then empty string (with enter)
-        assert ("C-c", False) in calls
-        assert ("", True) in calls
-
-    def test_clean_pane_tui_cleared_by_ctrlc(self):
-        """TUI active → Ctrl-C clears it → second check returns False."""
-        check_count = {"n": 0}
-
-        def mock_check_tui(sess, win):
-            check_count["n"] += 1
-            # First check: TUI active. Second check: TUI cleared by Ctrl-C
-            return check_count["n"] == 1
-
-        calls = []
-
-        def mock_send_keys(sess, win, text, enter=True):
-            calls.append((text, enter))
-            return True
-
-        with (
-            patch(
-                "orchestrator.session.reconnect.check_tui_running_in_pane",
-                side_effect=mock_check_tui,
-            ),
-            patch(
-                "orchestrator.session.reconnect.send_keys",
-                side_effect=mock_send_keys,
-            ),
-            patch(
-                "orchestrator.session.reconnect._verify_pane_responsive",
-                return_value=True,
-            ),
-        ):
-            _clean_pane_for_ssh("orch", "w1")
-
-        # Should not have killed the window (Ctrl-C was enough)
-        text_calls = [c[0] for c in calls]
-        assert "C-c" in text_calls
-
-    def test_clean_pane_tui_stuck_kills_window(self):
-        """TUI survives Ctrl-C → kill and recreate window."""
-
-        def mock_check_tui(sess, win):
-            return True  # Always active (stuck)
-
-        calls = CallRecorder()
-
-        def mock_send_keys(sess, win, text, enter=True):
-            calls.record(f"send:{text}")
-            return True
-
-        def mock_kill_window(sess, win):
-            calls.record("kill")
-            return True
-
-        def mock_ensure_window(sess, win, cwd=None):
-            calls.record("ensure")
-            return f"{sess}:{win}"
-
-        with (
-            patch(
-                "orchestrator.session.reconnect.check_tui_running_in_pane",
-                side_effect=mock_check_tui,
-            ),
-            patch(
-                "orchestrator.session.reconnect.send_keys",
-                side_effect=mock_send_keys,
-            ),
-            patch(
-                "orchestrator.session.reconnect.kill_window",
-                side_effect=mock_kill_window,
-            ),
-            patch(
-                "orchestrator.terminal.manager.ensure_window",
-                side_effect=mock_ensure_window,
-            ),
-        ):
-            _clean_pane_for_ssh("orch", "w1", cwd="/tmp")
-
-        seq = calls.snapshot()
-        assert "kill" in seq
-        assert "ensure" in seq
-        # Kill should come before ensure
-        assert seq.index("kill") < seq.index("ensure")
 
 
 # ---------------------------------------------------------------------------

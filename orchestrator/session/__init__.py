@@ -15,7 +15,6 @@ from orchestrator.session.health import (
 from orchestrator.session.reconnect import (
     WORKER_BASE_DIR,
     TUIActiveError,
-    check_screen_exists_via_tmux,
     cleanup_reconnect_lock,
     get_reconnect_lock,
     reconnect_local_worker,
@@ -62,7 +61,6 @@ __all__ = [
     "safe_send_keys",
     "get_reconnect_lock",
     "cleanup_reconnect_lock",
-    "check_screen_exists_via_tmux",
     "reconnect_tunnel_only",
     "reconnect_remote_worker",
     "reconnect_rdev_worker",
