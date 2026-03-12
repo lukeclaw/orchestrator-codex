@@ -67,7 +67,7 @@ All tools are in PATH. Run `<tool> --help` for full options.
 | `orch-skills` | list, show, create, update, delete custom skills |
 | `orch-send` | send message to a worker |
 | `orch-notifications` | list, dismiss, delete notifications |
-| `orch-prs` | batch check PR statuses — `orch-prs --repo org/repo 123 124 125` |
+| `orch-prs` | batch check PR statuses — `orch-prs --repo org/repo 123 124 125` (extract exact org/repo from PR URLs — never guess the org name) |
 
 ### Non-obvious patterns
 

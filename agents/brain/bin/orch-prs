@@ -39,6 +39,7 @@ EOF
 
 # --- Arg parsing ---
 REPO=""
+REPO_EXPLICIT=false
 STATS=false
 PR_NUMBERS=()
 
@@ -46,6 +47,7 @@ while [[ $# -gt 0 ]]; do
     case "$1" in
         --repo)
             REPO="$2"
+            REPO_EXPLICIT=true
             shift 2
             ;;
         --stats)
@@ -140,8 +142,15 @@ ${FIELDS}  }
         -f query="$QUERY" \
         -f owner="$OWNER" \
         -f repo="$NAME" 2>&1) || {
-        echo "Error: GraphQL query failed" >&2
-        echo "$RAW" >&2
+        if echo "$RAW" | grep -q "Could not resolve to a Repository"; then
+            echo "Error: repository '${REPO}' not found." >&2
+            if [[ "$REPO_EXPLICIT" == true ]]; then
+                echo "Hint: if you have a PR URL, extract the exact org/repo from it (e.g., github.com/ORG/REPO/pull/N → --repo ORG/REPO). Do not guess the org name." >&2
+            fi
+        else
+            echo "Error: GraphQL query failed" >&2
+            echo "$RAW" >&2
+        fi
         exit 1
     }
 

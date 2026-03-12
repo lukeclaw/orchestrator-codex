@@ -72,7 +72,7 @@ Two paths based on terminal output:
 
 ```bash
 orch-tasks list --assigned <worker-id> --format json | jq '.[0]'
-orch-prs --repo <owner/repo> <pr-numbers>    # batch per repo
+orch-prs --repo <owner/repo> <pr-numbers>    # extract org/repo from PR URL, never guess
 ```
 
 **For tasks with PRs** — map `orch-prs` action field:
@@ -144,5 +144,5 @@ orch-workers stop <worker-id>
 - **Never suggest "stop" for idle workers** — idle workers with no task are already stopped; skip them and let the user decide
 - **Self-report ≠ done** — a worker claiming completion is a signal to verify, not evidence to act on. Always route through Slow Path and confirm the deliverable externally before suggesting "mark done + stop"
 - **Act on facts only** — if unsure, put "Needs human" rather than guessing
-- **Batch PR checks** — `orch-prs --repo <owner/repo> <pr1> <pr2> ...`
+- **Batch PR checks** — `orch-prs --repo <owner/repo> <pr1> <pr2> ...` (extract exact org/repo from the PR URL, e.g. `github.com/ORG/REPO/pull/N` → `--repo ORG/REPO N` — never guess the org name)
 - **For special keys** (arrow keys for selection menus): use `tmux send-keys Up/Down`
