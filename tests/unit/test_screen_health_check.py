@@ -275,106 +275,105 @@ _SCREEN_ALIVE = ("alive", "Screen + Claude running")
 
 
 class TestPaneAttachmentDetection(unittest.TestCase):
-    """Tests for auto-detecting detached screen via pane attachment check.
+    """Tests for RWS PTY health check scenarios for remote sessions.
 
-    When check_screen_and_claude_remote reports "alive" (screen + Claude
-    running on the remote host), the health check should additionally verify
-    that the local tmux pane is actually attached to screen (alternate_on=1).
-    If not, the worker is marked screen_detached for auto-reattach.
+    All remote sessions now route through _check_rws_pty_health, which queries
+    the RWS daemon for PTY status instead of using the legacy screen/TUI path.
     """
 
-    @patch(f"{_HEALTH}.window_exists", return_value=True)
-    @patch(f"{_HEALTH}.check_tui_running_in_pane", return_value=False)
-    @patch(f"{_HEALTH}.check_screen_and_claude_remote", return_value=_SCREEN_ALIVE)
+    @patch("orchestrator.terminal.remote_worker_server._server_pool")
+    @patch(f"{_HEALTH}.is_remote_host", return_value=True)
     @patch(f"{_HEALTH}.repo")
-    def test_alive_but_pane_not_attached_returns_screen_detached(
+    def test_rws_pty_dead_returns_disconnected(
         self,
         mock_repo,
-        mock_screen_check,
-        mock_tui,
-        mock_win_exists,
+        mock_is_remote,
+        mock_pool,
     ):
-        """screen_status=alive + TUI not active → screen_detached + needs_reconnect."""
-        session = _make_remote_session()
+        """RWS PTY dead → disconnected + needs_reconnect."""
+        session = _make_remote_session(rws_pty_id="pty-123")
         tunnel_mgr = MagicMock()
         tunnel_mgr.is_alive.return_value = True
+
+        mock_rws = MagicMock()
+        mock_rws.execute.return_value = {"ptys": [{"pty_id": "pty-123", "alive": False}]}
+        mock_pool.get.return_value = mock_rws
 
         result = check_and_update_worker_health(MagicMock(), session, tunnel_manager=tunnel_mgr)
 
         assert result["alive"] is False
-        assert result["status"] == "screen_detached"
+        assert result["status"] == "disconnected"
         assert result["needs_reconnect"] is True
-        assert "pane not attached" in result["reason"]
-        mock_tui.assert_called_once()
 
-    @patch(f"{_HEALTH}.window_exists", return_value=True)
-    @patch(f"{_HEALTH}.check_tui_running_in_pane", return_value=True)
-    @patch(f"{_HEALTH}.check_screen_and_claude_remote", return_value=_SCREEN_ALIVE)
+    @patch("orchestrator.terminal.remote_worker_server._server_pool")
+    @patch(f"{_HEALTH}.is_remote_host", return_value=True)
     @patch(f"{_HEALTH}.repo")
-    def test_alive_and_pane_attached_returns_alive(
+    def test_alive_and_pty_alive_returns_alive(
         self,
         mock_repo,
-        mock_screen_check,
-        mock_tui,
-        mock_win_exists,
+        mock_is_remote,
+        mock_pool,
     ):
-        """screen_status=alive + TUI active → alive."""
-        session = _make_remote_session()
+        """RWS PTY alive → alive with tunnel_alive."""
+        session = _make_remote_session(rws_pty_id="pty-123")
         tunnel_mgr = MagicMock()
         tunnel_mgr.is_alive.return_value = True
+
+        mock_rws = MagicMock()
+        mock_rws.execute.return_value = {"ptys": [{"pty_id": "pty-123", "alive": True}]}
+        mock_pool.get.return_value = mock_rws
 
         result = check_and_update_worker_health(MagicMock(), session, tunnel_manager=tunnel_mgr)
 
         assert result["alive"] is True
         assert result["tunnel_alive"] is True
-        mock_tui.assert_called_once()
 
-    @patch(f"{_HEALTH}.window_exists", return_value=True)
-    @patch(f"{_HEALTH}.check_tui_running_in_pane", return_value=False)
-    @patch(f"{_HEALTH}.check_screen_and_claude_remote", return_value=_SCREEN_ALIVE)
+    @patch("orchestrator.terminal.remote_worker_server._server_pool")
+    @patch(f"{_HEALTH}.is_remote_host", return_value=True)
     @patch(f"{_HEALTH}.repo")
-    def test_tunnel_restart_success_still_checks_tui(
+    def test_tunnel_restart_success_still_checks_pty(
         self,
         mock_repo,
-        mock_screen_check,
-        mock_tui,
-        mock_win_exists,
+        mock_is_remote,
+        mock_pool,
     ):
-        """Tunnel dead → restart succeeds → TUI not active → screen_detached.
+        """Tunnel dead → restart succeeds → PTY alive → alive + tunnel_reconnected.
 
-        Ensures the tunnel restart success path doesn't short-circuit past
-        the TUI check.
+        Ensures the tunnel restart success path still performs the PTY check.
         """
-        session = _make_remote_session()
+        session = _make_remote_session(rws_pty_id="pty-123")
         tunnel_mgr = MagicMock()
         tunnel_mgr.is_alive.return_value = False  # tunnel initially dead
         tunnel_mgr.restart_tunnel.return_value = 12345  # restart succeeds
 
+        mock_rws = MagicMock()
+        mock_rws.execute.return_value = {"ptys": [{"pty_id": "pty-123", "alive": True}]}
+        mock_pool.get.return_value = mock_rws
+
         result = check_and_update_worker_health(MagicMock(), session, tunnel_manager=tunnel_mgr)
 
-        assert result["alive"] is False
-        assert result["status"] == "screen_detached"
-        assert result["needs_reconnect"] is True
+        assert result["alive"] is True
         assert result["tunnel_reconnected"] is True
         assert result["tunnel_alive"] is True
-        mock_tui.assert_called_once()
 
-    @patch(f"{_HEALTH}.window_exists", return_value=True)
-    @patch(f"{_HEALTH}.check_tui_running_in_pane", return_value=True)
-    @patch(f"{_HEALTH}.check_screen_and_claude_remote", return_value=_SCREEN_ALIVE)
+    @patch("orchestrator.terminal.remote_worker_server._server_pool")
+    @patch(f"{_HEALTH}.is_remote_host", return_value=True)
     @patch(f"{_HEALTH}.repo")
-    def test_tunnel_restart_success_and_tui_active_returns_alive(
+    def test_tunnel_restart_success_and_pty_alive_returns_alive(
         self,
         mock_repo,
-        mock_screen_check,
-        mock_tui,
-        mock_win_exists,
+        mock_is_remote,
+        mock_pool,
     ):
-        """Tunnel dead → restart succeeds → TUI active → alive + tunnel_reconnected."""
-        session = _make_remote_session()
+        """Tunnel dead → restart succeeds → PTY alive → alive + tunnel_reconnected."""
+        session = _make_remote_session(rws_pty_id="pty-123", status="waiting")
         tunnel_mgr = MagicMock()
         tunnel_mgr.is_alive.return_value = False
         tunnel_mgr.restart_tunnel.return_value = 12345
+
+        mock_rws = MagicMock()
+        mock_rws.execute.return_value = {"ptys": [{"pty_id": "pty-123", "alive": True}]}
+        mock_pool.get.return_value = mock_rws
 
         result = check_and_update_worker_health(MagicMock(), session, tunnel_manager=tunnel_mgr)
 
@@ -382,27 +381,32 @@ class TestPaneAttachmentDetection(unittest.TestCase):
         assert result["status"] == "waiting"
         assert result["tunnel_reconnected"] is True
         assert result["tunnel_alive"] is True
-        mock_tui.assert_called_once()
 
 
 class TestRdevRecoveryStatus(unittest.TestCase):
-    """Test that rdev recovery returns the updated status, not the stale one."""
+    """Test that rdev recovery via RWS PTY returns the updated status, not the stale one."""
 
-    @patch(f"{_HEALTH}.window_exists", return_value=True)
-    @patch(f"{_HEALTH}.check_tui_running_in_pane", return_value=True)
-    @patch(f"{_HEALTH}.check_screen_and_claude_remote", return_value=_SCREEN_ALIVE)
+    def _make_rws_mock(self, pty_id="pty-123", alive=True):
+        """Create a mock RWS that responds to pty_list with the given PTY status."""
+        mock_rws = MagicMock()
+        mock_rws.execute.return_value = {"ptys": [{"pty_id": pty_id, "alive": alive}]}
+        return mock_rws
+
+    @patch("orchestrator.terminal.remote_worker_server._server_pool")
+    @patch(f"{_HEALTH}.is_remote_host", return_value=True)
     @patch(f"{_HEALTH}.repo")
     def test_recovery_from_disconnected_returns_waiting(
         self,
         mock_repo,
-        mock_screen_check,
-        mock_tui,
-        mock_win_exists,
+        mock_is_remote,
+        mock_pool,
     ):
         """Rdev worker recovering from disconnected should return status='waiting'."""
-        session = _make_remote_session(status="disconnected")
+        session = _make_remote_session(status="disconnected", rws_pty_id="pty-123")
         tunnel_mgr = MagicMock()
         tunnel_mgr.is_alive.return_value = True
+
+        mock_pool.get.return_value = self._make_rws_mock()
 
         result = check_and_update_worker_health(MagicMock(), session, tunnel_manager=tunnel_mgr)
 
@@ -410,63 +414,63 @@ class TestRdevRecoveryStatus(unittest.TestCase):
         assert result["status"] == "waiting"  # not stale "disconnected"
         mock_repo.update_session.assert_called_once()
 
-    @patch(f"{_HEALTH}.window_exists", return_value=True)
-    @patch(f"{_HEALTH}.check_tui_running_in_pane", return_value=True)
-    @patch(f"{_HEALTH}.check_screen_and_claude_remote", return_value=_SCREEN_ALIVE)
+    @patch("orchestrator.terminal.remote_worker_server._server_pool")
+    @patch(f"{_HEALTH}.is_remote_host", return_value=True)
     @patch(f"{_HEALTH}.repo")
     def test_recovery_from_error_returns_waiting(
         self,
         mock_repo,
-        mock_screen_check,
-        mock_tui,
-        mock_win_exists,
+        mock_is_remote,
+        mock_pool,
     ):
         """Rdev worker recovering from error should return status='waiting'."""
-        session = _make_remote_session(status="error")
+        session = _make_remote_session(status="error", rws_pty_id="pty-123")
         tunnel_mgr = MagicMock()
         tunnel_mgr.is_alive.return_value = True
+
+        mock_pool.get.return_value = self._make_rws_mock()
 
         result = check_and_update_worker_health(MagicMock(), session, tunnel_manager=tunnel_mgr)
 
         assert result["alive"] is True
         assert result["status"] == "waiting"  # not stale "error"
 
-    @patch(f"{_HEALTH}.window_exists", return_value=True)
-    @patch(f"{_HEALTH}.check_tui_running_in_pane", return_value=True)
-    @patch(f"{_HEALTH}.check_screen_and_claude_remote", return_value=_SCREEN_ALIVE)
+    @patch("orchestrator.terminal.remote_worker_server._server_pool")
+    @patch(f"{_HEALTH}.is_remote_host", return_value=True)
     @patch(f"{_HEALTH}.repo")
     def test_recovery_from_screen_detached_returns_waiting(
         self,
         mock_repo,
-        mock_screen_check,
-        mock_tui,
-        mock_win_exists,
+        mock_is_remote,
+        mock_pool,
     ):
         """Rdev worker recovering from screen_detached should return status='waiting'."""
-        session = _make_remote_session(status="screen_detached")
+        session = _make_remote_session(status="screen_detached", rws_pty_id="pty-123")
         tunnel_mgr = MagicMock()
         tunnel_mgr.is_alive.return_value = True
+
+        mock_pool.get.return_value = self._make_rws_mock()
 
         result = check_and_update_worker_health(MagicMock(), session, tunnel_manager=tunnel_mgr)
 
         assert result["alive"] is True
         assert result["status"] == "waiting"
 
-    @patch(f"{_HEALTH}.window_exists", return_value=True)
-    @patch(f"{_HEALTH}.check_tui_running_in_pane", return_value=True)
-    @patch(f"{_HEALTH}.check_screen_and_claude_remote", return_value=_SCREEN_ALIVE)
+    @patch("orchestrator.terminal.remote_worker_server._server_pool")
+    @patch(f"{_HEALTH}.is_remote_host", return_value=True)
     @patch(f"{_HEALTH}.repo")
     def test_working_status_not_changed_on_alive(
         self,
         mock_repo,
-        mock_screen_check,
-        mock_tui,
-        mock_win_exists,
+        mock_is_remote,
+        mock_pool,
     ):
         """Rdev worker already 'working' should keep that status."""
-        session = _make_remote_session(status="working")
+        session = _make_remote_session(status="working", rws_pty_id="pty-123")
         tunnel_mgr = MagicMock()
         tunnel_mgr.is_alive.return_value = True
+
+        mock_pool.get.return_value = self._make_rws_mock()
 
         result = check_and_update_worker_health(MagicMock(), session, tunnel_manager=tunnel_mgr)
 

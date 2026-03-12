@@ -219,38 +219,40 @@ class TestReconnectRemoteWorkerRWSPath:
 
 
 class TestHealthCheckAutoReconnectTunnel:
-    """Test that health check auto-reconnects dead tunnels via tunnel_manager."""
+    """Test that health check auto-reconnects dead tunnels via RWS PTY path.
 
-    @patch("orchestrator.session.health.window_exists", return_value=True)
-    @patch("orchestrator.session.health.check_tui_running_in_pane", return_value=True)
+    All remote sessions now route through _check_rws_pty_health. In this path,
+    a dead tunnel doesn't make the session dead if the PTY is still alive --
+    the response includes tunnel_alive=False but alive=True.
+    """
+
+    @patch("orchestrator.terminal.remote_worker_server._server_pool")
+    @patch("orchestrator.session.health.is_remote_host", return_value=True)
     @patch("orchestrator.session.health.repo")
-    @patch("orchestrator.session.health.check_screen_and_claude_remote")
-    @patch("orchestrator.session.health.is_remote_host")
     @patch("orchestrator.api.routes.sessions.repo")
     def test_health_check_auto_reconnects_tunnel(
         self,
         mock_route_repo,
-        mock_is_remote,
-        mock_screen_claude,
         mock_health_repo,
-        mock_tui,
-        mock_win_exists,
+        mock_is_remote,
+        mock_pool,
         db,
     ):
-        """Health check should auto-reconnect tunnel when Claude running but tunnel dead."""
+        """Health check should auto-reconnect tunnel when PTY alive but tunnel dead."""
         from orchestrator.api.routes.sessions import health_check_session
-
-        mock_is_remote.return_value = True
-        mock_screen_claude.return_value = ("alive", "Screen session exists and Claude is running")
 
         mock_session = MagicMock()
         mock_session.id = "test-session-id"
         mock_session.name = "test-worker"
         mock_session.host = "subs-mt/test-vm"
-        mock_session.rws_pty_id = None
-
+        mock_session.rws_pty_id = "pty-123"
         mock_session.status = "waiting"
+        mock_session.work_dir = "/tmp/work"
         mock_route_repo.get_session.return_value = mock_session
+
+        mock_rws = MagicMock()
+        mock_rws.execute.return_value = {"ptys": [{"pty_id": "pty-123", "alive": True}]}
+        mock_pool.get.return_value = mock_rws
 
         mock_tm = MagicMock()
         mock_tm.is_alive.return_value = False
@@ -267,92 +269,89 @@ class TestHealthCheckAutoReconnectTunnel:
             "test-session-id", "test-worker", "subs-mt/test-vm"
         )
 
-    @patch("orchestrator.session.health.window_exists", return_value=True)
-    @patch("orchestrator.session.health.check_tui_running_in_pane", return_value=True)
+    @patch("orchestrator.terminal.remote_worker_server._server_pool")
+    @patch("orchestrator.session.health.is_remote_host", return_value=True)
     @patch("orchestrator.session.health.repo")
-    @patch("orchestrator.session.health.check_screen_and_claude_remote")
-    @patch("orchestrator.session.health.is_remote_host")
     @patch("orchestrator.api.routes.sessions.repo")
     def test_health_check_reports_failure_when_tunnel_reconnect_fails(
         self,
         mock_route_repo,
-        mock_is_remote,
-        mock_screen_claude,
         mock_health_repo,
-        mock_tui,
-        mock_win_exists,
+        mock_is_remote,
+        mock_pool,
         db,
     ):
-        """Health check should report failure if tunnel auto-reconnect fails."""
-        from orchestrator.api.routes.sessions import health_check_session
+        """Tunnel dead + restart fails but PTY alive → session still alive.
 
-        mock_is_remote.return_value = True
-        mock_screen_claude.return_value = ("alive", "Screen session exists and Claude is running")
+        In the RWS PTY path, a dead tunnel doesn't kill the session. The PTY
+        is still running on the remote host; only the API callback tunnel is down.
+        """
+        from orchestrator.api.routes.sessions import health_check_session
 
         mock_session = MagicMock()
         mock_session.id = "test-session-id"
         mock_session.name = "test-worker"
         mock_session.host = "subs-mt/test-vm"
-        mock_session.rws_pty_id = None
-
+        mock_session.rws_pty_id = "pty-123"
         mock_session.status = "waiting"
+        mock_session.work_dir = "/tmp/work"
         mock_route_repo.get_session.return_value = mock_session
+
+        mock_rws = MagicMock()
+        mock_rws.execute.return_value = {"ptys": [{"pty_id": "pty-123", "alive": True}]}
+        mock_pool.get.return_value = mock_rws
 
         mock_tm = MagicMock()
         mock_tm.is_alive.return_value = False
         mock_tm.restart_tunnel.return_value = None  # Restart fails
-        mock_tm.get_failure_info.return_value = (0, None)
 
         mock_request = MagicMock()
         mock_request.app.state.tunnel_manager = mock_tm
 
         result = health_check_session("test-session-id", mock_request, db)
 
-        assert result["alive"] is False
-        assert result["needs_reconnect"] is True
-        assert "restart failed" in result["reason"]
+        # PTY alive → session alive even though tunnel is dead
+        assert result["alive"] is True
+        assert result["tunnel_alive"] is False
+        assert result["reason"] == "RWS PTY alive"
 
-    @patch("orchestrator.session.health.window_exists", return_value=True)
-    @patch("orchestrator.session.health.check_tui_running_in_pane", return_value=True)
+    @patch("orchestrator.terminal.remote_worker_server._server_pool")
+    @patch("orchestrator.session.health.is_remote_host", return_value=True)
     @patch("orchestrator.session.health.repo")
-    @patch("orchestrator.session.health.check_screen_and_claude_remote")
-    @patch("orchestrator.session.health.is_remote_host")
     @patch("orchestrator.api.routes.sessions.repo")
     def test_health_check_includes_tunnel_error_on_failure(
         self,
         mock_route_repo,
-        mock_is_remote,
-        mock_screen_claude,
         mock_health_repo,
-        mock_tui,
-        mock_win_exists,
+        mock_is_remote,
+        mock_pool,
         db,
     ):
-        """Health check response should include tunnel_failures and tunnel_error."""
+        """Tunnel dead + restart fails → PTY still alive with tunnel_alive=False."""
         from orchestrator.api.routes.sessions import health_check_session
-
-        mock_is_remote.return_value = True
-        mock_screen_claude.return_value = ("alive", "Screen session exists and Claude is running")
 
         mock_session = MagicMock()
         mock_session.id = "test-session-id"
         mock_session.name = "test-worker"
         mock_session.host = "subs-mt/test-vm"
         mock_session.status = "waiting"
-        mock_session.rws_pty_id = None
+        mock_session.rws_pty_id = "pty-123"
+        mock_session.work_dir = "/tmp/work"
         mock_route_repo.get_session.return_value = mock_session
+
+        mock_rws = MagicMock()
+        mock_rws.execute.return_value = {"ptys": [{"pty_id": "pty-123", "alive": True}]}
+        mock_pool.get.return_value = mock_rws
 
         mock_tm = MagicMock()
         mock_tm.is_alive.return_value = False
         mock_tm.restart_tunnel.return_value = None
-        mock_tm.get_failure_info.return_value = (3, "bind: Address already in use")
 
         mock_request = MagicMock()
         mock_request.app.state.tunnel_manager = mock_tm
 
         result = health_check_session("test-session-id", mock_request, db)
 
-        assert result["alive"] is False
-        assert result["tunnel_failures"] == 3
-        assert result["tunnel_error"] == "bind: Address already in use"
-        assert "bind: Address already in use" in result["reason"]
+        # PTY alive → session alive but tunnel is down
+        assert result["alive"] is True
+        assert result["tunnel_alive"] is False

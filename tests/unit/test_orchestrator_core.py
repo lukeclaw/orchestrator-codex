@@ -67,8 +67,8 @@ class TestLifecycle:
 
     @patch("orchestrator.core.lifecycle.tmux")
     def test_startup_reconciles_missing_windows(self, mock_tmux, db):
-        # Create a session in DB
-        s = sessions.create_session(db, "worker-1", "host")
+        # Create a local session in DB (remote sessions are skipped — they use RWS PTY)
+        s = sessions.create_session(db, "worker-1", "localhost")
         sessions.update_session(db, s.id, status="working")
 
         mock_tmux.session_exists.return_value = True
