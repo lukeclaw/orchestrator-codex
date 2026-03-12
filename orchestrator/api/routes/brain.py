@@ -255,8 +255,8 @@ def brain_sync(db=Depends(get_db)):
         "1. Assess each worker: has it COMPLETED its task or is it still actively working?"
     )
     parts.append("2. If a worker has finished (idle prompt, completion message, task done):")
-    parts.append("   - Stop it: curl -s -X POST http://127.0.0.1:8093/api/sessions/{id}/stop")
-    parts.append("   - Then delete it: curl -s -X DELETE http://127.0.0.1:8093/api/sessions/{id}")
+    parts.append("   - Stop it: orch-workers stop {s.name}")
+    parts.append("   - Then delete it: orch-workers delete {s.name}")
     parts.append(
         "3. If a worker is waiting for input or stuck, try to unblock it by sending instructions."
     )

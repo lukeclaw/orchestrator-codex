@@ -1287,10 +1287,6 @@
   background: var(--accent);
 }
 
-.worker-status-dot.status-screen_detached {
-  background: var(--orange, #f97316);
-}
-
 .tdp-assign-icon-btn {
   display: flex;
   align-items: center;
@@ -1477,11 +1473,6 @@
   color: var(--accent);
 }
 
-.worker-status-label.status-screen_detached {
-  background: rgba(249, 115, 22, 0.15);
-  color: var(--orange, #f97316);
-}
-
 .worker-current {
   font-size: 11px;
   font-weight: 600;
@@ -1581,7 +1572,6 @@
 .tdp-worker-preview-card .status-indicator.error { background: var(--red); }
 .tdp-worker-preview-card .status-indicator.disconnected { background: var(--red); }
 .tdp-worker-preview-card .status-indicator.connecting { background: var(--accent); }
-.tdp-worker-preview-card .status-indicator.screen_detached { background: var(--orange, #f97316); }
 
 .tdp-worker-preview-card .wc-type-tag {
   font-size: 11px;
@@ -1646,7 +1636,6 @@
 .tdp-worker-preview-card.status-error { border-left-color: var(--red); }
 .tdp-worker-preview-card.status-disconnected { border-left-color: var(--red); }
 .tdp-worker-preview-card.status-connecting { border-left-color: var(--accent); }
-.tdp-worker-preview-card.status-screen_detached { border-left-color: var(--orange, #f97316); }
 
 .tdp-worker-preview-header {
   display: flex;

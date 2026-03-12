@@ -7,9 +7,8 @@ Reconnect Flow — RWS PTY (remote workers):
   Step 0: Acquire per-session lock (prevents concurrent reconnects)
   Step 1: Ensure reverse tunnel alive (for API callbacks)
   Step 2: Ensure RWS daemon connected
-  Step 3: Kill old screen session on remote (best-effort legacy cleanup)
-  Step 4: Deploy configs to remote via SSH
-  Step 5: Create new RWS PTY with Claude (resume if session exists)
+  Step 3: Deploy configs to remote via SSH
+  Step 4: Create new RWS PTY with Claude (resume if session exists)
 
 Local workers use a separate path via ``reconnect_local_worker``.
 """
@@ -25,7 +24,6 @@ import time
 from orchestrator.agents import get_path_export_command, get_worker_prompt
 from orchestrator.session.health import (
     check_tui_running_in_pane,
-    get_screen_session_name,
 )
 from orchestrator.terminal.manager import (
     capture_output,
@@ -800,23 +798,6 @@ def reconnect_remote_worker(
                 session.name,
                 exc_info=True,
             )
-
-        # Kill old screen session on remote (best-effort cleanup)
-        screen_name = get_screen_session_name(session.id)
-        try:
-            kill_cmd = (
-                f"screen -ls | grep -w '{screen_name}' | "
-                f"awk '{{print $1}}' | while read sid; do "
-                f'screen -X -S "$sid" quit; done'
-            )
-            subprocess.run(
-                ["ssh", "-o", "ConnectTimeout=5", "-o", "BatchMode=yes", session.host, kill_cmd],
-                capture_output=True,
-                timeout=10,
-            )
-            logger.info("Reconnect %s: killed old screen %s", session.name, screen_name)
-        except Exception:
-            pass  # Best-effort
 
         # Deploy configs
         api_base = f"http://127.0.0.1:{api_port}"

@@ -139,12 +139,16 @@ def _write_to_rws_pty(session, data: str) -> bool:
 
 
 def _capture_rws_pty(session, lines: int = 30) -> str:
-    """Capture terminal output from a remote session's RWS PTY."""
+    """Capture terminal output from a remote session's RWS PTY.
+
+    The daemon returns raw ringbuffer bytes which are rendered through a
+    minimal VT emulator in capture_pty() — no ANSI stripping needed here.
+    """
     from orchestrator.terminal.remote_worker_server import get_remote_worker_server
 
     try:
         rws = get_remote_worker_server(session.host)
-        return _strip_terminal_noise(rws.capture_pty(session.rws_pty_id, lines=lines))
+        return rws.capture_pty(session.rws_pty_id, lines=lines)
     except Exception:
         logger.debug("RWS PTY capture failed for %s", session.name, exc_info=True)
         return ""
@@ -909,7 +913,7 @@ def prepare_session_for_task(session_id: str, db=Depends(get_db)):
         raise HTTPException(404, "Session not found")
 
     # Check if session is in a connectable state
-    disconnected_statuses = {"disconnected", "screen_detached", "error", "connecting"}
+    disconnected_statuses = {"disconnected", "error", "connecting"}
     if s.status in disconnected_statuses:
         raise HTTPException(400, f"Session is not connected (status: {s.status})")
 
@@ -946,14 +950,9 @@ def prepare_session_for_task(session_id: str, db=Depends(get_db)):
 
 @router.post("/sessions/{session_id}/reconnect")
 def reconnect_session(session_id: str, request: Request, db=Depends(get_db)):
-    """Reconnect a disconnected or screen_detached worker session.
+    """Reconnect a disconnected worker session.
 
-    For rdev workers with screen_detached status:
-    - Re-establish SSH/tunnel, then reattach to existing screen session
-    - If screen has Claude running, just reattach (fast recovery!)
-
-    For rdev workers with disconnected status:
-    - Re-establish SSH/tunnel, create new screen, launch Claude
+    For remote workers: re-establish SSH/tunnel, create new RWS PTY, launch Claude.
 
     For local workers: just relaunch Claude with -r flag.
 
@@ -964,7 +963,7 @@ def reconnect_session(session_id: str, request: Request, db=Depends(get_db)):
     if s is None:
         raise HTTPException(404, "Session not found")
 
-    # Allow reconnect from disconnected, screen_detached, or error states
+    # Allow reconnect from disconnected or error states
     if not is_reconnectable(s.status):
         return {"ok": False, "error": f"Session is not in reconnectable state (status: {s.status})"}
 
@@ -991,21 +990,14 @@ def reconnect_session(session_id: str, request: Request, db=Depends(get_db)):
 def health_check_session(session_id: str, request: Request, db=Depends(get_db)):
     """Check if a worker's Claude Code process is still running.
 
-    For rdev workers with screen sessions:
-    - Checks both screen session and Claude process
-    - Returns screen_detached if SSH fails but screen may be running
-    - Returns error if screen exists but Claude is not running
-
-    For local workers:
-    - Uses ps | grep to check Claude process
+    For remote workers: checks RWS PTY status.
+    For local workers: uses ps | grep to check Claude process.
 
     Status checks don't lock user input - they just check status without sending commands
-    to the worker terminal.
-
-    Updates status accordingly.
+    to the worker terminal. Updates status accordingly.
 
     Returns:
-        {"alive": bool, "status": str, "reason": str, "screen_status": str (rdev only)}
+        {"alive": bool, "status": str, "reason": str}
     """
     s = _resolve_session(db, session_id)
     if s is None:
@@ -1019,20 +1011,15 @@ def health_check_session(session_id: str, request: Request, db=Depends(get_db)):
 def health_check_all_sessions(request: Request, db=Depends(get_db)):
     """Run health check on all active worker sessions.
 
-    For rdev workers with screen sessions:
-    - Checks both screen session and Claude process
-    - Sets screen_detached if SSH fails but screen may be running
-    - Sets error if screen exists but Claude crashed
-
-    For local workers:
-    - Uses ps | grep to check Claude process
+    For remote workers: checks RWS PTY status.
+    For local workers: uses ps | grep to check Claude process.
 
     Updates worker status automatically.
     If a worker has auto_reconnect enabled and is found disconnected,
     automatically triggers reconnection.
 
     Returns:
-        {"checked": int, "disconnected": list[str], "screen_detached": list[str],
+        {"checked": int, "disconnected": list[str],
          "error": list[str], "alive": list[str], "auto_reconnected": list[str]}
     """
     sessions = repo.list_sessions(db, session_type="worker")

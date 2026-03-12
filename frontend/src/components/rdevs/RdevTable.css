@@ -134,7 +134,6 @@
 .rt-worker-dot.error { background: var(--red); }
 .rt-worker-dot.disconnected { background: var(--red); }
 .rt-worker-dot.connecting { background: var(--accent); }
-.rt-worker-dot.screen_detached { background: var(--orange, #f97316); }
 
 /* Worker tag link - clickable badge that links to worker */
 .worker-tag-link {

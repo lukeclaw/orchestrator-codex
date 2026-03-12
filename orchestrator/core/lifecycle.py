@@ -77,6 +77,48 @@ def recover_tunnels(conn: sqlite3.Connection, tunnel_manager):
         logger.info("Recovered %d tunnels on startup", recovered)
 
 
+def migrate_legacy_screen_sessions(conn: sqlite3.Connection):
+    """Kill screen sessions for legacy remote workers, triggering RWS reconnect."""
+    import subprocess
+
+    from orchestrator.terminal.ssh import is_remote_host
+
+    all_sessions = sessions.list_sessions(conn, session_type="worker")
+    legacy = [
+        s
+        for s in all_sessions
+        if is_remote_host(s.host) and not s.rws_pty_id and s.status != "idle"
+    ]
+    if not legacy:
+        return
+
+    logger.info("Migrating %d legacy screen-based remote sessions", len(legacy))
+    for s in legacy:
+        screen_name = f"claude-{s.id}"
+        try:
+            kill_cmd = (
+                f"screen -ls | grep -w '{screen_name}' | awk '{{print $1}}' | "
+                f'while read sid; do screen -X -S "$sid" quit; done'
+            )
+            subprocess.run(
+                [
+                    "ssh",
+                    "-o",
+                    "ConnectTimeout=5",
+                    "-o",
+                    "BatchMode=yes",
+                    s.host,
+                    kill_cmd,
+                ],
+                capture_output=True,
+                timeout=10,
+            )
+        except Exception:
+            pass  # Best-effort
+        sessions.update_session(conn, s.id, status="disconnected")
+        logger.info("Migrated %s: killed screen, set disconnected", s.name)
+
+
 def shutdown(conn: sqlite3.Connection):
     """Clean shutdown."""
     logger.info("Shutting down orchestrator")

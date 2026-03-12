@@ -24,7 +24,6 @@ class TestStatusTransitions:
             "working",
             "paused",
             "waiting",
-            "screen_detached",
             "error",
             "disconnected",
         ]
@@ -41,7 +40,6 @@ class TestStatusTransitions:
             "working",
             "paused",
             "waiting",
-            "screen_detached",
             "error",
             "disconnected",
         ]
@@ -274,7 +272,7 @@ class TestStatusTransitions:
     ):
         """Dead tunnel + failed reconnect but PTY alive → session still alive.
 
-        In the RWS PTY world, a dead tunnel doesn't cause screen_detached.
+        In the RWS PTY world, a dead tunnel doesn't cause disconnect.
         If the PTY is alive but the tunnel is dead, the session stays alive
         with tunnel_alive=False.
         """
@@ -365,11 +363,9 @@ class TestReconnectableStates:
 
     def test_reconnectable_states_defined(self):
         """Verify the reconnectable states are correct."""
-        # From sessions.py line 577-580
-        reconnectable_states = ("disconnected", "screen_detached", "error")
+        reconnectable_states = ("disconnected", "error")
 
         assert "disconnected" in reconnectable_states
-        assert "screen_detached" in reconnectable_states
         assert "error" in reconnectable_states
 
         # These should NOT be reconnectable
@@ -390,7 +386,6 @@ class TestStatusValues:
             "working",
             "paused",
             "waiting",
-            "screen_detached",
             "error",
             "disconnected",
         }
@@ -401,7 +396,6 @@ class TestStatusValues:
         assert "working" in valid_statuses  # Active Claude session
         assert "paused" in valid_statuses  # After stop
         assert "waiting" in valid_statuses  # Claude running, waiting for input
-        assert "screen_detached" in valid_statuses  # Tunnel dead but Claude alive
         assert "error" in valid_statuses  # Setup failed
         assert "disconnected" in valid_statuses  # Health check failed
 

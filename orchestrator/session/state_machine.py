@@ -15,7 +15,6 @@ class SessionStatus(StrEnum):
     WORKING = "working"
     PAUSED = "paused"
     WAITING = "waiting"
-    SCREEN_DETACHED = "screen_detached"
     ERROR = "error"
     DISCONNECTED = "disconnected"
 
@@ -38,7 +37,6 @@ VALID_TRANSITIONS: dict[SessionStatus, set[SessionStatus]] = {
         SessionStatus.WAITING,  # Claude waiting for input
         SessionStatus.ERROR,  # Something went wrong
         SessionStatus.DISCONNECTED,  # Health check failed
-        SessionStatus.SCREEN_DETACHED,  # Tunnel dead but Claude alive
     },
     SessionStatus.PAUSED: {
         SessionStatus.WORKING,  # Resume
@@ -51,14 +49,7 @@ VALID_TRANSITIONS: dict[SessionStatus, set[SessionStatus]] = {
         SessionStatus.IDLE,  # Reset
         SessionStatus.PAUSED,  # Stop called
         SessionStatus.DISCONNECTED,  # Health check failed
-        SessionStatus.SCREEN_DETACHED,  # Tunnel dead
         SessionStatus.ERROR,  # Something went wrong
-    },
-    SessionStatus.SCREEN_DETACHED: {
-        SessionStatus.WORKING,  # Reconnected successfully
-        SessionStatus.WAITING,  # Reconnected, Claude waiting
-        SessionStatus.DISCONNECTED,  # Full disconnect
-        SessionStatus.ERROR,  # Reconnect failed
     },
     SessionStatus.ERROR: {
         SessionStatus.CONNECTING,  # Retry setup
@@ -76,7 +67,6 @@ VALID_TRANSITIONS: dict[SessionStatus, set[SessionStatus]] = {
 # States that allow reconnection
 RECONNECTABLE_STATES: set[SessionStatus] = {
     SessionStatus.DISCONNECTED,
-    SessionStatus.SCREEN_DETACHED,
     SessionStatus.ERROR,
 }
 

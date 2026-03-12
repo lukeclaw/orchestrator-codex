@@ -16,7 +16,7 @@ type SortOption = 'last_viewed' | 'last_status_changed' | 'name' | 'status'
 
 const SORT_KEY = 'orchestrator-worker-sort'
 
-const STATUS_ORDER = ['working', 'idle', 'waiting', 'paused', 'error', 'disconnected', 'screen_detached', 'connecting'] as const
+const STATUS_ORDER = ['working', 'idle', 'waiting', 'paused', 'error', 'disconnected', 'connecting'] as const
 
 const STATUS_COLORS: Record<string, string> = {
   working: '#58a6ff',
@@ -25,7 +25,6 @@ const STATUS_COLORS: Record<string, string> = {
   paused: '#f97316',
   error: '#f85149',
   disconnected: '#f85149',
-  screen_detached: '#f97316',
   connecting: '#58a6ff',
 }
 

@@ -62,7 +62,7 @@ All tools are in PATH. Run `<tool> --help` for full options.
 |------|---------|
 | `orch-projects` | list, show, create, update projects |
 | `orch-tasks` | list, show, create, update, assign, delete tasks |
-| `orch-workers` | list, create, stop, delete, reconnect workers |
+| `orch-workers` | list, show, create, delete, stop, reconnect, preview, pause, continue, prepare, health |
 | `orch-ctx` | list, read, create, update, delete context items |
 | `orch-skills` | list, show, create, update, delete custom skills |
 | `orch-send` | send message to a worker |
@@ -72,8 +72,8 @@ All tools are in PATH. Run `<tool> --help` for full options.
 ### Non-obvious patterns
 
 ```bash
-# Read worker terminal
-tmux capture-pane -p -t orchestrator:<worker-name> -S -50
+# Read worker terminal (works for both local and remote)
+orch-workers preview <worker-name>
 # Multi-line content via stdin
 orch-tasks update <id> --notes-stdin <<'EOF'
 ...

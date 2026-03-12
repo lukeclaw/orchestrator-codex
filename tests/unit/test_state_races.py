@@ -609,10 +609,6 @@ class TestReconnectExceptionHandling:
                 "orchestrator.terminal.session._build_claude_command",
                 return_value="claude --session-id test",
             ),
-            patch(
-                "orchestrator.session.reconnect.get_screen_session_name",
-                return_value="claude-test",
-            ),
             patch("orchestrator.session.reconnect.subprocess"),
             patch("orchestrator.session.reconnect.time.sleep"),
         ):
@@ -643,10 +639,6 @@ class TestReconnectExceptionHandling:
             patch(
                 "orchestrator.terminal.session._ensure_rws_ready",
                 side_effect=RuntimeError("RWS deploy failed"),
-            ),
-            patch(
-                "orchestrator.session.reconnect.get_screen_session_name",
-                return_value="claude-test",
             ),
             patch("orchestrator.session.reconnect.subprocess"),
             patch("orchestrator.session.reconnect.time.sleep"),
@@ -684,10 +676,6 @@ class TestReconnectExceptionHandling:
                 "orchestrator.terminal.session._ensure_rws_ready",
                 side_effect=RuntimeError("RWS deploy failed"),
             ),
-            patch(
-                "orchestrator.session.reconnect.get_screen_session_name",
-                return_value="claude-test",
-            ),
             patch("orchestrator.session.reconnect.subprocess"),
             patch("orchestrator.session.reconnect.time.sleep"),
         ):
@@ -722,10 +710,6 @@ class TestReconnectExceptionHandling:
             patch(
                 "orchestrator.terminal.session._ensure_rws_ready",
                 side_effect=ConnectionError("SSH tunnel broken"),
-            ),
-            patch(
-                "orchestrator.session.reconnect.get_screen_session_name",
-                return_value="claude-test",
             ),
             patch("orchestrator.session.reconnect.subprocess"),
             patch("orchestrator.session.reconnect.time.sleep"),

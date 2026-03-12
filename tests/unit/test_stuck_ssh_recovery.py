@@ -80,10 +80,6 @@ class TestReconnectStep3Retry:
                 "orchestrator.terminal.session._build_claude_command",
                 return_value="claude --session-id sess-stuck",
             ),
-            patch(
-                "orchestrator.session.reconnect.get_screen_session_name",
-                return_value="claude-sess-stuck",
-            ),
             patch("orchestrator.session.reconnect.time.sleep"),
         ):
             reconnect_remote_worker(
@@ -121,10 +117,6 @@ class TestReconnectStep3Retry:
             patch(
                 "orchestrator.terminal.session._ensure_rws_ready",
                 side_effect=RuntimeError("RWS not available"),
-            ),
-            patch(
-                "orchestrator.session.reconnect.get_screen_session_name",
-                return_value="claude-sess-stuck",
             ),
             patch("orchestrator.session.reconnect.time.sleep"),
             pytest.raises(RuntimeError, match="RWS not available"),

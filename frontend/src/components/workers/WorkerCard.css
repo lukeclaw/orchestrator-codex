@@ -29,7 +29,6 @@
 .worker-card.error { border-left-color: var(--red); }
 .worker-card.disconnected { border-left-color: var(--red); }
 .worker-card.connecting { border-left-color: var(--accent); }
-.worker-card.screen_detached { border-left-color: var(--orange, #f97316); }
 
 /* Header */
 .wc-header {

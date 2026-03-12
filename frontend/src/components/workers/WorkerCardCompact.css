@@ -23,7 +23,6 @@
 .wcc-card.error { border-left-color: var(--red); }
 .wcc-card.disconnected { border-left-color: var(--red); }
 .wcc-card.connecting { border-left-color: var(--accent); }
-.wcc-card.screen_detached { border-left-color: var(--orange, #f97316); }
 
 /* Header */
 .wcc-header {

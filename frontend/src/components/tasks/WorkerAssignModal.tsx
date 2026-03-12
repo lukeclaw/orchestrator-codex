@@ -12,7 +12,7 @@ interface WorkerAssignModalProps {
 }
 
 function isWorkerConnected(status: string): boolean {
-  const disconnectedStatuses = ['disconnected', 'screen_detached', 'error', 'connecting']
+  const disconnectedStatuses = ['disconnected', 'error', 'connecting']
   return !disconnectedStatuses.includes(status)
 }
 

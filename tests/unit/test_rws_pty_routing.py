@@ -90,52 +90,68 @@ class TestRemoteWorkerServerClientMethods:
         result = rws.capture_pty("pty-abc")
         assert result == ""
 
-    def test_capture_pty_strips_csi_sequences(self):
+    def test_capture_pty_renders_raw_bytes(self):
+        """capture_pty renders raw bytes through the VT emulator."""
+        import base64
+
         from orchestrator.terminal.remote_worker_server import RemoteWorkerServer
 
         rws = RemoteWorkerServer.__new__(RemoteWorkerServer)
         rws.host = "test-host"
-        # Synchronized output markers: ESC[?2026l and ESC[?2026h
-        raw = "\x1b[?2026l\x1b[?2026hHello world\x1b[0m"
-        rws.execute = MagicMock(return_value={"status": "ok", "output": raw})
+        raw_bytes = b"\x1b[?2026l\x1b[?2026hHello world\x1b[0m"
+        raw_b64 = base64.b64encode(raw_bytes).decode("ascii")
+        rws.execute = MagicMock(
+            return_value={"status": "ok", "raw": raw_b64, "cols": 80, "rows": 24}
+        )
 
         result = rws.capture_pty("pty-abc")
-        assert result == "Hello world"
+        assert "Hello world" in result
 
-    def test_capture_pty_strips_osc_sequences(self):
+    def test_capture_pty_renders_osc_and_text(self):
+        """OSC sequences are skipped, text is preserved."""
+        import base64
+
         from orchestrator.terminal.remote_worker_server import RemoteWorkerServer
 
         rws = RemoteWorkerServer.__new__(RemoteWorkerServer)
         rws.host = "test-host"
-        # OSC title set: ESC]0;title BEL
-        raw = "\x1b]0;claude@host:~\x07$ claude\n> Working..."
-        rws.execute = MagicMock(return_value={"status": "ok", "output": raw})
+        raw_bytes = b"\x1b]0;claude@host:~\x07$ claude\r\n> Working..."
+        raw_b64 = base64.b64encode(raw_bytes).decode("ascii")
+        rws.execute = MagicMock(
+            return_value={"status": "ok", "raw": raw_b64, "cols": 80, "rows": 24}
+        )
 
         result = rws.capture_pty("pty-abc")
-        assert result == "$ claude\n> Working..."
+        assert "$ claude" in result
+        assert "> Working..." in result
 
-    def test_capture_pty_strips_carriage_returns(self):
+    def test_capture_pty_renders_cursor_movement_as_spaces(self):
+        """Cursor-forward sequences produce visible spaces."""
+        import base64
+
         from orchestrator.terminal.remote_worker_server import RemoteWorkerServer
 
         rws = RemoteWorkerServer.__new__(RemoteWorkerServer)
         rws.host = "test-host"
-        raw = "line1\r\nline2\rline3"
-        rws.execute = MagicMock(return_value={"status": "ok", "output": raw})
+        raw_bytes = b"Hello\x1b[3CWorld"
+        raw_b64 = base64.b64encode(raw_bytes).decode("ascii")
+        rws.execute = MagicMock(
+            return_value={"status": "ok", "raw": raw_b64, "cols": 80, "rows": 24}
+        )
 
         result = rws.capture_pty("pty-abc")
-        assert result == "line1\nline2line3"
+        assert "Hello   World" in result
 
-    def test_capture_pty_strips_mixed_terminal_noise(self):
+    def test_capture_pty_fallback_old_daemon(self):
+        """Falls back to output field for old daemon versions without raw bytes."""
         from orchestrator.terminal.remote_worker_server import RemoteWorkerServer
 
         rws = RemoteWorkerServer.__new__(RemoteWorkerServer)
         rws.host = "test-host"
-        # Mix of private mode CSI, color codes, OSC, and CR
-        raw = "\x1b[?2026l\x1b[32m$ claude\x1b[0m\r\n\x1b]0;title\x07> Working\x1b[?2026h"
-        rws.execute = MagicMock(return_value={"status": "ok", "output": raw})
+        rws.execute = MagicMock(return_value={"status": "ok", "output": "fallback text"})
 
         result = rws.capture_pty("pty-abc")
-        assert result == "$ claude\n> Working"
+        assert result == "fallback text"
 
 
 # ---------------------------------------------------------------------------

@@ -435,10 +435,6 @@ class TestReconnectVsTunnelHealthLoopRace:
                 "orchestrator.terminal.session._build_claude_command",
                 return_value="claude --session-id test",
             ),
-            patch(
-                "orchestrator.session.reconnect.get_screen_session_name",
-                return_value="claude-test",
-            ),
         ):
             reconnect_remote_worker(
                 race_db,

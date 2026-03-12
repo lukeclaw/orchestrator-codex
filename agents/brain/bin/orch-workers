@@ -13,6 +13,11 @@ show_help() {
     echo "  delete <name-or-id>           Delete a worker"
     echo "  stop <name-or-id>             Stop worker: Escape, /clear, unassign task, set idle"
     echo "  reconnect <name-or-id>        Reconnect a disconnected worker"
+    echo "  preview <name-or-id>          Show worker terminal preview (raw text)"
+    echo "  pause <name-or-id>            Pause a worker (Escape + Ctrl-C)"
+    echo "  continue <name-or-id>         Continue a paused worker"
+    echo "  prepare <name-or-id>          Prepare worker for new task (/clear)"
+    echo "  health <name-or-id>           Run health check on a worker"
     echo ""
     echo "List Options:"
     echo "  --status STATUS               Filter by status (idle, working, waiting, error, etc.)"
@@ -151,6 +156,51 @@ cmd_reconnect() {
     curl -s -X POST "$API_BASE/api/sessions/$id/reconnect" | pp
 }
 
+cmd_preview() {
+    local id="$1"
+    if [[ -z "$id" ]]; then
+        echo "Error: Worker name or ID required" >&2
+        exit 1
+    fi
+    curl -s "$API_BASE/api/sessions/$id/preview" | jq -r '.content // .'
+}
+
+cmd_pause() {
+    local id="$1"
+    if [[ -z "$id" ]]; then
+        echo "Error: Worker name or ID required" >&2
+        exit 1
+    fi
+    curl -s -X POST "$API_BASE/api/sessions/$id/pause" | pp
+}
+
+cmd_continue() {
+    local id="$1"
+    if [[ -z "$id" ]]; then
+        echo "Error: Worker name or ID required" >&2
+        exit 1
+    fi
+    curl -s -X POST "$API_BASE/api/sessions/$id/continue" | pp
+}
+
+cmd_prepare() {
+    local id="$1"
+    if [[ -z "$id" ]]; then
+        echo "Error: Worker name or ID required" >&2
+        exit 1
+    fi
+    curl -s -X POST "$API_BASE/api/sessions/$id/prepare-for-task" | pp
+}
+
+cmd_health() {
+    local id="$1"
+    if [[ -z "$id" ]]; then
+        echo "Error: Worker name or ID required" >&2
+        exit 1
+    fi
+    curl -s -X POST "$API_BASE/api/sessions/$id/health-check" | pp
+}
+
 case "$1" in
     list) shift; cmd_list "$@" ;;
     rdevs) shift; cmd_rdevs "$@" ;;
@@ -159,6 +209,11 @@ case "$1" in
     delete) shift; cmd_delete "$@" ;;
     stop) shift; cmd_stop "$@" ;;
     reconnect) shift; cmd_reconnect "$@" ;;
+    preview) shift; cmd_preview "$@" ;;
+    pause) shift; cmd_pause "$@" ;;
+    continue) shift; cmd_continue "$@" ;;
+    prepare) shift; cmd_prepare "$@" ;;
+    health) shift; cmd_health "$@" ;;
     -h|--help|"") show_help ;;
     *) echo "Unknown command: $1" >&2; show_help; exit 1 ;;
 esac

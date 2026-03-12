@@ -220,11 +220,6 @@
   color: var(--accent);
 }
 
-.pt-worker-tag.screen_detached {
-  background: rgba(249, 115, 22, 0.08);
-  color: var(--orange);
-}
-
 /* Status column */
 .pt-td.status {
   white-space: nowrap;

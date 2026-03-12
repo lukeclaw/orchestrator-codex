@@ -67,6 +67,14 @@ async def lifespan(app: FastAPI):
     except Exception:
         logger.exception("Tunnel recovery failed (non-fatal)")
 
+    # Migrate legacy screen-based remote sessions to RWS PTY
+    try:
+        from orchestrator.core.lifecycle import migrate_legacy_screen_sessions
+
+        migrate_legacy_screen_sessions(conn)
+    except Exception:
+        logger.exception("Legacy screen migration failed (non-fatal)")
+
     # Start the StateManager (handles event-driven DB writes)
     state_manager = None
     if db_path:

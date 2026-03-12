@@ -125,11 +125,6 @@ def _is_pid_alive(pid: int) -> bool:
         return False
 
 
-def get_screen_session_name(session_id: str) -> str:
-    """Get the screen session name for a worker session."""
-    return f"claude-{session_id}"
-
-
 def _get_pane_pid(tmux_sess: str, tmux_win: str) -> int | None:
     """Get the PID of the shell running in a tmux pane.
 
@@ -382,211 +377,6 @@ def check_claude_process_local(session_id: str) -> tuple[bool, str]:
     except Exception as e:
         logger.warning("Health check ps command failed: %s", e)
         return True, f"Health check error: {e}"
-
-
-def check_screen_and_claude_remote(
-    host: str,
-    session_id: str,
-    tmux_sess: str = None,
-    tmux_win: str = None,
-    claude_session_id: str | None = None,
-) -> tuple[str, str]:
-    """Check screen session and Claude process status on a remote host.
-
-    Uses subprocess SSH (fresh connection) to check status. Does NOT use tmux send-keys
-    because that would type commands into Claude if it's running.
-
-    Also checks the worker tmux window to verify the SSH connection is actually alive.
-
-    Args:
-        host: rdev host (e.g., "user/rdev-vm")
-        session_id: Session ID to check for
-        tmux_sess: tmux session name (used for SSH alive check)
-        tmux_win: tmux window name (used for SSH alive check)
-        claude_session_id: Claude's internal session ID (may differ from
-            session_id after /clear).  When provided, the remote ``ps aux``
-            grep checks for either ID so that the check succeeds regardless
-            of which ID appears in the process command line.
-
-    Returns:
-        (status: str, reason: str) where status is one of:
-        - "alive": Screen exists and Claude is running AND SSH connection alive
-        - "screen_only": Screen exists but Claude not running
-        - "screen_detached": SSH connection failed but screen may still be running
-        - "dead": No screen session found OR SSH connection dead
-    """
-    screen_name = get_screen_session_name(session_id)
-
-    # First check if the worker SSH session is still connected by checking tmux window content
-    # This catches the case where the user's SSH session has died but
-    # the remote screen/Claude might still be running
-    if tmux_sess and tmux_win:
-        ssh_alive = check_worker_ssh_alive(tmux_sess, tmux_win, host)
-        if not ssh_alive:
-            logger.info(
-                "Health check: Worker SSH appears disconnected for %s - marking as dead", host
-            )
-            return "dead", f"Worker SSH session appears disconnected (not on rdev host '{host}')"
-
-    # Check remote screen/Claude status via subprocess SSH
-    # (separate from worker tmux window to avoid interfering with Claude)
-    try:
-        # Note: Check for 'claude -r' or 'claude --' to avoid matching screen session names
-        # which contain 'claude-<session_id>'. The actual Claude CLI is invoked with flags.
-        #
-        # Screen detection uses two methods:
-        #   1. `screen -ls` (socket-based — can fail if SCREENDIR differs between
-        #      interactive and BatchMode SSH sessions)
-        #   2. `ps aux | grep "screen .* <name>"` (process-based — always works,
-        #      matches both `screen -S` from initial creation and `screen -rd` from reconnect)
-        # Either match counts as "screen exists".
-        #
-        # NOTE: The ps grep uses case-insensitive match (-i) because GNU Screen
-        # renames the session manager process to uppercase "SCREEN".  It also
-        # drops the space before {screen_name} and uses `.*` to bridge both
-        # `screen -S <name>` (space-separated) and `screen -rd <pid>.<name>`
-        # (dot-separated) forms.
-        # Build the grep pattern for Claude process detection — match
-        # the orchestrator session ID, plus the Claude session ID if different.
-        claude_id_pattern = session_id
-        if claude_session_id and claude_session_id != session_id:
-            claude_id_pattern += "|" + claude_session_id
-        check_cmd = (
-            f"screen -ls 2>/dev/null | grep -q '{screen_name}'"
-            " && echo 'SCREEN_EXISTS' || echo 'NO_SCREEN'; "
-            f"ps aux | grep -v grep | grep -qi '[s]creen.*{screen_name}'"
-            " && echo 'SCREEN_PS_EXISTS' || echo 'NO_SCREEN_PS'; "
-            "ps aux | grep -v grep | grep -E 'claude (-r|--|--settings)'"
-            f" | grep -qE '({claude_id_pattern})'"
-            " && echo 'CLAUDE_RUNNING' || echo 'NO_CLAUDE'"
-        )
-
-        result = subprocess.run(
-            ["ssh", "-o", "ConnectTimeout=5", "-o", "BatchMode=yes", host, check_cmd],
-            capture_output=True,
-            text=True,
-            timeout=10,
-        )
-
-        if result.returncode != 0 and "Permission denied" in result.stderr:
-            return (
-                "screen_detached",
-                f"SSH auth failed - screen may still be running: {result.stderr.strip()}",
-            )
-
-        if result.returncode != 0 and (
-            "Connection refused" in result.stderr or "Connection timed out" in result.stderr
-        ):
-            return (
-                "screen_detached",
-                f"SSH connection failed - screen may still be running: {result.stderr.strip()}",
-            )
-
-        # Catch-all for other SSH transport failures (host key errors, DNS, etc.)
-        # If SSH itself failed (exit 255) and stdout is empty, it's a connection issue.
-        if result.returncode == 255 and not result.stdout.strip():
-            return (
-                "screen_detached",
-                "SSH connection failed - screen may still be running: "
-                f"{result.stderr.strip()[:200]}",
-            )
-
-        output = result.stdout
-        stderr = result.stderr
-        screen_exists_ls = "SCREEN_EXISTS" in output
-        screen_exists_ps = "SCREEN_PS_EXISTS" in output
-        screen_exists = screen_exists_ls or screen_exists_ps
-        claude_running = "CLAUDE_RUNNING" in output
-
-        # Debug logging to diagnose false negatives
-        logger.debug(
-            "SSH health check for %s (screen=%s): returncode=%d, "
-            "screen_ls=%s, screen_ps=%s, claude=%s, stdout=%r, stderr=%r",
-            host,
-            screen_name,
-            result.returncode,
-            screen_exists_ls,
-            screen_exists_ps,
-            claude_running,
-            output[:200],
-            stderr[:100],
-        )
-        if screen_exists_ps and not screen_exists_ls:
-            logger.info(
-                "SSH health check for %s: screen -ls missed session '%s' but ps found it "
-                "(likely SCREENDIR mismatch between interactive and BatchMode SSH)",
-                host,
-                screen_name,
-            )
-
-        if screen_exists and claude_running:
-            return "alive", "Screen session exists and Claude is running"
-        elif screen_exists and not claude_running:
-            return "screen_only", "Screen session exists but Claude not running"
-        elif not screen_exists and claude_running:
-            # Claude is running but screen session not found. This happens when the
-            # screen parent process died (OOM, system cleanup) but Claude survived as
-            # an orphaned process with its PTY intact. Treat as alive since Claude is
-            # still functional.
-            logger.warning(
-                "SSH health check for %s: Claude running but screen not found "
-                "(screen_name=%s) — likely orphaned after screen parent died. "
-                "stdout=%r, stderr=%r",
-                host,
-                screen_name,
-                output[:200],
-                stderr[:100],
-            )
-            return (
-                "alive",
-                f"Claude is running without screen "
-                f"(session '{screen_name}' not found — likely orphaned)",
-            )
-        else:
-            # Log at warning level when marking as dead - helps diagnose false negatives
-            logger.warning(
-                "SSH health check marking %s as DEAD: screen_name=%s, stdout=%r, stderr=%r",
-                host,
-                screen_name,
-                output,
-                stderr,
-            )
-            return "dead", f"No screen session found (looked for '{screen_name}')"
-
-    except subprocess.TimeoutExpired:
-        return "screen_detached", "SSH connection timed out - screen may still be running"
-    except Exception as e:
-        logger.warning("Health check SSH command failed: %s", e)
-        return "screen_detached", f"Health check error: {e}"
-
-
-def check_claude_process_remote(host: str, session_id: str) -> tuple[bool, str]:
-    """Check if Claude Code with given session_id is running on a remote host via SSH.
-
-    This is a simplified wrapper around check_screen_and_claude_remote that returns
-    a boolean alive status.
-
-    Args:
-        host: Remote host (rdev or generic SSH)
-        session_id: Session ID to check for
-
-    Returns:
-        (alive: bool, reason: str)
-    """
-    status, reason = check_screen_and_claude_remote(host, session_id)
-
-    if status == "alive":
-        return True, reason
-    elif status == "screen_detached":
-        # SSH failed but screen might be running - report as alive to avoid false positives
-        return True, reason
-    else:
-        return False, reason
-
-
-# Backward-compat aliases
-check_screen_and_claude_rdev = check_screen_and_claude_remote
-check_claude_process_rdev = check_claude_process_remote
 
 
 def check_claude_running_local(
@@ -863,7 +653,7 @@ def _check_rws_pty_health(db, session, tunnel_manager=None) -> dict:
                     pass
 
                 current_status = session.status
-                if current_status in ("screen_detached", "error", "disconnected", "connecting"):
+                if current_status in ("error", "disconnected", "connecting"):
                     repo.update_session(db, session.id, status="waiting")
                     current_status = "waiting"
 
@@ -1067,7 +857,7 @@ def check_all_workers_health(
         tunnel_manager: ReverseTunnelManager instance.
 
     Returns:
-        {"checked": int, "disconnected": [...], "screen_detached": [...],
+        {"checked": int, "disconnected": [...],
          "error": [...], "alive": [...], "skipped_active": [...],
          "auto_reconnected": [...]}
     """
@@ -1078,7 +868,6 @@ def check_all_workers_health(
     results = {
         "checked": 0,
         "disconnected": [],
-        "screen_detached": [],
         "error": [],
         "alive": [],
         "skipped_active": [],
@@ -1137,10 +926,6 @@ def check_all_workers_health(
 
             if result.get("alive"):
                 results["alive"].append(s.name)
-            elif result["status"] == "screen_detached":
-                results["screen_detached"].append(s.name)
-                if s.auto_reconnect:
-                    auto_reconnect_candidates.append(s)
             elif result["status"] == "error":
                 results["error"].append(s.name)
                 if s.auto_reconnect:

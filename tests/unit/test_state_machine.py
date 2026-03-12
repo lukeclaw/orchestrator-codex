@@ -25,7 +25,6 @@ class TestSessionStatus:
             "working",
             "paused",
             "waiting",
-            "screen_detached",
             "error",
             "disconnected",
         }
@@ -62,10 +61,6 @@ class TestValidTransitions:
         """working -> paused is valid (stop called)."""
         assert is_valid_transition(SessionStatus.WORKING, SessionStatus.PAUSED)
 
-    def test_working_to_screen_detached_valid(self):
-        """working -> screen_detached is valid (tunnel dead)."""
-        assert is_valid_transition(SessionStatus.WORKING, SessionStatus.SCREEN_DETACHED)
-
     def test_working_to_disconnected_valid(self):
         """working -> disconnected is valid (health check failed)."""
         assert is_valid_transition(SessionStatus.WORKING, SessionStatus.DISCONNECTED)
@@ -78,10 +73,6 @@ class TestValidTransitions:
         """error -> working is valid (reconnect succeeded)."""
         assert is_valid_transition(SessionStatus.ERROR, SessionStatus.WORKING)
 
-    def test_screen_detached_to_working_valid(self):
-        """screen_detached -> working is valid (reconnected)."""
-        assert is_valid_transition(SessionStatus.SCREEN_DETACHED, SessionStatus.WORKING)
-
 
 class TestInvalidTransitions:
     """Test that invalid transitions are rejected."""
@@ -93,10 +84,6 @@ class TestInvalidTransitions:
     def test_disconnected_to_paused_invalid(self):
         """disconnected -> paused is NOT valid."""
         assert not is_valid_transition(SessionStatus.DISCONNECTED, SessionStatus.PAUSED)
-
-    def test_idle_to_screen_detached_invalid(self):
-        """idle -> screen_detached is NOT valid."""
-        assert not is_valid_transition(SessionStatus.IDLE, SessionStatus.SCREEN_DETACHED)
 
     def test_invalid_string_status(self):
         """Invalid status strings should return False."""
@@ -132,11 +119,6 @@ class TestReconnectableStates:
         """disconnected should be reconnectable."""
         assert is_reconnectable(SessionStatus.DISCONNECTED)
         assert is_reconnectable("disconnected")
-
-    def test_screen_detached_is_reconnectable(self):
-        """screen_detached should be reconnectable."""
-        assert is_reconnectable(SessionStatus.SCREEN_DETACHED)
-        assert is_reconnectable("screen_detached")
 
     def test_error_is_reconnectable(self):
         """error should be reconnectable."""
@@ -187,7 +169,7 @@ class TestTransitionCompleteness:
 
     def test_reconnectable_states_match_constant(self):
         """RECONNECTABLE_STATES should match what's documented."""
-        expected = {SessionStatus.DISCONNECTED, SessionStatus.SCREEN_DETACHED, SessionStatus.ERROR}
+        expected = {SessionStatus.DISCONNECTED, SessionStatus.ERROR}
         assert RECONNECTABLE_STATES == expected
 
 

@@ -4,13 +4,8 @@ from orchestrator.session.health import (
     check_all_workers_health,
     check_and_update_worker_health,
     check_claude_process_local,
-    check_claude_process_rdev,  # backward-compat alias
-    check_claude_process_remote,
     check_claude_running_local,
-    check_screen_and_claude_rdev,  # backward-compat alias
-    check_screen_and_claude_remote,
     check_tui_running_in_pane,
-    get_screen_session_name,
 )
 from orchestrator.session.reconnect import (
     WORKER_BASE_DIR,
@@ -46,14 +41,9 @@ __all__ = [
     "is_reconnectable",
     "get_status_value",
     # Health checks
-    "get_screen_session_name",
     "check_tui_running_in_pane",
     "check_claude_process_local",
     "check_claude_running_local",
-    "check_screen_and_claude_remote",
-    "check_screen_and_claude_rdev",
-    "check_claude_process_remote",
-    "check_claude_process_rdev",
     "check_and_update_worker_health",
     "check_all_workers_health",
     # Reconnect

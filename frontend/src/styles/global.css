@@ -283,11 +283,6 @@ select:focus {
   color: #f97316;
 }
 
-.status-badge.screen_detached {
-  background: rgba(249,115,22,0.15);
-  color: #f97316;
-}
-
 .status-badge.connecting {
   background: rgba(88,166,255,0.15);
   color: var(--accent);

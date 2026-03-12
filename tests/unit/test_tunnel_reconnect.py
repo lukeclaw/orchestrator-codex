@@ -194,10 +194,6 @@ class TestReconnectRemoteWorkerRWSPath:
                 "orchestrator.terminal.session._build_claude_command",
                 return_value="claude --session-id test-session-id",
             ),
-            patch(
-                "orchestrator.session.reconnect.get_screen_session_name",
-                return_value="claude-test-session-id",
-            ),
             patch("orchestrator.session.reconnect.time.sleep"),
         ):
             reconnect_remote_worker(

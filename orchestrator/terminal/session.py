@@ -5,7 +5,6 @@ from __future__ import annotations
 import base64
 import logging
 import os
-import random
 import shlex
 import sqlite3
 import subprocess
@@ -223,11 +222,6 @@ def send_to_session(
     return False
 
 
-def _get_screen_session_name(session_id: str) -> str:
-    """Get the screen session name for a worker session."""
-    return f"claude-{session_id}"
-
-
 def _wait_for_command_completion(
     tmux_session: str, window_name: str, timeout: int = 60, poll_interval: float = 2.0
 ) -> bool:
@@ -246,95 +240,6 @@ def _wait_for_command_completion(
         timeout=timeout,
         poll_interval=poll_interval,
     )
-
-
-def _install_screen_if_needed(tmux_session: str, window_name: str) -> bool:
-    """Install screen on rdev if not already installed.
-
-    Returns True if screen is available (already installed or successfully installed).
-    """
-    from orchestrator.terminal.markers import check_yes_no
-
-    # Check if screen is installed
-    result = check_yes_no(
-        tmux.send_keys,
-        tmux.capture_output,
-        tmux_session,
-        window_name,
-        check_command="which screen",
-        prefix="SCREEN_CHK",
-    )
-
-    if result is True:
-        logger.info("Screen already installed")
-        return True
-
-    if result is False:
-        logger.info("Screen not found, installing...")
-    else:
-        logger.warning("Could not determine screen status, attempting install")
-
-    # Install screen with an inline done-marker so we know when it finishes.
-    # NOTE: Don't use wait_for_completion() here - it sends a separate marker
-    # command as typeahead that gets consumed by sudo/yum's foreground process,
-    # causing the markers to never appear and a 60s timeout hang.
-    # Instead, chain the marker on the same command line with ";".
-    marker_id = random.randint(10000, 99999)
-    done_marker = f"__INSTALL_DONE_{marker_id}__"
-    tmux.send_keys(
-        tmux_session,
-        window_name,
-        f"sudo yum install screen -y; echo {done_marker}",
-        enter=True,
-    )
-
-    # Poll until the done-marker appears on its own line (not in command echo)
-    start_time = time.time()
-    while time.time() - start_time < 60:
-        time.sleep(2)
-        output = tmux.capture_output(tmux_session, window_name, lines=20)
-        if any(line.strip() == done_marker for line in output.splitlines()):
-            break
-    else:
-        logger.warning("Screen installation may not have completed within 60s")
-
-    # Verify installation
-    verify_result = check_yes_no(
-        tmux.send_keys,
-        tmux.capture_output,
-        tmux_session,
-        window_name,
-        check_command="which screen",
-        prefix="SCREEN_VFY",
-    )
-    logger.debug("Screen verify result: %r", verify_result)
-
-    if verify_result is True:
-        logger.info("Screen installed successfully")
-        return True
-
-    logger.warning("Failed to install screen (verify result: %r)", verify_result)
-    return False
-
-
-def _kill_orphaned_screen(tmux_session: str, window_name: str, screen_name: str):
-    """Kill ALL orphaned screen sessions matching the given name.
-
-    Uses ``screen -ls`` to find PIDs, then kills each by ``{pid}.{name}``
-    so the command is unambiguous even when multiple sessions share a name.
-    The old single ``screen -X -S {name} quit`` silently fails when there
-    are duplicates ("There are several suitable screens …").
-
-    The grep uses ``-w`` (word boundary) to avoid matching sessions whose
-    names are a superstring of *screen_name*.
-    """
-    kill_cmd = (
-        f"screen -ls 2>/dev/null | grep -w '{screen_name}' "
-        f"| awk '{{print $1}}' "
-        f'| while read sid; do screen -X -S "$sid" quit 2>/dev/null; done'
-    )
-    tmux.send_keys(tmux_session, window_name, kill_cmd, enter=True)
-    time.sleep(0.5)
 
 
 def _copy_dir_to_remote_ssh(local_dir: str, host: str, remote_dir: str) -> bool:
