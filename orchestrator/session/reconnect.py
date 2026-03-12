@@ -636,6 +636,23 @@ def _reconnect_rws_pty_worker(conn, session, repo, tunnel_manager):
         logger.info("Reconnect RWS %s: PTY still alive, nothing to do", session.name)
         return
 
+    # PTY not found by ID — check if a PTY with our session_id exists
+    # (handles daemon restart where PTY IDs changed)
+    if not our_pty:
+        by_session = next(
+            (p for p in ptys if p.get("session_id") == session.id and p.get("alive")),
+            None,
+        )
+        if by_session:
+            pty_id = by_session["pty_id"]
+            repo.update_session(conn, session.id, rws_pty_id=pty_id, status="waiting")
+            logger.info(
+                "Reconnect RWS %s: found alive PTY %s by session_id, re-attached",
+                session.name,
+                pty_id,
+            )
+            return
+
     if our_pty and not our_pty["alive"]:
         try:
             rws.execute({"action": "pty_destroy", "pty_id": session.rws_pty_id})
@@ -747,12 +764,42 @@ def reconnect_remote_worker(
             _reconnect_rws_pty_worker(conn, session, repo, tunnel_manager)
             return
 
-        # ── New session or legacy migration: create RWS PTY ──────────────
+        # ── No rws_pty_id: either new session, legacy migration, or
+        #    health check cleared it because daemon was unreachable.
+        #    First check if a PTY for this session is already alive. ────────
         rws = _ensure_rws_ready(session.host, timeout=30)
 
         # Ensure reverse tunnel alive (for API callbacks)
         if tunnel_manager:
             _ensure_tunnel(session, tunnel_manager, repo, conn)
+
+        # Re-establish RWS forward tunnel (may have died with SSH)
+        _reconnect_rws_for_host(session)
+
+        # Check if there's already a PTY running for this session
+        try:
+            resp = rws.execute({"action": "pty_list"}, timeout=5)
+            ptys = resp.get("ptys", [])
+            existing = next(
+                (p for p in ptys if p.get("session_id") == session.id and p.get("alive")),
+                None,
+            )
+            if existing:
+                # PTY still alive — just re-attach, no need to restart anything
+                pty_id = existing["pty_id"]
+                repo.update_session(conn, session.id, rws_pty_id=pty_id, status="waiting")
+                logger.info(
+                    "Reconnect %s: found existing alive PTY %s, re-attached",
+                    session.name,
+                    pty_id,
+                )
+                return
+        except Exception:
+            logger.debug(
+                "Reconnect %s: could not query PTY list, will create new PTY",
+                session.name,
+                exc_info=True,
+            )
 
         # Kill old screen session on remote (best-effort cleanup)
         screen_name = get_screen_session_name(session.id)
@@ -796,9 +843,6 @@ def reconnect_remote_worker(
         )
         repo.update_session(conn, session.id, rws_pty_id=pty_id, status="working")
         logger.info("Reconnect %s: created RWS PTY %s", session.name, pty_id)
-
-        # Re-establish RWS forward tunnel
-        _reconnect_rws_for_host(session)
 
         # Detect work_dir if not set
         if not session.work_dir:

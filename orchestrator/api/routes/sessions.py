@@ -129,7 +129,7 @@ def _write_to_rws_pty(session, data: str) -> bool:
         rws = get_remote_worker_server(session.host)
         rws.write_to_pty(session.rws_pty_id, data)
         return True
-    except RuntimeError:
+    except Exception:
         logger.warning(
             "Could not write to RWS PTY for session %s",
             session.name,
@@ -144,9 +144,26 @@ def _capture_rws_pty(session, lines: int = 30) -> str:
 
     try:
         rws = get_remote_worker_server(session.host)
-        return rws.capture_pty(session.rws_pty_id, lines=lines)
-    except RuntimeError:
+        return _strip_terminal_noise(rws.capture_pty(session.rws_pty_id, lines=lines))
+    except Exception:
+        logger.debug("RWS PTY capture failed for %s", session.name, exc_info=True)
         return ""
+
+
+# Regex for stripping ANSI/terminal escape sequences from preview text.
+# Covers: CSI (incl. private modes like ?2026l), OSC, and simple ESC sequences.
+_ANSI_RE = re.compile(
+    r"\x1b\[[\x20-\x3f]*[\x30-\x3f]*[\x40-\x7e]"  # CSI: ESC[ ... final byte
+    r"|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)"  # OSC: ESC] ... BEL/ST
+    r"|\x1b[^[\]].?"  # Simple 2-byte ESC sequences
+)
+
+
+def _strip_terminal_noise(text: str) -> str:
+    """Strip ANSI escapes, carriage returns, and normalize for display."""
+    text = _ANSI_RE.sub("", text)
+    text = text.replace("\r\n", "\n").replace("\r", "")
+    return text
 
 
 def _capture_preview(s) -> str:
@@ -157,7 +174,7 @@ def _capture_preview(s) -> str:
     tmux_sess, tmux_win = tmux_target(s.name)
     try:
         content = capture_pane_with_escapes(tmux_sess, tmux_win, lines=0)
-        return re.sub(r"\x1b\[[0-9;]*[a-zA-Z]", "", content)
+        return _strip_terminal_noise(content)
     except Exception:
         return ""
 

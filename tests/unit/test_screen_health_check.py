@@ -305,6 +305,44 @@ class TestPaneAttachmentDetection(unittest.TestCase):
         assert result["status"] == "disconnected"
         assert result["needs_reconnect"] is True
 
+    @patch(f"{_HEALTH}.subprocess")
+    @patch("orchestrator.terminal.remote_worker_server._server_pool")
+    @patch(f"{_HEALTH}.is_remote_host", return_value=True)
+    @patch(f"{_HEALTH}.repo")
+    def test_daemon_unreachable_preserves_rws_pty_id(
+        self,
+        mock_repo,
+        mock_is_remote,
+        mock_pool,
+        mock_subprocess,
+    ):
+        """RWS daemon unreachable → disconnected but rws_pty_id preserved.
+
+        When the forward tunnel is down, we can't reach the daemon, but the
+        PTY might still be alive on the remote host.  Don't clear rws_pty_id
+        so reconnect can re-establish the tunnel and find the PTY.
+        """
+        session = _make_remote_session(rws_pty_id="pty-123")
+        tunnel_mgr = MagicMock()
+        tunnel_mgr.is_alive.return_value = True
+
+        # Daemon not in pool (tunnel dead)
+        mock_pool.get.return_value = None
+        # SSH fallback also fails
+        mock_subprocess.run.side_effect = Exception("SSH timeout")
+
+        result = check_and_update_worker_health(MagicMock(), session, tunnel_manager=tunnel_mgr)
+
+        assert result["alive"] is False
+        assert result["status"] == "disconnected"
+        assert result["needs_reconnect"] is True
+        # rws_pty_id should NOT be cleared
+        update_call = mock_repo.update_session.call_args
+        if update_call:
+            kwargs = update_call[1] if update_call[1] else {}
+            # Should not pass rws_pty_id=None
+            assert kwargs.get("rws_pty_id") is not None or "rws_pty_id" not in kwargs
+
     @patch("orchestrator.terminal.remote_worker_server._server_pool")
     @patch(f"{_HEALTH}.is_remote_host", return_value=True)
     @patch(f"{_HEALTH}.repo")

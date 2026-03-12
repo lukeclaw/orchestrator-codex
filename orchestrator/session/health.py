@@ -925,7 +925,10 @@ def _check_rws_pty_health(db, session, tunnel_manager=None) -> dict:
             exc_info=True,
         )
 
-    repo.update_session(db, session.id, status="disconnected", rws_pty_id=None)
+    # Don't clear rws_pty_id — the PTY may still be alive on the remote host,
+    # we just can't reach it (e.g. forward tunnel is down).  The reconnect flow
+    # will re-establish the tunnel and check PTY status.
+    repo.update_session(db, session.id, status="disconnected")
     return {
         "alive": False,
         "status": "disconnected",

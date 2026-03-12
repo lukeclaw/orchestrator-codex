@@ -720,7 +720,7 @@ class TestInteractiveCLIIntegration:
         from orchestrator.terminal.interactive import _active_clis, capture_interactive_cli
 
         mock_rws = MagicMock(spec=RemoteWorkerServer)
-        mock_rws.execute.return_value = {"status": "ok", "output": "$ ls\nfoo.txt\nbar.txt"}
+        mock_rws.capture_pty.return_value = "$ ls\nfoo.txt\nbar.txt"
 
         cli = InteractiveCLI(
             session_id="session-3",
@@ -739,9 +739,7 @@ class TestInteractiveCLIIntegration:
             output = capture_interactive_cli("session-3", lines=30)
 
         assert output == "$ ls\nfoo.txt\nbar.txt"
-        call_args = mock_rws.execute.call_args[0][0]
-        assert call_args["action"] == "pty_capture"
-        assert call_args["pty_id"] == "pty789"
+        mock_rws.capture_pty.assert_called_once_with("pty789", lines=30)
 
         # Clean up
         _active_clis.pop("session-3", None)

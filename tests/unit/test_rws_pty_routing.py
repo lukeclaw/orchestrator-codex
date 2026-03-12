@@ -90,6 +90,53 @@ class TestRemoteWorkerServerClientMethods:
         result = rws.capture_pty("pty-abc")
         assert result == ""
 
+    def test_capture_pty_strips_csi_sequences(self):
+        from orchestrator.terminal.remote_worker_server import RemoteWorkerServer
+
+        rws = RemoteWorkerServer.__new__(RemoteWorkerServer)
+        rws.host = "test-host"
+        # Synchronized output markers: ESC[?2026l and ESC[?2026h
+        raw = "\x1b[?2026l\x1b[?2026hHello world\x1b[0m"
+        rws.execute = MagicMock(return_value={"status": "ok", "output": raw})
+
+        result = rws.capture_pty("pty-abc")
+        assert result == "Hello world"
+
+    def test_capture_pty_strips_osc_sequences(self):
+        from orchestrator.terminal.remote_worker_server import RemoteWorkerServer
+
+        rws = RemoteWorkerServer.__new__(RemoteWorkerServer)
+        rws.host = "test-host"
+        # OSC title set: ESC]0;title BEL
+        raw = "\x1b]0;claude@host:~\x07$ claude\n> Working..."
+        rws.execute = MagicMock(return_value={"status": "ok", "output": raw})
+
+        result = rws.capture_pty("pty-abc")
+        assert result == "$ claude\n> Working..."
+
+    def test_capture_pty_strips_carriage_returns(self):
+        from orchestrator.terminal.remote_worker_server import RemoteWorkerServer
+
+        rws = RemoteWorkerServer.__new__(RemoteWorkerServer)
+        rws.host = "test-host"
+        raw = "line1\r\nline2\rline3"
+        rws.execute = MagicMock(return_value={"status": "ok", "output": raw})
+
+        result = rws.capture_pty("pty-abc")
+        assert result == "line1\nline2line3"
+
+    def test_capture_pty_strips_mixed_terminal_noise(self):
+        from orchestrator.terminal.remote_worker_server import RemoteWorkerServer
+
+        rws = RemoteWorkerServer.__new__(RemoteWorkerServer)
+        rws.host = "test-host"
+        # Mix of private mode CSI, color codes, OSC, and CR
+        raw = "\x1b[?2026l\x1b[32m$ claude\x1b[0m\r\n\x1b]0;title\x07> Working\x1b[?2026h"
+        rws.execute = MagicMock(return_value={"status": "ok", "output": raw})
+
+        result = rws.capture_pty("pty-abc")
+        assert result == "$ claude\n> Working"
+
 
 # ---------------------------------------------------------------------------
 # _write_to_rws_pty / _capture_rws_pty helpers

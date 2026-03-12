@@ -241,14 +241,7 @@ def capture_interactive_cli(
             from orchestrator.terminal.remote_worker_server import get_remote_worker_server
 
             rws = get_remote_worker_server(cli.rws_host)
-            resp = rws.execute(
-                {
-                    "action": "pty_capture",
-                    "pty_id": cli.remote_pty_id,
-                    "lines": lines,
-                }
-            )
-            return resp.get("output", "")
+            return rws.capture_pty(cli.remote_pty_id, lines=lines)
         except Exception:
             logger.warning("Failed to capture remote PTY output", exc_info=True)
             return None

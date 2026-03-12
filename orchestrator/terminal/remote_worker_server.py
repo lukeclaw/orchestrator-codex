@@ -19,6 +19,7 @@ import base64
 import hashlib
 import json
 import logging
+import re
 import socket
 import subprocess
 import textwrap
@@ -788,10 +789,11 @@ _REMOTE_WORKER_SERVER_SCRIPT = textwrap.dedent("""\
             raw = session.ringbuffer.decode("utf-8", errors="replace")
         except Exception:
             raw = ""
-        # Strip ANSI escape sequences
-        clean = re.sub(r"\\x1b\\[[0-9;]*[a-zA-Z]", "", raw)
+        # Strip ANSI escape sequences (CSI incl. private modes ?/>/=, OSC, simple ESC)
+        clean = re.sub(r"\\x1b\\[[?>=0-9;]*[a-zA-Z]", "", raw)
         clean = re.sub(r"\\x1b\\][^\\x07]*\\x07", "", clean)  # OSC sequences
         clean = re.sub(r"\\x1b[^\\[\\]][^a-zA-Z]*[a-zA-Z]?", "", clean)
+        clean = clean.replace("\\r\\n", "\\n").replace("\\r", "")
         lines = clean.split("\\n")
         if max_lines and len(lines) > max_lines:
             lines = lines[-max_lines:]
@@ -1817,12 +1819,23 @@ class RemoteWorkerServer:
         if "error" in resp:
             raise RuntimeError(f"PTY input failed on {self.host}: {resp['error']}")
 
+    # Regex for stripping ANSI/terminal escape sequences from captured output.
+    _ANSI_RE = re.compile(
+        r"\x1b\[[\x20-\x3f]*[\x30-\x3f]*[\x40-\x7e]"  # CSI sequences
+        r"|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)"  # OSC sequences
+        r"|\x1b[^[\]].?"  # Simple 2-byte ESC sequences
+    )
+
     def capture_pty(self, pty_id: str, lines: int = 30) -> str:
         """Capture the last N lines of PTY output (ANSI-stripped)."""
         resp = self.execute({"action": "pty_capture", "pty_id": pty_id, "lines": lines})
         if "error" in resp:
             raise RuntimeError(f"PTY capture failed on {self.host}: {resp['error']}")
-        return resp.get("output", "")
+        text = resp.get("output", "")
+        # Defense-in-depth: strip any ANSI escapes the daemon missed
+        text = self._ANSI_RE.sub("", text)
+        text = text.replace("\r\n", "\n").replace("\r", "")
+        return text
 
     def start_browser(
         self,
@@ -2030,12 +2043,31 @@ def force_restart_server(host: str, timeout: float = 30.0) -> RemoteWorkerServer
     """Kill the remote daemon and start a fresh one synchronously.
 
     Used when the running daemon is outdated (e.g. missing actions added in
-    newer versions).  Blocks until the new daemon is ready.
+    newer versions).  If active PTYs are running, the upgrade is deferred
+    to avoid killing Claude sessions — the old daemon is reused.
 
     Raises RuntimeError if the restart fails.
     """
     with _pool_lock:
-        old = _server_pool.pop(host, None)
+        old = _server_pool.get(host)
+
+    # Check for active PTYs before killing — don't kill Claude sessions
+    if old:
+        try:
+            resp = old.execute({"action": "pty_list"}, timeout=5)
+            alive_ptys = [p for p in resp.get("ptys", []) if p.get("alive")]
+            if alive_ptys:
+                logger.info(
+                    "Deferring RWS daemon upgrade for %s: %d active PTYs",
+                    host,
+                    len(alive_ptys),
+                )
+                return old  # Reuse old daemon — upgrade when PTYs are gone
+        except Exception:
+            pass  # Can't query — proceed with restart
+
+    with _pool_lock:
+        _server_pool.pop(host, None)
     if old:
         try:
             old.kill_remote_daemon()

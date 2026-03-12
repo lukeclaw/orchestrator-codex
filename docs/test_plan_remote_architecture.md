@@ -38,6 +38,14 @@ The architecture rewrite replaces GNU Screen + tmux send_keys with RWS (Remote W
 **Pass**: Returns data (may be 0 chars if idle, but no error).
 **Fail**: Error response or connection failure.
 
+### TC-3a: PTY Capture — Output Quality (ANSI Stripping)
+**What**: Captured PTY output is clean, human-readable text with no raw escape sequences.
+**How**: Call `capture_pty()` via RWS client and inspect the returned text.
+**Pass**: Output contains only readable text. No raw escape sequences: no `ESC[` (CSI), no `ESC]` (OSC), no `[?2026l`/`[?2026h` (synchronized output), no `[0m`/`[32m` (color codes), no bare `\r` carriage returns.
+**Fail**: Output contains visible escape sequence fragments like `[?2026l][?2026h]`, color codes like `[32m`, or OSC sequences like `]0;title`.
+**Code**: `remote_worker_server.py:capture_pty()` — client-side `_ANSI_RE` regex strips CSI/OSC/simple escapes. Daemon-side `handle_pty_capture` also strips. Defense-in-depth: `sessions.py:_strip_terminal_noise()` strips again for preview paths.
+**Why this matters**: Worker card previews, brain sync prompts, and interactive CLI capture all display this text in non-terminal contexts (HTML, LLM prompts). Raw escape sequences appear as garbage characters.
+
 ### TC-4: PTY Resize
 **What**: Resize command changes PTY dimensions.
 **How**: Send `pty_resize` with new cols/rows, verify via `pty_list`.
@@ -331,85 +339,99 @@ These endpoints use tmux operations to interact with workers. For RWS PTY sessio
 ### TC-43: Brain Sync — Terminal Capture
 **What**: `POST /brain/sync` captures each active worker's terminal preview.
 **How**: Start brain, have active RWS PTY worker, call `/brain/sync`.
-**Pass**: Brain receives terminal content from remote PTY (via `pty_capture` or equivalent).
-**Fail**: Returns "(could not capture terminal)" — brain has no visibility into remote workers.
-**Code**: `brain.py:233` — `tmux.capture_output(ts, tw, lines=30)` — tmux-only, no RWS path.
-**Status**: **KNOWN BUG** — no RWS path implemented.
+**Pass**: Brain receives readable terminal content from remote PTY via `rws.capture_pty()`. No ANSI garbage in the LLM prompt.
+**Fail**: Returns "(could not capture terminal)", or returns ANSI-contaminated text.
+**Code**: `brain.py:235-238` — branches on `is_remote_host(s.host) and s.rws_pty_id`, calls `rws.capture_pty()` which strips ANSI.
+**Status**: **FIXED** — RWS path + ANSI stripping.
 
 ### TC-44a: Session Preview — Single Session
 **What**: `GET /sessions/{id}/preview` returns terminal snapshot.
 **How**: Call preview endpoint for RWS PTY session.
-**Pass**: Returns PTY content via RWS capture.
-**Fail**: Returns empty string (tmux pane is empty/nonexistent).
-**Code**: `sessions.py:_capture_preview()` — uses `capture_pane_with_escapes()`, tmux-only.
-**Status**: **KNOWN BUG** — no RWS path implemented.
+**Pass**: Returns non-empty PTY content via RWS capture. Content is human-readable (no escape sequence garbage).
+**Fail**: Returns empty string, or returns text with visible ANSI fragments like `[?2026l]`.
+**Code**: `sessions.py:_capture_preview()` → `_capture_rws_pty()` → `rws.capture_pty()` (strips ANSI) → `_strip_terminal_noise()` (defense-in-depth).
+**Status**: **FIXED** — RWS path implemented + ANSI stripping.
 
 ### TC-44b: Worker Card Preview — Session List
 **What**: `GET /api/sessions?include_preview=true` returns terminal preview for each session, used by WorkerCard on the workers page.
-**How**: Load workers page (AppContext fetches with `include_preview=true`), check that remote worker cards show terminal content.
-**Pass**: Worker card shows last ~20 lines of terminal output from remote PTY.
-**Fail**: Shows "No terminal output yet..." because `_capture_preview()` captures from empty tmux pane, not from RWS PTY.
-**Code**: `sessions.py:156-168` — iterates sessions, calls `_capture_preview()` for each. `WorkerCard.tsx:208` — renders `session.preview`.
-**Status**: **KNOWN BUG** — same root cause as TC-44a.
+**How**: Load workers page, check that remote worker cards show terminal content. Inspect actual text for readability.
+**Pass**: Worker card shows last ~20 lines of **readable** terminal output. No escape sequence fragments, no `[?2026l][?2026h]`, no `[0m` color remnants.
+**Fail**: Shows garbage like `[?2026l][?2026h]`, or shows "No terminal output yet...".
+**Code**: `sessions.py` — iterates sessions, calls `_capture_preview()` → `_capture_rws_pty()` with ANSI stripping.
+**Status**: **FIXED** — routing + ANSI stripping.
 
 ### TC-44c: Task Worker Preview — Task Detail Page
 **What**: TaskWorkerPreview component fetches `GET /api/sessions/{id}/preview` every 5 seconds on the task detail page.
-**How**: Open task detail page for a task assigned to a remote worker.
-**Pass**: Worker preview card shows last ~15 lines of terminal output, updated every 5s.
-**Fail**: Shows "No terminal output yet..." permanently for remote workers.
-**Code**: `TaskWorkerPreview.tsx:27` — `api('/api/sessions/{id}/preview')` polling.
-**Status**: **KNOWN BUG** — same root cause.
+**How**: Open task detail page for a task assigned to a remote worker. Verify preview text is readable.
+**Pass**: Worker preview card shows last ~15 lines of readable terminal output, updated every 5s. No escape sequence garbage.
+**Fail**: Shows "No terminal output yet..." or shows ANSI garbage.
+**Code**: `TaskWorkerPreview.tsx:27` — polls `/api/sessions/{id}/preview`.
+**Status**: **FIXED** — same code path as TC-44a.
+
+### TC-44d: Brain Sync Preview — Clean Output
+**What**: Brain sync endpoint captures terminal preview for each active worker to include in the LLM monitoring prompt.
+**How**: Trigger brain sync (`POST /api/brain/sync`), inspect the preview text embedded in the prompt.
+**Pass**: Preview text in brain prompt is readable. No ANSI escape fragments that would confuse the LLM.
+**Fail**: Brain prompt contains raw terminal sequences like `\x1b[?2026h` or visible `[32m` color codes.
+**Code**: `brain.py:238` — calls `rws.capture_pty()` which now strips ANSI at the method level.
+
+### TC-44e: Interactive CLI Capture — Clean Output
+**What**: Interactive CLI capture (`capture_interactive_cli()`) returns clean text for RWS-backed CLIs.
+**How**: Capture output from a remote interactive CLI session.
+**Pass**: Returned text is readable, no escape sequences.
+**Fail**: Raw ANSI sequences in captured output.
+**Code**: `interactive.py:239-248` — calls `rws.capture_pty()` which strips ANSI.
 
 ### TC-45: Send Message to Remote Worker
 **What**: `POST /sessions/{id}/send` delivers message to Claude.
 **How**: Send message to RWS PTY session.
 **Pass**: Message written to PTY input, Claude processes it.
 **Fail**: Goes to empty tmux pane, Claude never sees it.
-**Code**: `sessions.py:613` — `send_to_session()` → `tmux.paste_to_pane()`.
-**Status**: **KNOWN BUG** — no RWS path implemented.
+**Code**: `sessions.py` — routes to `_write_to_rws_pty()` for RWS PTY sessions.
+**Status**: **FIXED** — RWS routing implemented.
 
 ### TC-46: Type Text to Remote Worker
 **What**: `POST /sessions/{id}/type` injects text without Enter.
 **How**: Call type endpoint for RWS PTY session.
 **Pass**: Text appears in PTY input buffer.
 **Fail**: Lost to empty tmux pane.
-**Code**: `sessions.py:637` — `send_keys_literal()`, tmux-only.
-**Status**: **KNOWN BUG** — no RWS path.
+**Code**: `sessions.py` — routes to `_write_to_rws_pty()` (no newline appended).
+**Status**: **FIXED** — RWS routing implemented.
 
 ### TC-47: Paste to Pane — Remote Worker
 **What**: `POST /sessions/{id}/paste-to-pane` bracketed paste.
 **How**: Call paste-to-pane for RWS PTY session.
-**Pass**: Text delivered to PTY.
+**Pass**: Text delivered to PTY with bracketed paste wrapping.
 **Fail**: Lost to tmux pane.
-**Status**: **KNOWN BUG** — no RWS path.
+**Status**: **FIXED** — RWS routing with `\x1b[200~...\x1b[201~` wrapping.
 
 ### TC-48: Pause Remote Worker
 **What**: `POST /sessions/{id}/pause` sends Escape to stop Claude.
 **How**: Call pause on RWS PTY session.
-**Pass**: Escape byte written to PTY, Claude pauses.
+**Pass**: Escape byte (`\x1b`) written to PTY, Claude pauses.
 **Fail**: Escape goes to tmux pane, Claude keeps running.
-**Status**: **KNOWN BUG** — no RWS path.
+**Status**: **FIXED** — RWS routing implemented.
 
 ### TC-49: Continue Remote Worker
 **What**: `POST /sessions/{id}/continue` resumes paused worker.
 **How**: Call continue on paused RWS PTY session.
-**Pass**: "continue" + Enter written to PTY.
+**Pass**: "continue\n" written to PTY.
 **Fail**: Goes to tmux pane, worker stays paused.
-**Status**: **KNOWN BUG** — no RWS path.
+**Status**: **FIXED** — RWS routing implemented.
 
 ### TC-50: Stop Remote Worker
 **What**: `POST /sessions/{id}/stop` sends Escape + /clear.
 **How**: Call stop on active RWS PTY session.
-**Pass**: Commands reach PTY, Claude stops, context cleared.
-**Fail**: Commands go to tmux, Claude keeps working. Task unassigned in DB but Claude doesn't know.
-**Status**: **KNOWN BUG** — no RWS path.
+**Pass**: Two writes: `\x1b` then `/clear\n` reach PTY.
+**Fail**: Commands go to tmux, Claude keeps working.
+**Status**: **FIXED** — RWS routing implemented.
 
 ### TC-51: Prepare for Task — Remote Worker
 **What**: `POST /sessions/{id}/prepare-for-task` interrupts and clears before new task.
 **How**: Call prepare-for-task on active RWS PTY session.
-**Pass**: Escape + Ctrl-C + /clear reach PTY.
+**Pass**: Three writes: `\x1b`, `\x03`, `/clear\n` reach PTY.
 **Fail**: Commands go to tmux, Claude still working on previous task.
-**Status**: **KNOWN BUG** — no RWS path.
+**Status**: **FIXED** — RWS routing implemented.
 
 ### TC-52: Paste Image to Remote Worker
 **What**: `POST /sessions/{id}/paste-image` saves and syncs image file.
@@ -486,11 +508,11 @@ These endpoints use tmux operations to interact with workers. For RWS PTY sessio
 
 ### TC-62a: Worker Card Compact — Preview for Remote Workers
 **What**: Compact worker cards (dashboard) show terminal preview for remote sessions.
-**How**: Load dashboard page, check compact cards for remote workers.
-**Pass**: Last 8 lines of terminal output from RWS PTY shown in preview area.
-**Fail**: Shows "No output yet..." because `session.preview` is empty (same root cause as TC-44a — `_capture_preview()` uses tmux).
-**Code**: `WorkerCardCompact.tsx:15` — `session.preview.split('\n').slice(-8)`
-**Status**: **KNOWN BUG** — same root cause as TC-44a/b/c.
+**How**: Load dashboard page, check compact cards for remote workers. Verify text readability.
+**Pass**: Last 8 lines of **readable** terminal output from RWS PTY shown in preview area. No ANSI garbage.
+**Fail**: Shows "No output yet..." or shows escape sequence fragments.
+**Code**: `WorkerCardCompact.tsx:15` — `session.preview.split('\n').slice(-8)`. Backend: `_capture_preview()` with ANSI stripping.
+**Status**: **FIXED** — same code path as TC-44a/b.
 
 ### TC-62b: Dashboard — allRdev Badge Suppression
 **What**: When all workers are rdev-hosted, the "rdev" type badge is suppressed (adds no info).
@@ -920,17 +942,17 @@ All file API endpoints route through RWS for remote sessions. TC-13 through TC-1
 
 ## Summary
 
-| Category | Test Cases | Known Bugs |
-|----------|-----------|------------|
-| RWS Daemon & PTY Core | TC-1 through TC-7 (7) | - |
+| Category | Test Cases | Status |
+|----------|-----------|--------|
+| RWS Daemon & PTY Core | TC-1 through TC-7, TC-3a (8) | TC-3a added for output quality |
 | Tunnel Infrastructure | TC-8 through TC-12 (5) | - |
 | File Operations (Basic) | TC-13 through TC-16 (4) | - |
 | Session Lifecycle | TC-17 through TC-22 (6) | - |
 | Terminal WebSocket | TC-23 through TC-28 (6) | - |
 | Health Checks | TC-29 through TC-35 (7) | - |
 | Reconnect Scenarios | TC-36 through TC-42 (7) | - |
-| Brain/Session API (tmux) | TC-43 through TC-52 (12) | **12 endpoints silently fail** (TC-43 to TC-51, TC-44b, TC-44c, TC-62a) |
-| UI — Frontend | TC-53 through TC-62f (16) | TC-62a: compact card preview broken |
+| Brain/Session API | TC-43 through TC-52, TC-44d, TC-44e (14) | All 12 bugs **FIXED** + 2 new output quality tests |
+| UI — Frontend | TC-53 through TC-62f (16) | TC-62a **FIXED** |
 | Interactive CLI & Browser View | TC-63 through TC-74 (12) | - |
 | Tunnel Monitor | TC-75 through TC-80 (6) | - |
 | Additional File Operations | TC-81 through TC-87 (7) | - |
@@ -938,4 +960,4 @@ All file API endpoints route through RWS for remote sessions. TC-13 through TC-1
 | App Lifecycle | TC-92 through TC-95 (4) | - |
 | Robustness & Recovery | RC-1 through RC-14 (14) | - |
 | Migration & Compatibility | MC-1 through MC-7 (7) | - |
-| **Total** | **103 test cases + 14 robustness + 7 migration = 124** | **12 known bugs** |
+| **Total** | **106 test cases + 14 robustness + 7 migration = 127** | **All 12 known bugs FIXED** |
