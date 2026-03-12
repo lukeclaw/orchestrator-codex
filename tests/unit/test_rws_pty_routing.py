@@ -328,7 +328,7 @@ class TestEndpointIntegration:
             resp = client.post(f"/api/sessions/{sid}/send", json={"message": "fix the bug"})
 
         assert resp.status_code == 200
-        mock_rws.write_to_pty.assert_called_once_with("pty-test-123", "fix the bug\n")
+        mock_rws.write_to_pty.assert_called_once_with("pty-test-123", "fix the bug\r")
 
     def test_type_uses_rws(self, rws_client):
         client, sid = rws_client
@@ -366,7 +366,7 @@ class TestEndpointIntegration:
             resp = client.post(f"/api/sessions/{sid}/continue")
 
         assert resp.status_code == 200
-        mock_rws.write_to_pty.assert_called_once_with("pty-test-123", "continue\n")
+        mock_rws.write_to_pty.assert_called_once_with("pty-test-123", "continue\r")
 
     def test_stop_sends_escape_and_clear(self, rws_client):
         client, sid = rws_client
@@ -378,7 +378,7 @@ class TestEndpointIntegration:
         calls = mock_rws.write_to_pty.call_args_list
         assert len(calls) == 2
         assert calls[0].args == ("pty-test-123", "\x1b")
-        assert calls[1].args == ("pty-test-123", "/clear\n")
+        assert calls[1].args == ("pty-test-123", "/clear\r")
 
     def test_prepare_sends_escape_ctrlc_clear(self, rws_client):
         client, sid = rws_client
@@ -391,7 +391,7 @@ class TestEndpointIntegration:
         assert len(calls) == 3
         assert calls[0].args == ("pty-test-123", "\x1b")
         assert calls[1].args == ("pty-test-123", "\x03")
-        assert calls[2].args == ("pty-test-123", "/clear\n")
+        assert calls[2].args == ("pty-test-123", "/clear\r")
 
     def test_preview_uses_rws(self, rws_client):
         client, sid = rws_client

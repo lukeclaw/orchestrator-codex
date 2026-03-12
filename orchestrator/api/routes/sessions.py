@@ -660,7 +660,7 @@ def send_message(session_id: str, body: SendMessage, request: Request, db=Depend
         raise HTTPException(404, "Session not found")
 
     if is_remote_host(s.host) and s.rws_pty_id:
-        success = _write_to_rws_pty(s, body.message + "\n")
+        success = _write_to_rws_pty(s, body.message + "\r")
     else:
         from orchestrator.terminal.manager import TMUX_SESSION
         from orchestrator.terminal.session import send_to_session
@@ -837,7 +837,7 @@ def continue_session(session_id: str, db=Depends(get_db)):
     session_id = s.id
 
     if is_remote_host(s.host) and s.rws_pty_id:
-        _write_to_rws_pty(s, "continue\n")
+        _write_to_rws_pty(s, "continue\r")
     else:
         tmux_sess, tmux_win = tmux_target(s.name)
         try:
@@ -863,7 +863,7 @@ def stop_session(session_id: str, db=Depends(get_db)):
     if is_remote_host(s.host) and s.rws_pty_id:
         _write_to_rws_pty(s, "\x1b")
         time.sleep(0.5)
-        _write_to_rws_pty(s, "/clear\n")
+        _write_to_rws_pty(s, "/clear\r")
     else:
         tmux_sess, tmux_win = tmux_target(s.name)
         try:
@@ -922,7 +922,7 @@ def prepare_session_for_task(session_id: str, db=Depends(get_db)):
         time.sleep(0.3)
         _write_to_rws_pty(s, "\x03")
         time.sleep(0.5)
-        _write_to_rws_pty(s, "/clear\n")
+        _write_to_rws_pty(s, "/clear\r")
         logger.info("Prepared session %s for new task assignment", s.name)
     else:
         import subprocess
