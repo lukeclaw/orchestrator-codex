@@ -853,7 +853,7 @@ def reconnect_remote_worker(
     except Exception:
         logger.exception("Reconnect failed for %s", session.name)
         try:
-            repo.update_session(conn, session.id, status="error")
+            repo.update_session(conn, session.id, status="disconnected")
         except Exception:
             pass
         raise

@@ -12,7 +12,7 @@ export default function StatsBar() {
   // Worker status breakdown
   const workingCount = workers.filter(w => w.status === 'working').length
   const waitingCount = workers.filter(w => w.status === 'waiting').length
-  const errorCount = workers.filter(w => w.status === 'error' || w.status === 'disconnected').length
+  const errorCount = workers.filter(w => w.status === 'disconnected').length
 
   const workerParts: string[] = []
   if (workingCount > 0) workerParts.push(`${workingCount} working`)

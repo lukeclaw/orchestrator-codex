@@ -176,7 +176,6 @@
 .pc-worker.working      .pc-worker-dot { background: var(--accent); }
 .pc-worker.idle          .pc-worker-dot { background: var(--green); }
 .pc-worker.waiting       .pc-worker-dot { background: var(--yellow); }
-.pc-worker.error         .pc-worker-dot { background: var(--red); }
 .pc-worker.disconnected  .pc-worker-dot { background: var(--red); }
 
 .pc-no-workers {

@@ -271,7 +271,7 @@ def toggle_auto_reconnect(session_id: str, request: Request, db=Depends(get_db))
     repo.update_session(db, session_id, auto_reconnect=new_value)
 
     # If enabling and worker is currently in a reconnectable state, reconnect now
-    if new_value and is_reconnectable(s.status):
+    if new_value and (is_reconnectable(s.status) or s.status == "error"):
         config = getattr(request.app.state, "config", {})
         api_port = config.get("server", {}).get("port", 8093)
         db_path = getattr(request.app.state, "db_path", None)
@@ -393,14 +393,14 @@ def create_session(body: SessionCreate, request: Request, db=Depends(get_db)):
                         )
                     logger.info("Remote worker %s setup complete", sanitized_name)
                 else:
-                    repo.update_session(bg_conn, s.id, status="error")
+                    repo.update_session(bg_conn, s.id, status="disconnected")
                     logger.error(
                         "Remote worker %s setup failed: %s", sanitized_name, result.get("error")
                     )
             except Exception:
                 logger.exception("Remote background setup failed for %s", sanitized_name)
                 try:
-                    repo.update_session(bg_conn, s.id, status="error")
+                    repo.update_session(bg_conn, s.id, status="disconnected")
                 except Exception:
                     pass
             finally:
@@ -913,7 +913,7 @@ def prepare_session_for_task(session_id: str, db=Depends(get_db)):
         raise HTTPException(404, "Session not found")
 
     # Check if session is in a connectable state
-    disconnected_statuses = {"disconnected", "error", "connecting"}
+    disconnected_statuses = {"disconnected", "connecting"}
     if s.status in disconnected_statuses:
         raise HTTPException(400, f"Session is not connected (status: {s.status})")
 
@@ -963,8 +963,8 @@ def reconnect_session(session_id: str, request: Request, db=Depends(get_db)):
     if s is None:
         raise HTTPException(404, "Session not found")
 
-    # Allow reconnect from disconnected or error states
-    if not is_reconnectable(s.status):
+    # Allow reconnect from disconnected state (and legacy "error" for backwards compat)
+    if not is_reconnectable(s.status) and s.status != "error":
         return {"ok": False, "error": f"Session is not in reconnectable state (status: {s.status})"}
 
     config = getattr(request.app.state, "config", {})

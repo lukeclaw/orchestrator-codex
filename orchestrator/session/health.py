@@ -928,7 +928,7 @@ def check_all_workers_health(
 
     Returns:
         {"checked": int, "disconnected": [...],
-         "error": [...], "alive": [...], "skipped_active": [...],
+         "alive": [...], "skipped_active": [...],
          "auto_reconnected": [...]}
     """
     from datetime import datetime
@@ -938,7 +938,6 @@ def check_all_workers_health(
     results = {
         "checked": 0,
         "disconnected": [],
-        "error": [],
         "alive": [],
         "skipped_active": [],
         "auto_reconnected": [],
@@ -1034,10 +1033,6 @@ def check_all_workers_health(
                 results["checked"] += 1
                 if result.get("alive"):
                     results["alive"].append(s.name)
-                elif result.get("status") == "error":
-                    results["error"].append(s.name)
-                    if s.auto_reconnect:
-                        auto_reconnect_candidates.append(s)
                 else:  # disconnected
                     results["disconnected"].append(s.name)
                     if s.auto_reconnect:

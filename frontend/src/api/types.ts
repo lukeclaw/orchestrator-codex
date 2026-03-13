@@ -4,7 +4,7 @@ export interface Session {
   host: string
   work_dir: string | null
   tunnel_pid: number | null
-  status: 'idle' | 'working' | 'waiting' | 'paused' | 'error' | 'disconnected' | 'connecting'
+  status: 'idle' | 'working' | 'waiting' | 'paused' | 'disconnected' | 'connecting'
   created_at: string
   last_status_changed_at: string | null
   last_viewed_at: string | null

@@ -25,7 +25,6 @@ class TestSessionStatus:
             "working",
             "paused",
             "waiting",
-            "error",
             "disconnected",
         }
         actual = {s.value for s in SessionStatus}
@@ -53,9 +52,9 @@ class TestValidTransitions:
         """connecting -> working is valid (setup succeeded)."""
         assert is_valid_transition(SessionStatus.CONNECTING, SessionStatus.WORKING)
 
-    def test_connecting_to_error_valid(self):
-        """connecting -> error is valid (setup failed)."""
-        assert is_valid_transition(SessionStatus.CONNECTING, SessionStatus.ERROR)
+    def test_connecting_to_disconnected_valid(self):
+        """connecting -> disconnected is valid (setup failed)."""
+        assert is_valid_transition(SessionStatus.CONNECTING, SessionStatus.DISCONNECTED)
 
     def test_working_to_paused_valid(self):
         """working -> paused is valid (stop called)."""
@@ -68,10 +67,6 @@ class TestValidTransitions:
     def test_disconnected_to_working_valid(self):
         """disconnected -> working is valid (reconnect succeeded)."""
         assert is_valid_transition(SessionStatus.DISCONNECTED, SessionStatus.WORKING)
-
-    def test_error_to_working_valid(self):
-        """error -> working is valid (reconnect succeeded)."""
-        assert is_valid_transition(SessionStatus.ERROR, SessionStatus.WORKING)
 
 
 class TestInvalidTransitions:
@@ -120,11 +115,6 @@ class TestReconnectableStates:
         assert is_reconnectable(SessionStatus.DISCONNECTED)
         assert is_reconnectable("disconnected")
 
-    def test_error_is_reconnectable(self):
-        """error should be reconnectable."""
-        assert is_reconnectable(SessionStatus.ERROR)
-        assert is_reconnectable("error")
-
     def test_working_is_not_reconnectable(self):
         """working should NOT be reconnectable."""
         assert not is_reconnectable(SessionStatus.WORKING)
@@ -142,6 +132,10 @@ class TestReconnectableStates:
     def test_invalid_status_not_reconnectable(self):
         """Invalid status should return False."""
         assert not is_reconnectable("invalid_status")
+
+    def test_error_is_not_reconnectable(self):
+        """error (legacy) should NOT be reconnectable — status was removed."""
+        assert not is_reconnectable("error")
 
 
 class TestGetStatusValue:
@@ -169,7 +163,7 @@ class TestTransitionCompleteness:
 
     def test_reconnectable_states_match_constant(self):
         """RECONNECTABLE_STATES should match what's documented."""
-        expected = {SessionStatus.DISCONNECTED, SessionStatus.ERROR}
+        expected = {SessionStatus.DISCONNECTED}
         assert RECONNECTABLE_STATES == expected
 
 

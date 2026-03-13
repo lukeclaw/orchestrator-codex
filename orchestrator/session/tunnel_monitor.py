@@ -97,7 +97,7 @@ async def _check_all_tunnels(
         # Skip non-rdev, disconnected, or connecting workers
         if not is_remote_host(s.host):
             continue
-        if s.status in ("disconnected", "connecting"):
+        if s.status in ("disconnected", "connecting", "error"):
             continue
 
         checked += 1
@@ -174,7 +174,8 @@ async def _restart_tunnel(tunnel_manager, conn, session, *, reason: str) -> int:
             failure_count,
             last_error,
         )
-        sessions_repo.update_session(conn, session.id, status="error")
+        # Don't change session status — tunnel health != worker health.
+        # The health check (_check_rws_pty_health) is the authority on session status.
         return 0
 
     logger.warning(

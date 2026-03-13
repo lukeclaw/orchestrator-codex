@@ -200,11 +200,6 @@
   color: var(--yellow);
 }
 
-.pt-worker-tag.error {
-  background: rgba(248, 81, 73, 0.08);
-  color: var(--red);
-}
-
 .pt-worker-tag.paused {
   background: rgba(210, 153, 34, 0.08);
   color: var(--yellow);

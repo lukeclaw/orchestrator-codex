@@ -131,7 +131,6 @@
 .rt-worker-dot.idle { background: var(--green); }
 .rt-worker-dot.waiting { background: var(--yellow); }
 .rt-worker-dot.paused { background: var(--orange, #f97316); }
-.rt-worker-dot.error { background: var(--red); }
 .rt-worker-dot.disconnected { background: var(--red); }
 .rt-worker-dot.connecting { background: var(--accent); }
 

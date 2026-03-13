@@ -1231,11 +1231,6 @@
   color: var(--yellow);
 }
 
-.tdp-worker-link.status-error {
-  background: rgba(248, 81, 73, 0.08);
-  color: var(--red);
-}
-
 .tdp-worker-link.status-waiting {
   background: rgba(210, 153, 34, 0.08);
   color: var(--yellow);
@@ -1269,10 +1264,6 @@
 
 .worker-status-dot.status-paused {
   background: var(--yellow);
-}
-
-.worker-status-dot.status-error {
-  background: var(--red);
 }
 
 .worker-status-dot.status-waiting {
@@ -1453,11 +1444,6 @@
   color: var(--yellow);
 }
 
-.worker-status-label.status-error {
-  background: rgba(248, 81, 73, 0.15);
-  color: var(--red);
-}
-
 .worker-status-label.status-waiting {
   background: rgba(210, 153, 34, 0.15);
   color: var(--yellow);
@@ -1569,7 +1555,6 @@
 .tdp-worker-preview-card .status-indicator.idle { background: var(--green); }
 .tdp-worker-preview-card .status-indicator.waiting { background: var(--yellow); }
 .tdp-worker-preview-card .status-indicator.paused { background: var(--orange, #f97316); }
-.tdp-worker-preview-card .status-indicator.error { background: var(--red); }
 .tdp-worker-preview-card .status-indicator.disconnected { background: var(--red); }
 .tdp-worker-preview-card .status-indicator.connecting { background: var(--accent); }
 
@@ -1633,7 +1618,6 @@
 .tdp-worker-preview-card.status-idle { border-left-color: var(--green); }
 .tdp-worker-preview-card.status-waiting { border-left-color: var(--yellow); }
 .tdp-worker-preview-card.status-paused { border-left-color: var(--orange, #f97316); }
-.tdp-worker-preview-card.status-error { border-left-color: var(--red); }
 .tdp-worker-preview-card.status-disconnected { border-left-color: var(--red); }
 .tdp-worker-preview-card.status-connecting { border-left-color: var(--accent); }
 

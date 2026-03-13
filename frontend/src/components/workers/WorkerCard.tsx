@@ -41,7 +41,7 @@ export default function WorkerCard({
   const isRemote = session.host !== 'localhost'
 
   // Whether to always show action buttons (error states)
-  const alwaysShowActions = session.status === 'error' || session.status === 'disconnected'
+  const alwaysShowActions = session.status === 'disconnected'
 
   // Update ref when session changes (for interval callbacks to read current value)
   sessionIdRef.current = session.id
@@ -220,8 +220,8 @@ export default function WorkerCard({
         <div className="wc-actions">
           {/* Hoverable action buttons */}
           <div className="wc-actions-hoverable">
-            {(session.status === 'disconnected' || session.status === 'error') ? (
-              /* Reconnect button for disconnected/error workers */
+            {session.status === 'disconnected' ? (
+              /* Reconnect button for disconnected workers */
               <button
                 className="wc-action-btn reconnect"
                 onClick={handleReconnect}

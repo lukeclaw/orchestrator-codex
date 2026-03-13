@@ -573,9 +573,8 @@ class TestReconnectExceptionHandling:
     lock but does NOT reset the status.  The session stays in 'waiting'
     even though the reconnect failed.
 
-    Additionally, for TUIActiveError (line 722-723), status is set to
-    'error', but for generic exceptions (line 724-726), the status is
-    NOT updated -- it stays at whatever was last written.
+    On any exception, status is set to 'disconnected' so the session
+    doesn't get stuck in a transient state like 'connecting'.
     """
 
     def test_status_set_on_success_and_error_on_exception(self):
@@ -657,14 +656,14 @@ class TestReconnectExceptionHandling:
                     mock_repo2,
                 )
 
-        # FIXED (RC-05): Generic exception handler now sets status to "error"
+        # Generic exception handler sets status to "disconnected"
         # so the session doesn't get stuck in "connecting" or "waiting".
-        assert "error" in tracker2.statuses
+        assert "disconnected" in tracker2.statuses
 
-    def test_generic_exception_sets_error_status(self):
-        """FIXED (RC-05): Generic exceptions now set status to 'error'.
+    def test_generic_exception_sets_disconnected_status(self):
+        """Generic exceptions set status to 'disconnected'.
 
-        All exceptions in reconnect_remote_worker set status to 'error'
+        All exceptions in reconnect_remote_worker set status to 'disconnected'
         to prevent stuck sessions.
         """
         tracker = StatusTracker()
@@ -694,13 +693,13 @@ class TestReconnectExceptionHandling:
                     mock_repo,
                 )
 
-        # FIXED: status is now set to "error" on generic exceptions
-        assert "error" in tracker.statuses
+        # Status is set to "disconnected" on generic exceptions
+        assert "disconnected" in tracker.statuses
 
-    def test_any_exception_sets_error_status(self):
-        """Any exception in reconnect_remote_worker sets status to 'error'.
+    def test_any_exception_sets_disconnected_status(self):
+        """Any exception in reconnect_remote_worker sets status to 'disconnected'.
 
-        The new RWS PTY code path catches all exceptions and sets error status.
+        The new RWS PTY code path catches all exceptions and sets disconnected status.
         """
         tracker = StatusTracker()
         conn = MagicMock()
@@ -729,8 +728,8 @@ class TestReconnectExceptionHandling:
                     mock_repo,
                 )
 
-        # Status should be set to "error"
-        assert "error" in tracker.statuses
+        # Status should be set to "disconnected"
+        assert "disconnected" in tracker.statuses
 
 
 # ===================================================================

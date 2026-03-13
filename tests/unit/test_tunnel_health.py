@@ -407,7 +407,7 @@ class TestTunnelHealthLoop:
 
     @patch("orchestrator.session.tunnel_monitor.sessions_repo")
     async def test_skips_restart_after_max_failures(self, mock_repo):
-        """Should not attempt restart and set status to error after max failures."""
+        """Should not attempt restart after max failures, and should NOT change session status."""
         from orchestrator.session.tunnel_monitor import _check_all_tunnels
 
         mock_session = MagicMock()
@@ -426,8 +426,8 @@ class TestTunnelHealthLoop:
 
         # Should NOT attempt restart
         mock_tm.restart_tunnel.assert_not_called()
-        # Should mark session as error
-        mock_repo.update_session.assert_called_once_with(mock_conn, "sess-1", status="error")
+        # Should NOT change session status (tunnel health != worker health)
+        mock_repo.update_session.assert_not_called()
 
     @patch("orchestrator.session.tunnel_monitor.sessions_repo")
     async def test_logs_attempt_count_on_restart(self, mock_repo, caplog):

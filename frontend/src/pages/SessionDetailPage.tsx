@@ -581,8 +581,8 @@ export default function SessionDetailPage() {
         <div className="sd-topbar-actions">
 
           {/* Control buttons - icon only */}
-          {(session.status === 'disconnected' || session.status === 'error') ? (
-            /* Reconnect button for disconnected/error workers */
+          {session.status === 'disconnected' ? (
+            /* Reconnect button for disconnected workers */
             <button
               className="sd-control-btn reconnect"
               onClick={handleReconnect}

@@ -132,8 +132,8 @@ class TestReconnectStep3Retry:
                 tunnel_manager=None,
             )
 
-        # Session status should be set to error
-        repo.update_session.assert_called_with(conn, session.id, status="error")
+        # Session status should be set to disconnected
+        repo.update_session.assert_called_with(conn, session.id, status="disconnected")
 
 
 # ---------------------------------------------------------------------------

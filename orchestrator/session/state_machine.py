@@ -15,7 +15,6 @@ class SessionStatus(StrEnum):
     WORKING = "working"
     PAUSED = "paused"
     WAITING = "waiting"
-    ERROR = "error"
     DISCONNECTED = "disconnected"
 
 
@@ -28,34 +27,24 @@ VALID_TRANSITIONS: dict[SessionStatus, set[SessionStatus]] = {
     },
     SessionStatus.CONNECTING: {
         SessionStatus.WORKING,  # Setup succeeded
-        SessionStatus.ERROR,  # Setup failed
-        SessionStatus.DISCONNECTED,  # Connection lost during setup
+        SessionStatus.DISCONNECTED,  # Setup failed or connection lost
     },
     SessionStatus.WORKING: {
         SessionStatus.IDLE,  # Task completed
         SessionStatus.PAUSED,  # Stop called
         SessionStatus.WAITING,  # Claude waiting for input
-        SessionStatus.ERROR,  # Something went wrong
         SessionStatus.DISCONNECTED,  # Health check failed
     },
     SessionStatus.PAUSED: {
         SessionStatus.WORKING,  # Resume
         SessionStatus.IDLE,  # Clear/reset
         SessionStatus.DISCONNECTED,  # Health check failed
-        SessionStatus.ERROR,  # Something went wrong
     },
     SessionStatus.WAITING: {
         SessionStatus.WORKING,  # Resumed work
         SessionStatus.IDLE,  # Reset
         SessionStatus.PAUSED,  # Stop called
         SessionStatus.DISCONNECTED,  # Health check failed
-        SessionStatus.ERROR,  # Something went wrong
-    },
-    SessionStatus.ERROR: {
-        SessionStatus.CONNECTING,  # Retry setup
-        SessionStatus.WORKING,  # Reconnect succeeded
-        SessionStatus.WAITING,  # Reconnect succeeded
-        SessionStatus.DISCONNECTED,  # Give up
     },
     SessionStatus.DISCONNECTED: {
         SessionStatus.CONNECTING,  # Reconnect attempt
@@ -67,7 +56,6 @@ VALID_TRANSITIONS: dict[SessionStatus, set[SessionStatus]] = {
 # States that allow reconnection
 RECONNECTABLE_STATES: set[SessionStatus] = {
     SessionStatus.DISCONNECTED,
-    SessionStatus.ERROR,
 }
 
 

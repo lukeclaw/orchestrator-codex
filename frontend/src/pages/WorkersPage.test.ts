@@ -62,7 +62,7 @@ const LOCAL = makeWorker({ name: 'local-1', host: 'localhost', status: 'idle' })
 const SSH = makeWorker({ name: 'ssh-1', host: 'devbox.corp.net', status: 'working' })
 const RDEV1 = makeWorker({ name: 'rdev-1', host: 'rdev/project/machine-1', status: 'idle' })
 const RDEV2 = makeWorker({ name: 'rdev-2', host: 'rdev/project/machine-2', status: 'working' })
-const LOCAL2 = makeWorker({ name: 'local-2', host: 'localhost', status: 'error' })
+const LOCAL2 = makeWorker({ name: 'local-2', host: 'localhost', status: 'disconnected' })
 
 const ALL_WORKERS = [LOCAL, SSH, RDEV1, RDEV2, LOCAL2]
 

@@ -72,7 +72,7 @@ export default function TaskWorkerPreview({ worker, onRefresh }: TaskWorkerPrevi
     }
   }
 
-  const isDisconnected = worker.status === 'disconnected' || worker.status === 'error'
+  const isDisconnected = worker.status === 'disconnected'
 
   return (
     <div
