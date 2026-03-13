@@ -109,6 +109,21 @@ orch-workers create --name <name> --remote <host> --task-id <task-id>
 
 Print recap of what was created and assigned.
 
+### 7. Verify worker started
+
+Wait ~10 seconds after assignment, then check that the worker is actually working:
+
+```bash
+orch-workers preview <worker-name>
+```
+
+Look at the terminal output:
+- **Worker is running commands or reading the task** → all good, done.
+- **Worker is sitting at a Claude prompt (`>`) doing nothing** → nudge it: `orch-send <worker-name> "You have a new task assigned. Run orch-task show to review it and get started."`
+- **Worker shows an error or is unresponsive** → flag to the user that the worker may need attention.
+
+Do not skip this step — assignment alone does not guarantee the worker received the message.
+
 ---
 
 ## rdev Quick Reference
