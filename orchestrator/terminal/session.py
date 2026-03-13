@@ -509,6 +509,12 @@ def setup_remote_worker(
     lock.acquire(timeout=5)
 
     try:
+        # 0. Ensure rdev host is running (auto-start if stopped)
+        from orchestrator.session.reconnect import _ensure_rdev_running
+
+        if not _ensure_rdev_running(session_id, host):
+            return {"ok": False, "error": f"Rdev host {host} is stopped and could not be started"}
+
         # 1. Start reverse SSH tunnel via subprocess (for API callbacks)
         tunnel_pid = None
         if tunnel_manager:

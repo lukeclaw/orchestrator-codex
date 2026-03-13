@@ -21,7 +21,8 @@ interface Props {
   onExit?: () => void  // Called when the underlying process exits (PTY closed)
 }
 
-const RECONNECT_STEPS = [
+const RECONNECT_STEPS_ALL = [
+  { key: 'rdev_start', label: 'Starting rdev host' },
   { key: 'tunnel', label: 'Establishing connection' },
   { key: 'daemon', label: 'Connecting to server' },
   { key: 'pty_check', label: 'Checking session' },
@@ -599,6 +600,16 @@ export default function TerminalView({ sessionId, wsPath, sendPath, sessionStatu
   // Collapse deploy/pty_create/verify into the single "deploy" UI step
   const activeStep = rawStep && DEPLOY_GROUP.has(rawStep) ? 'deploy' : rawStep
   const hasReconnectStep = !!activeStep
+
+  // Track whether rdev_start step was seen during this reconnect cycle
+  const sawRdevStartRef = useRef(false)
+  if (activeStep === 'rdev_start') sawRdevStartRef.current = true
+  // Reset when reconnect cycle ends (no active step and not reconnecting)
+  if (!hasReconnectStep && connectionState === 'connected') sawRdevStartRef.current = false
+  // Only show rdev_start step if backend actually emitted it
+  const RECONNECT_STEPS = sawRdevStartRef.current
+    ? RECONNECT_STEPS_ALL
+    : RECONNECT_STEPS_ALL.filter(s => s.key !== 'rdev_start')
 
   // Determine overlay type (mutually exclusive, in priority order)
   const isReconnecting = (

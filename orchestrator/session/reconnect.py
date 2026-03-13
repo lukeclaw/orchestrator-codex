@@ -144,6 +144,113 @@ def clear_reconnect_step(session_id: str):
 
 
 # =============================================================================
+# Rdev Auto-Start Helpers
+# =============================================================================
+
+
+def _get_rdev_state(host: str) -> str | None:
+    """Query the live state of an rdev host via ``rdev info``.
+
+    Returns the uppercase state string (e.g. ``"RUNNING"``, ``"STOPPED"``)
+    or ``None`` if the command fails or the state line is not found.
+    """
+    try:
+        result = subprocess.run(
+            ["rdev", "info", host],
+            capture_output=True,
+            text=True,
+            timeout=15,
+        )
+        for line in result.stdout.splitlines():
+            # rdev info prints a table like:  State | RUNNING
+            if "State" in line and "|" in line:
+                return line.split("|", 1)[1].strip().upper()
+    except Exception as exc:
+        logger.debug("_get_rdev_state(%s) failed: %s", host, exc)
+    return None
+
+
+def _ensure_rdev_running(session_id: str, host: str, timeout: int = 120) -> bool:
+    """Ensure an rdev host is in RUNNING state, restarting it if stopped.
+
+    Returns ``True`` if the host is running (or not an rdev host),
+    ``False`` if the host cannot be started.
+    """
+    from orchestrator.terminal.ssh import is_rdev_host
+
+    if not is_rdev_host(host):
+        return True
+
+    state = _get_rdev_state(host)
+
+    # Can't determine state, or already running — proceed optimistically
+    if state is None or state == "RUNNING":
+        return True
+
+    # Transitional states — just wait, no restart needed
+    if state in ("CREATING", "STARTING"):
+        _set_reconnect_step(session_id, "rdev_start")
+        deadline = time.time() + 60
+        while time.time() < deadline:
+            time.sleep(5)
+            s = _get_rdev_state(host)
+            if s == "RUNNING":
+                _invalidate_rdev_cache()
+                return True
+            if s not in ("CREATING", "STARTING"):
+                break
+        logger.error("_ensure_rdev_running: %s stuck in %s", host, state)
+        return False
+
+    # Stopped/stopping — restart
+    if state in ("STOPPED", "STOPPING"):
+        _set_reconnect_step(session_id, "rdev_start")
+        logger.info("_ensure_rdev_running: restarting stopped rdev %s", host)
+        try:
+            result = subprocess.run(
+                ["rdev", "restart", host],
+                capture_output=True,
+                text=True,
+                timeout=timeout,
+            )
+            if result.returncode != 0:
+                logger.error(
+                    "_ensure_rdev_running: rdev restart failed (rc=%d): %s",
+                    result.returncode,
+                    result.stderr.strip(),
+                )
+                return False
+        except (subprocess.TimeoutExpired, FileNotFoundError, OSError) as exc:
+            logger.error("_ensure_rdev_running: rdev restart error: %s", exc)
+            return False
+
+        # Poll until RUNNING
+        deadline = time.time() + 60
+        while time.time() < deadline:
+            time.sleep(5)
+            s = _get_rdev_state(host)
+            if s == "RUNNING":
+                _invalidate_rdev_cache()
+                return True
+        logger.error("_ensure_rdev_running: %s did not reach RUNNING after restart", host)
+        return False
+
+    # DELETED, ERROR, or unknown — cannot start
+    logger.error("_ensure_rdev_running: %s in unrecoverable state %s", host, state)
+    return False
+
+
+def _invalidate_rdev_cache():
+    """Invalidate the rdev list cache so the next API call fetches fresh data."""
+    try:
+        from orchestrator.api.routes.rdevs import _rdev_cache
+
+        _rdev_cache["timestamp"] = 0
+    except Exception:
+        pass
+
+
+# =============================================================================
 # Internal Helpers
 # =============================================================================
 
@@ -892,6 +999,16 @@ def reconnect_remote_worker(
         return
 
     try:
+        # ── Ensure rdev host is running (auto-start if stopped) ──────────
+        if not _ensure_rdev_running(session.id, session.host):
+            repo.update_session(conn, session.id, status="disconnected")
+            logger.error(
+                "Reconnect %s: rdev host %s not running, cannot start",
+                session.name,
+                session.host,
+            )
+            return
+
         # ── If session already has rws_pty_id, use existing reconnect logic ──
         if session.rws_pty_id:
             _reconnect_rws_pty_worker(conn, session, repo, tunnel_manager)
