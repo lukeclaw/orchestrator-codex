@@ -481,6 +481,56 @@ class ReverseTunnelManager:
     # Public API
     # ------------------------------------------------------------------
 
+    def _kill_remote_port_holder(self, host: str, port: int, session_name: str) -> bool:
+        """SSH to remote host and kill the process holding *port*.
+
+        Used to clear zombie sshd processes that keep the reverse tunnel
+        port bound after an ungraceful disconnect.  Returns True if the
+        command executed (regardless of whether anything was killed).
+        """
+        cmd = [
+            "ssh",
+            "-o",
+            "ConnectTimeout=10",
+            "-o",
+            "StrictHostKeyChecking=no",
+            "-o",
+            "UserKnownHostsFile=/dev/null",
+            host,
+            f"fuser -k {port}/tcp 2>/dev/null; exit 0",
+        ]
+        try:
+            subprocess.run(
+                cmd,
+                timeout=15,
+                capture_output=True,
+                stdin=subprocess.DEVNULL,
+            )
+            logger.info(
+                "Tunnel %s: killed remote process holding port %d on %s",
+                session_name,
+                port,
+                host,
+            )
+            return True
+        except subprocess.TimeoutExpired:
+            logger.warning(
+                "Tunnel %s: timed out killing remote port holder on %s:%d",
+                session_name,
+                host,
+                port,
+            )
+            return False
+        except Exception as e:
+            logger.warning(
+                "Tunnel %s: failed to kill remote port holder on %s:%d: %s",
+                session_name,
+                host,
+                port,
+                e,
+            )
+            return False
+
     def start_tunnel(
         self,
         session_id: str,
@@ -488,6 +538,8 @@ class ReverseTunnelManager:
         host: str,
         local_port: int | None = None,
         remote_port: int | None = None,
+        *,
+        _is_retry: bool = False,
     ) -> int | None:
         """Start a reverse SSH tunnel for a session.
 
@@ -584,7 +636,7 @@ class ReverseTunnelManager:
         new_log = self._read_log_since(log_path, log_start_pos)
         if new_log:
             if "remote port forwarding failed" in new_log.lower():
-                # The -R forward we actually need has failed. Fatal.
+                # The -R forward we actually need has failed.
                 logger.error(
                     "Tunnel for %s: remote port forwarding failed, killing process (pid=%d)",
                     session_name,
@@ -595,11 +647,32 @@ class ReverseTunnelManager:
                     proc.wait(timeout=3)
                 except subprocess.TimeoutExpired:
                     proc.kill()
+                if log_file:
+                    log_file.close()
+
+                if not _is_retry:
+                    # Zombie sshd likely holding the port on the remote.
+                    # Kill it and retry once.
+                    logger.info(
+                        "Tunnel %s: attempting zombie port remediation on %s:%d",
+                        session_name,
+                        host,
+                        remote_port,
+                    )
+                    self._kill_remote_port_holder(host, remote_port, session_name)
+                    time.sleep(1)  # Let the OS reclaim the port
+                    return self.start_tunnel(
+                        session_id,
+                        session_name,
+                        host,
+                        local_port,
+                        remote_port,
+                        _is_retry=True,
+                    )
+
                 with self._lock:
                     self._failure_counts[session_id] = self._failure_counts.get(session_id, 0) + 1
                     self._last_errors[session_id] = "remote port forwarding failed"
-                if log_file:
-                    log_file.close()
                 return None
 
             if "could not request local forwarding" in new_log.lower():

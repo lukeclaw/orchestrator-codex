@@ -86,9 +86,12 @@ def get_reconnect_lock(session_id: str) -> threading.Lock:
 
 def cleanup_reconnect_lock(session_id: str):
     """Remove the per-session reconnect lock (call on session delete)."""
+    from orchestrator.session.health import _reconnect_backoff
+
     with _registry_lock:
         _reconnect_locks.pop(session_id, None)
     clear_reconnect_step(session_id)
+    _reconnect_backoff.cleanup(session_id)
 
 
 # =============================================================================
@@ -215,11 +218,18 @@ def _cleanup_stale_claude_session_remote(host: str, session_id: str):
     """Delete stale Claude session files and kill orphaned processes on a remote host.
 
     Same purpose as ``_cleanup_stale_claude_session_local`` but executed via SSH.
+
+    Cleans up:
+    - ``<session_id>.jsonl`` conversation log (existence blocks ``--session-id``)
+    - ``<session_id>/`` directory (subagents, tool-results)
+    - Any Claude process whose command line contains the session ID
     """
     try:
         cleanup_cmd = (
-            # Delete stale session files
+            # Delete stale session files (.jsonl) AND session directories
             f"find ~/.claude/projects -name '{session_id}.jsonl' -delete 2>/dev/null; "
+            f"find ~/.claude/projects -maxdepth 2 -type d -name '{session_id}' "
+            f"-exec rm -rf {{}} + 2>/dev/null; "
             # Kill orphaned Claude processes
             f"ps aux | grep -v grep "
             f"| grep -E 'claude (-r|--|--settings)' "
@@ -236,6 +246,38 @@ def _cleanup_stale_claude_session_remote(host: str, session_id: str):
         logger.info("Cleaned up stale Claude session on %s for session %s", host, session_id)
     except Exception:
         logger.debug("_cleanup_stale_claude_session_remote failed", exc_info=True)
+
+
+def _kill_orphan_claude_processes_remote(
+    host: str, session_id: str, claude_session_id: str | None = None
+):
+    """Kill orphaned Claude processes on a remote host WITHOUT deleting session files.
+
+    This preserves conversation history (the ``.jsonl`` files) while clearing
+    process-level locks (``flock``).  Call before creating a new PTY so that
+    ``-r`` (resume) can acquire the flock on the existing ``.jsonl``.
+    """
+    ids = [session_id]
+    if claude_session_id and claude_session_id != session_id:
+        ids.append(claude_session_id)
+    grep_pattern = "|".join(ids)
+    kill_cmd = (
+        f"ps aux | grep -v grep "
+        f"| grep -E 'claude (-r|--|--settings)' "
+        f"| grep -E '{grep_pattern}' "
+        f"| awk '{{print $2}}' "
+        f"| xargs -r kill 2>/dev/null || true"
+    )
+    try:
+        subprocess.run(
+            ["ssh", "-o", "ConnectTimeout=10", "-o", "BatchMode=yes", host, kill_cmd],
+            capture_output=True,
+            text=True,
+            timeout=15,
+        )
+        logger.info("Killed orphan Claude processes on %s for %s", host, session_id)
+    except Exception:
+        logger.debug("_kill_orphan_claude_processes_remote failed", exc_info=True)
 
 
 def _check_claude_session_exists_remote(host: str, session_id: str) -> bool:
@@ -671,6 +713,9 @@ def _reconnect_rws_pty_worker(conn, session, repo, tunnel_manager):
     # 3. Reconnect RWS forward tunnel if needed
     _reconnect_rws_for_host(session)
 
+    # Re-fetch RWS in case _reconnect_rws_for_host replaced the pool entry
+    rws = _ensure_rws_ready(session.host, timeout=10)
+
     # 4. Check PTY status
     _set_reconnect_step(session.id, "pty_check")
     try:
@@ -716,7 +761,10 @@ def _reconnect_rws_pty_worker(conn, session, repo, tunnel_manager):
         except Exception:
             pass
 
-    # 5. PTY dead or gone — redeploy files and recreate
+    # 5. PTY dead or gone — kill orphaned Claude processes, redeploy, recreate
+    _kill_orphan_claude_processes_remote(session.host, session.id, session.claude_session_id)
+    time.sleep(1)  # Let flock release after process kill
+
     _set_reconnect_step(session.id, "deploy")
     _ensure_local_configs_exist(tmp_dir, session.id, api_base, conn=conn)
     _copy_configs_to_remote(session.host, tmp_dir, remote_tmp_dir, session.name)
@@ -757,8 +805,13 @@ def _reconnect_rws_pty_worker(conn, session, repo, tunnel_manager):
             "Reconnect RWS %s: PTY died after creation, retrying with fresh session",
             session.name,
         )
-        # Retry with --session-id (new conversation)
+        # Clean up ALL session files — both target_id and session.id
+        # (--session-id uses session.id, so its .jsonl must be removed)
         _cleanup_stale_claude_session_remote(session.host, target_id)
+        if session.id != target_id:
+            _cleanup_stale_claude_session_remote(session.host, session.id)
+        time.sleep(1)
+
         claude_cmd = _build_claude_command(
             session.id,
             session.host,
@@ -775,6 +828,24 @@ def _reconnect_rws_pty_worker(conn, session, repo, tunnel_manager):
         )
         repo.update_session(conn, session.id, rws_pty_id=pty_id, status="working")
         logger.info("Reconnect RWS %s: retry created PTY %s", session.name, pty_id)
+
+        # Second verify — if retry also fails, mark disconnected (not working)
+        # so the backoff prevents rapid oscillation.
+        time.sleep(3)
+        try:
+            resp = rws.execute({"action": "pty_list"}, timeout=5)
+            ptys = resp.get("ptys", [])
+            retry_alive = any(p["pty_id"] == pty_id and p["alive"] for p in ptys)
+        except Exception:
+            retry_alive = True
+
+        if not retry_alive:
+            logger.error(
+                "Reconnect RWS %s: retry PTY also died, giving up",
+                session.name,
+            )
+            repo.update_session(conn, session.id, status="disconnected")
+            return
 
     # Detect work_dir if not set
     if not session.work_dir:
@@ -840,6 +911,9 @@ def reconnect_remote_worker(
         _set_reconnect_step(session.id, "daemon")
         _reconnect_rws_for_host(session)
 
+        # Re-fetch RWS in case _reconnect_rws_for_host replaced the pool entry
+        rws = _ensure_rws_ready(session.host, timeout=10)
+
         # Check if there's already a PTY running for this session
         _set_reconnect_step(session.id, "pty_check")
         try:
@@ -872,6 +946,10 @@ def reconnect_remote_worker(
                 exc_info=True,
             )
 
+        # Kill orphaned Claude processes before creating new PTY
+        _kill_orphan_claude_processes_remote(session.host, session.id, session.claude_session_id)
+        time.sleep(1)  # Let flock release after process kill
+
         # Deploy configs
         _set_reconnect_step(session.id, "deploy")
         api_base = f"http://127.0.0.1:{api_port}"
@@ -900,6 +978,63 @@ def reconnect_remote_worker(
         )
         repo.update_session(conn, session.id, rws_pty_id=pty_id, status="working")
         logger.info("Reconnect %s: created RWS PTY %s", session.name, pty_id)
+
+        # Verify PTY survived startup (mirrors Path A verify step)
+        _set_reconnect_step(session.id, "verify")
+        time.sleep(3)
+        try:
+            resp = rws.execute({"action": "pty_list"}, timeout=5)
+            ptys = resp.get("ptys", [])
+            alive = any(p["pty_id"] == pty_id and p["alive"] for p in ptys)
+        except Exception:
+            alive = True  # Assume alive if we can't check
+
+        if not alive:
+            logger.warning(
+                "Reconnect %s: PTY died after creation, retrying with fresh session",
+                session.name,
+            )
+            # Clean up ALL session files — both target_id and session.id
+            # (--session-id uses session.id, so its .jsonl must be removed)
+            _cleanup_stale_claude_session_remote(session.host, target_id)
+            if session.id != target_id:
+                _cleanup_stale_claude_session_remote(session.host, session.id)
+            time.sleep(1)
+
+            claude_cmd = _build_claude_command(
+                session.id,
+                session.host,
+                remote_tmp_dir,
+                session.work_dir,
+                claude_session_id=session.claude_session_id,
+                is_resume=False,
+            )
+            pty_id = rws.create_pty(
+                cmd=claude_cmd,
+                cwd=session.work_dir or os.path.expanduser("~"),
+                session_id=session.id,
+                role="main",
+            )
+            repo.update_session(conn, session.id, rws_pty_id=pty_id, status="working")
+            logger.info("Reconnect %s: retry created PTY %s", session.name, pty_id)
+
+            # Second verify — if retry also fails, mark disconnected (not working)
+            # so the backoff prevents rapid oscillation.
+            time.sleep(3)
+            try:
+                resp = rws.execute({"action": "pty_list"}, timeout=5)
+                ptys = resp.get("ptys", [])
+                retry_alive = any(p["pty_id"] == pty_id and p["alive"] for p in ptys)
+            except Exception:
+                retry_alive = True
+
+            if not retry_alive:
+                logger.error(
+                    "Reconnect %s: retry PTY also died, giving up",
+                    session.name,
+                )
+                repo.update_session(conn, session.id, status="disconnected")
+                return
 
         # Detect work_dir if not set
         if not session.work_dir:
@@ -1180,8 +1315,10 @@ def trigger_reconnect(
         # request returns immediately.  All loop-variable-sensitive values
         # are bound via default parameters to avoid closure bugs.
         def _bg_reconnect(_session=session, _ts=tmux_sess, _tw=tmux_win, _td=tmp_dir):
+            from orchestrator.session.health import _reconnect_backoff
             from orchestrator.state.db import get_connection
 
+            _reconnect_backoff.record_attempt(_session.id)
             bg_conn = get_connection(db_path) if db_path else db
             try:
                 reconnect_remote_worker(
@@ -1196,8 +1333,10 @@ def trigger_reconnect(
                 )
                 logger.info("Reconnect succeeded for %s", _session.name)
                 clear_reconnect_step(_session.id)
+                _reconnect_backoff.record_success(_session.id)
             except Exception:
                 logger.exception("Reconnect failed for %s", _session.name)
+                _reconnect_backoff.record_failure(_session.id)
                 try:
                     current_step = get_reconnect_step(_session.id)
                     if current_step and not current_step.startswith("failed:"):

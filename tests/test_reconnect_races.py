@@ -418,6 +418,11 @@ class TestReconnectVsTunnelHealthLoopRace:
 
         mock_rws = MagicMock()
         mock_rws.create_pty.return_value = "pty-test"
+        # pty_check: no existing PTYs; verify: PTY alive
+        mock_rws.execute.side_effect = [
+            {"ptys": []},
+            {"ptys": [{"pty_id": "pty-test", "alive": True}]},
+        ]
 
         mock_repo = MagicMock()
 
@@ -454,7 +459,7 @@ class TestReconnectVsTunnelHealthLoopRace:
             c for c in mock_repo.update_session.call_args_list if "tunnel_pid" in str(c)
         ]
         assert len(tunnel_update_calls) >= 1, "Should update tunnel_pid in DB"
-        # Verify RWS PTY was created
+        # Verify RWS PTY was created (once — verify confirms alive)
         mock_rws.create_pty.assert_called_once()
         # Verify rws_pty_id was written to session
         pty_update_calls = [

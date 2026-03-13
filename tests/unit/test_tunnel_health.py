@@ -5,14 +5,17 @@ Covers:
 - kill_tunnel_processes SIGKILL escalation
 - find_tunnel_pids process discovery
 - Periodic tunnel health monitor loop (subprocess-based)
+- Reconnect backoff (exponential delay, no hard limit)
 """
 
 import signal
+import time
 from unittest.mock import MagicMock, call, patch
 
 import pytest
 
 from orchestrator.session import tunnel
+from orchestrator.session.health import _ReconnectBackoff
 
 
 @pytest.fixture(autouse=True)
@@ -482,3 +485,75 @@ class TestReconnectTunnelOnlyKillEscalation:
         assert result is True
         mock_tm.restart_tunnel.assert_called_once_with("sess-123", "w1", "user/rdev-vm")
         mock_repo.update_session.assert_called_once_with(db, "sess-123", tunnel_pid=55555)
+
+
+class TestReconnectBackoff:
+    """Exponential backoff for auto-reconnect — no hard attempt limit."""
+
+    def test_first_attempt_not_skipped(self):
+        bo = _ReconnectBackoff()
+        assert bo.should_skip("s1") is False
+
+    def test_skips_after_failure(self):
+        bo = _ReconnectBackoff()
+        bo.record_attempt("s1")
+        bo.record_failure("s1")
+        # Within the 15s base delay window
+        assert bo.should_skip("s1") is True
+
+    def test_allows_after_delay(self):
+        bo = _ReconnectBackoff()
+        bo.record_attempt("s1")
+        bo.record_failure("s1")
+        # Pretend the attempt was 20s ago (past the 15s base delay)
+        with bo._lock:
+            bo._last_attempt["s1"] = time.time() - 20
+        assert bo.should_skip("s1") is False
+
+    def test_exponential_growth(self):
+        bo = _ReconnectBackoff()
+        # 3 consecutive failures → delay = 15 * 2^2 = 60s
+        for _ in range(3):
+            bo.record_attempt("s1")
+            bo.record_failure("s1")
+        with bo._lock:
+            bo._last_attempt["s1"] = time.time() - 50
+        # 50s elapsed < 60s delay → still skipped
+        assert bo.should_skip("s1") is True
+        with bo._lock:
+            bo._last_attempt["s1"] = time.time() - 65
+        # 65s elapsed > 60s delay → allowed
+        assert bo.should_skip("s1") is False
+
+    def test_caps_at_max_delay(self):
+        bo = _ReconnectBackoff()
+        # 10 failures → raw delay = 15 * 2^9 = 7680s, capped at 300s
+        for _ in range(10):
+            bo.record_attempt("s1")
+            bo.record_failure("s1")
+        with bo._lock:
+            bo._last_attempt["s1"] = time.time() - 305
+        # 305s > 300s cap → allowed (never stuck forever)
+        assert bo.should_skip("s1") is False
+
+    def test_resets_on_success(self):
+        bo = _ReconnectBackoff()
+        bo.record_attempt("s1")
+        bo.record_failure("s1")
+        assert bo.should_skip("s1") is True
+        bo.record_success("s1")
+        assert bo.should_skip("s1") is False
+
+    def test_cleanup_removes_tracking(self):
+        bo = _ReconnectBackoff()
+        bo.record_attempt("s1")
+        bo.record_failure("s1")
+        bo.cleanup("s1")
+        assert bo.should_skip("s1") is False
+
+    def test_independent_sessions(self):
+        bo = _ReconnectBackoff()
+        bo.record_attempt("s1")
+        bo.record_failure("s1")
+        assert bo.should_skip("s1") is True
+        assert bo.should_skip("s2") is False

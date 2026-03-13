@@ -797,7 +797,10 @@ class TestReverseTunnelStartupVerification:
     @patch("orchestrator.session.tunnel.time.sleep")
     @patch("orchestrator.session.tunnel.subprocess.Popen")
     def test_fails_on_remote_forward_failure(self, mock_popen, mock_sleep, tmp_path):
-        """Remote port forwarding failure is fatal — tunnel must be killed."""
+        """Remote port forwarding failure triggers zombie remediation + retry.
+
+        If both attempts fail, the tunnel returns None with failure tracking.
+        """
         mock_proc = MagicMock()
         mock_proc.pid = 800
         mock_proc.poll.return_value = None  # process alive (SSH stays connected)
@@ -814,12 +817,16 @@ class TestReverseTunnelStartupVerification:
         mock_sleep.side_effect = write_log_during_sleep
 
         mgr = self._make_manager(tmp_path)
-        result = mgr.start_tunnel("s1", "worker-1", "user/vm")
+        with patch.object(mgr, "_kill_remote_port_holder", return_value=True) as mock_kill:
+            result = mgr.start_tunnel("s1", "worker-1", "user/vm")
 
         assert result is None
+        # Remediation was attempted on first failure
+        mock_kill.assert_called_once_with("user/vm", 8093, "worker-1")
+        # Both attempts failed, so terminate called twice (once per attempt)
+        assert mock_proc.terminate.call_count == 2
         assert mgr._failure_counts["s1"] == 1
         assert mgr._last_errors["s1"] == "remote port forwarding failed"
-        mock_proc.terminate.assert_called_once()
 
     def test_read_log_since(self, tmp_path):
         """_read_log_since should return only content written after start_pos."""

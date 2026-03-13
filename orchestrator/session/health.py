@@ -78,6 +78,59 @@ class _HostCircuitBreaker:
 _host_breaker = _HostCircuitBreaker()
 
 
+class _ReconnectBackoff:
+    """Per-session exponential backoff for auto-reconnect attempts.
+
+    Prevents rapid oscillation between working/disconnected by enforcing
+    increasing delays between reconnect attempts.  There is NO hard attempt
+    limit — the delay caps at ``_MAX_DELAY`` seconds so that workers always
+    eventually recover (e.g. after a VPN reconnect).
+    """
+
+    _BASE_DELAY = 15  # seconds
+    _MAX_DELAY = 300  # 5 minutes
+
+    def __init__(self):
+        self._lock = threading.Lock()
+        self._attempts: dict[str, int] = {}  # session_id → consecutive failures
+        self._last_attempt: dict[str, float] = {}  # session_id → timestamp
+
+    def should_skip(self, session_id: str) -> bool:
+        """Return True if the session is still within its backoff window."""
+        with self._lock:
+            attempts = self._attempts.get(session_id, 0)
+            if attempts == 0:
+                return False
+            delay = min(self._BASE_DELAY * (2 ** (attempts - 1)), self._MAX_DELAY)
+            elapsed = time.time() - self._last_attempt.get(session_id, 0)
+            return elapsed < delay
+
+    def record_attempt(self, session_id: str):
+        """Record that a reconnect attempt was started."""
+        with self._lock:
+            self._last_attempt[session_id] = time.time()
+
+    def record_failure(self, session_id: str):
+        """Record a reconnect failure (increments backoff)."""
+        with self._lock:
+            self._attempts[session_id] = self._attempts.get(session_id, 0) + 1
+
+    def record_success(self, session_id: str):
+        """Record a reconnect success (resets backoff)."""
+        with self._lock:
+            self._attempts.pop(session_id, None)
+            self._last_attempt.pop(session_id, None)
+
+    def cleanup(self, session_id: str):
+        """Remove all tracking for a session (call on session delete)."""
+        with self._lock:
+            self._attempts.pop(session_id, None)
+            self._last_attempt.pop(session_id, None)
+
+
+_reconnect_backoff = _ReconnectBackoff()
+
+
 def find_tunnel_pids(host: str) -> list[int]:
     """Find PIDs of SSH tunnel processes for a given host.
 
@@ -1047,10 +1100,18 @@ def check_all_workers_health(
             )
             results["deferred"].append(s.name)
             continue
+        if _reconnect_backoff.should_skip(s.id):
+            logger.debug("Auto-reconnect: backoff active for %s, skipping", s.name)
+            continue
+        # Re-read session from DB — background health-check threads may have
+        # updated fields (rws_pty_id, status) since we built the candidate list.
+        fresh = repo.get_session(db, s.id)
+        if fresh is None or fresh.status not in ("disconnected", "error"):
+            continue
         try:
             logger.info("Auto-reconnect: triggering reconnect for %s", s.name)
             trigger_reconnect(
-                s,
+                fresh,
                 db,
                 db_path=db_path,
                 api_port=api_port,

@@ -60,6 +60,11 @@ class TestReconnectStep3Retry:
 
         mock_rws = MagicMock()
         mock_rws.create_pty.return_value = "pty-test-123"
+        # pty_check: no existing PTYs; verify: PTY alive
+        mock_rws.execute.side_effect = [
+            {"ptys": []},
+            {"ptys": [{"pty_id": "pty-test-123", "alive": True}]},
+        ]
 
         with (
             patch(
@@ -93,7 +98,7 @@ class TestReconnectStep3Retry:
                 tunnel_manager=MagicMock(is_alive=MagicMock(return_value=False)),
             )
 
-        # Should have created a PTY
+        # Should have created a PTY (once — verify confirms it's alive)
         mock_rws.create_pty.assert_called_once()
 
         # Should have updated session with pty_id and status
