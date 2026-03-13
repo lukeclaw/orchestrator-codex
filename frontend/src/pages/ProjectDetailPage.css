@@ -162,7 +162,7 @@
 .status-indicator.waiting { background: var(--yellow); }
 .status-indicator.paused { background: var(--orange, #f97316); }
 .status-indicator.disconnected { background: var(--text-muted); }
-.status-indicator.connecting { background: var(--accent); }
+.status-indicator.connecting { background: var(--yellow); }
 
 /* Context section */
 .pd-context-form {

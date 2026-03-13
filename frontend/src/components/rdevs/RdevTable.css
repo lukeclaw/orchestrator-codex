@@ -132,7 +132,7 @@
 .rt-worker-dot.waiting { background: var(--yellow); }
 .rt-worker-dot.paused { background: var(--orange, #f97316); }
 .rt-worker-dot.disconnected { background: var(--red); }
-.rt-worker-dot.connecting { background: var(--accent); }
+.rt-worker-dot.connecting { background: var(--yellow); }
 
 /* Worker tag link - clickable badge that links to worker */
 .worker-tag-link {

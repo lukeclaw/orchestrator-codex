@@ -17,6 +17,7 @@ from orchestrator.session import (
     check_all_workers_health,
     check_and_update_worker_health,
     cleanup_reconnect_lock,
+    get_reconnect_step,
     is_reconnectable,
     trigger_reconnect,
 )
@@ -118,6 +119,7 @@ def _serialize_session(s):
         "last_viewed_at": s.last_viewed_at,
         "auto_reconnect": s.auto_reconnect,
         "rws_pty_id": s.rws_pty_id,
+        "reconnect_step": get_reconnect_step(s.id),
     }
 
 
@@ -237,8 +239,13 @@ def get_session(session_id: str, db=Depends(get_db)):
 
 
 @router.post("/sessions/{session_id}/viewed")
-def record_session_viewed(session_id: str, db=Depends(get_db)):
-    """Record that the user viewed this session's detail page."""
+def record_session_viewed(session_id: str, request: Request, db=Depends(get_db)):
+    """Record that the user viewed this session's detail page.
+
+    Also triggers auto-reconnect if the session is disconnected with
+    auto_reconnect enabled, so the user sees immediate progress instead
+    of waiting for the 5-minute health check interval.
+    """
     from datetime import datetime
 
     s = _resolve_session(db, session_id)
@@ -252,6 +259,15 @@ def record_session_viewed(session_id: str, db=Depends(get_db)):
         from orchestrator.terminal.remote_worker_server import ensure_rws_starting
 
         ensure_rws_starting(s.host)
+
+    # Auto-reconnect: if user opens a disconnected session, trigger reconnect
+    # immediately instead of waiting for the periodic health check.
+    if s.auto_reconnect and (is_reconnectable(s.status) or s.status == "error"):
+        config = getattr(request.app.state, "config", {})
+        api_port = config.get("server", {}).get("port", 8093)
+        db_path = getattr(request.app.state, "db_path", None)
+        tunnel_manager = getattr(request.app.state, "tunnel_manager", None)
+        trigger_reconnect(s, db, db_path=db_path, api_port=api_port, tunnel_manager=tunnel_manager)
 
     return {"ok": True}
 

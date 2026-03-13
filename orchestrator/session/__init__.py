@@ -11,7 +11,9 @@ from orchestrator.session.reconnect import (
     WORKER_BASE_DIR,
     TUIActiveError,
     cleanup_reconnect_lock,
+    clear_reconnect_step,  # noqa: F401 — re-exported for external use
     get_reconnect_lock,
+    get_reconnect_step,  # noqa: F401 — re-exported for external use
     reconnect_local_worker,
     reconnect_rdev_worker,  # backward-compat alias
     reconnect_remote_worker,

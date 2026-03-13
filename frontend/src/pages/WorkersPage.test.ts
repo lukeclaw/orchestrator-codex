@@ -54,6 +54,7 @@ function makeWorker(overrides: Partial<Session> & { host: string }): Session {
     session_type: 'worker',
     auto_reconnect: false,
     rws_pty_id: null,
+    reconnect_step: null,
     ...overrides,
   }
 }

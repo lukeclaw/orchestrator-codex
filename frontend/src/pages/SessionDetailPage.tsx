@@ -709,7 +709,7 @@ export default function SessionDetailPage() {
             {fe.open && editorTabs.tabs.length > 0 && (
               <div className="sd-terminal-header">TERMINAL</div>
             )}
-            <TerminalView sessionId={session.id} sessionStatus={session.status} disableScrollback={false} onFocusRef={(fn) => { terminalFocusRef.current = fn }} onImagePaste={handleImagePaste} onTextPaste={handleTextPaste} onPastingChange={setCtxPasting} />
+            <TerminalView sessionId={session.id} sessionStatus={session.status} reconnectStep={session.reconnect_step} disableScrollback={false} onFocusRef={(fn) => { terminalFocusRef.current = fn }} onImagePaste={handleImagePaste} onTextPaste={handleTextPaste} onPastingChange={setCtxPasting} />
           </div>
 
           {/* Interactive CLI overlay — inside right pane so it follows terminal position */}

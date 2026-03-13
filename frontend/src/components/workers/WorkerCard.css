@@ -27,7 +27,7 @@
 .worker-card.waiting { border-left-color: var(--yellow); }
 .worker-card.paused { border-left-color: var(--orange, #f97316); }
 .worker-card.disconnected { border-left-color: var(--red); }
-.worker-card.connecting { border-left-color: var(--accent); }
+.worker-card.connecting { border-left-color: var(--yellow); }
 
 /* Header */
 .wc-header {

@@ -556,11 +556,39 @@ async def terminal_websocket(websocket: WebSocket, session_id: str):
 
     # Remote worker without rws_pty_id — PTY not attached yet (reconnecting).
     # Don't fall back to tmux (would show an empty shell); tell the frontend
-    # so it can show a proper "connecting" / "disconnected" overlay.
+    # so it can show the step-progress overlay instead of error text.
     if is_remote_host(host):
-        await websocket.send_json(
-            {"type": "error", "message": "Remote session is reconnecting — PTY not attached yet"}
-        )
+        from orchestrator.session.reconnect import get_reconnect_lock, get_reconnect_step
+
+        # Auto-trigger reconnect if not already running.  The user has the
+        # terminal open (they sent a WS connect), so they're waiting — don't
+        # make them wait for the 5-minute health check interval.
+        step = get_reconnect_step(session_id)
+        if step is None and not get_reconnect_lock(session_id).locked():
+            try:
+                from orchestrator.session import is_reconnectable, trigger_reconnect
+                from orchestrator.state.repositories import sessions as _repo
+
+                _db = _get_conn(websocket)
+                _owns = getattr(websocket.app.state, "conn_factory", None) is not None
+                try:
+                    s = _repo.get_session(_db, session_id)
+                    if s and s.auto_reconnect and is_reconnectable(s.status):
+                        config = getattr(websocket.app.state, "config", {})
+                        api_port = config.get("server", {}).get("port", 8093)
+                        db_path = getattr(websocket.app.state, "db_path", None)
+                        tm = getattr(websocket.app.state, "tunnel_manager", None)
+                        trigger_reconnect(
+                            s, _db, db_path=db_path, api_port=api_port, tunnel_manager=tm
+                        )
+                        step = get_reconnect_step(session_id)
+                finally:
+                    if _owns:
+                        _db.close()
+            except Exception:
+                logger.debug("Auto-reconnect trigger failed for %s", session_id, exc_info=True)
+
+        await websocket.send_json({"type": "reconnect_status", "step": step})
         await websocket.close(code=4004)
         return
 

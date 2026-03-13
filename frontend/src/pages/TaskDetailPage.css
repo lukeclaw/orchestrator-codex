@@ -1556,7 +1556,7 @@
 .tdp-worker-preview-card .status-indicator.waiting { background: var(--yellow); }
 .tdp-worker-preview-card .status-indicator.paused { background: var(--orange, #f97316); }
 .tdp-worker-preview-card .status-indicator.disconnected { background: var(--red); }
-.tdp-worker-preview-card .status-indicator.connecting { background: var(--accent); }
+.tdp-worker-preview-card .status-indicator.connecting { background: var(--yellow); }
 
 .tdp-worker-preview-card .wc-type-tag {
   font-size: 11px;

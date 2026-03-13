@@ -11,6 +11,7 @@ interface Props {
   wsPath?: string  // Custom WebSocket path (default: /ws/terminal/{sessionId})
   sendPath?: string  // Custom REST send path (default: /api/sessions/{sessionId}/send)
   sessionStatus?: string  // Session status from parent (e.g., 'connecting', 'working')
+  reconnectStep?: string | null  // Current reconnect step from session state
   disableScrollback?: boolean  // Disable scrollback history (for rdev sessions with screen)
   onInputRef?: (fn: (text: string) => void) => void  // Expose function to inject text into terminal
   onFocusRef?: (fn: () => void) => void  // Expose function to focus the terminal
@@ -20,13 +21,23 @@ interface Props {
   onExit?: () => void  // Called when the underlying process exits (PTY closed)
 }
 
+const RECONNECT_STEPS = [
+  { key: 'tunnel', label: 'Establishing connection' },
+  { key: 'daemon', label: 'Connecting to server' },
+  { key: 'pty_check', label: 'Checking session' },
+  { key: 'deploy', label: 'Starting session' },  // covers deploy + pty_create + verify
+]
+
+// Backend emits deploy → pty_create → verify, but we show them as one UI step.
+const DEPLOY_GROUP = new Set(['deploy', 'pty_create', 'verify'])
+
 type ConnectionState = 'connecting' | 'connected' | 'disconnected' | 'reconnecting'
 
 // Reconnection backoff: 1s, 2s, 5s, 10s, 10s (max 5 attempts)
 const RECONNECT_DELAYS = [1000, 2000, 5000, 10000, 10000]
 const MAX_RECONNECT_ATTEMPTS = 5
 
-export default function TerminalView({ sessionId, wsPath, sendPath, sessionStatus, disableScrollback, onInputRef, onFocusRef, onImagePaste, onTextPaste, onPastingChange, onExit }: Props) {
+export default function TerminalView({ sessionId, wsPath, sendPath, sessionStatus, reconnectStep, disableScrollback, onInputRef, onFocusRef, onImagePaste, onTextPaste, onPastingChange, onExit }: Props) {
   const termRef = useRef<HTMLDivElement>(null)
   const terminalRef = useRef<Terminal | null>(null)
   const wsRef = useRef<WebSocket | null>(null)
@@ -47,6 +58,7 @@ export default function TerminalView({ sessionId, wsPath, sendPath, sessionStatu
   const [isFocused, setIsFocused] = useState(false)
   const [connectionState, setConnectionState] = useState<ConnectionState>('connecting')
   const [reconnectCountdown, setReconnectCountdown] = useState<number | null>(null)
+  const [wsReconnectStep, setWsReconnectStep] = useState<string | null>(null)
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null)
   // Once the terminal has received a successful WS connection, it's "ready" forever.
   // Before ready: show skeleton. After ready: show content (+ error overlay if disconnected).
@@ -58,6 +70,7 @@ export default function TerminalView({ sessionId, wsPath, sendPath, sessionStatu
   // Flag: set when the server reports the PTY process exited.
   // Prevents reconnection attempts — the process is gone, not just a network blip.
   const ptyExitedRef = useRef(false)
+
 
   // --- Typing latency tracker (component-level so both WS and onData can access) ---
   const latencyRef = useRef({
@@ -154,6 +167,7 @@ export default function TerminalView({ sessionId, wsPath, sendPath, sessionStatu
       setConnectionState('connected')
       setReady(true)
       setReconnectCountdown(null)
+      setWsReconnectStep(null)
       reconnectAttemptRef.current = 0
 
       // Send initial size after a brief delay so fit has completed
@@ -191,6 +205,9 @@ export default function TerminalView({ sessionId, wsPath, sendPath, sessionStatu
       // Use fixed 5s retries with NO attempt cap (session may take 60s+ to reconnect).
       if (event.code === 4004) {
         setConnectionState('reconnecting')
+        if (terminal.buffer.active.length > 0) {
+          terminal.write('\x1b[2J\x1b[H')  // Clear stale content
+        }
         const delay = 5000
         const delaySeconds = 5
         setReconnectCountdown(delaySeconds)
@@ -311,6 +328,9 @@ export default function TerminalView({ sessionId, wsPath, sendPath, sessionStatu
           // The underlying PTY process exited — suppress reconnection
           ptyExitedRef.current = true
           onExitRef.current?.()
+        } else if (msg.type === 'reconnect_status') {
+          // Capture step locally so the overlay shows it immediately
+          setWsReconnectStep(msg.step ?? null)
         } else if (msg.type === 'error') {
           terminal.write(`\r\n\x1b[31m${msg.message}\x1b[0m\r\n`)
         }
@@ -572,15 +592,34 @@ export default function TerminalView({ sessionId, wsPath, sendPath, sessionStatu
     }
   }, [sessionStatus, connectionState, connectWebSocket, cancelPendingReconnect])
 
-  // Before first successful connection: always show skeleton, never show errors.
-  // After first connection: show content; overlay only if connection is lost.
+  // Parse reconnect step — merge prop (from session API/WS event) and local WS capture
+  const effectiveStep = reconnectStep ?? wsReconnectStep
+  const isFailed = effectiveStep?.startsWith('failed:') ?? false
+  const rawStep = isFailed ? effectiveStep!.replace('failed:', '') : effectiveStep
+  // Collapse deploy/pty_create/verify into the single "deploy" UI step
+  const activeStep = rawStep && DEPLOY_GROUP.has(rawStep) ? 'deploy' : rawStep
+  const hasReconnectStep = !!activeStep
+
+  // Determine overlay type (mutually exclusive, in priority order)
+  const isReconnecting = (
+    sessionStatus === 'connecting' || (ready && connectionState === 'reconnecting')
+  )
+  const showFailedOverlay = (
+    (sessionStatus === 'disconnected' || sessionStatus === 'error') && isFailed
+  )
+  const isInitialSetup = isLocked && !ready && !hasReconnectStep
+
+  let overlayType: 'reconnect' | 'initial' | 'lost' | null = null
+  if (isReconnecting || showFailedOverlay) {
+    overlayType = 'reconnect'
+  } else if (isInitialSetup) {
+    overlayType = 'initial'
+  } else if (ready && connectionState !== 'connected') {
+    overlayType = 'lost'
+  }
+
   const showSkeleton = !ready
-  const showOverlay = isLocked || (ready && connectionState !== 'connected')
-  const overlayMessage = isLocked
-    ? 'Setting up connection...'
-    : connectionState === 'reconnecting'
-    ? `Reconnecting${reconnectCountdown ? ` in ${reconnectCountdown}s` : '...'}`
-    : 'Connection lost'
+  const showOverlay = overlayType !== null
 
   // Build CSS classes
   const containerClasses = [
@@ -700,14 +739,63 @@ export default function TerminalView({ sessionId, wsPath, sendPath, sessionStatu
       )}
       {showOverlay && (
         <div className="terminal-overlay">
-          <div className="terminal-overlay-content">
-            <span className="terminal-overlay-message">{overlayMessage}</span>
-            {connectionState === 'disconnected' && (
-              <button className="terminal-retry-btn" onClick={handleRetry}>
-                Retry
-              </button>
-            )}
-          </div>
+          {overlayType === 'reconnect' ? (
+            <div className="terminal-reconnect-progress">
+              <div className="trp-header">
+                {isFailed ? 'Reconnect failed' : 'Reconnecting'}
+              </div>
+              <div className="trp-steps">
+                {RECONNECT_STEPS.map((step, idx) => {
+                  const stepIdx = RECONNECT_STEPS.findIndex(s => s.key === activeStep)
+                  const thisIdx = idx
+                  const isDone = hasReconnectStep && stepIdx >= 0 && thisIdx < stepIdx
+                  const isCurrent = hasReconnectStep && step.key === activeStep
+                  // When no step data yet, pulse the first step as "waiting"
+                  const isWaiting = !hasReconnectStep && idx === 0
+                  const isFailedStep = isCurrent && isFailed
+                  const cls = [
+                    'trp-step',
+                    isDone && 'done',
+                    isCurrent && 'current',
+                    isFailedStep && 'failed',
+                    isWaiting && 'waiting',
+                  ].filter(Boolean).join(' ')
+                  return (
+                    <div key={step.key} className={cls}>
+                      <span className="trp-step-dot">
+                        {isDone ? (
+                          <svg width="14" height="14" viewBox="0 0 14 14"><circle cx="7" cy="7" r="7" fill="currentColor" opacity="0.15"/><path d="M4 7l2 2 4-4" stroke="currentColor" strokeWidth="1.5" fill="none" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                        ) : isFailedStep ? (
+                          <svg width="14" height="14" viewBox="0 0 14 14"><circle cx="7" cy="7" r="7" fill="currentColor" opacity="0.15"/><path d="M5 5l4 4M9 5l-4 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>
+                        ) : (isCurrent || isWaiting) ? (
+                          <span className="trp-dot-active" />
+                        ) : (
+                          <span className="trp-dot-idle" />
+                        )}
+                      </span>
+                      <span className="trp-step-label">{step.label}</span>
+                    </div>
+                  )
+                })}
+              </div>
+              {showFailedOverlay && (
+                <button className="terminal-retry-btn" onClick={handleRetry}>Retry</button>
+              )}
+            </div>
+          ) : (
+            <div className="terminal-overlay-content">
+              <span className="terminal-overlay-message">
+                {overlayType === 'initial'
+                  ? 'Setting up connection...'
+                  : connectionState === 'reconnecting'
+                    ? `Reconnecting${reconnectCountdown ? ` in ${reconnectCountdown}s` : '...'}`
+                    : 'Connection lost'}
+              </span>
+              {connectionState === 'disconnected' && !isLocked && (
+                <button className="terminal-retry-btn" onClick={handleRetry}>Retry</button>
+              )}
+            </div>
+          )}
         </div>
       )}
       {contextMenu && (

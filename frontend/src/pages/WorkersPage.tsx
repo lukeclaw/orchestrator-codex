@@ -25,7 +25,7 @@ const STATUS_COLORS: Record<string, string> = {
   paused: '#f97316',
   error: '#f85149',
   disconnected: '#f85149',
-  connecting: '#58a6ff',
+  connecting: '#d29922',
 }
 
 export default function WorkersPage() {

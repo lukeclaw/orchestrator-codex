@@ -211,8 +211,8 @@
 }
 
 .pt-worker-tag.connecting {
-  background: rgba(88, 166, 255, 0.08);
-  color: var(--accent);
+  background: rgba(210, 153, 34, 0.08);
+  color: var(--yellow);
 }
 
 /* Status column */

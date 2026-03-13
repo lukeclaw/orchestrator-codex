@@ -88,6 +88,56 @@ def cleanup_reconnect_lock(session_id: str):
     """Remove the per-session reconnect lock (call on session delete)."""
     with _registry_lock:
         _reconnect_locks.pop(session_id, None)
+    clear_reconnect_step(session_id)
+
+
+# =============================================================================
+# In-Memory Reconnect Step Tracking (Ephemeral)
+# =============================================================================
+
+# Key: session_id, Value: step string (e.g. "tunnel", "daemon", "failed:daemon")
+_reconnect_steps: dict[str, str] = {}
+_steps_lock = threading.Lock()
+
+
+def get_reconnect_step(session_id: str) -> str | None:
+    """Read the current reconnect step for a session (thread-safe)."""
+    with _steps_lock:
+        return _reconnect_steps.get(session_id)
+
+
+def _set_reconnect_step(session_id: str, step: str):
+    """Update the reconnect step and broadcast to frontend via event bus."""
+    with _steps_lock:
+        _reconnect_steps[session_id] = step
+    try:
+        from orchestrator.core.events import Event, publish
+
+        publish(
+            Event(
+                type="reconnect.step_changed",
+                data={"session_id": session_id, "step": step},
+            )
+        )
+    except Exception:
+        pass  # Non-critical
+
+
+def clear_reconnect_step(session_id: str):
+    """Clear the reconnect step (call on success, or session delete)."""
+    with _steps_lock:
+        _reconnect_steps.pop(session_id, None)
+    try:
+        from orchestrator.core.events import Event, publish
+
+        publish(
+            Event(
+                type="reconnect.step_changed",
+                data={"session_id": session_id, "step": None},
+            )
+        )
+    except Exception:
+        pass
 
 
 # =============================================================================
@@ -610,16 +660,19 @@ def _reconnect_rws_pty_worker(conn, session, repo, tunnel_manager):
     api_base = "http://127.0.0.1:8093"
 
     # 1. Ensure reverse tunnel alive
+    _set_reconnect_step(session.id, "tunnel")
     if tunnel_manager and not tunnel_manager.is_alive(session.id):
         _ensure_tunnel(session, tunnel_manager, repo, conn)
 
     # 2. Ensure RWS daemon connected
+    _set_reconnect_step(session.id, "daemon")
     rws = _ensure_rws_ready(session.host, timeout=30)
 
     # 3. Reconnect RWS forward tunnel if needed
     _reconnect_rws_for_host(session)
 
     # 4. Check PTY status
+    _set_reconnect_step(session.id, "pty_check")
     try:
         resp = rws.execute({"action": "pty_list"}, timeout=5)
         ptys = resp.get("ptys", [])
@@ -664,10 +717,12 @@ def _reconnect_rws_pty_worker(conn, session, repo, tunnel_manager):
             pass
 
     # 5. PTY dead or gone — redeploy files and recreate
+    _set_reconnect_step(session.id, "deploy")
     _ensure_local_configs_exist(tmp_dir, session.id, api_base, conn=conn)
     _copy_configs_to_remote(session.host, tmp_dir, remote_tmp_dir, session.name)
 
     # 6. Create new PTY
+    _set_reconnect_step(session.id, "pty_create")
     target_id = session.claude_session_id or session.id
     session_exists = _check_claude_session_exists_remote(session.host, target_id)
     claude_cmd = _build_claude_command(
@@ -688,6 +743,7 @@ def _reconnect_rws_pty_worker(conn, session, repo, tunnel_manager):
     logger.info("Reconnect RWS %s: created new PTY %s", session.name, pty_id)
 
     # 7. Verify
+    _set_reconnect_step(session.id, "verify")
     time.sleep(3)
     try:
         resp = rws.execute({"action": "pty_list"}, timeout=5)
@@ -773,6 +829,7 @@ def reconnect_remote_worker(
         # ── No rws_pty_id: either new session, legacy migration, or
         #    health check cleared it because daemon was unreachable.
         #    First check if a PTY for this session is already alive. ────────
+        _set_reconnect_step(session.id, "tunnel")
         rws = _ensure_rws_ready(session.host, timeout=30)
 
         # Ensure reverse tunnel alive (for API callbacks)
@@ -780,9 +837,11 @@ def reconnect_remote_worker(
             _ensure_tunnel(session, tunnel_manager, repo, conn)
 
         # Re-establish RWS forward tunnel (may have died with SSH)
+        _set_reconnect_step(session.id, "daemon")
         _reconnect_rws_for_host(session)
 
         # Check if there's already a PTY running for this session
+        _set_reconnect_step(session.id, "pty_check")
         try:
             resp = rws.execute({"action": "pty_list"}, timeout=5)
             ptys = resp.get("ptys", [])
@@ -814,6 +873,7 @@ def reconnect_remote_worker(
             )
 
         # Deploy configs
+        _set_reconnect_step(session.id, "deploy")
         api_base = f"http://127.0.0.1:{api_port}"
         _ensure_local_configs_exist(tmp_dir, session.id, api_base, conn=conn)
         _copy_configs_to_remote(session.host, tmp_dir, remote_tmp_dir, session.name)
@@ -831,6 +891,7 @@ def reconnect_remote_worker(
         )
 
         # Create PTY
+        _set_reconnect_step(session.id, "pty_create")
         pty_id = rws.create_pty(
             cmd=claude_cmd,
             cwd=session.work_dir or os.path.expanduser("~"),
@@ -1134,9 +1195,13 @@ def trigger_reconnect(
                     tunnel_manager=tunnel_manager,
                 )
                 logger.info("Reconnect succeeded for %s", _session.name)
+                clear_reconnect_step(_session.id)
             except Exception:
                 logger.exception("Reconnect failed for %s", _session.name)
                 try:
+                    current_step = get_reconnect_step(_session.id)
+                    if current_step and not current_step.startswith("failed:"):
+                        _set_reconnect_step(_session.id, f"failed:{current_step}")
                     repo.update_session(bg_conn, _session.id, status="disconnected")
                 except Exception:
                     pass

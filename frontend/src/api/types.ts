@@ -12,6 +12,7 @@ export interface Session {
   preview?: string
   auto_reconnect: boolean
   rws_pty_id: string | null
+  reconnect_step: string | null
 }
 
 export interface WorkerDetail {

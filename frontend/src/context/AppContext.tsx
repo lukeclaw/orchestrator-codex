@@ -193,6 +193,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
               next.delete(msg.data.session_id)
               return next
             })
+          } else if (msg.type === 'reconnect.step_changed' && msg.data?.session_id) {
+            setSessions(prev => prev.map(s =>
+              s.id === msg.data.session_id
+                ? { ...s, reconnect_step: msg.data.step }
+                : s
+            ))
           } else {
             // Other messages trigger data refresh
             fetchAll()
