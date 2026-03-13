@@ -114,6 +114,34 @@ export default function TerminalView({ sessionId, wsPath, sendPath, sessionStatu
     let userScrolledUp = false
     let lastSyncHash: number | null = null  // CRC32 from last sync message
 
+    // Write batching: small frames (keystroke echoes) are written immediately
+    // for low latency.  Larger frames are deferred to the next animation frame
+    // so that screen-clearing sequences and their content are processed as one
+    // atomic terminal.write(), preventing the "history flash" artifact.
+    const pendingWrites: Uint8Array[] = []
+    let writeRafId: number | null = null
+    const IMMEDIATE_THRESHOLD = 128 // bytes — keystroke echoes are 1-10 bytes
+
+    function flushPendingWrites() {
+      writeRafId = null
+      if (userScrolledUp || pendingWrites.length === 0) {
+        pendingWrites.length = 0
+        return
+      }
+      if (pendingWrites.length === 1) {
+        terminal.write(pendingWrites[0])
+      } else {
+        const total = pendingWrites.reduce((n, b) => n + b.length, 0)
+        const merged = new Uint8Array(total)
+        let off = 0
+        for (const b of pendingWrites) {
+          merged.set(b, off)
+          off += b.length
+        }
+        terminal.write(merged)
+      }
+      pendingWrites.length = 0
+    }
 
     // Track when user scrolls up to pause live updates
     const scrollDisposable = terminal.onScroll(() => {
@@ -146,6 +174,8 @@ export default function TerminalView({ sessionId, wsPath, sendPath, sessionStatu
 
     ws.onclose = (event) => {
       scrollDisposable.dispose()
+      if (writeRafId !== null) { cancelAnimationFrame(writeRafId); writeRafId = null }
+      pendingWrites.length = 0
 
       // Ignore close events from stale WebSocket instances
       // (e.g., React Strict Mode unmounts WS #1, but WS #2 is already current)
@@ -231,10 +261,20 @@ export default function TerminalView({ sessionId, wsPath, sendPath, sessionStatu
           latencyRef.current.lastInputTime = 0  // reset — only measure first echo after input
           recordLatency(latencyMs)
         }
-        // Write to terminal unless user is scrolled up reviewing history
-        if (!userScrolledUp) {
-          const bytes = new Uint8Array(event.data)
-          terminal.write(bytes)
+        const bytes = new Uint8Array(event.data)
+        if (bytes.length < IMMEDIATE_THRESHOLD && pendingWrites.length === 0) {
+          // Small frame with nothing pending — write immediately (low latency
+          // path for keystroke echoes).
+          if (!userScrolledUp) {
+            terminal.write(bytes)
+          }
+        } else {
+          // Larger frame or data already pending — batch into next animation
+          // frame so screen-clearing sequences and content are atomic.
+          pendingWrites.push(bytes)
+          if (writeRafId === null) {
+            writeRafId = requestAnimationFrame(flushPendingWrites)
+          }
         }
         // NOTE: No ACK needed — server uses snapshot recovery instead
         // of drop-based flow control.  Bytes are never dropped.
