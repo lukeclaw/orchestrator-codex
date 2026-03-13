@@ -111,6 +111,14 @@ Print recap of what was created and assigned.
 
 ---
 
+## rdev Quick Reference
+
+- **List sessions:** `rdev list` — shows MP name, session name, and status
+- **Host format:** `MP_NAME/SESSION_NAME` (e.g. `subs-mt/sleepy-franklin`) — the slash triggers rdev mode; use `localhost` for local workers
+- **Brain's job:** just set the host — the API handles tunnel setup, SSH, Claude launch, and sending the initial message
+
+---
+
 ## Key Rules
 
 - **Two separate approval gates** — never combine creation and assignment into one prompt
