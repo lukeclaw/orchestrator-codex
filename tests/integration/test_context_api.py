@@ -12,7 +12,7 @@ from orchestrator.state.migrations.runner import apply_migrations
 def client():
     conn = get_memory_connection()
     apply_migrations(conn)
-    app = create_app(db=conn)
+    app = create_app(db=conn, test_mode=True)
     with TestClient(app) as c:
         yield c
 

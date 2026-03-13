@@ -124,7 +124,7 @@ def test_05_session_detail_page(page, server):
     card = page.query_selector("[data-session-id='s1']")
     assert card is not None
     card.click()
-    page.wait_for_timeout(1500)
+    page.wait_for_url("**/workers/s1", timeout=5000)
 
     screenshot(page, "05_session_detail")
 
@@ -134,12 +134,6 @@ def test_05_session_detail_page(page, server):
     # Session name should be visible
     text = page.inner_text("body")
     assert "worker-alpha" in text
-
-    # Navigate back
-    back_btn = page.query_selector("text=Dashboard")
-    if back_btn:
-        back_btn.click()
-        page.wait_for_timeout(1000)
 
 
 # ---------------------------------------------------------------------------
@@ -168,7 +162,7 @@ def test_10_brain_sidebar(page):
 def test_11_responsive_layout(page):
     """At 600px width, layout switches to single column."""
     page.set_viewport_size({"width": 600, "height": 900})
-    page.wait_for_timeout(500)
+    page.wait_for_timeout(200)
 
     screenshot(page, "11_responsive")
 
@@ -210,7 +204,7 @@ def test_14_smart_paste_on_worker_page(page):
     card = page.query_selector("[data-session-id='s1']")
     assert card is not None
     card.click()
-    page.wait_for_timeout(1500)
+    page.wait_for_url("**/workers/s1", timeout=5000)
 
     screenshot(page, "14_paste_worker_page")
 

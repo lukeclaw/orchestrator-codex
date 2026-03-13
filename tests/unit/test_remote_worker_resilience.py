@@ -8,13 +8,11 @@ Covers:
 - Pool lock narrowing (get_remote_worker_server lock scope)
 """
 
-import threading
 import time
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
-
 
 # ===========================================================================
 # Circuit Breaker
@@ -190,9 +188,8 @@ class TestPtyExitHardeningStreamEOF:
         we should NOT confirm dead — health check will sort it out."""
         import asyncio
 
-        from tests.test_pty_stream import FakeWebSocket
-
         from orchestrator.api.ws_terminal import stream_remote_pty
+        from tests.test_pty_stream import FakeWebSocket
 
         ws = FakeWebSocket()
         ws.accepted = True
@@ -236,9 +233,8 @@ class TestPtyExitHardeningStreamEOF:
         """When daemon's PTY list has our PTY with alive=False, confirm dead."""
         import asyncio
 
-        from tests.test_pty_stream import FakeWebSocket
-
         from orchestrator.api.ws_terminal import stream_remote_pty
+        from tests.test_pty_stream import FakeWebSocket
 
         ws = FakeWebSocket()
         ws.accepted = True
@@ -295,9 +291,8 @@ class TestStreamIdleTimeout:
         stream_closed should be set without pty_exited."""
         import asyncio
 
-        from tests.test_pty_stream import FakeWebSocket
-
         from orchestrator.api.ws_terminal import stream_remote_pty
+        from tests.test_pty_stream import FakeWebSocket
 
         ws = FakeWebSocket()
         ws.accepted = True

@@ -202,7 +202,7 @@ class TestAPIErrorHandling:
         # Create rdev session
         session = repo.create_session(conn, "test-worker", "user/rdev-vm", "/tmp/work")
 
-        app = create_app(db=conn)
+        app = create_app(db=conn, test_mode=True)
         with (
             TestClient(app) as client,
             patch(

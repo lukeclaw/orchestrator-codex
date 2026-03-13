@@ -166,9 +166,23 @@ async def lifespan(app: FastAPI):
         conn.close()
 
 
+@asynccontextmanager
+async def _test_lifespan(app: FastAPI):
+    """Minimal lifespan for tests — skips orchestrator/tunnel/rdev startup."""
+    from orchestrator.api.websocket import init_event_loop
+
+    init_event_loop()
+    app.state.config = {}
+    yield
+    conn = getattr(app.state, "conn", None)
+    if conn:
+        conn.close()
+
+
 def create_app(
     db: sqlite3.Connection | None = None,
     db_path: str | None = None,
+    test_mode: bool = False,
 ) -> FastAPI:
     """Create and configure the FastAPI application."""
     from orchestrator import __version__
@@ -176,7 +190,7 @@ def create_app(
     app = FastAPI(
         title="Orchestrator",
         version=__version__,
-        lifespan=lifespan,
+        lifespan=_test_lifespan if test_mode else lifespan,
     )
 
     # CORS

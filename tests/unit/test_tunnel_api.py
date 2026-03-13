@@ -27,7 +27,7 @@ def db():
 @pytest.fixture
 def client(db):
     """Create a test client with the in-memory database."""
-    app = create_app(db=db)
+    app = create_app(db=db, test_mode=True)
     with TestClient(app) as c:
         yield c
 

@@ -25,7 +25,7 @@ def pytest_collection_modifyitems(items):
     """E2E tests need longer timeouts and real I/O (server, browser)."""
     for item in items:
         if not item.get_closest_marker("timeout"):
-            item.add_marker(pytest.mark.timeout(60))
+            item.add_marker(pytest.mark.timeout(30))
         item.add_marker(pytest.mark.allow_subprocess)
         item.add_marker(pytest.mark.allow_network)
 
@@ -114,8 +114,25 @@ def server(e2e_db_path, server_port):
     """Start a uvicorn subprocess and wait for it to be ready.
 
     Each xdist worker gets its own server on a unique port.
+    Kills any stale server on the port first to avoid connecting to old data.
     """
     import httpx
+
+    # Kill any stale server left over from a previous test run
+    try:
+        result = subprocess.run(
+            ["lsof", "-iTCP:" + str(server_port), "-sTCP:LISTEN", "-t"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        for pid in result.stdout.strip().split():
+            if pid:
+                os.kill(int(pid), signal.SIGKILL)
+        if result.stdout.strip():
+            time.sleep(0.5)  # Wait for port to be released
+    except (subprocess.TimeoutExpired, OSError, ValueError):
+        pass
 
     env = {
         **os.environ,
@@ -178,6 +195,14 @@ SCREENSHOT_DIR = Path(__file__).parent.parent.parent / "tmp" / "screenshots"
 
 
 @pytest.fixture(scope="module")
+def browser_context(browser_instance, server):
+    """Module-scoped browser context, reused across tests for speed."""
+    ctx = browser_instance.new_context(viewport={"width": 1400, "height": 900})
+    yield ctx
+    ctx.close()
+
+
+@pytest.fixture(scope="module")
 def browser_instance():
     """Launch a browser for the e2e test module.
 
@@ -216,10 +241,13 @@ def browser_instance():
 
 
 @pytest.fixture()
-def page(browser_instance, server):
-    """Create a fresh page per test, navigated to the dashboard."""
-    ctx = browser_instance.new_context(viewport={"width": 1400, "height": 900})
-    pg = ctx.new_page()
+def page(browser_context, server):
+    """Create a fresh page per test, navigated to the dashboard.
+
+    Reuses the module-scoped browser context for speed — only creates a new
+    page tab instead of a full context + page.
+    """
+    pg = browser_context.new_page()
 
     # Collect console errors
     pg._console_errors = []
@@ -228,14 +256,13 @@ def page(browser_instance, server):
     )
 
     pg.goto(server + "/")
-    pg.wait_for_load_state("networkidle")
-    # Wait for React hydration — stats bar is one of the first things rendered
+    # Wait for React hydration + API data to load
     pg.wait_for_selector("[data-testid='stats-bar']", timeout=10000)
-    pg.wait_for_timeout(500)  # Reduced from 1500ms for faster tests
+    pg.wait_for_selector("[data-testid='worker-card']", timeout=5000)
 
     yield pg
 
-    ctx.close()
+    pg.close()
 
 
 def screenshot(page, name: str, full_page: bool = False):

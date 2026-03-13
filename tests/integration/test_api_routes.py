@@ -15,7 +15,7 @@ from orchestrator.state.migrations.runner import apply_migrations
 def client():
     conn = get_memory_connection()
     apply_migrations(conn)
-    app = create_app(db=conn)
+    app = create_app(db=conn, test_mode=True)
     with TestClient(app) as c:
         yield c
 
@@ -311,6 +311,8 @@ class TestTasks:
 
 # --- Brain ---
 
+_SKIP_UPDATE = "orchestrator.terminal.claude_update.should_update_before_start"
+
 
 class TestBrain:
     def test_brain_status_not_running(self, client):
@@ -323,7 +325,7 @@ class TestBrain:
 
     def test_brain_start_fresh(self, client):
         """Start brain when no brain session exists yet."""
-        with patch("orchestrator.api.routes.brain.time.sleep"):  # Speed up test
+        with patch(_SKIP_UPDATE, return_value=False):
             with patch("orchestrator.api.routes.brain.tmux") as mock_tmux:
                 mock_tmux.pane_foreground_command.return_value = None
                 mock_tmux.ensure_window.return_value = "orchestrator:brain"
@@ -342,7 +344,7 @@ class TestBrain:
 
     def test_brain_start_already_running(self, client):
         """Starting brain when already running returns early with existing info."""
-        with patch("orchestrator.api.routes.brain.time.sleep"):  # Speed up test
+        with patch(_SKIP_UPDATE, return_value=False):
             with patch("orchestrator.api.routes.brain.tmux") as mock_tmux:
                 mock_tmux.pane_foreground_command.return_value = None
                 mock_tmux.ensure_window.return_value = "orchestrator:brain"
@@ -356,7 +358,7 @@ class TestBrain:
 
     def test_brain_start_after_stopped(self, client):
         """Restarting brain after stop reuses the existing session record."""
-        with patch("orchestrator.api.routes.brain.time.sleep"):  # Speed up test
+        with patch(_SKIP_UPDATE, return_value=False):
             with patch("orchestrator.api.routes.brain.tmux") as mock_tmux:
                 mock_tmux.pane_foreground_command.return_value = None
                 mock_tmux.ensure_window.return_value = "orchestrator:brain"
@@ -377,7 +379,7 @@ class TestBrain:
         assert second.json()["status"] == "working"
 
     def test_brain_stop(self, client):
-        with patch("orchestrator.api.routes.brain.time.sleep"):  # Speed up test
+        with patch(_SKIP_UPDATE, return_value=False):
             with patch("orchestrator.api.routes.brain.tmux") as mock_tmux:
                 mock_tmux.ensure_window.return_value = "orchestrator:brain"
                 mock_tmux.send_keys.return_value = True
@@ -410,7 +412,7 @@ class TestBrain:
 
     def test_brain_session_appears_in_sessions_list(self, client):
         """Brain session should appear in GET /api/sessions with all fields."""
-        with patch("orchestrator.api.routes.brain.time.sleep"):  # Speed up test
+        with patch(_SKIP_UPDATE, return_value=False):
             with patch("orchestrator.api.routes.brain.tmux") as mock_tmux:
                 mock_tmux.pane_foreground_command.return_value = None
                 mock_tmux.ensure_window.return_value = "orchestrator:brain"

@@ -29,6 +29,25 @@ from orchestrator.state.migrations.runner import apply_migrations
 # messages from capture_output / send_keys in integration tests).
 logging.getLogger("orchestrator").setLevel(logging.ERROR)
 
+
+# ---------------------------------------------------------------------------
+# Test ordering — schedule slow e2e tests first so their long setup
+# (server startup, browser launch) overlaps with fast unit/integration tests.
+# ---------------------------------------------------------------------------
+
+
+def pytest_collection_modifyitems(items):
+    """Reorder tests so e2e tests are collected first.
+
+    With xdist ``--dist load``, the first tests collected get assigned to
+    workers first.  By putting e2e tests at the front, a worker begins the
+    ~9 s server startup immediately while other workers run fast unit tests.
+    """
+    e2e = [i for i in items if "/e2e/" in str(i.fspath)]
+    rest = [i for i in items if "/e2e/" not in str(i.fspath)]
+    items[:] = e2e + rest
+
+
 # ---------------------------------------------------------------------------
 # tmux session isolation — all tests use "orchestrator-test" instead of
 # "orchestrator" so test windows never pollute the user's real session.
@@ -197,6 +216,7 @@ _SLEEP_MODULES = [
     "orchestrator.terminal.ssh",
     "orchestrator.terminal.markers",
     "orchestrator.terminal.remote_worker_server",
+    "orchestrator.terminal.claude_update",
     "orchestrator.api.routes.sessions",
     "orchestrator.api.routes.brain",
     "orchestrator.api.routes.files",

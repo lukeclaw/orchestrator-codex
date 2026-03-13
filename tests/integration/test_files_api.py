@@ -25,7 +25,7 @@ def client_with_session(tmp_path):
     """Create a test client with a session whose work_dir is tmp_path."""
     conn = get_memory_connection()
     apply_migrations(conn)
-    app = create_app(db=conn)
+    app = create_app(db=conn, test_mode=True)
 
     # Create a session with work_dir pointing to tmp_path
     session = repo.create_session(
@@ -324,7 +324,7 @@ def client_with_remote_session(tmp_path):
     """
     conn = get_memory_connection()
     apply_migrations(conn)
-    app = create_app(db=conn)
+    app = create_app(db=conn, test_mode=True)
 
     session = repo.create_session(
         conn,
@@ -595,21 +595,24 @@ class TestReadFileContent:
 
 
 class TestRateLimiting:
-    def test_rate_limit_exceeded(self, client_with_session):
+    def test_rate_limit_exceeded(self, client_with_session, monkeypatch):
         client, session_id, tmp_path = client_with_session
         (tmp_path / "file.txt").write_text("hi")
 
+        # Lower the rate limit to speed up the test
+        import orchestrator.api.routes.files as files_mod
+
+        monkeypatch.setattr(files_mod, "_RATE_LIMIT", 5)
+
         # Clear any existing rate limit state
-        from orchestrator.api.routes.files import _rate_limits
+        files_mod._rate_limits.pop(session_id, None)
 
-        _rate_limits.pop(session_id, None)
-
-        # Send 60 requests (should all succeed)
-        for _ in range(60):
+        # Send 5 requests (should all succeed)
+        for _ in range(5):
             resp = client.get(f"/api/sessions/{session_id}/files")
             assert resp.status_code == 200
 
-        # 61st should be rate limited
+        # 6th should be rate limited
         resp = client.get(f"/api/sessions/{session_id}/files")
         assert resp.status_code == 429
 
