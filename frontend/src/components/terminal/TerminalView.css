@@ -328,3 +328,30 @@
 .trp-step-label {
   line-height: 1;
 }
+
+/* Drag-and-drop file overlay */
+.terminal-drop-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 15; /* above terminal-overlay (10), below context menu (99) */
+  background: rgba(13, 17, 23, 0.6);
+  border: 2px dashed rgba(88, 166, 255, 0.6);
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.terminal-drop-overlay-text {
+  color: #e6edf3;
+  font-size: 13px;
+  font-weight: 500;
+  padding: 6px 16px;
+  background: rgba(22, 27, 34, 0.9);
+  border-radius: 6px;
+  border: 1px solid rgba(48, 54, 61, 0.8);
+}

@@ -17,6 +17,7 @@ interface Props {
   onFocusRef?: (fn: () => void) => void  // Expose function to focus the terminal
   onImagePaste?: (file: File) => void  // Handle image paste from Cmd+V
   onTextPaste?: (text: string) => void  // Handle long text paste from Cmd+V
+  onFileDrop?: (file: File) => void  // Handle non-image file drop from Finder
   onPastingChange?: (pasting: boolean) => void  // Notify parent when context-menu paste is in progress
   onExit?: () => void  // Called when the underlying process exits (PTY closed)
 }
@@ -38,7 +39,7 @@ type ConnectionState = 'connecting' | 'connected' | 'disconnected' | 'reconnecti
 const RECONNECT_DELAYS = [1000, 2000, 5000, 10000, 10000]
 const MAX_RECONNECT_ATTEMPTS = 5
 
-export default function TerminalView({ sessionId, wsPath, sendPath, sessionStatus, reconnectStep, disableScrollback, onInputRef, onFocusRef, onImagePaste, onTextPaste, onPastingChange, onExit }: Props) {
+export default function TerminalView({ sessionId, wsPath, sendPath, sessionStatus, reconnectStep, disableScrollback, onInputRef, onFocusRef, onImagePaste, onTextPaste, onFileDrop, onPastingChange, onExit }: Props) {
   const termRef = useRef<HTMLDivElement>(null)
   const terminalRef = useRef<Terminal | null>(null)
   const wsRef = useRef<WebSocket | null>(null)
@@ -53,11 +54,17 @@ export default function TerminalView({ sessionId, wsPath, sendPath, sessionStatu
   onTextPasteRef.current = onTextPaste
   const onPastingChangeRef = useRef(onPastingChange)
   onPastingChangeRef.current = onPastingChange
+  const onFileDropRef = useRef(onFileDrop)
+  onFileDropRef.current = onFileDrop
   const onExitRef = useRef(onExit)
   onExitRef.current = onExit
 
   const [isFocused, setIsFocused] = useState(false)
+  const [dragOver, setDragOver] = useState(false)
+  const dragCounterRef = useRef(0)
   const [connectionState, setConnectionState] = useState<ConnectionState>('connecting')
+  const connectionStateRef = useRef<ConnectionState>('connecting')
+  connectionStateRef.current = connectionState
   const [reconnectCountdown, setReconnectCountdown] = useState<number | null>(null)
   const [wsReconnectStep, setWsReconnectStep] = useState<string | null>(null)
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null)
@@ -525,6 +532,54 @@ export default function TerminalView({ sessionId, wsPath, sendPath, sessionStatu
       }, { passive: false, capture: true, signal: wheelAbort.signal })
     }
 
+    // Drag-and-drop file support
+    const dropAbort = new AbortController()
+    const dropTarget = termRef.current?.closest('.terminal-container') as HTMLElement | null
+    if (dropTarget) {
+      dropTarget.addEventListener('dragenter', (e: DragEvent) => {
+        e.preventDefault()
+        dragCounterRef.current++
+        if (dragCounterRef.current === 1) setDragOver(true)
+      }, { signal: dropAbort.signal })
+
+      dropTarget.addEventListener('dragover', (e: DragEvent) => {
+        e.preventDefault()
+        if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy'
+      }, { signal: dropAbort.signal })
+
+      dropTarget.addEventListener('dragleave', () => {
+        dragCounterRef.current--
+        if (dragCounterRef.current <= 0) {
+          dragCounterRef.current = 0
+          setDragOver(false)
+        }
+      }, { signal: dropAbort.signal })
+
+      dropTarget.addEventListener('drop', (e: DragEvent) => {
+        e.preventDefault()
+        dragCounterRef.current = 0
+        setDragOver(false)
+
+        const cs = connectionStateRef.current
+        if (cs === 'disconnected' || cs === 'connecting') return
+        if (pasteInProgress) return
+
+        const file = e.dataTransfer?.files?.[0]
+        if (!file) return
+        // Skip directories (heuristic: 0 bytes + empty type)
+        if (file.size === 0 && file.type === '') return
+
+        if (file.type.startsWith('image/')) {
+          onImagePasteRef.current?.(file)
+        } else {
+          onFileDropRef.current?.(file)
+        }
+
+        // Refocus terminal after drop so user can immediately type
+        terminalRef.current?.focus()
+      }, { signal: dropAbort.signal })
+    }
+
     // Handle resize
     let resizeTimeout: ReturnType<typeof setTimeout>
     const observer = new ResizeObserver(() => {
@@ -557,6 +612,7 @@ export default function TerminalView({ sessionId, wsPath, sendPath, sessionStatu
       }
       pasteAbort.abort()   // guaranteed to remove the paste listener
       wheelAbort.abort()   // guaranteed to remove the wheel listener
+      dropAbort.abort()    // guaranteed to remove drag/drop listeners
       wsRef.current?.close()
       terminal.dispose()
     }
@@ -807,6 +863,11 @@ export default function TerminalView({ sessionId, wsPath, sendPath, sessionStatu
               )}
             </div>
           )}
+        </div>
+      )}
+      {dragOver && (
+        <div className="terminal-drop-overlay">
+          <span className="terminal-drop-overlay-text">Drop file to paste path</span>
         </div>
       )}
       {contextMenu && (

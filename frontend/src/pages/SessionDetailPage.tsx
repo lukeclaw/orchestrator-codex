@@ -1,6 +1,8 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import { api, ApiError } from '../api/client'
+import Modal from '../components/common/Modal'
+import { isSupportedDropFile, LARGE_FILE_THRESHOLD, fileToBase64 } from '../utils/fileDropUtils'
 import { useNotify } from '../context/NotificationContext'
 import { useApp } from '../context/AppContext'
 import { useSmartPaste } from '../hooks/useSmartPaste'
@@ -52,6 +54,9 @@ export default function SessionDetailPage() {
   const [pasting, setPasting] = useState(false)
   const [ctxPasting, setCtxPasting] = useState(false)
   const [showAssignTask, setShowAssignTask] = useState(false)
+  const [dropFile, setDropFile] = useState<File | null>(null)
+  const [dropUploading, setDropUploading] = useState(false)
+  const [showLargeFileModal, setShowLargeFileModal] = useState(false)
   const [feConnecting, setFeConnecting] = useState(false)
   const [icliActiveLocal, setIcliActiveLocal] = useState(false)
   const [icliStarting, setIcliStarting] = useState(false)
@@ -497,6 +502,55 @@ export default function SessionDetailPage() {
     }
   }, [id, notify])
 
+  // Upload a dropped file to the worker's tmp dir, then type the path into the terminal
+  const uploadDroppedFile = useCallback(async (file: File) => {
+    if (!id || dropUploading) return
+    setDropUploading(true)
+    try {
+      const data = await fileToBase64(file)
+      const res = await api<{ ok: boolean; file_path: string; filename: string }>(
+        `/api/sessions/${id}/upload-file`,
+        { method: 'POST', body: JSON.stringify({ file_data: data, filename: file.name }) },
+      )
+      if (res.ok) {
+        await api(`/api/sessions/${id}/type`, {
+          method: 'POST',
+          body: JSON.stringify({ text: res.file_path }),
+        })
+      }
+    } catch (e) {
+      if (e instanceof ApiError) {
+        if (e.status === 413) notify('File too large to upload', 'error')
+        else if (e.status === 415) notify('Unsupported file type', 'error')
+        else notify(e.message, 'error')
+      } else {
+        notify(e instanceof Error ? e.message : 'Failed to upload file', 'error')
+      }
+    } finally {
+      setDropUploading(false)
+      setShowLargeFileModal(false)
+      setDropFile(null)
+    }
+  }, [id, dropUploading, notify])
+
+  // Handle file drop from Finder (non-image files)
+  const handleFileDrop = useCallback((file: File) => {
+    if (dropUploading || pasting || ctxPasting) {
+      notify('Another paste is in progress', 'warning')
+      return
+    }
+    if (!isSupportedDropFile(file.name)) {
+      notify(`Unsupported file type: ${file.name}`, 'warning')
+      return
+    }
+    if (file.size > LARGE_FILE_THRESHOLD) {
+      setDropFile(file)
+      setShowLargeFileModal(true)
+      return
+    }
+    uploadDroppedFile(file)
+  }, [dropUploading, pasting, ctxPasting, notify, uploadDroppedFile])
+
   const handlePaste = useCallback(async () => {
     if (!id || pasting) return
     setPasting(true)
@@ -709,7 +763,7 @@ export default function SessionDetailPage() {
             {fe.open && editorTabs.tabs.length > 0 && (
               <div className="sd-terminal-header">TERMINAL</div>
             )}
-            <TerminalView sessionId={session.id} sessionStatus={session.status} reconnectStep={session.reconnect_step} disableScrollback={false} onFocusRef={(fn) => { terminalFocusRef.current = fn }} onImagePaste={handleImagePaste} onTextPaste={handleTextPaste} onPastingChange={setCtxPasting} />
+            <TerminalView sessionId={session.id} sessionStatus={session.status} reconnectStep={session.reconnect_step} disableScrollback={false} onFocusRef={(fn) => { terminalFocusRef.current = fn }} onImagePaste={handleImagePaste} onTextPaste={handleTextPaste} onFileDrop={handleFileDrop} onPastingChange={setCtxPasting} />
           </div>
 
           {/* Interactive CLI overlay — inside right pane so it follows terminal position */}
@@ -836,10 +890,10 @@ export default function SessionDetailPage() {
             </button>
           </div>
           <button
-            className={`sd-paste-btn${pasting || ctxPasting ? ' pasting' : ''}`}
+            className={`sd-paste-btn${pasting || ctxPasting || dropUploading ? ' pasting' : ''}`}
             onClick={handlePaste}
-            disabled={pasting || ctxPasting}
-            title={pasting || ctxPasting ? 'Pasting...' : 'Paste clipboard to terminal'}
+            disabled={pasting || ctxPasting || dropUploading}
+            title={pasting || ctxPasting || dropUploading ? 'Pasting...' : 'Paste clipboard to terminal'}
           >
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2" />
@@ -857,6 +911,24 @@ export default function SessionDetailPage() {
           sessionName={session.name}
         />
       )}
+      <Modal
+        open={showLargeFileModal}
+        onClose={() => { setShowLargeFileModal(false); setDropFile(null) }}
+        title="Large File Upload"
+      >
+        <div className="modal-body" style={{ padding: '16px 20px' }}>
+          <p style={{ margin: 0, color: 'var(--text-secondary)' }}>
+            <strong>{dropFile?.name}</strong> is {dropFile ? `${(dropFile.size / 1024 / 1024).toFixed(1)} MB` : ''}.
+            Large files may take a moment to upload.
+          </p>
+        </div>
+        <div className="modal-footer" style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, padding: '12px 20px' }}>
+          <button className="btn btn-secondary btn-sm" onClick={() => { setShowLargeFileModal(false); setDropFile(null) }}>Cancel</button>
+          <button className="btn btn-primary btn-sm" disabled={dropUploading} onClick={() => { if (dropFile) uploadDroppedFile(dropFile) }}>
+            {dropUploading ? 'Uploading...' : 'Upload'}
+          </button>
+        </div>
+      </Modal>
     </div>
   )
 }

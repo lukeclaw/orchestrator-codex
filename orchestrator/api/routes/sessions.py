@@ -814,6 +814,55 @@ def paste_image_to_session(session_id: str, body: PasteImageBody, db=Depends(get
     }
 
 
+class UploadFileBody(BaseModel):
+    file_data: str  # base64-encoded file content
+    filename: str  # original filename
+
+
+@router.post("/sessions/{session_id}/upload-file")
+def upload_file_to_session(session_id: str, body: UploadFileBody, db=Depends(get_db)):
+    """Upload a file to the worker's tmp dir and return the file path.
+
+    Used by drag-and-drop: the frontend sends the file as base64 JSON (matching
+    the existing paste-image pattern) and the path is typed into the terminal
+    for Claude Code to read.
+    """
+    import base64
+
+    from orchestrator.api.upload_utils import MAX_FILE_SIZE, is_supported_file, save_uploaded_file
+    from orchestrator.terminal.file_sync import get_worker_tmp_dir, sync_file_to_remote
+
+    s = _resolve_session(db, session_id)
+    if s is None:
+        raise HTTPException(404, "Session not found")
+
+    if not is_supported_file(body.filename):
+        raise HTTPException(415, f"Unsupported file type: {body.filename}")
+
+    try:
+        file_bytes = base64.b64decode(body.file_data, validate=True)
+    except Exception as e:
+        raise HTTPException(400, f"Invalid base64 data: {e}")
+
+    if len(file_bytes) > MAX_FILE_SIZE:
+        raise HTTPException(413, f"File too large ({len(file_bytes)} bytes, max {MAX_FILE_SIZE})")
+
+    tmp_dir = get_worker_tmp_dir(s.name)
+    local_path = save_uploaded_file(file_bytes, body.filename, tmp_dir)
+
+    if is_remote_host(s.host):
+        ok = sync_file_to_remote(local_path, s.host, local_path)
+        if not ok:
+            raise HTTPException(502, "Failed to sync file to remote worker")
+
+    return {
+        "ok": True,
+        "file_path": local_path,
+        "filename": os.path.basename(local_path),
+        "size": len(file_bytes),
+    }
+
+
 @router.get("/sessions/{session_id}/preview")
 def session_preview(session_id: str, db=Depends(get_db)):
     """Return a plain-text terminal snapshot for a worker session."""

@@ -361,6 +361,48 @@ def paste_image(req: PasteImageRequest, db=Depends(get_db)):
     }
 
 
+class UploadFileRequest(BaseModel):
+    """Request body for uploading a file via drag-and-drop."""
+
+    file_data: str  # base64-encoded file content
+    filename: str  # original filename
+
+
+@router.post("/brain/upload-file")
+def upload_file_to_brain(req: UploadFileRequest, db=Depends(get_db)):
+    """Upload a file to the brain's tmp dir and return the file path.
+
+    Used by drag-and-drop in the brain panel. Same pattern as the session
+    upload endpoint but saves to the brain's working directory.
+    """
+    from orchestrator.api.upload_utils import MAX_FILE_SIZE, is_supported_file, save_uploaded_file
+
+    session = _get_brain_session(db)
+    if session is None or session.status in ("disconnected",):
+        raise HTTPException(400, "Brain is not running")
+
+    if not is_supported_file(req.filename):
+        raise HTTPException(415, f"Unsupported file type: {req.filename}")
+
+    try:
+        file_bytes = base64.b64decode(req.file_data, validate=True)
+    except Exception as e:
+        raise HTTPException(400, f"Invalid base64 data: {e}")
+
+    if len(file_bytes) > MAX_FILE_SIZE:
+        raise HTTPException(413, f"File too large ({len(file_bytes)} bytes, max {MAX_FILE_SIZE})")
+
+    brain_tmp_dir = "/tmp/orchestrator/brain/tmp"
+    file_path = save_uploaded_file(file_bytes, req.filename, brain_tmp_dir)
+
+    return {
+        "ok": True,
+        "file_path": file_path,
+        "filename": os.path.basename(file_path),
+        "size": len(file_bytes),
+    }
+
+
 class PasteTextRequest(BaseModel):
     """Request body for pasting text via bracketed paste."""
 

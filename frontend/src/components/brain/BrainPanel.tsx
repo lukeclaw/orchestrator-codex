@@ -1,5 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { api } from '../../api/client'
+import { api, ApiError } from '../../api/client'
+import Modal from '../common/Modal'
+import { isSupportedDropFile, LARGE_FILE_THRESHOLD, fileToBase64 } from '../../utils/fileDropUtils'
 import { useNotify } from '../../context/NotificationContext'
 import { useSmartPaste } from '../../hooks/useSmartPaste'
 import BrainTerminal from './BrainTerminal'
@@ -31,6 +33,9 @@ export default function BrainPanel({
   const [stopping, setStopping] = useState(false)
   const [pasting, setPasting] = useState(false)
   const [ctxPasting, setCtxPasting] = useState(false)
+  const [dropFile, setDropFile] = useState<File | null>(null)
+  const [dropUploading, setDropUploading] = useState(false)
+  const [showLargeFileModal, setShowLargeFileModal] = useState(false)
   const isDragging = useRef(false)
   const terminalInputRef = useRef<((text: string) => void) | null>(null)
   const terminalFocusRef = useRef<(() => void) | null>(null)
@@ -205,6 +210,52 @@ export default function BrainPanel({
     }
   }, [notify])
 
+  // Upload a dropped file to the brain's tmp dir, then type the path into the terminal
+  const uploadDroppedFile = useCallback(async (file: File) => {
+    if (dropUploading) return
+    setDropUploading(true)
+    try {
+      const data = await fileToBase64(file)
+      const res = await api<{ ok: boolean; file_path: string; filename: string }>(
+        '/api/brain/upload-file',
+        { method: 'POST', body: JSON.stringify({ file_data: data, filename: file.name }) },
+      )
+      if (res.ok && res.file_path) {
+        terminalInputRef.current?.(res.file_path)
+      }
+    } catch (e) {
+      if (e instanceof ApiError) {
+        if (e.status === 413) notify('File too large to upload', 'error')
+        else if (e.status === 415) notify('Unsupported file type', 'error')
+        else notify(e.message, 'error')
+      } else {
+        notify(e instanceof Error ? e.message : 'Failed to upload file', 'error')
+      }
+    } finally {
+      setDropUploading(false)
+      setShowLargeFileModal(false)
+      setDropFile(null)
+    }
+  }, [dropUploading, notify])
+
+  // Handle file drop from Finder (non-image files)
+  const handleFileDrop = useCallback((file: File) => {
+    if (dropUploading || pasting || ctxPasting) {
+      notify('Another paste is in progress', 'warning')
+      return
+    }
+    if (!isSupportedDropFile(file.name)) {
+      notify(`Unsupported file type: ${file.name}`, 'warning')
+      return
+    }
+    if (file.size > LARGE_FILE_THRESHOLD) {
+      setDropFile(file)
+      setShowLargeFileModal(true)
+      return
+    }
+    uploadDroppedFile(file)
+  }, [dropUploading, pasting, ctxPasting, notify, uploadDroppedFile])
+
   // Drag resize
   function handleMouseDown(e: React.MouseEvent) {
     e.preventDefault()
@@ -313,6 +364,7 @@ export default function BrainPanel({
           onTerminalFocusRef={(fn: () => void) => { terminalFocusRef.current = fn }}
           onImagePaste={handleImagePaste}
           onTextPaste={handleTextPaste}
+          onFileDrop={handleFileDrop}
           onPastingChange={setCtxPasting}
         />
       </div>
@@ -346,16 +398,34 @@ export default function BrainPanel({
             </button>
           </div>
           <button
-            className={`bp-footer-paste-btn${pasting || ctxPasting ? ' pasting' : ''}`}
+            className={`bp-footer-paste-btn${pasting || ctxPasting || dropUploading ? ' pasting' : ''}`}
             onClick={handlePaste}
-            disabled={pasting || ctxPasting}
-            title={pasting || ctxPasting ? 'Pasting...' : 'Paste from clipboard'}
+            disabled={pasting || ctxPasting || dropUploading}
+            title={pasting || ctxPasting || dropUploading ? 'Pasting...' : 'Paste from clipboard'}
           >
             <IconClipboard size={12} />
             <span>Paste</span>
           </button>
         </div>
       )}
+      <Modal
+        open={showLargeFileModal}
+        onClose={() => { setShowLargeFileModal(false); setDropFile(null) }}
+        title="Large File Upload"
+      >
+        <div className="modal-body" style={{ padding: '16px 20px' }}>
+          <p style={{ margin: 0, color: 'var(--text-secondary)' }}>
+            <strong>{dropFile?.name}</strong> is {dropFile ? `${(dropFile.size / 1024 / 1024).toFixed(1)} MB` : ''}.
+            Large files may take a moment to upload.
+          </p>
+        </div>
+        <div className="modal-footer" style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, padding: '12px 20px' }}>
+          <button className="btn btn-secondary btn-sm" onClick={() => { setShowLargeFileModal(false); setDropFile(null) }}>Cancel</button>
+          <button className="btn btn-primary btn-sm" disabled={dropUploading} onClick={() => { if (dropFile) uploadDroppedFile(dropFile) }}>
+            {dropUploading ? 'Uploading...' : 'Upload'}
+          </button>
+        </div>
+      </Modal>
     </div>
   )
 }
