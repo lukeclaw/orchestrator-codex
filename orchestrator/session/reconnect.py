@@ -638,7 +638,13 @@ def _reconnect_rws_pty_worker(conn, session, repo, tunnel_manager):
     # (handles daemon restart where PTY IDs changed)
     if not our_pty:
         by_session = next(
-            (p for p in ptys if p.get("session_id") == session.id and p.get("alive")),
+            (
+                p
+                for p in ptys
+                if p.get("session_id") == session.id
+                and p.get("alive")
+                and p.get("role") != "interactive-cli"
+            ),
             None,
         )
         if by_session:
@@ -676,6 +682,7 @@ def _reconnect_rws_pty_worker(conn, session, repo, tunnel_manager):
         cmd=claude_cmd,
         cwd=session.work_dir or os.path.expanduser("~"),
         session_id=session.id,
+        role="main",
     )
     repo.update_session(conn, session.id, rws_pty_id=pty_id, status="working")
     logger.info("Reconnect RWS %s: created new PTY %s", session.name, pty_id)
@@ -708,6 +715,7 @@ def _reconnect_rws_pty_worker(conn, session, repo, tunnel_manager):
             cmd=claude_cmd,
             cwd=session.work_dir or os.path.expanduser("~"),
             session_id=session.id,
+            role="main",
         )
         repo.update_session(conn, session.id, rws_pty_id=pty_id, status="working")
         logger.info("Reconnect RWS %s: retry created PTY %s", session.name, pty_id)
@@ -779,7 +787,13 @@ def reconnect_remote_worker(
             resp = rws.execute({"action": "pty_list"}, timeout=5)
             ptys = resp.get("ptys", [])
             existing = next(
-                (p for p in ptys if p.get("session_id") == session.id and p.get("alive")),
+                (
+                    p
+                    for p in ptys
+                    if p.get("session_id") == session.id
+                    and p.get("alive")
+                    and p.get("role") != "interactive-cli"
+                ),
                 None,
             )
             if existing:
@@ -821,6 +835,7 @@ def reconnect_remote_worker(
             cmd=claude_cmd,
             cwd=session.work_dir or os.path.expanduser("~"),
             session_id=session.id,
+            role="main",
         )
         repo.update_session(conn, session.id, rws_pty_id=pty_id, status="working")
         logger.info("Reconnect %s: created RWS PTY %s", session.name, pty_id)

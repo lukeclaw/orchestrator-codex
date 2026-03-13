@@ -81,7 +81,14 @@ def open_interactive_cli_via_rws(
         raise ValueError(f"Interactive CLI already active for session {session_id}")
 
     rws = get_remote_worker_server(host)
-    pty_id = rws.create_pty(cmd="/bin/bash", cwd=cwd, cols=cols, rows=rows, session_id=session_id)
+    pty_id = rws.create_pty(
+        cmd="/bin/bash",
+        cwd=cwd,
+        cols=cols,
+        rows=rows,
+        session_id=session_id,
+        role="interactive-cli",
+    )
 
     # Send the initial command if provided
     if command:
@@ -203,7 +210,11 @@ def recover_cli(
         return None
 
     for pty in ptys:
-        if pty.get("session_id") == session_id and pty.get("alive"):
+        if (
+            pty.get("session_id") == session_id
+            and pty.get("alive")
+            and pty.get("role") == "interactive-cli"
+        ):
             cli = InteractiveCLI(
                 session_id=session_id,
                 window_name=f"rws-{pty['pty_id']}",
@@ -427,11 +438,13 @@ def _restore_remote_iclis(sessions: list) -> None:
         if not alive_ptys:
             continue
 
-        # Match PTYs to sessions by session_id
+        # Match PTYs to sessions by session_id (only interactive-cli role)
         matched_session_ids: set[str] = set()
         for pty in alive_ptys:
             sid = pty.get("session_id")
             if not sid or sid not in session_by_id or sid in _active_clis:
+                continue
+            if pty.get("role") != "interactive-cli":
                 continue
 
             cli = InteractiveCLI(
@@ -453,6 +466,8 @@ def _restore_remote_iclis(sessions: list) -> None:
 
         # Destroy orphaned PTYs (no session_id, or session not in our list)
         for pty in alive_ptys:
+            if pty.get("role") == "main":
+                continue  # Never destroy main Claude PTYs from ICLI restore
             sid = pty.get("session_id")
             if sid and sid in matched_session_ids:
                 continue  # Just restored — keep it

@@ -305,6 +305,7 @@ class TestRestoreRemoteICLIs:
                 "pty_id": "pty-abc",
                 "alive": True,
                 "session_id": "sess-1",
+                "role": "interactive-cli",
                 "created_at": "2026-01-01T00:00:00",
             }
         ]
@@ -330,12 +331,14 @@ class TestRestoreRemoteICLIs:
                 "pty_id": "pty-abc",
                 "alive": True,
                 "session_id": "sess-1",
+                "role": "interactive-cli",
                 "created_at": "2026-01-01T00:00:00",
             },
             {
                 "pty_id": "pty-orphan",
                 "alive": True,
                 "session_id": None,
+                "role": "interactive-cli",
                 "created_at": "2026-01-01T00:00:00",
             },
         ]
@@ -359,6 +362,7 @@ class TestRestoreRemoteICLIs:
                 "pty_id": "pty-abc",
                 "alive": True,
                 "session_id": "sess-1",
+                "role": "interactive-cli",
                 "created_at": "2026-01-01T00:00:00",
             }
         ]
@@ -413,12 +417,14 @@ class TestRestoreRemoteICLIs:
                 "pty_id": "pty-1",
                 "alive": True,
                 "session_id": "sess-1",
+                "role": "interactive-cli",
                 "created_at": "2026-01-01T00:00:00",
             },
             {
                 "pty_id": "pty-2",
                 "alive": True,
                 "session_id": "sess-2",
+                "role": "interactive-cli",
                 "created_at": "2026-01-01T00:00:00",
             },
         ]
@@ -434,6 +440,68 @@ class TestRestoreRemoteICLIs:
         mock_get_rws.assert_called_once_with("remote-host")
         assert get_active_cli("sess-1") is not None
         assert get_active_cli("sess-2") is not None
+
+    @patch("orchestrator.terminal.remote_worker_server.get_remote_worker_server")
+    def test_skips_main_role_ptys(self, mock_get_rws):
+        """PTYs with role='main' should not be restored as interactive CLIs."""
+        from unittest.mock import MagicMock
+
+        mock_rws = MagicMock()
+        mock_rws.list_ptys.return_value = [
+            {
+                "pty_id": "pty-main",
+                "alive": True,
+                "session_id": "sess-1",
+                "role": "main",
+                "created_at": "2026-01-01T00:00:00",
+            },
+            {
+                "pty_id": "pty-icli",
+                "alive": True,
+                "session_id": "sess-1",
+                "role": "interactive-cli",
+                "created_at": "2026-01-01T00:00:00",
+            },
+        ]
+        mock_get_rws.return_value = mock_rws
+
+        sessions = [MagicMock(id="sess-1", host="remote-host")]
+        _restore_remote_iclis(sessions)
+
+        cli = get_active_cli("sess-1")
+        assert cli is not None
+        assert cli.remote_pty_id == "pty-icli"  # Restored the ICLI, not the main
+        mock_rws.destroy_pty.assert_not_called()  # Main PTY not destroyed
+
+    @patch("orchestrator.terminal.remote_worker_server.get_remote_worker_server")
+    def test_orphan_cleanup_skips_main_ptys(self, mock_get_rws):
+        """Orphan cleanup should never destroy main Claude PTYs."""
+        from unittest.mock import MagicMock
+
+        mock_rws = MagicMock()
+        mock_rws.list_ptys.return_value = [
+            {
+                "pty_id": "pty-main-orphan",
+                "alive": True,
+                "session_id": "sess-unknown",
+                "role": "main",
+                "created_at": "2026-01-01T00:00:00",
+            },
+            {
+                "pty_id": "pty-icli-orphan",
+                "alive": True,
+                "session_id": "sess-unknown",
+                "role": "interactive-cli",
+                "created_at": "2026-01-01T00:00:00",
+            },
+        ]
+        mock_get_rws.return_value = mock_rws
+
+        sessions = [MagicMock(id="sess-1", host="remote-host")]
+        _restore_remote_iclis(sessions)
+
+        # Only the ICLI orphan is destroyed, not the main PTY
+        mock_rws.destroy_pty.assert_called_once_with("pty-icli-orphan")
 
 
 class TestRecoverCLI:
@@ -519,12 +587,14 @@ class TestRecoverCLI:
                 "pty_id": "pty-abc",
                 "alive": True,
                 "session_id": "sess-1",
+                "role": "interactive-cli",
                 "created_at": "2026-01-01T00:00:00",
             },
             {
                 "pty_id": "pty-other",
                 "alive": True,
                 "session_id": "sess-other",
+                "role": "interactive-cli",
                 "created_at": "2026-01-01T00:00:00",
             },
         ]
@@ -564,3 +634,67 @@ class TestRecoverCLI:
 
         assert result is None
         assert get_active_cli("sess-1") is None
+
+    @patch("orchestrator.terminal.remote_worker_server.get_remote_worker_server")
+    def test_recover_cli_ignores_main_role(self, mock_get_rws):
+        """recover_cli returns None when only role='main' PTY exists for session."""
+        from unittest.mock import MagicMock
+
+        mock_rws = MagicMock()
+        mock_rws.list_ptys.return_value = [
+            {
+                "pty_id": "pty-main",
+                "alive": True,
+                "session_id": "sess-1",
+                "role": "main",
+                "created_at": "2026-01-01T00:00:00",
+            },
+        ]
+        mock_get_rws.return_value = mock_rws
+        mock_conn = MagicMock()
+        mock_session = MagicMock(id="sess-1", host="remote-host")
+        mock_session.name = "worker1"
+
+        with patch(
+            "orchestrator.state.repositories.sessions.get_session",
+            return_value=mock_session,
+        ):
+            result = recover_cli("sess-1", mock_conn)
+
+        assert result is None
+
+    @patch("orchestrator.terminal.remote_worker_server.get_remote_worker_server")
+    def test_recover_cli_picks_icli_over_main(self, mock_get_rws):
+        """When both main and interactive-cli PTYs exist, only interactive-cli is recovered."""
+        from unittest.mock import MagicMock
+
+        mock_rws = MagicMock()
+        mock_rws.list_ptys.return_value = [
+            {
+                "pty_id": "pty-main",
+                "alive": True,
+                "session_id": "sess-1",
+                "role": "main",
+                "created_at": "2026-01-01T00:00:00",
+            },
+            {
+                "pty_id": "pty-icli",
+                "alive": True,
+                "session_id": "sess-1",
+                "role": "interactive-cli",
+                "created_at": "2026-01-01T00:00:00",
+            },
+        ]
+        mock_get_rws.return_value = mock_rws
+        mock_conn = MagicMock()
+        mock_session = MagicMock(id="sess-1", host="remote-host")
+        mock_session.name = "worker1"
+
+        with patch(
+            "orchestrator.state.repositories.sessions.get_session",
+            return_value=mock_session,
+        ):
+            result = recover_cli("sess-1", mock_conn)
+
+        assert result is not None
+        assert result.remote_pty_id == "pty-icli"

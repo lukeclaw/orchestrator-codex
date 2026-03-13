@@ -659,7 +659,13 @@ def _check_rws_pty_health(db, session, tunnel_manager=None) -> dict:
                 our_pty = next((p for p in ptys if p["pty_id"] == session.rws_pty_id), None)
             if not our_pty:
                 our_pty = next(
-                    (p for p in ptys if p.get("session_id") == session.id and p.get("alive")),
+                    (
+                        p
+                        for p in ptys
+                        if p.get("session_id") == session.id
+                        and p.get("alive")
+                        and p.get("role") != "interactive-cli"
+                    ),
                     None,
                 )
                 if our_pty and our_pty["pty_id"] != session.rws_pty_id:

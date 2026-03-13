@@ -597,6 +597,7 @@ def setup_remote_worker(
             cols=120,
             rows=40,
             session_id=session_id,
+            role="main",
         )
         logger.info("Created RWS PTY %s for worker %s", pty_id, name)
 
