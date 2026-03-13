@@ -81,3 +81,6 @@ src-tauri/*.provisionprofile
 orchestrator-server
 orchestrator-server.pkg
 orchestrator/_version.py
+
+# Windsurf tmp files
+.windsurf/
