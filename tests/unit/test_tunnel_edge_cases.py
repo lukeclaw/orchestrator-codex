@@ -203,7 +203,16 @@ class TestAPIErrorHandling:
         session = repo.create_session(conn, "test-worker", "user/rdev-vm", "/tmp/work")
 
         app = create_app(db=conn)
-        with TestClient(app) as client:
+        with (
+            TestClient(app) as client,
+            patch(
+                "orchestrator.session.tunnel.create_tunnel",
+                return_value=(
+                    False,
+                    {"error": "Port 8093 is reserved and no available port found nearby"},
+                ),
+            ),
+        ):
             response = client.post(f"/api/sessions/{session.id}/tunnel", json={"port": 8093})
 
             assert response.status_code == 500
