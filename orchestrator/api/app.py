@@ -28,7 +28,21 @@ async def lifespan(app: FastAPI):
     from orchestrator.core.lifecycle import recover_tunnels, shutdown, startup_check
     from orchestrator.core.orchestrator import Orchestrator
     from orchestrator.core.state_manager import StateManager
+
+    # Ensure logging is configured (file handler + stderr).
+    # In packaged mode, launcher.py calls setup_logging() before uvicorn.run().
+    # In dev mode (uv run uvicorn ...), nobody calls it, so the log file
+    # (data/orchestrator.log) never gets written.  Do it here as a fallback.
+    from orchestrator.main import load_config, setup_logging
     from orchestrator.session.tunnel import ReverseTunnelManager
+
+    try:
+        config = load_config()
+    except Exception:
+        config = {}
+
+    if not logging.getLogger().handlers:
+        setup_logging(config)
 
     logger.info("Orchestrator API starting up")
 
@@ -39,14 +53,6 @@ async def lifespan(app: FastAPI):
 
     conn = app.state.conn
     db_path = app.state.db_path
-
-    # Load config for the orchestrator engine
-    try:
-        from orchestrator.main import load_config
-
-        config = load_config()
-    except Exception:
-        config = {}
 
     app.state.config = config
     api_port = config.get("server", {}).get("port", 8093)

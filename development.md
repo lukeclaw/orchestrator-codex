@@ -110,6 +110,90 @@ cargo tauri dev
 
 In dev mode, Tauri opens the Vite dev server directly and does **not** spawn the bundled sidecar. The production app and dev workflow are fully isolated.
 
+### Avoiding Duplicate Dev Servers
+
+The backend (`:8093`) and frontend (`:5173`) each bind to a fixed port. Starting a second instance will fail with "address already in use." Before starting, check if one is already running:
+
+```bash
+# Check if the backend is already running on port 8093
+lsof -iTCP:8093 -sTCP:LISTEN
+
+# Check if the Vite dev server is already running on port 5173
+lsof -iTCP:5173 -sTCP:LISTEN
+
+# Kill a specific process by PID
+kill <pid>
+```
+
+**Common pitfall with `cargo tauri dev`:** Tauri's `beforeDevCommand` (`cd frontend && npm run dev`) automatically starts Vite on `:5173`. If you already have Vite running in another terminal, this will fail. Either stop the existing Vite process first, or run the backend + Vite manually and skip `cargo tauri dev` (use the browser-only workflow instead).
+
+### Capturing Logs During Development
+
+#### Backend logs
+
+The Python server writes application logs to **`data/orchestrator.log`** automatically on startup (level configurable via `config.yaml` → `logging.level`). This file is always available — even when the server is running in a different terminal or was started by someone else.
+
+```bash
+# Read recent backend logs
+tail -100 data/orchestrator.log
+
+# Follow logs in real time
+tail -f data/orchestrator.log
+```
+
+In dev mode, logs also go to **stderr** in the terminal running uvicorn. To capture _everything_ including uvicorn access logs (which bypass Python logging) to a file that can be inspected later:
+
+```bash
+uv run uvicorn orchestrator.api.app:create_app --factory --reload --port 8093 2>&1 | tee tmp/server.log
+```
+
+#### Accessing logs from Claude Code (or other AI agents)
+
+When a dev server is already running in another terminal, Claude Code can't see its stdout/stderr. Use these file-based approaches instead:
+
+- **Backend application logs**: Read `data/orchestrator.log` — always written in dev mode.
+- **Backend access logs** (uvicorn HTTP request lines): Only available if the server was started with `| tee tmp/server.log` (see above). If not, the log file still has application-level logs which cover most debugging needs.
+- **Frontend build/runtime errors**: Not captured to a file by default. Open `http://localhost:5173` in a browser and use devtools, or check the Vite terminal manually.
+
+**Recommended dev workflow when using Claude Code:**
+
+Start the backend with tee so all output (application logs + uvicorn access logs) is captured to a file:
+```bash
+uv run uvicorn orchestrator.api.app:create_app --factory --reload --port 8093 2>&1 | tee tmp/server.log
+```
+
+Then Claude Code can inspect logs with:
+```bash
+# Application logs (always available)
+tail -100 data/orchestrator.log
+
+# Full server output including access logs (if started with tee)
+tail -100 tmp/server.log
+```
+
+#### Frontend logs
+
+**Browser-only workflow** (`npm run dev` + open `http://localhost:5173`): Use the normal Chrome/Firefox devtools (`Cmd+Option+J`).
+
+**Tauri window** (`cargo tauri dev`): Options for accessing frontend console logs:
+- **Open devtools inside Tauri**: Press `Cmd+Option+I` in the Tauri window (enabled automatically in debug builds).
+- **Use a regular browser in parallel**: Since Tauri dev mode just loads `http://localhost:5173`, open that same URL in Chrome/Safari to get full devtools. Both the Tauri window and the browser will work simultaneously against the same backend.
+
+Vite build errors and HMR status appear in the terminal where `npm run dev` (or `cargo tauri dev`) is running.
+
+#### Tauri (Rust) logs
+
+When running `cargo tauri dev`, `eprintln!` output (prefixed `[tauri]`) appears in that terminal. In dev mode, the Python sidecar is **not** spawned — you run the backend separately — so `[sidecar]` lines don't appear.
+
+#### Packaged app logs
+
+For debugging production builds:
+- Python server log: `~/Library/Application Support/Orchestrator/orchestrator.log`
+- Tauri/sidecar stderr: captured and printed with `[sidecar]` prefix. View by launching the app from a terminal:
+  ```bash
+  /Applications/Orchestrator.app/Contents/MacOS/Orchestrator
+  ```
+
 ### CLI Mode
 
 ```bash
