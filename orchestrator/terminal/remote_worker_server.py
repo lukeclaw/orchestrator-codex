@@ -784,6 +784,7 @@ _REMOTE_WORKER_SERVER_SCRIPT = textwrap.dedent("""\
             self.ringbuffer = bytearray()
             self.stream_conns = []  # list of socket connections for streaming
             self.alive = True
+            self._last_stream_time = time.time()
 
         def append_output(self, data):
             self.ringbuffer.extend(data)
@@ -1213,6 +1214,7 @@ _REMOTE_WORKER_SERVER_SCRIPT = textwrap.dedent("""\
 
         update_activity()
         session.append_output(data)
+        session._last_stream_time = time.time()
 
         # Push to all stream connections
         dead_conns = []
@@ -1531,6 +1533,26 @@ _REMOTE_WORKER_SERVER_SCRIPT = textwrap.dedent("""\
                     handle_pty_stream_data(ident)
                 elif kind == "pty_output":
                     handle_pty_output(ident)
+
+            # Send heartbeats on idle PTY stream connections (every 15s)
+            now = time.time()
+            for pty_id, session in list(pty_sessions.items()):
+                if not session.stream_conns:
+                    continue
+                if now - session._last_stream_time >= 15.0:
+                    session._last_stream_time = now
+                    dead_conns = []
+                    for conn in session.stream_conns:
+                        try:
+                            conn.sendall(b"\\x00")
+                        except OSError:
+                            dead_conns.append(conn)
+                    for conn in dead_conns:
+                        session.stream_conns.remove(conn)
+                        for fn, info in list(pty_stream_conns.items()):
+                            if info["conn"] is conn:
+                                remove_pty_stream(fn)
+                                break
 
         # Shutdown
         for sid in list(browser_processes.keys()):
@@ -2082,26 +2104,43 @@ def get_remote_worker_server(host: str) -> RemoteWorkerServer:
     raises ``RuntimeError`` immediately so the caller falls back to other
     paths.  Subsequent calls return the server once it's up.
     """
+    # Phase 1: Quick check under lock (dict reads/writes only — microseconds)
+    server = None
+    needs_reconnect = False
     with _pool_lock:
         server = _server_pool.get(host)
         if server is not None:
             if server._tunnel_proc is not None and server._tunnel_proc.poll() is None:
                 if server._cmd_sock is not None:
                     return server
-                # Socket dead but tunnel alive — try reconnecting
+                needs_reconnect = True
+            else:
+                # Tunnel dead — remove stale server
                 try:
-                    server._connect_command_socket()
-                    logger.info("Reconnected command socket for %s", host)
-                    return server
+                    server.stop()
                 except Exception:
-                    logger.warning("Socket reconnect failed for %s, restarting", host)
-            # Tunnel dead or reconnect failed — remove stale server
-            try:
-                server.stop()
-            except Exception:
-                pass
-            _server_pool.pop(host, None)
+                    pass
+                _server_pool.pop(host, None)
+                server = None
+                needs_reconnect = False
 
+    # Phase 2: Socket reconnect OUTSIDE the lock (can take up to 10s)
+    if server is not None and needs_reconnect:
+        try:
+            server._connect_command_socket()
+            logger.info("Reconnected command socket for %s", host)
+            return server
+        except Exception:
+            logger.warning("Socket reconnect failed for %s, restarting", host)
+            with _pool_lock:
+                try:
+                    server.stop()
+                except Exception:
+                    pass
+                _server_pool.pop(host, None)
+
+    # Phase 3: No server available — check if already starting, else kick off background
+    with _pool_lock:
         # Already starting in background — don't launch a second one
         if host in _starting and _starting[host].is_alive():
             raise RuntimeError("Connecting to remote host\u2026")

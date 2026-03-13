@@ -66,6 +66,9 @@ DRIFT_STREAM_HEALTH_TIMEOUT = 5.0  # stream is "unhealthy" after this many secon
 DRIFT_STAGGER_MAX = 2.0  # max random stagger to spread out drift checks
 DRIFT_EARLY_SYNC_DELAY = 0.15  # seconds before first sync after history
 
+# Stream idle timeout: if no data (including heartbeats) for this long, assume dead
+STREAM_IDLE_TIMEOUT = 45.0  # 3x daemon heartbeat interval (15s)
+
 
 def record_user_input(session_id: str) -> None:
     """Record that user sent input to a session."""
@@ -621,8 +624,10 @@ async def stream_remote_pty(
         err_msg = str(e)
         pty_gone = "PTY not found" in err_msg
         if pty_gone:
-            # PTY is definitively gone — clear stale DB state and tell frontend
-            # to stop retrying (pty_exit suppresses reconnection attempts).
+            # PTY not found — clear stale rws_pty_id so health check can
+            # re-discover the PTY if the daemon restarted.  Do NOT send
+            # pty_exit: "not found" can mean the daemon restarted/GC'd,
+            # not that Claude exited.  Frontend will retry via 4004 path.
             try:
                 from orchestrator.state.repositories import sessions as _repo
 
@@ -633,10 +638,6 @@ async def stream_remote_pty(
                 finally:
                     if _owns:
                         _db.close()
-            except Exception:
-                pass
-            try:
-                await websocket.send_json({"type": "pty_exit"})
             except Exception:
                 pass
         else:
@@ -662,6 +663,7 @@ async def stream_remote_pty(
         """Read raw bytes from PTY stream socket and batch-send to WebSocket."""
         nonlocal pty_exited
         loop = asyncio.get_running_loop()
+        last_data_time = loop.time()
         while not stream_closed.is_set():
             try:
                 data = await loop.run_in_executor(None, _blocking_recv, stream_sock)
@@ -669,13 +671,23 @@ async def stream_remote_pty(
                 stream_closed.set()
                 break
             if data is None:
-                continue  # Timeout — no data yet, keep reading
+                # Timeout — check idle duration
+                if (loop.time() - last_data_time) > STREAM_IDLE_TIMEOUT:
+                    # No data at all for 45s (including heartbeats) — stream is dead.
+                    # Do NOT set pty_exited — this is a connectivity issue.
+                    stream_closed.set()
+                    break
+                continue
             if not data:
                 pty_exited = True
                 stream_closed.set()
                 break  # b"" means EOF — remote closed connection
-            stream_buffer.extend(data)
-            flush_event.set()
+            last_data_time = loop.time()
+            # Filter out heartbeat NUL bytes (daemon sends \x00 every 15s on idle)
+            filtered = data.replace(b"\x00", b"")
+            if filtered:
+                stream_buffer.extend(filtered)
+                flush_event.set()
 
     async def stream_flusher():
         """Batch stream bytes and send as binary WebSocket frames."""
@@ -763,8 +775,14 @@ async def stream_remote_pty(
                 _rws = get_remote_worker_server(rws_host)
                 resp = _rws.execute({"action": "pty_list"}, timeout=5)
                 ptys = resp.get("ptys", [])
-                alive = any(p.get("pty_id") == pty_id and p.get("alive") for p in ptys)
-                confirmed_dead = not alive
+                # Only confirm dead when PTY IS in the list with alive=False.
+                # If the PTY ID is not in the list (daemon restarted/GC'd),
+                # don't assume dead — health check will sort it out.
+                our_pty = next((p for p in ptys if p.get("pty_id") == pty_id), None)
+                if our_pty is not None:
+                    confirmed_dead = not our_pty.get("alive", False)
+                else:
+                    confirmed_dead = False
             except Exception:
                 # Daemon unreachable (tunnel died) — PTY may still be alive,
                 # don't assume it exited.  Health check will sort it out.
@@ -789,6 +807,19 @@ async def stream_remote_pty(
                                 _db.close()
                     except Exception:
                         pass
+        elif not pty_exited:
+            # Stream closed without PTY exit (idle timeout or connectivity issue).
+            # Close with 4004 so frontend retries (unlimited with Phase 1 fix).
+            try:
+                await websocket.send_json(
+                    {"type": "error", "message": "Terminal stream timed out \u2014 reconnecting"}
+                )
+            except Exception:
+                pass
+            try:
+                await websocket.close(code=4004)
+            except Exception:
+                pass
         if session_id:
             clear_user_activity(session_id)
 

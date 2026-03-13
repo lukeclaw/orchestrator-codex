@@ -32,6 +32,7 @@ export default function TerminalView({ sessionId, wsPath, sendPath, sessionStatu
   const wsRef = useRef<WebSocket | null>(null)
   const fitAddonRef = useRef<FitAddon | null>(null)
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const countdownIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const reconnectAttemptRef = useRef(0)
   
   const onImagePasteRef = useRef(onImagePaste)
@@ -82,8 +83,27 @@ export default function TerminalView({ sessionId, wsPath, sendPath, sessionStatu
     }
   }, [])
 
+  const cancelPendingReconnect = useCallback(() => {
+    if (reconnectTimerRef.current) {
+      clearTimeout(reconnectTimerRef.current)
+      reconnectTimerRef.current = null
+    }
+    if (countdownIntervalRef.current) {
+      clearInterval(countdownIntervalRef.current)
+      countdownIntervalRef.current = null
+    }
+  }, [])
+
   // Create WebSocket connection with reconnection support
   const connectWebSocket = useCallback((terminal: Terminal) => {
+    cancelPendingReconnect()
+    const old = wsRef.current
+    if (old) {
+      old.onclose = null   // prevent stale onclose from re-triggering
+      old.onerror = null
+      old.close()
+    }
+
     const proto = location.protocol === 'https:' ? 'wss:' : 'ws:'
     const path = wsPath || `/ws/terminal/${sessionId}`
     const ws = new WebSocket(`${proto}//${location.host}${path}`)
@@ -124,7 +144,7 @@ export default function TerminalView({ sessionId, wsPath, sendPath, sessionStatu
       // Will trigger onclose
     }
 
-    ws.onclose = () => {
+    ws.onclose = (event) => {
       scrollDisposable.dispose()
 
       // Ignore close events from stale WebSocket instances
@@ -137,7 +157,35 @@ export default function TerminalView({ sessionId, wsPath, sendPath, sessionStatu
         return
       }
 
-      // Don't reconnect if component is unmounting or max attempts reached
+      // Close code 4004: "PTY not attached yet" — remote session reconnecting.
+      // Use fixed 5s retries with NO attempt cap (session may take 60s+ to reconnect).
+      if (event.code === 4004) {
+        setConnectionState('reconnecting')
+        const delay = 5000
+        const delaySeconds = 5
+        setReconnectCountdown(delaySeconds)
+
+        let countdown = delaySeconds
+        countdownIntervalRef.current = setInterval(() => {
+          countdown--
+          if (countdown > 0) {
+            setReconnectCountdown(countdown)
+          } else {
+            if (countdownIntervalRef.current) clearInterval(countdownIntervalRef.current)
+            countdownIntervalRef.current = null
+          }
+        }, 1000)
+
+        reconnectTimerRef.current = setTimeout(() => {
+          if (countdownIntervalRef.current) clearInterval(countdownIntervalRef.current)
+          countdownIntervalRef.current = null
+          // Do NOT increment reconnectAttemptRef — unlimited retries for 4004
+          connectWebSocket(terminal)
+        }, delay)
+        return
+      }
+
+      // All other close codes: backoff with 5-attempt cap
       if (reconnectAttemptRef.current >= MAX_RECONNECT_ATTEMPTS) {
         setConnectionState('disconnected')
         setReconnectCountdown(null)
@@ -145,25 +193,27 @@ export default function TerminalView({ sessionId, wsPath, sendPath, sessionStatu
       }
 
       setConnectionState('reconnecting')
-      
+
       // Calculate delay with backoff
       const delay = RECONNECT_DELAYS[Math.min(reconnectAttemptRef.current, RECONNECT_DELAYS.length - 1)]
       const delaySeconds = Math.ceil(delay / 1000)
       setReconnectCountdown(delaySeconds)
-      
+
       // Countdown timer
       let countdown = delaySeconds
-      const countdownInterval = setInterval(() => {
+      countdownIntervalRef.current = setInterval(() => {
         countdown--
         if (countdown > 0) {
           setReconnectCountdown(countdown)
         } else {
-          clearInterval(countdownInterval)
+          if (countdownIntervalRef.current) clearInterval(countdownIntervalRef.current)
+          countdownIntervalRef.current = null
         }
       }, 1000)
 
       reconnectTimerRef.current = setTimeout(() => {
-        clearInterval(countdownInterval)
+        if (countdownIntervalRef.current) clearInterval(countdownIntervalRef.current)
+        countdownIntervalRef.current = null
         reconnectAttemptRef.current++
         connectWebSocket(terminal)
       }, delay)
@@ -231,7 +281,7 @@ export default function TerminalView({ sessionId, wsPath, sendPath, sessionStatu
     }
 
     return ws
-  }, [sessionId, wsPath])
+  }, [sessionId, wsPath, cancelPendingReconnect])
 
   useEffect(() => {
     if (!termRef.current) return
@@ -434,9 +484,7 @@ export default function TerminalView({ sessionId, wsPath, sendPath, sessionStatu
 
     return () => {
       // Clear reconnect timer on unmount
-      if (reconnectTimerRef.current) {
-        clearTimeout(reconnectTimerRef.current)
-      }
+      cancelPendingReconnect()
       reconnectAttemptRef.current = MAX_RECONNECT_ATTEMPTS // Prevent reconnect on unmount
       
       clearTimeout(resizeTimeout)
@@ -456,12 +504,13 @@ export default function TerminalView({ sessionId, wsPath, sendPath, sessionStatu
   // Manual retry handler
   const handleRetry = useCallback(() => {
     if (terminalRef.current) {
+      cancelPendingReconnect()
       reconnectAttemptRef.current = 0
       ptyExitedRef.current = false
       setConnectionState('reconnecting')
       connectWebSocket(terminalRef.current)
     }
-  }, [connectWebSocket])
+  }, [connectWebSocket, cancelPendingReconnect])
 
   // Auto-reconnect when session transitions to an active state while the
   // terminal WebSocket is disconnected (e.g. worker reconnected after a
@@ -473,12 +522,15 @@ export default function TerminalView({ sessionId, wsPath, sendPath, sessionStatu
     const isActive = sessionStatus === 'working' || sessionStatus === 'waiting'
     const wasInactive = !prev || prev === 'disconnected' || prev === 'connecting' || prev === 'error' || prev === 'idle'
     if (isActive && wasInactive && connectionState !== 'connected' && terminalRef.current) {
+      cancelPendingReconnect()
       ptyExitedRef.current = false
       reconnectAttemptRef.current = 0
       setConnectionState('reconnecting')
+      // Clear old terminal content to avoid flash of stale buffer
+      terminalRef.current.write('\x1b[2J\x1b[H')
       connectWebSocket(terminalRef.current)
     }
-  }, [sessionStatus, connectionState, connectWebSocket])
+  }, [sessionStatus, connectionState, connectWebSocket, cancelPendingReconnect])
 
   // Before first successful connection: always show skeleton, never show errors.
   // After first connection: show content; overlay only if connection is lost.

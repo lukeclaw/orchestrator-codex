@@ -746,9 +746,13 @@ def _make_remote_db_row(name="rws-test", pty_id="pty-abc"):
 
 
 class TestStreamRemotePtyNotFound:
-    """When the daemon reports PTY not found, clear DB state and send pty_exit."""
+    """When the daemon reports PTY not found, clear DB state but do NOT send pty_exit.
 
-    async def test_pty_not_found_sends_pty_exit_and_clears_db(self):
+    "PTY not found" can mean the daemon restarted/GC'd — Claude may still be
+    running.  Frontend will retry via the 4004 close code path.
+    """
+
+    async def test_pty_not_found_clears_db_but_no_pty_exit(self):
         from orchestrator.api.ws_terminal import terminal_websocket
 
         ws = FakeWebSocket()
@@ -779,12 +783,13 @@ class TestStreamRemotePtyNotFound:
 
             await terminal_websocket(ws, "sess-1")
 
-        # Should send pty_exit (not a generic error), suppressing frontend retries
-        assert any(m.get("type") == "pty_exit" for m in ws.sent_json), (
-            f"Expected pty_exit message, got: {ws.sent_json}"
+        # Should NOT send pty_exit — "not found" doesn't mean Claude exited
+        assert not any(m.get("type") == "pty_exit" for m in ws.sent_json), (
+            f"Should not send pty_exit on PTY not found, got: {ws.sent_json}"
         )
+        # Should NOT send error either — just close with 4004
         assert not any(m.get("type") == "error" for m in ws.sent_json), (
-            "Should not send error message when PTY is gone"
+            "Should not send error message when PTY is not found"
         )
 
         # Should clear stale rws_pty_id in DB
