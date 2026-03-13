@@ -66,14 +66,14 @@ export default function SettingsPage() {
     restoreBackup,
   } = useBackup()
 
-  const [claudeUpdateBeforeStart, setClaudeUpdateBeforeStart] = useState(true)
+  const [claudeUpdateBeforeStart, setClaudeUpdateBeforeStart] = useState(false)
 
   // Sync claude update setting from DB
   useEffect(() => {
     if (!loading) {
       const val = getValue('claude.update_before_start')
-      // Default to true if not set
-      setClaudeUpdateBeforeStart(val === null ? true : Boolean(val))
+      // Default to false if not set
+      setClaudeUpdateBeforeStart(val === null ? false : Boolean(val))
     }
   }, [loading, getValue])
 
@@ -241,14 +241,12 @@ export default function SettingsPage() {
                         : installStatus === 'installing' ? 'Installing…'
                         : 'Update Now'}
                     </button>
-                    {updateInfo.release_url && (
-                      <button
-                        className="btn btn-secondary"
-                        onClick={() => openRelease(updateInfo.release_url!)}
-                      >
-                        Release Notes
-                      </button>
-                    )}
+                    <button
+                      className="btn btn-secondary"
+                      onClick={() => openRelease('https://github.com/yudongqiu/orchestrator/releases')}
+                    >
+                      Release Notes
+                    </button>
                   </div>
                   {installError && (
                     <div className="update-error">

@@ -29,8 +29,8 @@ CONFIG_KEY = "claude.update_before_start"
 
 
 def should_update_before_start(conn: sqlite3.Connection) -> bool:
-    """Read the ``claude.update_before_start`` config flag (default ``True``)."""
-    value = get_config_value(conn, CONFIG_KEY, default=True)
+    """Read the ``claude.update_before_start`` config flag (default ``False``)."""
+    value = get_config_value(conn, CONFIG_KEY, default=False)
     # Coerce to bool in case the stored value is a string or int
     return bool(value)
 
