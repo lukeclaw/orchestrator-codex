@@ -417,7 +417,7 @@ export default function PrPreviewCard({ url, initialData, onDataFetched }: PrPre
               </div>
             )}
 
-            {data.state === 'merged' && gateChecks.length > 0 && (() => {
+            {(data.state === 'merged' || (data.state === 'open' && pendingGates.length === 0)) && gateChecks.length > 0 && (() => {
               const approvers = data.reviews.filter(r => r.state === 'approved').map(r => r.reviewer)
               return (
                 <div className="pr-section-title">

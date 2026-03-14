@@ -25,16 +25,23 @@
   flex-shrink: 0;
 }
 
-/* Sub-filter bar */
+/* Fetched-at label */
+.prs-fetched-at {
+  font-size: 11px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+/* Filter bar — attention pills + search */
 .prs-filter-bar {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 2px;
   flex-wrap: wrap;
 }
 
 .prs-filter-pill {
-  display: flex;
+  display: inline-flex;
   align-items: center;
   gap: 5px;
   padding: 4px 10px;
@@ -50,18 +57,34 @@
 
 .prs-filter-pill:hover {
   background: var(--surface-hover);
+  color: var(--text-primary);
 }
 
 .prs-filter-pill.active {
-  background: var(--accent-muted);
+  background: var(--surface-hover);
+  border-color: var(--border);
   color: var(--text-primary);
 }
 
 .prs-filter-pill-count {
   font-weight: 600;
-  font-size: 12px;
-  color: var(--text-primary);
 }
+
+.prs-filter-pill-label {
+  font-weight: 400;
+}
+
+.prs-filter-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.prs-dot-red { background: var(--red); }
+.prs-dot-green { background: var(--green); }
+.prs-dot-accent { background: var(--accent); }
+.prs-dot-gray { background: var(--text-muted); }
 
 /* Inline search */
 .prs-search-inline {
@@ -109,22 +132,6 @@
   font-size: 11px;
 }
 
-/* Days dropdown */
-.prs-days-select {
-  padding: 4px 8px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  color: var(--text-primary);
-  font-size: 12px;
-  cursor: pointer;
-}
-
-.prs-days-select:focus {
-  outline: none;
-  border-color: var(--accent);
-}
-
 /* Table */
 .prs-table {
   width: 100%;
@@ -168,6 +175,7 @@
 .prs-table tbody tr {
   cursor: pointer;
   transition: background 0.1s;
+  border-left: 3px solid transparent;
 }
 
 .prs-table tbody tr:hover {
@@ -177,6 +185,12 @@
 .prs-table tbody tr.expanded {
   background: var(--surface-hover);
 }
+
+/* Accent bars by attention level */
+.prs-table tbody tr.attention-1 { border-left-color: var(--red); }
+.prs-table tbody tr.attention-2 { border-left-color: var(--green); }
+.prs-table tbody tr.attention-3 { border-left-color: var(--accent); }
+.prs-table tbody tr.attention-4 { border-left-color: var(--text-muted); }
 
 /* PR column — two-line cell */
 .prs-pr-cell {
@@ -202,6 +216,20 @@
 
 .prs-pr-repo a:hover {
   color: var(--accent);
+}
+
+.prs-pr-size {
+  font-size: 11px;
+  margin-left: 6px;
+}
+
+.prs-additions {
+  color: var(--green);
+}
+
+.prs-deletions {
+  color: var(--red);
+  margin-left: 2px;
 }
 
 .prs-pr-title {
@@ -240,26 +268,21 @@
 .prs-status-cell .pr-chip-red { color: var(--red); }
 .prs-status-cell .pr-chip-yellow { color: var(--yellow); }
 .prs-status-cell .pr-chip-gray { color: var(--text-muted); }
+.prs-status-cell .pr-chip-accent { color: var(--accent); }
 
-/* Skeleton chips */
-.prs-status-cell .prs-skel-chip {
-  height: 14px;
-  width: 56px;
-  background: var(--border);
-  border-radius: 7px;
-  animation: prs-skel-shimmer 1.2s ease-in-out infinite;
+.prs-merged-by {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-left: 6px;
 }
 
-.prs-status-cell .prs-skel-chip-short {
-  width: 40px;
+/* Task / Worker two-line cell */
+.prs-taskworker-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
 }
 
-@keyframes prs-skel-shimmer {
-  0%, 100% { opacity: 0.3; }
-  50% { opacity: 0.6; }
-}
-
-/* Task column — pill link */
 .prs-task-pill {
   display: inline-flex;
   align-items: center;
@@ -281,6 +304,17 @@
 .prs-no-task {
   color: var(--text-muted);
   font-size: 12px;
+}
+
+.prs-worker-link {
+  font-size: 11px;
+  color: var(--text-muted);
+  text-decoration: none;
+}
+
+.prs-worker-link:hover {
+  color: var(--accent);
+  text-decoration: none;
 }
 
 /* Updated column */
@@ -327,6 +361,11 @@
 .prs-skel-bar-short { width: 60%; }
 .prs-skel-bar-medium { width: 80%; }
 .prs-skel-bar-narrow { width: 50px; }
+
+@keyframes prs-skel-shimmer {
+  0%, 100% { opacity: 0.3; }
+  50% { opacity: 0.6; }
+}
 
 /* Empty state */
 .prs-empty {

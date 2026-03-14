@@ -1,4 +1,4 @@
-"""PR search endpoint — discovers user's PRs via GitHub search API."""
+"""PR search endpoint — discovers user's PRs via GitHub GraphQL API."""
 
 from __future__ import annotations
 
@@ -18,9 +18,159 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
-# In-memory cache: key = "active" or "recent:7", value = (timestamp, list[dict])
-_search_cache: dict[str, tuple[float, list[dict]]] = {}
+# In-memory cache: key = "active" or "recent:7", value = (timestamp, response_dict)
+_search_cache: dict[str, tuple[float, dict]] = {}
 _SEARCH_CACHE_TTL = 600.0  # 10 minutes
+
+# Single GraphQL query fetches the PR list AND status details in one API call.
+_GRAPHQL_QUERY = """\
+query($q: String!) {
+  search(query: $q, type: ISSUE, first: 100) {
+    nodes {
+      ... on PullRequest {
+        url
+        number
+        title
+        state
+        isDraft
+        author { login }
+        createdAt
+        updatedAt
+        closedAt
+        mergedAt
+        mergedBy { login }
+        additions
+        deletions
+        changedFiles
+        repository { nameWithOwner }
+        autoMergeRequest { enabledAt }
+        reviewDecision
+        reviewRequests(first: 10) {
+          nodes {
+            requestedReviewer {
+              ... on User { login }
+              ... on Team { name }
+            }
+          }
+        }
+        commits(last: 1) {
+          nodes {
+            commit {
+              statusCheckRollup {
+                state
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}"""
+
+
+def _compute_attention_level(
+    *, draft: bool, state: str, ci_state: str | None, review_decision: str | None
+) -> int:
+    """Compute attention level (1-4) for a PR."""
+    if draft:
+        return 4
+    if state != "open":
+        return 3  # closed/merged — no urgency model
+    if ci_state == "failure" or review_decision == "changes_requested":
+        return 1  # needs action
+    if review_decision == "approved" and ci_state == "success":
+        return 2  # ready to ship
+    return 3  # in review (default)
+
+
+def _derive_ci_state(node: dict) -> str | None:
+    """Derive ci_state from statusCheckRollup."""
+    commits_nodes = (node.get("commits") or {}).get("nodes", [])
+    if not commits_nodes:
+        return None
+    commit = (commits_nodes[0] or {}).get("commit") or {}
+    rollup = commit.get("statusCheckRollup") or {}
+    rollup_state = (rollup.get("state") or "").upper()
+    if rollup_state == "SUCCESS":
+        return "success"
+    if rollup_state in ("FAILURE", "ERROR"):
+        return "failure"
+    if rollup_state in ("PENDING", "EXPECTED"):
+        return "pending"
+    return None
+
+
+def _parse_graphql_prs(nodes: list[dict], fetched_at: str) -> list[dict]:
+    """Parse GraphQL PR nodes into a flat list of PR dicts."""
+    prs: list[dict] = []
+
+    for node in nodes:
+        if not isinstance(node, dict) or "url" not in node:
+            continue
+
+        url = node["url"]
+        repo = (node.get("repository") or {}).get("nameWithOwner", "")
+        gql_state = (node.get("state") or "OPEN").upper()
+        draft = node.get("isDraft", False)
+        author = (node.get("author") or {}).get("login", "")
+
+        if gql_state == "MERGED":
+            state = "closed"
+            merged_at = node.get("mergedAt")
+        elif gql_state == "CLOSED":
+            state = "closed"
+            merged_at = None
+        else:
+            state = "open"
+            merged_at = None
+
+        # Review decision (lowercase)
+        raw_decision = node.get("reviewDecision")
+        review_decision = raw_decision.lower() if raw_decision else None
+
+        # Review requests — extract logins/names
+        review_requests: list[str] = []
+        for rr_node in (node.get("reviewRequests") or {}).get("nodes", []):
+            reviewer = (rr_node or {}).get("requestedReviewer") or {}
+            name = reviewer.get("login") or reviewer.get("name")
+            if name:
+                review_requests.append(name)
+
+        ci_state = _derive_ci_state(node)
+        auto_merge = bool(node.get("autoMergeRequest"))
+        merged_by = (node.get("mergedBy") or {}).get("login")
+        attention_level = _compute_attention_level(
+            draft=draft, state=state, ci_state=ci_state, review_decision=review_decision
+        )
+
+        prs.append(
+            {
+                "url": url,
+                "repo": repo,
+                "number": node.get("number", 0),
+                "title": node.get("title", ""),
+                "state": state,
+                "draft": draft,
+                "author": author,
+                "created_at": node.get("createdAt", ""),
+                "updated_at": node.get("updatedAt", ""),
+                "closed_at": node.get("closedAt"),
+                "merged_at": merged_at,
+                "additions": node.get("additions", 0),
+                "deletions": node.get("deletions", 0),
+                "changed_files": node.get("changedFiles", 0),
+                "review_decision": review_decision,
+                "review_requests": review_requests,
+                "auto_merge": auto_merge,
+                "ci_state": ci_state,
+                "attention_level": attention_level,
+                "merged_by": merged_by,
+                "linked_task": None,
+                "linked_worker": None,
+            }
+        )
+
+    return prs
 
 
 @router.get("/prs")
@@ -30,7 +180,7 @@ async def search_prs(
     refresh: bool = Query(False, description="Bypass cache"),
     db=Depends(get_db),
 ):
-    """Search for PRs authored by the current GitHub user."""
+    """Search for PRs authored by the current GitHub user via GraphQL."""
     if tab not in ("active", "recent"):
         raise HTTPException(400, "tab must be 'active' or 'recent'")
 
@@ -40,57 +190,30 @@ async def search_prs(
     if not refresh and cache_key in _search_cache:
         ts, cached = _search_cache[cache_key]
         if time.time() - ts < _SEARCH_CACHE_TTL:
-            return {"prs": cached}
+            return cached
 
-    # Build search query
-    base = "search/issues?q=type:pr+author:@me"
+    # Build search query string
     if tab == "active":
-        query_path = f"{base}+is:open&sort=updated&per_page=100"
+        search_q = "type:pr author:@me is:open sort:updated-desc"
     else:
         cutoff = (datetime.now(UTC) - timedelta(days=days)).strftime("%Y-%m-%d")
-        query_path = f"{base}+is:closed+closed:>{cutoff}&sort=updated&per_page=100"
+        search_q = f"type:pr author:@me is:closed closed:>{cutoff} sort:updated-desc"
 
     try:
-        result = await _run_gh(query_path)
+        result = await _run_gh("graphql", "-f", f"query={_GRAPHQL_QUERY}", "-f", f"q={search_q}")
     except HTTPException as e:
         if e.status_code == 429 and cache_key in _search_cache:
-            # Return stale cache on rate limit
             _, cached = _search_cache[cache_key]
-            return {"prs": cached}
+            return cached
         raise
 
-    items = result.get("items", []) if isinstance(result, dict) else []
+    # Handle GraphQL errors
+    if isinstance(result, dict) and result.get("errors"):
+        logger.warning("GraphQL errors: %s", result["errors"])
 
-    # Transform items into PrSearchItem shape
-    prs = []
-    for item in items:
-        pr_obj = item.get("pull_request", {}) or {}
-        html_url = item.get("html_url", "")
-
-        # Extract repo from URL: https://github.com/org/repo/pull/123
-        repo = ""
-        parts = html_url.split("/")
-        if len(parts) >= 5:
-            # parts = ['https:', '', 'github.com', 'org', 'repo', 'pull', '123']
-            repo = f"{parts[3]}/{parts[4]}"
-
-        prs.append(
-            {
-                "url": html_url,
-                "repo": repo,
-                "number": item.get("number", 0),
-                "title": item.get("title", ""),
-                "state": item.get("state", "open"),
-                "draft": pr_obj.get("draft", False),
-                "author": (item.get("user") or {}).get("login", ""),
-                "created_at": item.get("created_at", ""),
-                "updated_at": item.get("updated_at", ""),
-                "closed_at": item.get("closed_at"),
-                "merged_at": pr_obj.get("merged_at"),
-                "linked_task": None,
-                "linked_worker": None,
-            }
-        )
+    nodes = (result.get("data") or {}).get("search", {}).get("nodes", [])
+    fetched_at = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    prs = _parse_graphql_prs(nodes if isinstance(nodes, list) else [], fetched_at)
 
     # Cross-reference with tasks
     if prs:
@@ -129,7 +252,7 @@ async def search_prs(
                             "name": session.name,
                         }
 
-    # Cache result
-    _search_cache[cache_key] = (time.time(), prs)
-
-    return {"prs": prs}
+    # Cache the full response
+    response = {"prs": prs}
+    _search_cache[cache_key] = (time.time(), response)
+    return response

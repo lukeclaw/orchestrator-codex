@@ -255,17 +255,21 @@ export interface PrSearchItem {
   updated_at: string
   closed_at: string | null
   merged_at: string | null
+  additions: number
+  deletions: number
+  changed_files: number
+  review_decision: 'approved' | 'changes_requested' | 'review_required' | null
+  review_requests: string[]
+  auto_merge: boolean
+  ci_state: 'success' | 'failure' | 'pending' | null
+  attention_level: 1 | 2 | 3 | 4
+  merged_by: string | null
   linked_task: { id: string; task_key: string | null; title: string } | null
   linked_worker: { id: string; name: string } | null
 }
 
 export interface PrSearchResponse {
   prs: PrSearchItem[]
-}
-
-export interface PrBatchResponse {
-  results: Record<string, PrPreviewData | null>
-  error?: string
 }
 
 export type TrendDetailSelection =
