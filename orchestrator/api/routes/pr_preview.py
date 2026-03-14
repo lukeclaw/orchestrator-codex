@@ -20,7 +20,7 @@ router = APIRouter()
 _pr_cache: OrderedDict[str, tuple[float, dict]] = OrderedDict()
 _PR_CACHE_TTL_OPEN = 120.0  # seconds — open PRs change frequently
 _PR_CACHE_TTL_CLOSED = 600.0  # seconds — merged/closed PRs are static
-_MAX_CACHE_SIZE = 50
+_MAX_CACHE_SIZE = 200
 
 # Semaphore to limit concurrent gh api calls (shared across batch and single-PR)
 _GH_SEMAPHORE = asyncio.Semaphore(3)

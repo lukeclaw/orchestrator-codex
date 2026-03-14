@@ -20,7 +20,7 @@ router = APIRouter()
 
 # In-memory cache: key = "active" or "recent:7", value = (timestamp, list[dict])
 _search_cache: dict[str, tuple[float, list[dict]]] = {}
-_SEARCH_CACHE_TTL = 90.0  # seconds
+_SEARCH_CACHE_TTL = 600.0  # 10 minutes
 
 
 @router.get("/prs")

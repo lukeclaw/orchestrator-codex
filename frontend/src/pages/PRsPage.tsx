@@ -20,6 +20,14 @@ const TABS = [
   { value: 'recent' as Tab, label: 'Recent' },
 ]
 
+const CACHE_TTL = 10 * 60 * 1000 // 10 minutes
+
+interface TabCache {
+  prs: PrSearchItem[]
+  details: Record<string, PrPreviewData | null>
+  fetchedAt: number
+}
+
 export default function PRsPage() {
   const { setPrBadgeCount } = useApp()
   const [tab, setTab] = useState<Tab>('active')
@@ -37,11 +45,44 @@ export default function PRsPage() {
 
   const searchAbortRef = useRef<AbortController | null>(null)
   const batchAbortRef = useRef<AbortController | null>(null)
+  const cacheRef = useRef<Record<string, TabCache>>({})
+
+  const cacheKey = tab === 'active' ? 'active' : `recent:${days}`
+
+  const computeBadge = useCallback((prList: PrSearchItem[], detailsMap: Record<string, PrPreviewData | null>) => {
+    let count = 0
+    for (const pr of prList) {
+      const detail = detailsMap[pr.url]
+      if (!detail) continue
+      const hasFailure = detail.checks?.some(c =>
+        c.conclusion === 'failure' || c.conclusion === 'timed_out'
+      )
+      const hasChangesRequested = detail.reviews?.some(r =>
+        r.state === 'changes_requested'
+      )
+      if (hasFailure || hasChangesRequested) count++
+    }
+    setPrBadgeCount(count)
+  }, [setPrBadgeCount])
 
   const fetchPrs = useCallback(async (refresh = false) => {
     // Abort in-flight requests
     searchAbortRef.current?.abort()
     batchAbortRef.current?.abort()
+
+    // Check frontend cache (skip on manual refresh)
+    if (!refresh) {
+      const cached = cacheRef.current[cacheKey]
+      if (cached && Date.now() - cached.fetchedAt < CACHE_TTL) {
+        setPrs(cached.prs)
+        setDetails(cached.details)
+        setLoading(false)
+        setDetailsLoading(false)
+        setError(null)
+        computeBadge(cached.prs, cached.details)
+        return
+      }
+    }
 
     const searchCtrl = new AbortController()
     searchAbortRef.current = searchCtrl
@@ -76,21 +117,14 @@ export default function PRsPage() {
           if (batchCtrl.signal.aborted) return
 
           setDetails(batchData.results)
+          computeBadge(data.prs, batchData.results)
 
-          // Compute badge count
-          let badgeCount = 0
-          for (const pr of data.prs) {
-            const detail = batchData.results[pr.url]
-            if (!detail) continue
-            const hasFailure = detail.checks?.some(c =>
-              c.conclusion === 'failure' || c.conclusion === 'timed_out'
-            )
-            const hasChangesRequested = detail.reviews?.some(r =>
-              r.state === 'changes_requested'
-            )
-            if (hasFailure || hasChangesRequested) badgeCount++
+          // Store in frontend cache
+          cacheRef.current[cacheKey] = {
+            prs: data.prs,
+            details: batchData.results,
+            fetchedAt: Date.now(),
           }
-          setPrBadgeCount(badgeCount)
         } catch (e) {
           if (e instanceof Error && e.name === 'AbortError') return
         } finally {
@@ -99,6 +133,12 @@ export default function PRsPage() {
       } else {
         setDetails({})
         setDetailsLoading(false)
+        // Cache empty result too
+        cacheRef.current[cacheKey] = {
+          prs: [],
+          details: {},
+          fetchedAt: Date.now(),
+        }
       }
     } catch (e) {
       if (e instanceof Error && e.name === 'AbortError') return
@@ -109,7 +149,7 @@ export default function PRsPage() {
       }
       setLoading(false)
     }
-  }, [tab, days, setPrBadgeCount])
+  }, [tab, days, cacheKey, setPrBadgeCount, computeBadge])
 
   useEffect(() => {
     setSubFilter('all')
