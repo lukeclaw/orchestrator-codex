@@ -222,6 +222,15 @@ export default function PRsPage() {
     if (tab === 'active') {
       return (
         <div className="prs-filter-bar">
+          <button
+            className={`prs-filter-pill${attentionFilter === null ? ' active' : ''}`}
+            onClick={() => setAttentionFilter(null)}
+            type="button"
+          >
+            <span className="prs-filter-dot prs-dot-gray" />
+            <span className="prs-filter-pill-count">{prs.length}</span>
+            <span className="prs-filter-pill-label">All</span>
+          </button>
           {ATTENTION_PILLS.map(p => (
             <button
               key={p.level}
@@ -286,12 +295,12 @@ export default function PRsPage() {
     <>
       {[...Array(5)].map((_, i) => (
         <tr key={i} className="prs-skel-row">
-          <td><div className="prs-skel-bar prs-skel-bar-medium" /><div className="prs-skel-bar prs-skel-bar-short" style={{ marginTop: 4 }} /></td>
-          <td><div className="prs-skel-bar prs-skel-bar-narrow" /></td>
-          <td />
-          <td />
-          <td><div className="prs-skel-bar prs-skel-bar-narrow" /></td>
-          <td><div className="prs-skel-bar prs-skel-bar-narrow" /></td>
+          <td className="pt-td"><div className="prs-skel-bar prs-skel-bar-medium" /><div className="prs-skel-bar prs-skel-bar-short" style={{ marginTop: 4 }} /></td>
+          <td className="pt-td"><div className="prs-skel-bar prs-skel-bar-narrow" /></td>
+          <td className="pt-td" />
+          <td className="pt-td" />
+          <td className="pt-td"><div className="prs-skel-bar prs-skel-bar-narrow" /></td>
+          <td className="pt-td"><div className="prs-skel-bar prs-skel-bar-narrow" /></td>
         </tr>
       ))}
     </>
@@ -406,43 +415,46 @@ export default function PRsPage() {
       {!showSkeleton && !showEmpty && prs.length > 0 && renderFilterBar()}
 
       {showSkeleton ? (
-        <table className="prs-table">
+        <div className="prs-table-wrapper">
+        <table className="pt-table">
           <thead>
             <tr>
-              <th>PR</th>
-              <th>Status</th>
-              <th className="prs-col-icon" title="CI">CI</th>
-              <th className="prs-col-icon" title="Auto-merge">AM</th>
-              <th>Task / Worker</th>
-              <th>Updated</th>
+              <th className="pt-th">PR</th>
+              <th className="pt-th">Status</th>
+              <th className="pt-th prs-col-icon">CI</th>
+              <th className="pt-th prs-col-icon">AM</th>
+              <th className="pt-th">Task / Worker</th>
+              <th className="pt-th">Updated</th>
             </tr>
           </thead>
           <tbody>{renderSkeletonRows()}</tbody>
         </table>
+        </div>
       ) : showEmpty ? (
         renderEmpty()
       ) : (
-        <table className="prs-table">
+        <div className="prs-table-wrapper">
+        <table className="pt-table">
           <thead>
             <tr>
-              <th onClick={() => handleSort(tab === 'active' ? 'attention' : 'pr')}>
+              <th className="pt-th sortable" onClick={() => handleSort(tab === 'active' ? 'attention' : 'pr')}>
                 PR {sortIndicator(tab === 'active' ? 'attention' : 'pr')}
               </th>
-              <th onClick={() => handleSort('status')}>Status {sortIndicator('status')}</th>
-              <th className="prs-col-icon" title="CI">CI</th>
-              <th className="prs-col-icon" title="Auto-merge">AM</th>
-              <th onClick={() => handleSort('task')}>Task / Worker {sortIndicator('task')}</th>
-              <th onClick={() => handleSort('updated')}>Updated {sortIndicator('updated')}</th>
+              <th className="pt-th sortable" onClick={() => handleSort('status')}>Status {sortIndicator('status')}</th>
+              <th className="pt-th prs-col-icon">CI</th>
+              <th className="pt-th prs-col-icon">AM</th>
+              <th className="pt-th sortable" onClick={() => handleSort('task')}>Task / Worker {sortIndicator('task')}</th>
+              <th className="pt-th sortable" onClick={() => handleSort('updated')}>Updated {sortIndicator('updated')}</th>
             </tr>
           </thead>
           <tbody>
             {filteredPrs.map(pr => (
               <Fragment key={pr.url}>
                 <tr
-                  className={`attention-${pr.attention_level}${expandedUrl === pr.url ? ' expanded' : ''}`}
+                  className={`pt-row attention-${pr.attention_level}${expandedUrl === pr.url ? ' expanded' : ''}`}
                   onClick={() => handleRowClick(pr.url)}
                 >
-                  <td>
+                  <td className="pt-td">
                     <div className="prs-pr-cell">
                       <span className="prs-pr-repo">
                         <a
@@ -459,10 +471,10 @@ export default function PRsPage() {
                       <span className="prs-pr-title" title={pr.title}>{pr.title}</span>
                     </div>
                   </td>
-                  <td>{renderStatusCell(pr)}</td>
-                  <td className="prs-col-icon">{renderCIIcon(pr)}</td>
-                  <td className="prs-col-icon">{renderAutoMergeIcon(pr)}</td>
-                  <td>
+                  <td className="pt-td">{renderStatusCell(pr)}</td>
+                  <td className="pt-td prs-col-icon">{renderCIIcon(pr)}</td>
+                  <td className="pt-td prs-col-icon">{renderAutoMergeIcon(pr)}</td>
+                  <td className="pt-td">
                     <div className="prs-taskworker-cell">
                       <div>
                         {pr.linked_task ? (
@@ -489,7 +501,7 @@ export default function PRsPage() {
                       )}
                     </div>
                   </td>
-                  <td>
+                  <td className="pt-td date">
                     <span className="prs-updated-cell" title={parseDate(pr.updated_at).toLocaleString()}>
                       {timeAgo(pr.updated_at)}
                     </span>
@@ -497,7 +509,7 @@ export default function PRsPage() {
                 </tr>
                 {expandedUrl === pr.url && (
                   <tr className="prs-expanded-row">
-                    <td colSpan={6}>
+                    <td className="pt-td" colSpan={6}>
                       <div className="prs-expanded-content">
                         <PrPreviewCard url={pr.url} />
                       </div>
@@ -508,6 +520,7 @@ export default function PRsPage() {
             ))}
           </tbody>
         </table>
+        </div>
       )}
     </div>
   )

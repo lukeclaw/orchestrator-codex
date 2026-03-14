@@ -131,7 +131,7 @@
 /* Table wrapper */
 .tasks-table-wrapper {
   overflow-x: auto;
-  background: var(--surface);
+  background: var(--surface-inset);
   border: 1px solid transparent;
   border-radius: var(--radius);
   margin-top: 6px;

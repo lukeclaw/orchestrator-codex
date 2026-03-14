@@ -95,6 +95,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [prRefreshing, setPrRefreshing] = useState(false)
   const [prError, setPrError] = useState<string | null>(null)
   const prCacheRef = useRef<Record<string, { prs: PrSearchItem[]; fetchedAt: number }>>({})
+  const location = useLocation()
 
   const fetchAll = useCallback(async () => {
     try {
@@ -134,7 +135,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
   }, [])
 
+  const wsRef = useRef<WebSocket | null>(null)
+  const locationRef = useRef(location.pathname)
   const prAbortRef = useRef<AbortController | null>(null)
+
 
   const fetchPrs = useCallback(async (tab: 'active' | 'recent', days = 7, refresh = false) => {
     const cacheKey = tab === 'active' ? 'active' : `recent:${days}`
@@ -196,36 +200,39 @@ export function AppProvider({ children }: { children: ReactNode }) {
     return () => clearInterval(interval)
   }, [fetchPrs])
 
-  // WebSocket
-  const location = useLocation()
+  // Keep locationRef in sync
   useEffect(() => {
-    let ws: WebSocket | null = null
+    locationRef.current = location.pathname
+  })
+  useEffect(() => {
     let reconnectTimer: ReturnType<typeof setTimeout>
     let intentionalClose = false
 
     function connect() {
       const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-      ws = new WebSocket(`${proto}//${window.location.host}/ws`)
+      const ws = new WebSocket(`${proto}//${window.location.host}/ws`)
+      wsRef.current = ws
 
       ws.onopen = () => {
         setConnected(true)
         // Send current focus on connect
-        ws?.send(JSON.stringify({ type: 'focus_update', url: location.pathname }))
+        ws.send(JSON.stringify({ type: 'focus_update', url: locationRef.current }))
       }
       ws.onclose = () => {
+        wsRef.current = null
         setConnected(false)
         // Only reconnect on unexpected disconnects, not effect cleanup
         if (!intentionalClose) {
           reconnectTimer = setTimeout(connect, 3000)
         }
       }
-      ws.onerror = () => ws?.close()
+      ws.onerror = () => ws.close()
       ws.onmessage = (event) => {
         try {
           const msg = JSON.parse(event.data)
           if (msg.type === 'request_focus') {
             // Backend requesting current URL - respond immediately
-            ws?.send(JSON.stringify({ type: 'focus_response', url: location.pathname }))
+            ws.send(JSON.stringify({ type: 'focus_response', url: locationRef.current }))
           } else if (msg.type === 'interactive_cli_opened' && msg.data?.session_id) {
             setInteractiveCliSessions(prev => new Set([...prev, msg.data.session_id]))
             fetchAll()
@@ -292,9 +299,18 @@ export function AppProvider({ children }: { children: ReactNode }) {
     return () => {
       intentionalClose = true
       clearTimeout(reconnectTimer)
-      ws?.close()
+      wsRef.current?.close()
+      wsRef.current = null
     }
-  }, [fetchAll, location.pathname])
+  }, [fetchAll])
+
+  // Send focus_update when the route changes (without tearing down the WebSocket)
+  useEffect(() => {
+    const ws = wsRef.current
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ type: 'focus_update', url: location.pathname }))
+    }
+  }, [location.pathname])
 
   // Initial fetch + polling
   useEffect(() => {
