@@ -1,7 +1,7 @@
-import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from 'react'
+import { createContext, useContext, useState, useEffect, useCallback, useRef, type ReactNode } from 'react'
 import { useLocation } from 'react-router-dom'
-import type { Session, Project, Task, Rdev } from '../api/types'
-import { api } from '../api/client'
+import type { Session, Project, Task, Rdev, PrSearchItem, PrSearchResponse } from '../api/types'
+import { api, ApiError } from '../api/client'
 
 export interface SmartPastePayload {
   title?: string
@@ -34,7 +34,10 @@ interface AppState {
   closeBrowserView: (sessionId: string) => void
   setUpdateAvailable: (available: boolean) => void
   prBadgeCount: number
-  setPrBadgeCount: (count: number) => void
+  prCache: Record<string, { prs: PrSearchItem[]; fetchedAt: number }>
+  prRefreshing: boolean
+  prError: string | null
+  fetchPrs: (tab: 'active' | 'recent', days?: number, refresh?: boolean) => void
 }
 
 const AppContext = createContext<AppState>({
@@ -61,12 +64,17 @@ const AppContext = createContext<AppState>({
   closeBrowserView: () => {},
   setUpdateAvailable: () => {},
   prBadgeCount: 0,
-  setPrBadgeCount: () => {},
+  prCache: {},
+  prRefreshing: false,
+  prError: null,
+  fetchPrs: () => {},
 })
 
 export function useApp() {
   return useContext(AppContext)
 }
+
+const PR_CACHE_TTL = 20 * 60 * 1000 // 20 minutes
 
 export function AppProvider({ children }: { children: ReactNode }) {
   const [sessions, setSessions] = useState<Session[]>([])
@@ -83,6 +91,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [browserViewMinimized, setBrowserViewMinimized] = useState<Set<string>>(new Set())
   const [updateAvailable, setUpdateAvailable] = useState(false)
   const [prBadgeCount, setPrBadgeCount] = useState(0)
+  const [prCache, setPrCache] = useState<Record<string, { prs: PrSearchItem[]; fetchedAt: number }>>({})
+  const [prRefreshing, setPrRefreshing] = useState(false)
+  const [prError, setPrError] = useState<string | null>(null)
+  const prCacheRef = useRef<Record<string, { prs: PrSearchItem[]; fetchedAt: number }>>({})
 
   const fetchAll = useCallback(async () => {
     try {
@@ -121,6 +133,68 @@ export function AppProvider({ children }: { children: ReactNode }) {
       console.error('Failed to fetch rdevs:', e)
     }
   }, [])
+
+  const prAbortRef = useRef<AbortController | null>(null)
+
+  const fetchPrs = useCallback(async (tab: 'active' | 'recent', days = 7, refresh = false) => {
+    const cacheKey = tab === 'active' ? 'active' : `recent:${days}`
+
+    // Check cache (skip on manual refresh)
+    if (!refresh) {
+      const cached = prCacheRef.current[cacheKey]
+      if (cached && Date.now() - cached.fetchedAt < PR_CACHE_TTL) {
+        return
+      }
+    }
+
+    prAbortRef.current?.abort()
+    const ctrl = new AbortController()
+    prAbortRef.current = ctrl
+
+    setPrRefreshing(true)
+
+    try {
+      const params = new URLSearchParams({ tab })
+      if (tab === 'recent') params.set('days', String(days))
+      if (refresh) params.set('refresh', 'true')
+
+      const data = await api<PrSearchResponse>(`/api/prs?${params}`, { signal: ctrl.signal })
+      if (ctrl.signal.aborted) return
+
+      const now = Date.now()
+      const entry = { prs: data.prs, fetchedAt: now }
+      prCacheRef.current[cacheKey] = entry
+      setPrCache(prev => ({ ...prev, [cacheKey]: entry }))
+      setPrError(null)
+
+      // Update badge from active tab
+      if (cacheKey === 'active') {
+        setPrBadgeCount(data.prs.filter(p => p.attention_level === 1).length)
+      }
+    } catch (e) {
+      if (e instanceof Error && e.name === 'AbortError') return
+      if (e instanceof ApiError && e.status === 401) {
+        setPrError('auth')
+      } else {
+        setPrError(e instanceof Error ? e.message : 'Failed to fetch PRs')
+      }
+    } finally {
+      if (!ctrl.signal.aborted) {
+        setPrRefreshing(false)
+      }
+    }
+  }, [])
+
+  // Auto-refresh active PRs on mount and every 20 minutes
+  useEffect(() => {
+    fetchPrs('active')
+    const interval = setInterval(() => {
+      // Clear cache for active tab to force re-fetch
+      delete prCacheRef.current['active']
+      fetchPrs('active')
+    }, PR_CACHE_TTL)
+    return () => clearInterval(interval)
+  }, [fetchPrs])
 
   // WebSocket
   const location = useLocation()
@@ -307,7 +381,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   // Focus tracking now handled via WebSocket (see above)
 
   return (
-    <AppContext.Provider value={{ sessions, workers, projects, tasks, rdevs, notificationCount, updateAvailable, connected, loading, smartPastePayload, interactiveCliSessions, interactiveCliMinimized, browserViewSessions, browserViewMinimized, setSmartPastePayload, refresh: fetchAll, refreshRdevs, refreshNotificationCount, removeSession, closeInteractiveCli, closeBrowserView, setUpdateAvailable, prBadgeCount, setPrBadgeCount }}>
+    <AppContext.Provider value={{ sessions, workers, projects, tasks, rdevs, notificationCount, updateAvailable, connected, loading, smartPastePayload, interactiveCliSessions, interactiveCliMinimized, browserViewSessions, browserViewMinimized, setSmartPastePayload, refresh: fetchAll, refreshRdevs, refreshNotificationCount, removeSession, closeInteractiveCli, closeBrowserView, setUpdateAvailable, prBadgeCount, prCache, prRefreshing, prError, fetchPrs }}>
       {children}
     </AppContext.Provider>
   )

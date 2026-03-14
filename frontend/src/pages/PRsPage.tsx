@@ -1,7 +1,7 @@
-import { useState, useEffect, useRef, useMemo, useCallback, Fragment } from 'react'
+import { useState, useEffect, useMemo, useCallback, Fragment } from 'react'
 import { Link } from 'react-router-dom'
-import { api, ApiError, openUrl } from '../api/client'
-import type { PrSearchItem, PrSearchResponse } from '../api/types'
+import { openUrl } from '../api/client'
+import type { PrSearchItem } from '../api/types'
 import { useApp } from '../context/AppContext'
 import SlidingTabs from '../components/common/SlidingTabs'
 import { IconPullRequest, IconRefresh, IconSearch, IconX } from '../components/common/Icons'
@@ -20,8 +20,6 @@ const TABS = [
   { value: 'recent' as Tab, label: 'Recent' },
 ]
 
-const CACHE_TTL = 10 * 60 * 1000 // 10 minutes
-
 const ATTENTION_PILLS: { level: 1 | 2 | 3 | 4; label: string; dotClass: string }[] = [
   { level: 2, label: 'Ready to ship', dotClass: 'prs-dot-green' },
   { level: 1, label: 'Needs action', dotClass: 'prs-dot-red' },
@@ -36,11 +34,6 @@ const SUB_FILTER_COLORS: Record<SubFilter, string> = {
   all: 'var(--text-muted)',
   merged: 'var(--purple)',
   closed: 'var(--red)',
-}
-
-interface TabCache {
-  prs: PrSearchItem[]
-  fetchedAt: number
 }
 
 function renderReviewChip(pr: PrSearchItem) {
@@ -100,77 +93,34 @@ function renderAutoMergeIcon(pr: PrSearchItem) {
 }
 
 export default function PRsPage() {
-  const { setPrBadgeCount } = useApp()
+  const { prCache, prRefreshing, prError, fetchPrs } = useApp()
   const [tab, setTab] = useState<Tab>('active')
   const [days, setDays] = useState(7)
-  const [prs, setPrs] = useState<PrSearchItem[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
   const [expandedUrl, setExpandedUrl] = useState<string | null>(null)
   const [sortField, setSortField] = useState<SortField>('attention')
   const [sortDir, setSortDir] = useState<SortDir>('asc')
   const [filterText, setFilterText] = useState('')
   const [attentionFilter, setAttentionFilter] = useState<AttentionFilter>(null)
   const [subFilter, setSubFilter] = useState<SubFilter>('all')
-  const [fetchedAt, setFetchedAt] = useState<number | null>(null)
   const [, setTick] = useState(0)
 
-  const abortRef = useRef<AbortController | null>(null)
-  const cacheRef = useRef<Record<string, TabCache>>({})
-
   const cacheKey = tab === 'active' ? 'active' : `recent:${days}`
+  const cached = prCache[cacheKey]
+  const prs = cached?.prs ?? []
+  const fetchedAt = cached?.fetchedAt ?? null
+  const initialLoading = !cached && (prRefreshing || !prError)
 
-  const fetchPrs = useCallback(async (refresh = false) => {
-    abortRef.current?.abort()
+  // Trigger fetch for current tab on mount or tab/days change
+  useEffect(() => {
+    fetchPrs(tab, days)
+  }, [tab, days, fetchPrs])
 
-    // Check frontend cache (skip on manual refresh)
-    if (!refresh) {
-      const cached = cacheRef.current[cacheKey]
-      if (cached && Date.now() - cached.fetchedAt < CACHE_TTL) {
-        setPrs(cached.prs)
-        setFetchedAt(cached.fetchedAt)
-        setLoading(false)
-        setError(null)
-        setPrBadgeCount(cached.prs.filter(p => p.attention_level === 1).length)
-        return
-      }
-    }
-
-    const ctrl = new AbortController()
-    abortRef.current = ctrl
-
-    setLoading(true)
-    setError(null)
-    setPrBadgeCount(0)
-
-    try {
-      const params = new URLSearchParams({ tab })
-      if (tab === 'recent') params.set('days', String(days))
-      if (refresh) params.set('refresh', 'true')
-
-      const data = await api<PrSearchResponse>(`/api/prs?${params}`, { signal: ctrl.signal })
-      if (ctrl.signal.aborted) return
-
-      const now = Date.now()
-      setPrs(data.prs)
-      setFetchedAt(now)
-      setLoading(false)
-      setPrBadgeCount(data.prs.filter(p => p.attention_level === 1).length)
-
-      cacheRef.current[cacheKey] = {
-        prs: data.prs,
-        fetchedAt: now,
-      }
-    } catch (e) {
-      if (e instanceof Error && e.name === 'AbortError') return
-      if (e instanceof ApiError && e.status === 401) {
-        setError('auth')
-      } else {
-        setError(e instanceof Error ? e.message : 'Failed to fetch PRs')
-      }
-      setLoading(false)
-    }
-  }, [tab, days, cacheKey, setPrBadgeCount])
+  // Tick every 30s to keep "fetched X ago" fresh
+  useEffect(() => {
+    if (fetchedAt === null) return
+    const id = setInterval(() => setTick(t => t + 1), 30_000)
+    return () => clearInterval(id)
+  }, [fetchedAt])
 
   const handleTabChange = useCallback((newTab: Tab) => {
     setTab(newTab)
@@ -180,18 +130,6 @@ export default function PRsPage() {
     setSortField(newTab === 'active' ? 'attention' : 'updated')
     setSortDir(newTab === 'active' ? 'asc' : 'desc')
   }, [])
-
-  useEffect(() => {
-    fetchPrs()
-    return () => { abortRef.current?.abort() }
-  }, [fetchPrs])
-
-  // Tick every 30s to keep "fetched X ago" fresh
-  useEffect(() => {
-    if (fetchedAt === null) return
-    const id = setInterval(() => setTick(t => t + 1), 30_000)
-    return () => clearInterval(id)
-  }, [fetchedAt])
 
   const handleSort = (field: SortField) => {
     if (sortField === field) {
@@ -360,7 +298,7 @@ export default function PRsPage() {
   )
 
   const renderEmpty = () => {
-    if (error === 'auth') {
+    if (prError === 'auth') {
       return (
         <div className="prs-empty">
           <IconPullRequest size={32} className="prs-empty-icon" />
@@ -371,11 +309,11 @@ export default function PRsPage() {
         </div>
       )
     }
-    if (error) {
+    if (prError) {
       return (
         <div className="prs-empty">
           <IconPullRequest size={32} className="prs-empty-icon" />
-          <div className="prs-empty-text">{error}</div>
+          <div className="prs-empty-text">{prError}</div>
         </div>
       )
     }
@@ -427,6 +365,11 @@ export default function PRsPage() {
     )
   }
 
+  // Show skeleton only on initial load (no cached data yet)
+  const showSkeleton = initialLoading && prs.length === 0
+  // Show empty/error only when not loading and no data
+  const showEmpty = !initialLoading && (prError || prs.length === 0)
+
   return (
     <div className="prs-page">
       <div className="page-header">
@@ -445,14 +388,14 @@ export default function PRsPage() {
           </div>
         )}
         <div className="page-header-actions">
-          {fetchedAt && !loading && (
+          {fetchedAt && !prRefreshing && (
             <span className="prs-fetched-at" title={new Date(fetchedAt).toLocaleString()}>
               {timeAgo(new Date(fetchedAt).toISOString())}
             </span>
           )}
           <button
-            className={`btn-icon ${loading ? 'spinning' : ''}`}
-            onClick={() => fetchPrs(true)}
+            className={`btn-icon ${prRefreshing ? 'spinning' : ''}`}
+            onClick={() => fetchPrs(tab, days, true)}
             title="Refresh"
           >
             <IconRefresh size={14} />
@@ -460,9 +403,9 @@ export default function PRsPage() {
         </div>
       </div>
 
-      {!loading && !error && prs.length > 0 && renderFilterBar()}
+      {!showSkeleton && !showEmpty && prs.length > 0 && renderFilterBar()}
 
-      {loading ? (
+      {showSkeleton ? (
         <table className="prs-table">
           <thead>
             <tr>
@@ -476,7 +419,7 @@ export default function PRsPage() {
           </thead>
           <tbody>{renderSkeletonRows()}</tbody>
         </table>
-      ) : error || prs.length === 0 ? (
+      ) : showEmpty ? (
         renderEmpty()
       ) : (
         <table className="prs-table">
