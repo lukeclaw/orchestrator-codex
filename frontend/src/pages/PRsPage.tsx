@@ -412,12 +412,17 @@ export default function PRsPage() {
       )
     }
 
-    // Open PRs — review chip + conflict chip
-    const review = renderReviewChip(pr)
+    // Open PRs — conflict takes priority, otherwise show review chip
+    if (pr.mergeable === 'conflicting') {
+      return (
+        <div className="prs-status-cell">
+          <span className="pr-status-chip pr-chip-red">Merge conflicts</span>
+        </div>
+      )
+    }
     return (
       <div className="prs-status-cell">
-        {review}
-        {pr.mergeable === 'conflicting' && <span className="pr-status-chip pr-chip-red">Conflicts</span>}
+        {renderReviewChip(pr)}
       </div>
     )
   }
