@@ -93,16 +93,15 @@ def _compute_attention_level(
     return 3  # in review (default)
 
 
-def _derive_ci_state(node: dict, *, review_decision: str | None) -> str | None:
+def _derive_ci_state(node: dict) -> str | None:
     """Derive ci_state from statusCheckRollup.
 
-    When the rollup is PENDING, the only pending check may be the owner
-    approval gate (which mirrors reviewDecision).  We use reviewDecision
-    to distinguish:
-      - review approved  → gate should have cleared, pending = real CI
-      - review not approved → pending is likely just the gate
-    This avoids fetching individual check contexts (which causes GitHub
-    504 timeouts when there are many PRs × many checks).
+    Only returns definitive states (success/failure).  PENDING is not
+    surfaced because statusCheckRollup aggregates ALL checks including
+    owner-approval gates — we cannot distinguish "real CI running" from
+    "only the gate is pending" without fetching individual check
+    contexts (which causes GitHub 504 timeouts at scale).  The expanded
+    preview card has full per-check detail when needed.
     """
     commits_nodes = (node.get("commits") or {}).get("nodes", [])
     if not commits_nodes:
@@ -114,12 +113,7 @@ def _derive_ci_state(node: dict, *, review_decision: str | None) -> str | None:
         return "success"
     if rollup_state in ("FAILURE", "ERROR"):
         return "failure"
-    if rollup_state in ("PENDING", "EXPECTED"):
-        if review_decision == "approved":
-            # Owner gate should have cleared — real CI is still running
-            return "pending"
-        # Pending is likely just the owner approval gate, not real CI
-        return None
+    # PENDING/EXPECTED — can't tell if real CI or just a gate; omit.
     return None
 
 
@@ -159,7 +153,7 @@ def _parse_graphql_prs(nodes: list[dict], fetched_at: str) -> list[dict]:
             if name:
                 review_requests.append(name)
 
-        ci_state = _derive_ci_state(node, review_decision=review_decision)
+        ci_state = _derive_ci_state(node)
         auto_merge = bool(node.get("autoMergeRequest"))
         merged_by = (node.get("mergedBy") or {}).get("login")
         raw_mergeable = (node.get("mergeable") or "").upper()
