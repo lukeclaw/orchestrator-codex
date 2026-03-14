@@ -192,6 +192,31 @@
 .prs-table tbody tr.attention-3 { border-left-color: var(--accent); }
 .prs-table tbody tr.attention-4 { border-left-color: var(--text-muted); }
 
+/* Icon columns (CI, Auto-merge) */
+.prs-col-icon {
+  width: 32px;
+  text-align: center;
+  padding-left: 4px !important;
+  padding-right: 4px !important;
+}
+
+.prs-table th.prs-col-icon {
+  font-size: 11px;
+  color: var(--text-muted);
+  cursor: default;
+}
+
+.prs-icon-cell {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.prs-icon-green { color: var(--green); }
+.prs-icon-red { color: var(--red); }
+.prs-icon-yellow { color: var(--yellow); }
+.prs-icon-accent { color: var(--accent); }
+
 /* PR column — two-line cell */
 .prs-pr-cell {
   display: flex;

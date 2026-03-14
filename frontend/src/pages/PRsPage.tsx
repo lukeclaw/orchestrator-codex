@@ -61,18 +61,39 @@ function renderReviewChip(pr: PrSearchItem) {
   }
 }
 
-function renderCIChip(pr: PrSearchItem) {
-  if (pr.draft || pr.state !== 'open') return null
+function renderCIIcon(pr: PrSearchItem) {
+  if (pr.state !== 'open') return null
   switch (pr.ci_state) {
     case 'success':
-      return <span className="pr-status-chip pr-chip-green">CI passing</span>
+      return (
+        <span className="prs-icon-cell prs-icon-green" title="CI passing">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
+        </span>
+      )
     case 'failure':
-      return <span className="pr-status-chip pr-chip-red">CI failing</span>
+      return (
+        <span className="prs-icon-cell prs-icon-red" title="CI failing">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+        </span>
+      )
     case 'pending':
-      return <span className="pr-status-chip pr-chip-yellow">CI running</span>
+      return (
+        <span className="prs-icon-cell prs-icon-yellow" title="CI running">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></svg>
+        </span>
+      )
     default:
       return null
   }
+}
+
+function renderAutoMergeIcon(pr: PrSearchItem) {
+  if (!pr.auto_merge || pr.state !== 'open') return null
+  return (
+    <span className="prs-icon-cell prs-icon-accent" title="Auto-merge enabled">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="18" cy="18" r="3" /><circle cx="6" cy="6" r="3" /><path d="M6 21V9a9 9 0 0 0 9 9" /></svg>
+    </span>
+  )
 }
 
 export default function PRsPage() {
@@ -326,6 +347,8 @@ export default function PRsPage() {
         <tr key={i} className="prs-skel-row">
           <td><div className="prs-skel-bar prs-skel-bar-medium" /><div className="prs-skel-bar prs-skel-bar-short" style={{ marginTop: 4 }} /></td>
           <td><div className="prs-skel-bar prs-skel-bar-narrow" /></td>
+          <td />
+          <td />
           <td><div className="prs-skel-bar prs-skel-bar-narrow" /></td>
           <td><div className="prs-skel-bar prs-skel-bar-narrow" /></td>
         </tr>
@@ -386,15 +409,12 @@ export default function PRsPage() {
       )
     }
 
-    // Open PRs — review chip + CI chip + conflict chip + optional auto-merge
+    // Open PRs — review chip + conflict chip
     const review = renderReviewChip(pr)
-    const ci = renderCIChip(pr)
     return (
       <div className="prs-status-cell">
         {review}
-        {ci}
         {pr.mergeable === 'conflicting' && <span className="pr-status-chip pr-chip-red">Conflicts</span>}
-        {pr.auto_merge && <span className="pr-status-chip pr-chip-accent">Auto-merge</span>}
       </div>
     )
   }
@@ -440,6 +460,8 @@ export default function PRsPage() {
             <tr>
               <th>PR</th>
               <th>Status</th>
+              <th className="prs-col-icon" title="CI">CI</th>
+              <th className="prs-col-icon" title="Auto-merge">AM</th>
               <th>Task / Worker</th>
               <th>Updated</th>
             </tr>
@@ -456,6 +478,8 @@ export default function PRsPage() {
                 PR {sortIndicator(tab === 'active' ? 'attention' : 'pr')}
               </th>
               <th onClick={() => handleSort('status')}>Status {sortIndicator('status')}</th>
+              <th className="prs-col-icon" title="CI">CI</th>
+              <th className="prs-col-icon" title="Auto-merge">AM</th>
               <th onClick={() => handleSort('task')}>Task / Worker {sortIndicator('task')}</th>
               <th onClick={() => handleSort('updated')}>Updated {sortIndicator('updated')}</th>
             </tr>
@@ -485,6 +509,8 @@ export default function PRsPage() {
                     </div>
                   </td>
                   <td>{renderStatusCell(pr)}</td>
+                  <td className="prs-col-icon">{renderCIIcon(pr)}</td>
+                  <td className="prs-col-icon">{renderAutoMergeIcon(pr)}</td>
                   <td>
                     <div className="prs-taskworker-cell">
                       <div>
@@ -520,7 +546,7 @@ export default function PRsPage() {
                 </tr>
                 {expandedUrl === pr.url && (
                   <tr className="prs-expanded-row">
-                    <td colSpan={4}>
+                    <td colSpan={6}>
                       <div className="prs-expanded-content">
                         <PrPreviewCard url={pr.url} />
                       </div>
