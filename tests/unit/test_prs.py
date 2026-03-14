@@ -63,13 +63,21 @@ def _make_graphql_node(
     draft=False,
     merged_at=None,
     rollup_state=None,
+    checks=None,
     review_decision=None,
     review_requests=None,
     auto_merge=False,
     mergeable=None,
 ):
-    """Build a GraphQL PullRequest node for mocking."""
-    rollup = {"state": rollup_state} if rollup_state else None
+    """Build a GraphQL PullRequest node for mocking.
+
+    checks: list of dicts like {"name": "ci", "conclusion": "SUCCESS"}
+            or {"name": "Owner Approval", "conclusion": ""} for pending.
+    """
+    rollup = None
+    if rollup_state or checks is not None:
+        rollup = {"state": rollup_state or "SUCCESS"}
+        rollup["contexts"] = {"nodes": checks or []}
     rr_nodes = []
     if review_requests:
         for rr in review_requests:
@@ -397,8 +405,8 @@ def test_rollup_failure_state(mock_gh, client):
 
 
 @patch.object(prs, "_run_gh", new_callable=AsyncMock)
-def test_rollup_pending_gives_null_ci_state(mock_gh, client):
-    """PENDING rollup gives null ci_state (can't distinguish CI from gate)."""
+def test_rollup_pending_fallback_gives_null(mock_gh, client):
+    """PENDING rollup with no contexts falls back to null ci_state."""
     mock_gh.return_value = _wrap_graphql(_make_graphql_node(rollup_state="PENDING"))
 
     resp = client.get("/api/prs?tab=active")
@@ -418,7 +426,7 @@ def test_no_rollup_gives_null_ci_state(mock_gh, client):
 
 @patch.object(prs, "_run_gh", new_callable=AsyncMock)
 def test_error_rollup_treated_as_failure(mock_gh, client):
-    """ERROR rollup state is treated as CI failure."""
+    """ERROR rollup state with no contexts falls back to failure."""
     mock_gh.return_value = _wrap_graphql(_make_graphql_node(rollup_state="ERROR"))
 
     resp = client.get("/api/prs?tab=active")
@@ -428,12 +436,174 @@ def test_error_rollup_treated_as_failure(mock_gh, client):
 
 @patch.object(prs, "_run_gh", new_callable=AsyncMock)
 def test_expected_rollup_gives_null_ci_state(mock_gh, client):
-    """EXPECTED rollup gives null ci_state (same as PENDING)."""
+    """EXPECTED rollup with no contexts falls back to null."""
     mock_gh.return_value = _wrap_graphql(_make_graphql_node(rollup_state="EXPECTED"))
 
     resp = client.get("/api/prs?tab=active")
     pr = resp.json()["prs"][0]
     assert pr["ci_state"] is None
+
+
+# --- Context-based CI derivation tests ---
+
+
+@patch.object(prs, "_run_gh", new_callable=AsyncMock)
+def test_ci_checks_passing_with_gate_pending(mock_gh, client):
+    """Real CI checks all passing + approval gate pending -> ci_state='success'."""
+    mock_gh.return_value = _wrap_graphql(
+        _make_graphql_node(
+            checks=[
+                {"name": "build", "conclusion": "SUCCESS"},
+                {"name": "lint", "conclusion": "SUCCESS"},
+                {"name": "Owner Approval", "conclusion": ""},
+            ],
+        )
+    )
+
+    resp = client.get("/api/prs?tab=active")
+    pr = resp.json()["prs"][0]
+    assert pr["ci_state"] == "success"
+
+
+@patch.object(prs, "_run_gh", new_callable=AsyncMock)
+def test_ci_check_failing_with_gate_pending(mock_gh, client):
+    """One CI check failing + approval gate pending -> ci_state='failure'."""
+    mock_gh.return_value = _wrap_graphql(
+        _make_graphql_node(
+            checks=[
+                {"name": "build", "conclusion": "FAILURE"},
+                {"name": "lint", "conclusion": "SUCCESS"},
+                {"name": "Owner Approval", "conclusion": ""},
+            ],
+        )
+    )
+
+    resp = client.get("/api/prs?tab=active")
+    pr = resp.json()["prs"][0]
+    assert pr["ci_state"] == "failure"
+    assert pr["attention_level"] == 1
+
+
+@patch.object(prs, "_run_gh", new_callable=AsyncMock)
+def test_ci_check_running_with_gate_pending(mock_gh, client):
+    """CI check still running + approval gate pending -> ci_state='pending'."""
+    mock_gh.return_value = _wrap_graphql(
+        _make_graphql_node(
+            checks=[
+                {"name": "build", "conclusion": ""},
+                {"name": "lint", "conclusion": "SUCCESS"},
+                {"name": "Owner Approval", "conclusion": ""},
+            ],
+        )
+    )
+
+    resp = client.get("/api/prs?tab=active")
+    pr = resp.json()["prs"][0]
+    assert pr["ci_state"] == "pending"
+
+
+@patch.object(prs, "_run_gh", new_callable=AsyncMock)
+def test_only_gate_checks_gives_null_ci_state(mock_gh, client):
+    """Only approval gate checks (no real CI) -> ci_state=null."""
+    mock_gh.return_value = _wrap_graphql(
+        _make_graphql_node(
+            checks=[
+                {"name": "Owner Approval", "conclusion": ""},
+                {"name": "Code approval gate", "conclusion": ""},
+            ],
+        )
+    )
+
+    resp = client.get("/api/prs?tab=active")
+    pr = resp.json()["prs"][0]
+    assert pr["ci_state"] is None
+
+
+@patch.object(prs, "_run_gh", new_callable=AsyncMock)
+def test_status_context_failure(mock_gh, client):
+    """StatusContext with state=FAILURE is treated as CI failure."""
+    mock_gh.return_value = _wrap_graphql(
+        _make_graphql_node(
+            checks=[
+                {"context": "ci/jenkins", "state": "FAILURE"},
+            ],
+        )
+    )
+
+    resp = client.get("/api/prs?tab=active")
+    pr = resp.json()["prs"][0]
+    assert pr["ci_state"] == "failure"
+
+
+@patch.object(prs, "_run_gh", new_callable=AsyncMock)
+def test_status_context_pending(mock_gh, client):
+    """StatusContext with state=PENDING is treated as pending."""
+    mock_gh.return_value = _wrap_graphql(
+        _make_graphql_node(
+            checks=[
+                {"context": "ci/jenkins", "state": "PENDING"},
+            ],
+        )
+    )
+
+    resp = client.get("/api/prs?tab=active")
+    pr = resp.json()["prs"][0]
+    assert pr["ci_state"] == "pending"
+
+
+@patch.object(prs, "_run_gh", new_callable=AsyncMock)
+def test_timed_out_check_is_failure(mock_gh, client):
+    """TIMED_OUT conclusion is treated as failure."""
+    mock_gh.return_value = _wrap_graphql(
+        _make_graphql_node(
+            checks=[
+                {"name": "slow-test", "conclusion": "TIMED_OUT"},
+            ],
+        )
+    )
+
+    resp = client.get("/api/prs?tab=active")
+    assert resp.json()["prs"][0]["ci_state"] == "failure"
+
+
+@patch.object(prs, "_run_gh", new_callable=AsyncMock)
+def test_ci_passing_with_approved_gives_ready_to_ship(mock_gh, client):
+    """All CI checks pass + approved -> attention level 2 (ready to ship)."""
+    mock_gh.return_value = _wrap_graphql(
+        _make_graphql_node(
+            review_decision="APPROVED",
+            checks=[
+                {"name": "build", "conclusion": "SUCCESS"},
+                {"name": "lint", "conclusion": "SUCCESS"},
+                {"name": "Owner Approval", "conclusion": "SUCCESS"},
+            ],
+        )
+    )
+
+    resp = client.get("/api/prs?tab=active")
+    pr = resp.json()["prs"][0]
+    assert pr["ci_state"] == "success"
+    assert pr["attention_level"] == 2
+
+
+@patch.object(prs, "_run_gh", new_callable=AsyncMock)
+def test_approved_ci_passing_gate_pending_is_not_ready(mock_gh, client):
+    """Approved + CI passing + owner gate still pending -> level 3, not 2."""
+    mock_gh.return_value = _wrap_graphql(
+        _make_graphql_node(
+            review_decision="APPROVED",
+            checks=[
+                {"name": "build", "conclusion": "SUCCESS"},
+                {"name": "lint", "conclusion": "SUCCESS"},
+                {"name": "Owner Approval", "conclusion": ""},
+            ],
+        )
+    )
+
+    resp = client.get("/api/prs?tab=active")
+    pr = resp.json()["prs"][0]
+    assert pr["ci_state"] == "success"
+    assert pr["attention_level"] == 3  # not ready — gate still pending
 
 
 # --- Attention model tests ---

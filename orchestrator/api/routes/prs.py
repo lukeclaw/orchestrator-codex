@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import re
 import time
 from datetime import UTC, datetime, timedelta
 
@@ -59,6 +60,12 @@ query($q: String!) {
             commit {
               statusCheckRollup {
                 state
+                contexts(first: 50) {
+                  nodes {
+                    ... on CheckRun { name conclusion }
+                    ... on StatusContext { context state }
+                  }
+                }
               }
             }
           }
@@ -76,6 +83,7 @@ def _compute_attention_level(
     ci_state: str | None,
     review_decision: str | None,
     mergeable: str | None,
+    has_pending_gates: bool,
 ) -> int:
     """Compute attention level (1-4) for a PR."""
     if draft:
@@ -88,33 +96,95 @@ def _compute_attention_level(
         or mergeable == "conflicting"
     ):
         return 1  # needs action
-    if review_decision == "approved" and ci_state == "success":
+    if review_decision == "approved" and ci_state == "success" and not has_pending_gates:
         return 2  # ready to ship
     return 3  # in review (default)
 
 
-def _derive_ci_state(node: dict) -> str | None:
-    """Derive ci_state from statusCheckRollup.
+_APPROVAL_GATE_RE = re.compile(r"approval", re.IGNORECASE)
 
-    Only returns definitive states (success/failure).  PENDING is not
-    surfaced because statusCheckRollup aggregates ALL checks including
-    owner-approval gates — we cannot distinguish "real CI running" from
-    "only the gate is pending" without fetching individual check
-    contexts (which causes GitHub 504 timeouts at scale).  The expanded
-    preview card has full per-check detail when needed.
+
+def _derive_ci_state(node: dict) -> str | None:
+    """Derive ci_state from individual check contexts, excluding approval gates.
+
+    We fetch statusCheckRollup.contexts (name + conclusion only) and
+    filter out owner-approval gate checks (matching /approval/i) — the
+    same pattern the preview card uses.  This gives accurate CI state
+    without being polluted by gate checks that stay pending until an
+    owner approves.
     """
     commits_nodes = (node.get("commits") or {}).get("nodes", [])
     if not commits_nodes:
         return None
     commit = (commits_nodes[0] or {}).get("commit") or {}
     rollup = commit.get("statusCheckRollup") or {}
-    rollup_state = (rollup.get("state") or "").upper()
-    if rollup_state == "SUCCESS":
-        return "success"
-    if rollup_state in ("FAILURE", "ERROR"):
+    contexts = (rollup.get("contexts") or {}).get("nodes", [])
+
+    if not contexts:
+        # No contexts available — fall back to rollup state
+        rollup_state = (rollup.get("state") or "").upper()
+        if rollup_state == "SUCCESS":
+            return "success"
+        if rollup_state in ("FAILURE", "ERROR"):
+            return "failure"
+        return None
+
+    # Filter out approval gate checks
+    ci_checks = []
+    for ctx in contexts:
+        if not isinstance(ctx, dict):
+            continue
+        name = ctx.get("name") or ctx.get("context") or ""
+        if _APPROVAL_GATE_RE.search(name):
+            continue
+        ci_checks.append(ctx)
+
+    if not ci_checks:
+        return None
+
+    # Derive state from real CI checks only
+    has_failure = False
+    has_pending = False
+    for ctx in ci_checks:
+        conclusion = (ctx.get("conclusion") or "").upper()
+        state = (ctx.get("state") or "").upper()
+        if conclusion in ("FAILURE", "TIMED_OUT", "STARTUP_FAILURE"):
+            has_failure = True
+        elif state in ("ERROR", "FAILURE"):
+            has_failure = True
+        elif conclusion == "":
+            # CheckRun with no conclusion = still running
+            has_pending = True
+        elif state in ("PENDING", "EXPECTED"):
+            has_pending = True
+
+    if has_failure:
         return "failure"
-    # PENDING/EXPECTED — can't tell if real CI or just a gate; omit.
-    return None
+    if has_pending:
+        return "pending"
+    return "success"
+
+
+def _has_pending_gates(node: dict) -> bool:
+    """Check if any approval gate checks are still pending."""
+    commits_nodes = (node.get("commits") or {}).get("nodes", [])
+    if not commits_nodes:
+        return False
+    commit = (commits_nodes[0] or {}).get("commit") or {}
+    rollup = commit.get("statusCheckRollup") or {}
+    contexts = (rollup.get("contexts") or {}).get("nodes", [])
+
+    for ctx in contexts:
+        if not isinstance(ctx, dict):
+            continue
+        name = ctx.get("name") or ctx.get("context") or ""
+        if not _APPROVAL_GATE_RE.search(name):
+            continue
+        # Gate check found — is it pending?
+        conclusion = (ctx.get("conclusion") or "").upper()
+        if conclusion == "" or conclusion not in ("SUCCESS", "NEUTRAL", "SKIPPED"):
+            return True
+    return False
 
 
 def _parse_graphql_prs(nodes: list[dict], fetched_at: str) -> list[dict]:
@@ -154,6 +224,7 @@ def _parse_graphql_prs(nodes: list[dict], fetched_at: str) -> list[dict]:
                 review_requests.append(name)
 
         ci_state = _derive_ci_state(node)
+        pending_gates = _has_pending_gates(node)
         auto_merge = bool(node.get("autoMergeRequest"))
         merged_by = (node.get("mergedBy") or {}).get("login")
         raw_mergeable = (node.get("mergeable") or "").upper()
@@ -164,6 +235,7 @@ def _parse_graphql_prs(nodes: list[dict], fetched_at: str) -> list[dict]:
             ci_state=ci_state,
             review_decision=review_decision,
             mergeable=mergeable,
+            has_pending_gates=pending_gates,
         )
 
         prs.append(

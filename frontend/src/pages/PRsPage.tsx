@@ -23,11 +23,14 @@ const TABS = [
 const CACHE_TTL = 10 * 60 * 1000 // 10 minutes
 
 const ATTENTION_PILLS: { level: 1 | 2 | 3 | 4; label: string; dotClass: string }[] = [
-  { level: 1, label: 'Needs action', dotClass: 'prs-dot-red' },
   { level: 2, label: 'Ready to ship', dotClass: 'prs-dot-green' },
+  { level: 1, label: 'Needs action', dotClass: 'prs-dot-red' },
   { level: 3, label: 'In review', dotClass: 'prs-dot-accent' },
   { level: 4, label: 'Draft', dotClass: 'prs-dot-gray' },
 ]
+
+// Sort priority: ready to ship first, then needs action, in review, draft
+const ATTENTION_SORT_ORDER: Record<number, number> = { 2: 0, 1: 1, 3: 2, 4: 3 }
 
 const SUB_FILTER_COLORS: Record<SubFilter, string> = {
   all: 'var(--text-muted)',
@@ -48,7 +51,7 @@ function renderReviewChip(pr: PrSearchItem) {
       if (pr.attention_level === 2) {
         return <span className="pr-status-chip pr-chip-green">Approved</span>
       }
-      return <span className="pr-status-chip pr-chip-gray">Reviewed</span>
+      return <span className="pr-status-chip pr-chip-yellow">Pending ACL</span>
     case 'changes_requested':
       return <span className="pr-status-chip pr-chip-red">Changes requested</span>
     case 'review_required':
@@ -234,14 +237,14 @@ export default function PRsPage() {
       let cmp = 0
       switch (sortField) {
         case 'attention':
-          cmp = a.attention_level - b.attention_level
+          cmp = ATTENTION_SORT_ORDER[a.attention_level] - ATTENTION_SORT_ORDER[b.attention_level]
           if (cmp === 0) cmp = parseDate(b.updated_at).getTime() - parseDate(a.updated_at).getTime()
           break
         case 'pr':
           cmp = a.repo.localeCompare(b.repo) || a.number - b.number
           break
         case 'status':
-          cmp = a.attention_level - b.attention_level
+          cmp = ATTENTION_SORT_ORDER[a.attention_level] - ATTENTION_SORT_ORDER[b.attention_level]
           break
         case 'task':
           cmp = (a.linked_task ? 0 : 1) - (b.linked_task ? 0 : 1) ||
