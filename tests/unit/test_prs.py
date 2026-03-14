@@ -397,13 +397,25 @@ def test_rollup_failure_state(mock_gh, client):
 
 
 @patch.object(prs, "_run_gh", new_callable=AsyncMock)
-def test_rollup_pending_state(mock_gh, client):
-    """PENDING rollup state produces ci_state='pending'."""
-    mock_gh.return_value = _wrap_graphql(_make_graphql_node(rollup_state="PENDING"))
+def test_rollup_pending_with_approved_review(mock_gh, client):
+    """PENDING rollup + approved review = real CI pending."""
+    mock_gh.return_value = _wrap_graphql(
+        _make_graphql_node(rollup_state="PENDING", review_decision="APPROVED")
+    )
 
     resp = client.get("/api/prs?tab=active")
     pr = resp.json()["prs"][0]
     assert pr["ci_state"] == "pending"
+
+
+@patch.object(prs, "_run_gh", new_callable=AsyncMock)
+def test_rollup_pending_without_approved_review(mock_gh, client):
+    """PENDING rollup + review not approved = likely just owner gate."""
+    mock_gh.return_value = _wrap_graphql(_make_graphql_node(rollup_state="PENDING"))
+
+    resp = client.get("/api/prs?tab=active")
+    pr = resp.json()["prs"][0]
+    assert pr["ci_state"] is None
 
 
 @patch.object(prs, "_run_gh", new_callable=AsyncMock)
@@ -428,8 +440,10 @@ def test_error_rollup_treated_as_failure(mock_gh, client):
 
 @patch.object(prs, "_run_gh", new_callable=AsyncMock)
 def test_expected_rollup_treated_as_pending(mock_gh, client):
-    """EXPECTED rollup state is treated as pending."""
-    mock_gh.return_value = _wrap_graphql(_make_graphql_node(rollup_state="EXPECTED"))
+    """EXPECTED rollup + approved review is treated as pending."""
+    mock_gh.return_value = _wrap_graphql(
+        _make_graphql_node(rollup_state="EXPECTED", review_decision="APPROVED")
+    )
 
     resp = client.get("/api/prs?tab=active")
     pr = resp.json()["prs"][0]
