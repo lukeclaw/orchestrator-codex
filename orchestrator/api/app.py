@@ -260,6 +260,7 @@ def create_app(
         paste,
         pr_preview,
         projects,
+        prs,
         rdevs,
         sessions,
         settings,
@@ -286,6 +287,7 @@ def create_app(
     app.include_router(interactive_cli.router, prefix="/api", tags=["interactive_cli"])
     app.include_router(browser_view.router, prefix="/api", tags=["browser_view"])
     app.include_router(pr_preview.router, prefix="/api", tags=["pr_preview"])
+    app.include_router(prs.router, prefix="/api", tags=["prs"])
 
     # Health check (used by Tauri shell to know when the sidecar is ready)
     @app.get("/api/health", tags=["health"])

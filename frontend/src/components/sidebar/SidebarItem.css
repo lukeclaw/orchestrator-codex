@@ -95,3 +95,12 @@
 .sidebar-badge-dot.warning {
   background: #f59e0b;
 }
+
+.sidebar-badge.danger {
+  background: rgba(248, 81, 73, 0.15);
+  color: #f85149;
+}
+
+.sidebar-badge-dot.danger {
+  background: #f85149;
+}

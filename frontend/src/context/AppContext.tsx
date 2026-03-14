@@ -33,6 +33,8 @@ interface AppState {
   closeInteractiveCli: (sessionId: string) => void
   closeBrowserView: (sessionId: string) => void
   setUpdateAvailable: (available: boolean) => void
+  prBadgeCount: number
+  setPrBadgeCount: (count: number) => void
 }
 
 const AppContext = createContext<AppState>({
@@ -58,6 +60,8 @@ const AppContext = createContext<AppState>({
   closeInteractiveCli: () => {},
   closeBrowserView: () => {},
   setUpdateAvailable: () => {},
+  prBadgeCount: 0,
+  setPrBadgeCount: () => {},
 })
 
 export function useApp() {
@@ -78,6 +82,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [browserViewSessions, setBrowserViewSessions] = useState<Set<string>>(new Set())
   const [browserViewMinimized, setBrowserViewMinimized] = useState<Set<string>>(new Set())
   const [updateAvailable, setUpdateAvailable] = useState(false)
+  const [prBadgeCount, setPrBadgeCount] = useState(0)
 
   const fetchAll = useCallback(async () => {
     try {
@@ -302,7 +307,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   // Focus tracking now handled via WebSocket (see above)
 
   return (
-    <AppContext.Provider value={{ sessions, workers, projects, tasks, rdevs, notificationCount, updateAvailable, connected, loading, smartPastePayload, interactiveCliSessions, interactiveCliMinimized, browserViewSessions, browserViewMinimized, setSmartPastePayload, refresh: fetchAll, refreshRdevs, refreshNotificationCount, removeSession, closeInteractiveCli, closeBrowserView, setUpdateAvailable }}>
+    <AppContext.Provider value={{ sessions, workers, projects, tasks, rdevs, notificationCount, updateAvailable, connected, loading, smartPastePayload, interactiveCliSessions, interactiveCliMinimized, browserViewSessions, browserViewMinimized, setSmartPastePayload, refresh: fetchAll, refreshRdevs, refreshNotificationCount, removeSession, closeInteractiveCli, closeBrowserView, setUpdateAvailable, prBadgeCount, setPrBadgeCount }}>
       {children}
     </AppContext.Provider>
   )

@@ -10,6 +10,7 @@ import time
 from collections import Counter, OrderedDict
 
 from fastapi import APIRouter, HTTPException, Query
+from pydantic import BaseModel
 
 logger = logging.getLogger(__name__)
 
@@ -20,6 +21,9 @@ _pr_cache: OrderedDict[str, tuple[float, dict]] = OrderedDict()
 _PR_CACHE_TTL_OPEN = 120.0  # seconds — open PRs change frequently
 _PR_CACHE_TTL_CLOSED = 600.0  # seconds — merged/closed PRs are static
 _MAX_CACHE_SIZE = 50
+
+# Semaphore to limit concurrent gh api calls (shared across batch and single-PR)
+_GH_SEMAPHORE = asyncio.Semaphore(3)
 
 _PR_URL_RE = re.compile(r"github\.com/([^/]+)/([^/]+)/pull/(\d+)")
 
@@ -307,25 +311,8 @@ def _get_skips(cache_key: str) -> set[str]:
     return set()
 
 
-@router.get("/pr-preview")
-async def get_pr_preview(
-    url: str = Query(..., description="GitHub PR URL"),
-    refresh: bool = Query(False, description="Bypass in-memory cache"),
-):
-    """Fetch a GitHub PR preview with metadata, reviews, and CI checks."""
-    owner, repo, number = _parse_pr_url(url)
-    cache_key = f"{owner}/{repo}/{number}"
-
-    # Check cache — state-aware TTL (skipped on explicit refresh)
-    if not refresh and cache_key in _pr_cache:
-        ts, data = _pr_cache[cache_key]
-        state = data.get("state", "open")
-        ttl = _PR_CACHE_TTL_CLOSED if state in ("merged", "closed") else _PR_CACHE_TTL_OPEN
-        if time.time() - ts < ttl:
-            _pr_cache.move_to_end(cache_key)
-            return data
-
-    # Determine which endpoints to skip based on previously cached state
+async def _fetch_pr_detail(owner: str, repo: str, number: str, cache_key: str) -> dict:
+    """Core fetch logic for a single PR — parallel gh api calls, build response, cache."""
     skip = _get_skips(cache_key)
 
     # Fetch PR metadata, reviews, comments, and files in parallel
@@ -374,10 +361,8 @@ async def get_pr_preview(
                 cache=_GH_HTTP_CACHE,
             )
         except HTTPException:
-            # Non-fatal: some repos may not have checks configured
             logger.debug("Could not fetch check runs for %s", cache_key)
     elif head_sha and "check_runs" in skip and actual_state == "open":
-        # Safety net: re-fetch if PR reopened
         try:
             checks_data = await _run_gh(
                 f"repos/{owner}/{repo}/commits/{head_sha}/check-runs",
@@ -421,6 +406,104 @@ async def get_pr_preview(
     _pr_cache.move_to_end(cache_key)
     while len(_pr_cache) > _MAX_CACHE_SIZE:
         _pr_cache.popitem(last=False)
+    return response
+
+
+def _check_pr_cache(cache_key: str) -> dict | None:
+    """Return cached PR data if fresh, else None."""
+    if cache_key in _pr_cache:
+        ts, data = _pr_cache[cache_key]
+        state = data.get("state", "open")
+        ttl = _PR_CACHE_TTL_CLOSED if state in ("merged", "closed") else _PR_CACHE_TTL_OPEN
+        if time.time() - ts < ttl:
+            _pr_cache.move_to_end(cache_key)
+            return data
+    return None
+
+
+@router.get("/pr-preview")
+async def get_pr_preview(
+    url: str = Query(..., description="GitHub PR URL"),
+    refresh: bool = Query(False, description="Bypass in-memory cache"),
+):
+    """Fetch a GitHub PR preview with metadata, reviews, and CI checks."""
+    owner, repo, number = _parse_pr_url(url)
+    cache_key = f"{owner}/{repo}/{number}"
+
+    if not refresh:
+        cached = _check_pr_cache(cache_key)
+        if cached is not None:
+            return cached
+
+    return await _fetch_pr_detail(owner, repo, number, cache_key)
+
+
+class _BatchRequest(BaseModel):
+    urls: list[str]
+
+
+@router.post("/pr-preview/batch")
+async def batch_pr_preview(body: _BatchRequest):
+    """Fetch PR preview data for multiple URLs in parallel."""
+    if len(body.urls) > 50:
+        raise HTTPException(400, "Maximum 50 URLs per batch request")
+
+    # Deduplicate
+    unique_urls = list(dict.fromkeys(body.urls))
+
+    results: dict[str, dict | None] = {}
+    uncached: list[str] = []
+
+    # Check cache first
+    for url in unique_urls:
+        try:
+            owner, repo, number = _parse_pr_url(url)
+            cache_key = f"{owner}/{repo}/{number}"
+            cached = _check_pr_cache(cache_key)
+            if cached is not None:
+                results[url] = cached
+            else:
+                uncached.append(url)
+        except HTTPException:
+            results[url] = None
+
+    # Fetch uncached PRs with concurrency control and error isolation
+    error_msg: str | None = None
+    stop_event = asyncio.Event()
+
+    async def fetch_one(fetch_url: str) -> tuple[str, dict | None]:
+        if stop_event.is_set():
+            return fetch_url, None
+        async with _GH_SEMAPHORE:
+            if stop_event.is_set():
+                return fetch_url, None
+            try:
+                owner, repo, number = _parse_pr_url(fetch_url)
+                cache_key = f"{owner}/{repo}/{number}"
+                data = await _fetch_pr_detail(owner, repo, number, cache_key)
+                return fetch_url, data
+            except HTTPException as e:
+                if e.status_code in (401, 429):
+                    nonlocal error_msg
+                    error_msg = e.detail if isinstance(e.detail, str) else str(e.detail)
+                    stop_event.set()
+                return fetch_url, None
+            except Exception:
+                return fetch_url, None
+
+    if uncached:
+        fetch_results = await asyncio.gather(
+            *[fetch_one(u) for u in uncached], return_exceptions=True
+        )
+        for r in fetch_results:
+            if isinstance(r, Exception):
+                continue
+            url, data = r
+            results[url] = data
+
+    response: dict = {"results": results}
+    if error_msg:
+        response["error"] = error_msg
     return response
 
 

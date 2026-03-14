@@ -243,6 +243,31 @@ export interface Skill {
   updated_at: string
 }
 
+export interface PrSearchItem {
+  url: string
+  repo: string
+  number: number
+  title: string
+  state: 'open' | 'closed'
+  draft: boolean
+  author: string
+  created_at: string
+  updated_at: string
+  closed_at: string | null
+  merged_at: string | null
+  linked_task: { id: string; task_key: string | null; title: string } | null
+  linked_worker: { id: string; name: string } | null
+}
+
+export interface PrSearchResponse {
+  prs: PrSearchItem[]
+}
+
+export interface PrBatchResponse {
+  results: Record<string, PrPreviewData | null>
+  error?: string
+}
+
 export type TrendDetailSelection =
   | { chart: 'throughput'; date: string }
   | { chart: 'worker_hours'; date: string }

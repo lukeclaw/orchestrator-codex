@@ -4,6 +4,7 @@ import {
   IconDashboard,
   IconProjects,
   IconTasks,
+  IconPullRequest,
   IconSessions,
   IconContext,
   IconSkills,
@@ -21,7 +22,7 @@ interface Props {
 }
 
 export default function Sidebar({ collapsed, onToggle }: Props) {
-  const { workers, notificationCount, updateAvailable } = useApp()
+  const { workers, notificationCount, updateAvailable, prBadgeCount } = useApp()
 
   const waitingWorkers = workers.filter(
     s => s.status === 'waiting'
@@ -51,6 +52,7 @@ export default function Sidebar({ collapsed, onToggle }: Props) {
         <SidebarItem to="/" icon={<IconDashboard size={18} />} label="Dashboard" collapsed={collapsed} shortcut="D" />
         <SidebarItem to="/projects" icon={<IconProjects size={18} />} label="Projects" collapsed={collapsed} shortcut="P" />
         <SidebarItem to="/tasks" icon={<IconTasks size={18} />} label="Tasks" collapsed={collapsed} shortcut="T" />
+        <SidebarItem to="/prs" icon={<IconPullRequest size={18} />} label="PRs" badge={prBadgeCount} badgeVariant="warning" collapsed={collapsed} shortcut="R" />
         <SidebarItem to="/workers" icon={<IconSessions size={18} />} label="Workers" badge={waitingWorkers} badgeVariant="warning" collapsed={collapsed} shortcut="W" />
         <SidebarItem to="/context" icon={<IconContext size={18} />} label="Context" collapsed={collapsed} shortcut="K" />
         <SidebarItem to="/skills" icon={<IconSkills size={18} />} label="Skills" collapsed={collapsed} shortcut="S" />

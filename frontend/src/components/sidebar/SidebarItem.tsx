@@ -7,7 +7,7 @@ interface Props {
   icon: ReactNode
   label: string
   badge?: number
-  badgeVariant?: 'default' | 'warning'
+  badgeVariant?: 'default' | 'warning' | 'danger'
   collapsed: boolean
   shortcut?: string
 }
