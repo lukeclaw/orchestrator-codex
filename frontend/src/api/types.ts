@@ -262,6 +262,7 @@ export interface PrSearchItem {
   review_requests: string[]
   auto_merge: boolean
   ci_state: 'success' | 'failure' | 'pending' | null
+  mergeable: 'mergeable' | 'conflicting' | null
   attention_level: 1 | 2 | 3 | 4
   merged_by: string | null
   linked_task: { id: string; task_key: string | null; title: string } | null

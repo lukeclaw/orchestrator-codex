@@ -386,13 +386,14 @@ export default function PRsPage() {
       )
     }
 
-    // Open PRs — review chip + CI chip + optional auto-merge
+    // Open PRs — review chip + CI chip + conflict chip + optional auto-merge
     const review = renderReviewChip(pr)
     const ci = renderCIChip(pr)
     return (
       <div className="prs-status-cell">
         {review}
         {ci}
+        {pr.mergeable === 'conflicting' && <span className="pr-status-chip pr-chip-red">Conflicts</span>}
         {pr.auto_merge && <span className="pr-status-chip pr-chip-accent">Auto-merge</span>}
       </div>
     )

@@ -43,6 +43,7 @@ query($q: String!) {
         deletions
         changedFiles
         repository { nameWithOwner }
+        mergeable
         autoMergeRequest { enabledAt }
         reviewDecision
         reviewRequests(first: 10) {
@@ -69,14 +70,23 @@ query($q: String!) {
 
 
 def _compute_attention_level(
-    *, draft: bool, state: str, ci_state: str | None, review_decision: str | None
+    *,
+    draft: bool,
+    state: str,
+    ci_state: str | None,
+    review_decision: str | None,
+    mergeable: str | None,
 ) -> int:
     """Compute attention level (1-4) for a PR."""
     if draft:
         return 4
     if state != "open":
         return 3  # closed/merged — no urgency model
-    if ci_state == "failure" or review_decision == "changes_requested":
+    if (
+        ci_state == "failure"
+        or review_decision == "changes_requested"
+        or mergeable == "conflicting"
+    ):
         return 1  # needs action
     if review_decision == "approved" and ci_state == "success":
         return 2  # ready to ship
@@ -139,8 +149,14 @@ def _parse_graphql_prs(nodes: list[dict], fetched_at: str) -> list[dict]:
         ci_state = _derive_ci_state(node)
         auto_merge = bool(node.get("autoMergeRequest"))
         merged_by = (node.get("mergedBy") or {}).get("login")
+        raw_mergeable = (node.get("mergeable") or "").upper()
+        mergeable = raw_mergeable.lower() if raw_mergeable in ("MERGEABLE", "CONFLICTING") else None
         attention_level = _compute_attention_level(
-            draft=draft, state=state, ci_state=ci_state, review_decision=review_decision
+            draft=draft,
+            state=state,
+            ci_state=ci_state,
+            review_decision=review_decision,
+            mergeable=mergeable,
         )
 
         prs.append(
@@ -163,6 +179,7 @@ def _parse_graphql_prs(nodes: list[dict], fetched_at: str) -> list[dict]:
                 "review_requests": review_requests,
                 "auto_merge": auto_merge,
                 "ci_state": ci_state,
+                "mergeable": mergeable,
                 "attention_level": attention_level,
                 "merged_by": merged_by,
                 "linked_task": None,

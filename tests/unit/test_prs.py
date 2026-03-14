@@ -66,6 +66,7 @@ def _make_graphql_node(
     review_decision=None,
     review_requests=None,
     auto_merge=False,
+    mergeable=None,
 ):
     """Build a GraphQL PullRequest node for mocking."""
     rollup = {"state": rollup_state} if rollup_state else None
@@ -92,6 +93,7 @@ def _make_graphql_node(
         "deletions": 5,
         "changedFiles": 2,
         "repository": {"nameWithOwner": repo},
+        "mergeable": mergeable,
         "autoMergeRequest": {"enabledAt": "2026-03-10T10:00:00Z"} if auto_merge else None,
         "reviewDecision": review_decision,
         "reviewRequests": {"nodes": rr_nodes},
@@ -541,3 +543,49 @@ def test_team_reviewer_parsed(mock_gh, client):
 
     resp = client.get("/api/prs?tab=active")
     assert resp.json()["prs"][0]["review_requests"] == ["my-team"]
+
+
+@patch.object(prs, "_run_gh", new_callable=AsyncMock)
+def test_mergeable_conflicting(mock_gh, client):
+    """CONFLICTING mergeable state is parsed as 'conflicting'."""
+    mock_gh.return_value = _wrap_graphql(_make_graphql_node(mergeable="CONFLICTING"))
+
+    resp = client.get("/api/prs?tab=active")
+    pr = resp.json()["prs"][0]
+    assert pr["mergeable"] == "conflicting"
+
+
+@patch.object(prs, "_run_gh", new_callable=AsyncMock)
+def test_mergeable_unknown_is_null(mock_gh, client):
+    """UNKNOWN mergeable state is treated as null."""
+    mock_gh.return_value = _wrap_graphql(_make_graphql_node(mergeable="UNKNOWN"))
+
+    resp = client.get("/api/prs?tab=active")
+    assert resp.json()["prs"][0]["mergeable"] is None
+
+
+@patch.object(prs, "_run_gh", new_callable=AsyncMock)
+def test_attention_needs_action_conflict(mock_gh, client):
+    """Merge conflict -> attention level 1 even with CI passing."""
+    mock_gh.return_value = _wrap_graphql(
+        _make_graphql_node(rollup_state="SUCCESS", mergeable="CONFLICTING")
+    )
+
+    resp = client.get("/api/prs?tab=active")
+    pr = resp.json()["prs"][0]
+    assert pr["attention_level"] == 1
+
+
+@patch.object(prs, "_run_gh", new_callable=AsyncMock)
+def test_conflict_blocks_ready_to_ship(mock_gh, client):
+    """Approved + CI passing + conflict -> level 1, not level 2."""
+    mock_gh.return_value = _wrap_graphql(
+        _make_graphql_node(
+            review_decision="APPROVED",
+            rollup_state="SUCCESS",
+            mergeable="CONFLICTING",
+        )
+    )
+
+    resp = client.get("/api/prs?tab=active")
+    assert resp.json()["prs"][0]["attention_level"] == 1
