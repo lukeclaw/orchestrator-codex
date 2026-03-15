@@ -236,6 +236,7 @@ def test_task_cross_referencing(mock_gh, client, conn):
     assert pr["linked_task"]["id"] == "task-1"
     assert pr["linked_task"]["task_key"] == "TST-1"
     assert pr["linked_task"]["title"] == "Fix auth task"
+    assert pr["linked_task"]["status"] == "in_progress"
 
 
 @patch.object(prs, "_run_gh", new_callable=AsyncMock)
@@ -319,6 +320,7 @@ def test_subtask_resolves_parent_worker(mock_gh, client, conn):
     assert pr["linked_worker"] is not None
     assert pr["linked_worker"]["id"] == "worker-1"
     assert pr["linked_worker"]["name"] == "my-worker"
+    assert pr["linked_worker"]["status"] == "working"
 
 
 @patch.object(prs, "_run_gh", new_callable=AsyncMock)

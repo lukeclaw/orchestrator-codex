@@ -484,7 +484,7 @@ export default function PRsPage() {
                         {pr.linked_task ? (
                           <Link
                             to={`/tasks/${pr.linked_task.id}`}
-                            className="prs-task-pill"
+                            className={`prs-task-pill status-${pr.linked_task.status}`}
                             onClick={e => e.stopPropagation()}
                             title={pr.linked_task.title}
                           >
@@ -497,7 +497,7 @@ export default function PRsPage() {
                       {pr.linked_worker && (
                         <Link
                           to={`/workers/${pr.linked_worker.id}`}
-                          className="prs-worker-link"
+                          className={`prs-worker-link ${pr.linked_worker.status}`}
                           onClick={e => e.stopPropagation()}
                         >
                           {pr.linked_worker.name}

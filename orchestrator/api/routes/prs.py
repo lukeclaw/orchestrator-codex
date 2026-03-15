@@ -332,6 +332,7 @@ async def search_prs(
                     "id": task.id,
                     "task_key": task_key,
                     "title": task.title,
+                    "status": task.status,
                 }
 
                 # Resolve worker
@@ -346,6 +347,7 @@ async def search_prs(
                         pr["linked_worker"] = {
                             "id": session.id,
                             "name": session.name,
+                            "status": session.status,
                         }
 
     # Cache the full response

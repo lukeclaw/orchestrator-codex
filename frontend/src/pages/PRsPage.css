@@ -299,7 +299,7 @@
   font-size: 12px;
   font-weight: 500;
   text-decoration: none;
-  transition: opacity 0.15s;
+  transition: background 0.15s;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -307,8 +307,20 @@
 }
 
 .prs-task-pill:hover {
-  opacity: 0.8;
+  text-decoration: none;
 }
+
+/* Task pill status colors */
+.prs-task-pill.status-in_progress { background: rgba(88, 166, 255, 0.12); color: var(--accent); }
+.prs-task-pill.status-done { background: rgba(63, 185, 80, 0.12); color: var(--green); }
+.prs-task-pill.status-blocked { background: rgba(248, 81, 73, 0.12); color: var(--red); }
+.prs-task-pill.status-todo { background: var(--surface-hover); color: var(--text-muted); }
+
+/* Task pill hover — deeper background */
+.prs-task-pill.status-in_progress:hover { background: rgba(88, 166, 255, 0.22); }
+.prs-task-pill.status-done:hover { background: rgba(63, 185, 80, 0.22); }
+.prs-task-pill.status-blocked:hover { background: rgba(248, 81, 73, 0.22); }
+.prs-task-pill.status-todo:hover { background: var(--surface-raised); }
 
 .prs-no-task {
   color: var(--text-muted);
@@ -324,9 +336,16 @@
 }
 
 .prs-worker-link:hover {
-  color: var(--accent);
   text-decoration: none;
 }
+
+/* Worker link hover colors by status */
+.prs-worker-link.working:hover { color: var(--accent); }
+.prs-worker-link.idle:hover { color: var(--green); }
+.prs-worker-link.waiting:hover { color: var(--yellow); }
+.prs-worker-link.paused:hover { color: var(--yellow); }
+.prs-worker-link.disconnected:hover { color: var(--red); }
+.prs-worker-link.connecting:hover { color: var(--yellow); }
 
 /* Updated column */
 .prs-updated-cell {

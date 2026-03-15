@@ -265,8 +265,8 @@ export interface PrSearchItem {
   mergeable: 'mergeable' | 'conflicting' | null
   attention_level: 1 | 2 | 3 | 4
   merged_by: string | null
-  linked_task: { id: string; task_key: string | null; title: string } | null
-  linked_worker: { id: string; name: string } | null
+  linked_task: { id: string; task_key: string | null; title: string; status: string } | null
+  linked_worker: { id: string; name: string; status: string } | null
 }
 
 export interface PrSearchResponse {
