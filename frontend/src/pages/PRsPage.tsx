@@ -427,11 +427,11 @@ export default function PRsPage() {
           <thead>
             <tr>
               <th className="pt-th">PR</th>
-              <th className="pt-th">Status</th>
+              <th className="pt-th" style={{ width: 130 }}>Status</th>
               {isActive && <th className="pt-th prs-col-icon">CI</th>}
               {isActive && <th className="pt-th prs-col-icon">AM</th>}
-              <th className="pt-th">Task / Worker</th>
-              <th className="pt-th">Updated</th>
+              <th className="pt-th" style={{ width: 220 }}>Task / Worker</th>
+              <th className="pt-th" style={{ width: 80 }}>Updated</th>
             </tr>
           </thead>
           <tbody>{renderSkeletonRows()}</tbody>
@@ -447,11 +447,11 @@ export default function PRsPage() {
               <th className="pt-th sortable" onClick={() => handleSort(isActive ? 'attention' : 'pr')}>
                 PR {sortIndicator(isActive ? 'attention' : 'pr')}
               </th>
-              <th className="pt-th sortable" onClick={() => handleSort('status')}>Status {sortIndicator('status')}</th>
+              <th className="pt-th sortable" style={{ width: 130 }} onClick={() => handleSort('status')}>Status {sortIndicator('status')}</th>
               {isActive && <th className="pt-th prs-col-icon">CI</th>}
               {isActive && <th className="pt-th prs-col-icon">AM</th>}
-              <th className="pt-th sortable" onClick={() => handleSort('task')}>Task / Worker {sortIndicator('task')}</th>
-              <th className="pt-th sortable" onClick={() => handleSort('updated')}>Updated {sortIndicator('updated')}</th>
+              <th className="pt-th sortable" style={{ width: 220 }} onClick={() => handleSort('task')}>Task / Worker {sortIndicator('task')}</th>
+              <th className="pt-th sortable" style={{ width: 80 }} onClick={() => handleSort('updated')}>Updated {sortIndicator('updated')}</th>
             </tr>
           </thead>
           <tbody>

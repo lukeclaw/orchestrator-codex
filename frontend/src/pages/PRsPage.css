@@ -140,6 +140,12 @@
   margin-top: 6px;
 }
 
+/* Fixed column widths */
+.prs-page .pt-table {
+  table-layout: fixed;
+  width: 100%;
+}
+
 /* Sort indicator (reuse pattern from pt-th) */
 .prs-page .pt-th .sort-indicator {
   margin-left: 4px;
@@ -242,7 +248,6 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  max-width: 400px;
 }
 
 /* Status column — chips */
@@ -286,7 +291,7 @@
   flex-direction: column;
   gap: 2px;
   white-space: nowrap;
-  max-width: 160px;
+  min-width: 0;
 }
 
 .prs-task-pill {
