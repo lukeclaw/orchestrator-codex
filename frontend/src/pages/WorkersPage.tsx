@@ -257,7 +257,7 @@ export default function WorkersPage() {
   const stoppedCount = rdevs.filter(r => r.state === 'STOPPED').length
 
   return (
-    <div className="workers-page">
+    <div className="workers-page page-scroll-layout">
       <div className="page-header">
         <div className="page-header-left">
           {isRdevsPage ? (
@@ -383,6 +383,7 @@ export default function WorkersPage() {
             </div>
           )}
 
+          <div className="page-content">
           {filtered.length > 0 ? (
             <div className="worker-grid" data-testid="session-grid">
               {filtered.map(s => (
@@ -419,6 +420,7 @@ export default function WorkersPage() {
               )}
             </div>
           )}
+          </div>
         </>
       ) : (
         <>
@@ -458,6 +460,7 @@ export default function WorkersPage() {
             </div>
           )}
 
+          <div className="page-content">
           {filteredRdevs.length > 0 ? (
             <RdevTable
               rdevs={filteredRdevs}
@@ -476,6 +479,7 @@ export default function WorkersPage() {
                 : 'No rdevs found. Click "+ New Rdev" to create one.'}
             </p>
           )}
+          </div>
         </>
       )}
 

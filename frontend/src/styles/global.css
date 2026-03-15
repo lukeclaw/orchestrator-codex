@@ -123,6 +123,30 @@ select:focus {
   overflow-y: hidden;
 }
 
+/* Pages with fixed header + scrollable content */
+.app-main:has(> .page-scroll-layout) {
+  overflow: hidden;
+  scrollbar-gutter: auto;
+  padding: 0;
+}
+
+.page-scroll-layout {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  padding: 20px 24px 0;
+}
+
+.page-content {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  margin: 0 -24px;
+  padding: 0 24px 20px;
+}
+
 /* Panel */
 .panel {
   background: var(--surface);

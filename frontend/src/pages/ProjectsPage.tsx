@@ -68,7 +68,7 @@ export default function ProjectsPage() {
   }
 
   return (
-    <div className="projects-page">
+    <div className="projects-page page-scroll-layout">
       <div className="page-header">
         <h1>Projects</h1>
         <div className="page-header-actions">
@@ -182,6 +182,7 @@ export default function ProjectsPage() {
         </div>
       )}
 
+      <div className="page-content">
       {loading ? (
         <p className="empty-state">Loading projects...</p>
       ) : filtered.length === 0 ? (
@@ -202,6 +203,7 @@ export default function ProjectsPage() {
         </div>
       )}
 
+      </div>
       <ProjectForm
         open={showForm}
         onClose={() => setShowForm(false)}

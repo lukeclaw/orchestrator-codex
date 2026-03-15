@@ -215,7 +215,7 @@ export default function TasksPage() {
   const hasFilters = statusFilter || priorityFilter || projectFilter || searchQuery
 
   return (
-    <div className="tasks-page">
+    <div className="tasks-page page-scroll-layout">
       {/* Header */}
       <div className="page-header">
         <h1>Tasks</h1>
@@ -271,6 +271,7 @@ export default function TasksPage() {
       )}
 
       {/* Table */}
+      <div className="page-content">
       {filteredTasks.length === 0 ? (
         <div className="tk-empty-state">
           {hasFilters ? (
@@ -370,6 +371,7 @@ export default function TasksPage() {
           </table>
         </div>
       )}
+      </div>
       <TaskForm
         open={showAddTask}
         onClose={() => setShowAddTask(false)}

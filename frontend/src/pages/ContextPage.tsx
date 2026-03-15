@@ -209,7 +209,7 @@ export default function ContextPage() {
   }
 
   return (
-    <div className="context-page">
+    <div className="context-page page-scroll-layout">
       {/* Header: title + count + actions */}
       <div className="page-header">
         <h1>Context</h1>
@@ -266,6 +266,7 @@ export default function ContextPage() {
       )}
 
       {/* Table */}
+      <div className="page-content">
       {loading ? (
         <p className="empty-state">Loading...</p>
       ) : sortedItems.length === 0 ? (
@@ -342,6 +343,7 @@ export default function ContextPage() {
           </table>
         </div>
       )}
+      </div>
 
       <ContextModal
         context={selectedContext}

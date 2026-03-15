@@ -150,7 +150,7 @@ export default function SettingsPage() {
   }, [backups.length, totalPages, backupPage])
 
   return (
-    <div className="settings-page">
+    <div className="settings-page page-scroll-layout">
       <div className="page-header">
         <h1>Settings</h1>
       </div>
@@ -186,6 +186,7 @@ export default function SettingsPage() {
         onChange={setActiveTab}
       />
 
+      <div className="page-content">
       {/* ── Updates Tab ── */}
       {activeTab === 'updates' && (<>
         <div className="settings-content panel">
@@ -565,6 +566,7 @@ export default function SettingsPage() {
           )}
         </div>
       )}
+      </div>
     </div>
   )
 }

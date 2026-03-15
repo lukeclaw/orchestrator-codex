@@ -52,7 +52,7 @@ export default function SkillsPage() {
   }
 
   return (
-    <div className="skills-page">
+    <div className="skills-page page-scroll-layout">
       <div className="page-header">
         <div>
           <h1>Skills</h1>
@@ -65,6 +65,7 @@ export default function SkillsPage() {
         </div>
       </div>
 
+      <div className="page-content">
       {loading ? (
         <p className="empty-state">Loading...</p>
       ) : items.length === 0 ? (
@@ -105,6 +106,7 @@ export default function SkillsPage() {
         </>
       )}
 
+      </div>
       <SkillModal
         skill={selectedSkill}
         isNew={showNewSkill}

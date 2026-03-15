@@ -384,7 +384,7 @@ export default function PRsPage() {
   const showEmpty = !initialLoading && (prError || prs.length === 0)
 
   return (
-    <div className="prs-page">
+    <div className="prs-page page-scroll-layout">
       <div className="page-header">
         <h1>PRs</h1>
         <SlidingTabs tabs={TABS} value={tab} onChange={handleTabChange} />
@@ -420,6 +420,7 @@ export default function PRsPage() {
 
       {!showSkeleton && !showEmpty && prs.length > 0 && renderFilterBar()}
 
+      <div className="page-content">
       {showSkeleton ? (
         <div className="prs-table-wrapper">
         <table className="pt-table">
@@ -528,6 +529,7 @@ export default function PRsPage() {
         </table>
         </div>
       )}
+      </div>
     </div>
   )
 }

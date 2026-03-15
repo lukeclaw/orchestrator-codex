@@ -448,7 +448,7 @@ export default function NotificationsPage() {
   ]
 
   return (
-    <div className="notifications-page">
+    <div className="notifications-page page-scroll-layout">
       {/* Header with tabs */}
       <div className="page-header">
         <h1>Notifications</h1>
@@ -486,7 +486,7 @@ export default function NotificationsPage() {
       </div>
 
       {/* Content */}
-      <div className="np-content">
+      <div className="np-content page-content">
         {loading ? (
           <div className="np-empty">
             <div className="np-empty-icon">
