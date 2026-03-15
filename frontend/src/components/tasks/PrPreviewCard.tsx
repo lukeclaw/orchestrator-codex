@@ -79,8 +79,10 @@ export default function PrPreviewCard({ url, initialData, onDataFetched }: PrPre
     const btn = popupBtnRef.current
     if (!node || !btn) return
     const btnRect = btn.getBoundingClientRect()
-    const wrapper = btn.closest('.prs-table-wrapper') || btn.closest('.pr-preview-card')?.parentElement
-    const wrapperTop = wrapper ? wrapper.getBoundingClientRect().top : 0
+    // In PRs page, clamp to the table wrapper; elsewhere allow up to page top
+    const wrapper = btn.closest('.prs-table-wrapper')
+    const minTop = wrapper ? wrapper.getBoundingClientRect().top : 60
+    const wrapperTop = Math.max(minTop, 0)
     const gap = 6
     const popupBottom = btnRect.top - gap
     // Allow extending below button when upward space is tight
@@ -110,13 +112,14 @@ export default function PrPreviewCard({ url, initialData, onDataFetched }: PrPre
     return () => window.removeEventListener('scroll', handler, true)
   }, [openReviewPopup, positionPopup])
 
-  // Close review popup on click outside
+  // Close review popup on click outside (popup or its trigger button)
   useEffect(() => {
     if (!openReviewPopup) return
     const handler = (e: MouseEvent) => {
-      if (reviewsRef.current && !reviewsRef.current.contains(e.target as Node)) {
-        setOpenReviewPopup(null)
-      }
+      const target = e.target as Node
+      if (popupNodeRef.current?.contains(target)) return
+      if (popupBtnRef.current?.contains(target)) return
+      setOpenReviewPopup(null)
     }
     document.addEventListener('mousedown', handler)
     return () => document.removeEventListener('mousedown', handler)
