@@ -12,15 +12,15 @@ from orchestrator.terminal.claude_update import (
 class TestShouldUpdateBeforeStart:
     """Tests for should_update_before_start()."""
 
-    def test_default_true_when_not_set(self):
-        """Returns True when config key is absent (default)."""
+    def test_default_false_when_not_set(self):
+        """Returns False when config key is absent (default)."""
         conn = MagicMock()
         with patch(
-            "orchestrator.terminal.claude_update.get_config_value", return_value=True
+            "orchestrator.terminal.claude_update.get_config_value", return_value=False
         ) as mock_get:
             result = should_update_before_start(conn)
-            assert result is True
-            mock_get.assert_called_once_with(conn, "claude.update_before_start", default=True)
+            assert result is False
+            mock_get.assert_called_once_with(conn, "claude.update_before_start", default=False)
 
     def test_returns_true_when_set_true(self):
         """Returns True when config value is True."""
