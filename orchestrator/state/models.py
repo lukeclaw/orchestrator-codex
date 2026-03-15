@@ -61,7 +61,7 @@ class Session:
     last_status_changed_at: str | None = None
     session_type: str = "worker"  # "worker" | "brain" | "system"
     last_viewed_at: str | None = None
-    auto_reconnect: bool = False
+    auto_reconnect: bool = True
     claude_session_id: str | None = None
     rws_pty_id: str | None = None
 

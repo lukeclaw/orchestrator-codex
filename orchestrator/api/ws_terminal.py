@@ -576,7 +576,8 @@ async def terminal_websocket(websocket: WebSocket, session_id: str):
         # terminal open (they sent a WS connect), so they're waiting — don't
         # make them wait for the 5-minute health check interval.
         step = get_reconnect_step(session_id)
-        if step is None and not get_reconnect_lock(session_id).locked():
+        reconnect_active = step is not None or get_reconnect_lock(session_id).locked()
+        if not reconnect_active:
             try:
                 from orchestrator.session import is_reconnectable, trigger_reconnect
                 from orchestrator.state.repositories import sessions as _repo
@@ -594,6 +595,7 @@ async def terminal_websocket(websocket: WebSocket, session_id: str):
                             s, _db, db_path=db_path, api_port=api_port, tunnel_manager=tm
                         )
                         step = get_reconnect_step(session_id)
+                        reconnect_active = True
                 finally:
                     if _owns:
                         _db.close()
@@ -601,7 +603,10 @@ async def terminal_websocket(websocket: WebSocket, session_id: str):
                 logger.debug("Auto-reconnect trigger failed for %s", session_id, exc_info=True)
 
         await websocket.send_json({"type": "reconnect_status", "step": step})
-        await websocket.close(code=4004)
+        # 4004 = reconnect in progress, frontend should keep retrying
+        # 4005 = disconnected with no reconnect planned, frontend should stop
+        close_code = 4004 if reconnect_active else 4005
+        await websocket.close(code=close_code)
         return
 
     # Legacy: tmux-based streaming (local workers only)

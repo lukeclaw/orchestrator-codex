@@ -93,6 +93,14 @@
   border-color: rgba(88, 166, 255, 0.6);
 }
 
+.terminal-overlay-hint {
+  color: #8b949e;
+  font-size: 12px;
+  text-align: center;
+  max-width: 240px;
+  line-height: 1.4;
+}
+
 .terminal-toolbar {
   display: flex;
   align-items: center;
@@ -111,7 +119,7 @@
 }
 
 .terminal-status.connecting {
-  background: var(--yellow);
+  background: var(--status-connecting);
 }
 
 .terminal-status.connected {

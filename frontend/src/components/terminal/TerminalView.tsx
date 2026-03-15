@@ -209,6 +209,14 @@ export default function TerminalView({ sessionId, wsPath, sendPath, sessionStatu
         return
       }
 
+      // Close code 4005: "PTY not attached, no reconnect planned" — worker is
+      // disconnected and auto-reconnect is off.  Stop retrying immediately.
+      if (event.code === 4005) {
+        setConnectionState('disconnected')
+        setReconnectCountdown(null)
+        return
+      }
+
       // Close code 4004: "PTY not attached yet" — remote session reconnecting.
       // Use fixed 5s retries with NO attempt cap (session may take 60s+ to reconnect).
       if (event.code === 4004) {
@@ -856,9 +864,14 @@ export default function TerminalView({ sessionId, wsPath, sendPath, sessionStatu
                   ? 'Setting up connection...'
                   : connectionState === 'reconnecting'
                     ? `Reconnecting${reconnectCountdown ? ` in ${reconnectCountdown}s` : '...'}`
-                    : 'Connection lost'}
+                    : sessionStatus === 'disconnected'
+                      ? 'Worker disconnected'
+                      : 'Connection lost'}
               </span>
-              {connectionState === 'disconnected' && !isLocked && (
+              {connectionState === 'disconnected' && sessionStatus === 'disconnected' && (
+                <span className="terminal-overlay-hint">Use the reconnect button above to reconnect, or enable auto-reconnect</span>
+              )}
+              {connectionState === 'disconnected' && !isLocked && sessionStatus !== 'disconnected' && (
                 <button className="terminal-retry-btn" onClick={handleRetry}>Retry</button>
               )}
             </div>
