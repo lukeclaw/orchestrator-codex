@@ -194,6 +194,7 @@ export interface ThroughputDay {
   date: string
   tasks: number
   subtasks: number
+  prs?: number
 }
 
 export interface HeatmapCell {
@@ -212,6 +213,22 @@ export interface TrendsData {
   throughput: ThroughputDay[]
   heatmap: HeatmapCell[]
   worker_hours: WorkerHoursDay[]
+}
+
+export interface PrMergeItem {
+  url: string
+  number: number
+  title: string
+  repo: string
+  merged_at: string
+  additions: number
+  deletions: number
+}
+
+export interface PrMergeDay {
+  date: string
+  count: number
+  prs: PrMergeItem[]
 }
 
 export interface ThroughputDetailItem {

@@ -6,6 +6,7 @@ from datetime import UTC, datetime, timedelta
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from orchestrator.api.deps import get_db
+from orchestrator.api.routes.prs import _search_cache as pr_search_cache
 from orchestrator.state.repositories import status_events
 
 router = APIRouter()
@@ -77,3 +78,60 @@ def get_trend_detail(
 
     else:
         raise HTTPException(status_code=400, detail=f"Unknown chart type: {chart}")
+
+
+@router.get("/trends/pr-merges")
+def get_pr_merge_throughput(
+    range: str = Query("30d", alias="range"),
+):
+    """Merged PRs per day, extracted from the PR search cache.
+
+    Reads from the same data source as the PRs page to ensure consistency
+    (same GitHub account, same paginated results).
+    """
+    range_key = range if range in VALID_RANGES else "30d"
+    days = VALID_RANGES.get(range_key, 30)
+    cutoff = (datetime.now(UTC) - timedelta(days=days)).strftime("%Y-%m-%d")
+
+    # Find the best matching cache entry — prefer exact days match,
+    # fall back to any recent entry with enough range.
+    prs: list[dict] = []
+    exact_key = f"recent:{days}"
+    if exact_key in pr_search_cache:
+        _, cached = pr_search_cache[exact_key]
+        prs = cached.get("prs", [])
+    else:
+        # Fall back to any recent cache entry
+        for key, (_, cached) in pr_search_cache.items():
+            if key.startswith("recent:"):
+                prs = cached.get("prs", [])
+                break
+
+    by_day: dict[str, dict] = {}
+    for pr in prs:
+        merged_at = pr.get("merged_at")
+        if not merged_at:
+            continue
+        try:
+            dt = datetime.fromisoformat(merged_at.replace("Z", "+00:00"))
+        except (ValueError, TypeError):
+            continue
+        day = dt.astimezone().strftime("%Y-%m-%d")
+        if day < cutoff:
+            continue
+        if day not in by_day:
+            by_day[day] = {"date": day, "count": 0, "prs": []}
+        by_day[day]["count"] += 1
+        by_day[day]["prs"].append(
+            {
+                "url": pr.get("url", ""),
+                "number": pr.get("number", 0),
+                "title": pr.get("title", ""),
+                "repo": pr.get("repo", ""),
+                "merged_at": merged_at,
+                "additions": pr.get("additions", 0),
+                "deletions": pr.get("deletions", 0),
+            }
+        )
+
+    return sorted(by_day.values(), key=lambda x: x["date"])

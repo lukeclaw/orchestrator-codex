@@ -13,7 +13,7 @@ const RANGES = ['7d', '30d', '90d'] as const
 const RANGE_TABS = RANGES.map(r => ({ value: r, label: r }))
 
 export default function TrendsPanel() {
-  const { data, loading, range, setRange } = useTrends()
+  const { data, loading, range, setRange, prDetailByDay } = useTrends()
   const [detailSelection, setDetailSelection] = useState<TrendDetailSelection | null>(null)
 
   const hasData = data && (
@@ -61,6 +61,7 @@ export default function TrendsPanel() {
             selection={detailSelection}
             range={range}
             onClose={() => setDetailSelection(null)}
+            prDetailByDay={prDetailByDay}
           />
         </div>
       )}

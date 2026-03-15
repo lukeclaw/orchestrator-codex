@@ -1,12 +1,13 @@
 import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import Modal from '../common/Modal'
-import { api } from '../../api/client'
+import { api, openUrl } from '../../api/client'
 import type {
   TrendDetailSelection,
   ThroughputDetailItem,
   WorkerHoursDetailItem,
   HeatmapDetailItem,
+  PrMergeItem,
 } from '../../api/types'
 import './TrendDetailModal.css'
 
@@ -14,6 +15,7 @@ interface Props {
   selection: TrendDetailSelection | null
   range: string
   onClose: () => void
+  prDetailByDay?: Record<string, PrMergeItem[]>
 }
 
 const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
@@ -72,7 +74,7 @@ export function buildDetailQuery(selection: TrendDetailSelection, range: string)
   return `/api/trends/detail?${params}`
 }
 
-export default function TrendDetailModal({ selection, range, onClose }: Props) {
+export default function TrendDetailModal({ selection, range, onClose, prDetailByDay }: Props) {
   const [loading, setLoading] = useState(false)
   // Keep chart type paired with its items so a stale render never
   // dispatches to the wrong content component.
@@ -99,7 +101,10 @@ export default function TrendDetailModal({ selection, range, onClose }: Props) {
         ) : result.items.length === 0 ? (
           <p className="trend-detail-empty">No data for this selection</p>
         ) : result.chart === 'throughput' ? (
-          <ThroughputContent items={result.items as ThroughputDetailItem[]} />
+          <ThroughputContent
+            items={result.items as ThroughputDetailItem[]}
+            prItems={selection.chart === 'throughput' ? prDetailByDay?.[selection.date] : undefined}
+          />
         ) : result.chart === 'worker_hours' ? (
           <WorkerHoursContent items={result.items as WorkerHoursDetailItem[]} />
         ) : (
@@ -110,15 +115,19 @@ export default function TrendDetailModal({ selection, range, onClose }: Props) {
   )
 }
 
-function ThroughputContent({ items }: { items: ThroughputDetailItem[] }) {
+function ThroughputContent({ items, prItems }: { items: ThroughputDetailItem[]; prItems?: PrMergeItem[] }) {
   const tasks = items.filter(i => !i.is_subtask)
   const subtasks = items.filter(i => i.is_subtask)
+  const prs = prItems || []
+
+  const parts: string[] = []
+  if (tasks.length > 0) parts.push(`${tasks.length} task${tasks.length !== 1 ? 's' : ''}`)
+  if (subtasks.length > 0) parts.push(`${subtasks.length} subtask${subtasks.length !== 1 ? 's' : ''}`)
+  if (prs.length > 0) parts.push(`${prs.length} PR${prs.length !== 1 ? 's' : ''} merged`)
 
   return (
     <>
-      <p className="trend-detail-summary">
-        {tasks.length} task{tasks.length !== 1 ? 's' : ''}, {subtasks.length} subtask{subtasks.length !== 1 ? 's' : ''}
-      </p>
+      <p className="trend-detail-summary">{parts.join(', ')}</p>
 
       {tasks.length > 0 && (
         <div className="trend-detail-section">
@@ -154,6 +163,30 @@ function ThroughputContent({ items }: { items: ThroughputDetailItem[] }) {
                 </span>
               )}
               <span className="trend-detail-time">{formatTime(item.timestamp)}</span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {prs.length > 0 && (
+        <div className="trend-detail-section">
+          <h4 className="trend-detail-section-title">PRs Merged</h4>
+          {prs.map(pr => (
+            <div key={pr.url} className="trend-detail-row">
+              <span className="trend-detail-type-badge badge-pr">PR</span>
+              <a
+                href={pr.url}
+                className="trend-detail-key"
+                onClick={e => { e.preventDefault(); e.stopPropagation(); openUrl(pr.url) }}
+              >
+                {pr.repo}#{pr.number}
+              </a>
+              <span className="trend-detail-title">{pr.title}</span>
+              <span className="trend-detail-diff">
+                <span className="diff-add">+{pr.additions}</span>
+                <span className="diff-del">-{pr.deletions}</span>
+              </span>
+              <span className="trend-detail-time">{formatTime(pr.merged_at)}</span>
             </div>
           ))}
         </div>

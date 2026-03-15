@@ -77,9 +77,14 @@ query($q: String!) {
 }"""
 
 # Lightweight query for recent (closed) PRs — no CI, reviews, or mergeable status needed.
+# Uses cursor pagination to fetch beyond the 100-result-per-page GitHub limit.
 _GRAPHQL_QUERY_RECENT = """\
-query($q: String!) {
-  search(query: $q, type: ISSUE, first: 100) {
+query($q: String!, $cursor: String) {
+  search(query: $q, type: ISSUE, first: 100, after: $cursor) {
+    pageInfo {
+      hasNextPage
+      endCursor
+    }
     nodes {
       ... on PullRequest {
         url
@@ -101,6 +106,8 @@ query($q: String!) {
     }
   }
 }"""
+
+_MAX_RECENT_PAGES = 5  # Up to 500 recent PRs
 
 
 def _compute_attention_level(
@@ -333,20 +340,37 @@ async def search_prs(
         gql = _GRAPHQL_QUERY_RECENT
 
     try:
-        result = await _run_gh("graphql", "-f", f"query={gql}", "-f", f"q={search_q}")
+        all_nodes: list[dict] = []
+        cursor: str | None = None
+        max_pages = _MAX_RECENT_PAGES if tab == "recent" else 1
+
+        for _ in range(max_pages):
+            args = ["graphql", "-f", f"query={gql}", "-f", f"q={search_q}"]
+            if cursor:
+                args.extend(["-f", f"cursor={cursor}"])
+            result = await _run_gh(*args)
+
+            if isinstance(result, dict) and result.get("errors"):
+                logger.warning("GraphQL errors: %s", result["errors"])
+
+            search_data = (result.get("data") or {}).get("search", {})
+            nodes = search_data.get("nodes", [])
+            all_nodes.extend(nodes if isinstance(nodes, list) else [])
+
+            page_info = search_data.get("pageInfo", {})
+            if not page_info.get("hasNextPage"):
+                break
+            cursor = page_info.get("endCursor")
+            if not cursor:
+                break
     except HTTPException as e:
         if e.status_code == 429 and cache_key in _search_cache:
             _, cached = _search_cache[cache_key]
             return cached
         raise
 
-    # Handle GraphQL errors
-    if isinstance(result, dict) and result.get("errors"):
-        logger.warning("GraphQL errors: %s", result["errors"])
-
-    nodes = (result.get("data") or {}).get("search", {}).get("nodes", [])
     fetched_at = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
-    new_prs = _parse_graphql_prs(nodes if isinstance(nodes, list) else [], fetched_at)
+    new_prs = _parse_graphql_prs(all_nodes, fetched_at)
 
     # Merge with cached PRs for incremental recent refresh
     if prev_entry:

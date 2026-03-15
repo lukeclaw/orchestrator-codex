@@ -397,6 +397,7 @@ export default function PRsPage() {
               <option value={7}>7 days</option>
               <option value={14}>14 days</option>
               <option value={30}>30 days</option>
+              <option value={90}>90 days</option>
             </select>
           </div>
         )}

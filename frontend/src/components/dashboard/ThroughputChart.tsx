@@ -1,5 +1,5 @@
 import { useMemo } from 'react'
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts'
+import { ComposedChart, Bar, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts'
 import type { ThroughputDay } from '../../api/types'
 
 interface Props {
@@ -28,7 +28,7 @@ function fillDays(data: ThroughputDay[], rangeDays: number): ThroughputDay[] {
     const d = new Date(now)
     d.setDate(d.getDate() - i)
     const key = localYMD(d)
-    result.push(map.get(key) || { date: key, tasks: 0, subtasks: 0 })
+    result.push(map.get(key) || { date: key, tasks: 0, subtasks: 0, prs: 0 })
   }
   return result
 }
@@ -48,10 +48,15 @@ export default function ThroughputChart({ data, range, onBarClick }: Props) {
   const filled = useMemo(() => fillDays(data, rangeDays), [data, rangeDays])
 
   const hasData = data.length > 0
+  const hasPrs = filled.some(d => (d.prs ?? 0) > 0)
 
-  // Average over selected range
-  const avg = useMemo(() => {
+  const avgTasks = useMemo(() => {
     const total = filled.reduce((s, d) => s + d.tasks + d.subtasks, 0)
+    return (total / filled.length).toFixed(1)
+  }, [filled])
+
+  const avgPrs = useMemo(() => {
+    const total = filled.reduce((s, d) => s + (d.prs ?? 0), 0)
     return (total / filled.length).toFixed(1)
   }, [filled])
 
@@ -61,10 +66,12 @@ export default function ThroughputChart({ data, range, onBarClick }: Props) {
     <div className="trends-chart">
       <div className="trends-chart-header">
         <span className="trends-chart-title">Task Throughput</span>
-        <span className="trends-chart-stat">{avg}/day avg ({range})</span>
+        <span className="trends-chart-stat">
+          {avgTasks} tasks/day{hasPrs ? `, ${avgPrs} PRs/day` : ''} avg ({range})
+        </span>
       </div>
       <ResponsiveContainer width="100%" height={180}>
-        <BarChart
+        <ComposedChart
           data={filled}
           margin={{ top: 4, right: 4, bottom: 0, left: -20 }}
           onClick={(state: any) => {
@@ -123,7 +130,20 @@ export default function ThroughputChart({ data, range, onBarClick }: Props) {
             onClick={(data: any) => onBarClick?.(data?.payload?.date)}
             style={{ cursor: onBarClick ? 'pointer' : undefined }}
           />
-        </BarChart>
+          {hasPrs && (
+            <Line
+              dataKey="prs"
+              name="PRs Merged"
+              type="monotone"
+              stroke="var(--green)"
+              strokeWidth={2}
+              dot={{ r: 3, fill: 'var(--green)', strokeWidth: 0 }}
+              activeDot={{ r: 5, fill: 'var(--green)', strokeWidth: 2, stroke: 'var(--surface)' }}
+              animationDuration={400}
+              animationEasing="ease-out"
+            />
+          )}
+        </ComposedChart>
       </ResponsiveContainer>
     </div>
   )

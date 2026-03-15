@@ -65,6 +65,28 @@
   color: var(--purple);
 }
 
+.badge-pr {
+  background: rgba(63, 185, 80, 0.15);
+  color: var(--green);
+}
+
+/* Diff stats */
+.trend-detail-diff {
+  display: flex;
+  gap: 4px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  flex-shrink: 0;
+}
+
+.diff-add {
+  color: var(--green);
+}
+
+.diff-del {
+  color: var(--red);
+}
+
 /* Task key links */
 .trend-detail-key {
   font-family: var(--font-mono);
