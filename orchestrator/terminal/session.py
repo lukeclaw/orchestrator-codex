@@ -75,7 +75,7 @@ def start_claude_code(
         return False
 
     tmux.send_keys(tmux_session, name, "claude")
-    sessions_repo.update_session(conn, session.id, status="working")
+    sessions_repo.update_session(conn, session.id, status="idle")
     logger.info("Started Claude Code in session: %s", name)
     return True
 
@@ -515,6 +515,16 @@ def setup_remote_worker(
         if not _ensure_rdev_running(session_id, host):
             return {"ok": False, "error": f"Rdev host {host} is stopped and could not be started"}
 
+        # 0.5. Ensure SSH config entry exists for rdev host.
+        # Brand-new rdevs won't have an entry in ~/.ssh/config.rdev until
+        # the first `rdev ssh` connection, causing plain `ssh host` to fail
+        # with "Could not resolve hostname".
+        if is_rdev_host(host):
+            from orchestrator.terminal.ssh import ensure_rdev_ssh_config
+
+            if not ensure_rdev_ssh_config(host):
+                return {"ok": False, "error": f"Could not bootstrap SSH config for {host}"}
+
         # 1. Start reverse SSH tunnel via subprocess (for API callbacks)
         tunnel_pid = None
         if tunnel_manager:
@@ -607,8 +617,9 @@ def setup_remote_worker(
         )
         logger.info("Created RWS PTY %s for worker %s", pty_id, name)
 
-        # 8. Store pty_id
-        sessions_repo.update_session(conn, session_id, rws_pty_id=pty_id, status="working")
+        # 8. Store pty_id — start as idle (no task assigned yet).
+        # The hook will transition to "working" when a task is submitted.
+        sessions_repo.update_session(conn, session_id, rws_pty_id=pty_id, status="idle")
 
         # 9. Verify PTY alive after a few seconds
         time.sleep(3)

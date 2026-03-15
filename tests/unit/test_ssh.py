@@ -1,9 +1,11 @@
 """Tests for SSH helper functions."""
 
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 from orchestrator.terminal.ssh import (
+    _rdev_ssh_config_has_host,
     _remove_stale_known_hosts_old,
+    ensure_rdev_ssh_config,
     is_rdev_host,
     is_remote_host,
     remote_connect,
@@ -135,3 +137,99 @@ class TestRemoveStaleKnownHostsOld:
             str(tmp_path / "nonexistent"),
         ):
             _remove_stale_known_hosts_old()  # should not raise
+
+
+class TestRdevSshConfigHasHost:
+    def test_finds_existing_host(self, tmp_path):
+        config = tmp_path / "config.rdev"
+        config.write_text(
+            "Host subs-backend/happy-einstein subs-backend_happy-einstein\n"
+            "  HostName rdev-aks-wus3-12.example.com\n"
+            "  Port 42410\n"
+        )
+        with patch("orchestrator.terminal.ssh._RDEV_SSH_CONFIG", str(config)):
+            assert _rdev_ssh_config_has_host("subs-backend/happy-einstein") is True
+
+    def test_missing_host(self, tmp_path):
+        config = tmp_path / "config.rdev"
+        config.write_text(
+            "Host subs-backend/happy-einstein subs-backend_happy-einstein\n"
+            "  HostName rdev-aks-wus3-12.example.com\n"
+        )
+        with patch("orchestrator.terminal.ssh._RDEV_SSH_CONFIG", str(config)):
+            assert _rdev_ssh_config_has_host("subs-backend/envious-valley") is False
+
+    def test_missing_config_file(self, tmp_path):
+        with patch("orchestrator.terminal.ssh._RDEV_SSH_CONFIG", str(tmp_path / "nope")):
+            assert _rdev_ssh_config_has_host("subs-backend/envious-valley") is False
+
+    def test_finds_underscore_alias(self, tmp_path):
+        config = tmp_path / "config.rdev"
+        config.write_text("Host mp/session mp_session\n  HostName example.com\n")
+        with patch("orchestrator.terminal.ssh._RDEV_SSH_CONFIG", str(config)):
+            assert _rdev_ssh_config_has_host("mp/session") is True
+
+
+class TestEnsureRdevSshConfig:
+    def test_non_rdev_host_returns_true(self):
+        """Non-rdev hosts skip entirely."""
+        assert ensure_rdev_ssh_config("plain-host.example.com") is True
+
+    def test_existing_config_skips_rdev_ssh(self, tmp_path):
+        """When config entry already exists, no subprocess is spawned."""
+        config = tmp_path / "config.rdev"
+        config.write_text("Host mp/session mp_session\n  HostName x.com\n")
+        with patch("orchestrator.terminal.ssh._RDEV_SSH_CONFIG", str(config)):
+            result = ensure_rdev_ssh_config("mp/session")
+        assert result is True
+
+    @patch("orchestrator.terminal.ssh.subprocess.Popen")
+    def test_spawns_rdev_ssh_when_config_missing(self, mock_popen, tmp_path):
+        """When config is missing, should spawn rdev ssh and poll for entry."""
+        config = tmp_path / "config.rdev"
+
+        mock_proc = MagicMock()
+        call_count = 0
+
+        def poll_side_effect():
+            nonlocal call_count
+            call_count += 1
+            # Simulate rdev writing the config on second poll
+            if call_count >= 2 and not config.exists():
+                config.write_text("Host mp/new-rdev mp_new-rdev\n  HostName x.com\n")
+            return None  # process still running
+
+        mock_proc.poll.side_effect = poll_side_effect
+        mock_popen.return_value = mock_proc
+
+        with patch("orchestrator.terminal.ssh._RDEV_SSH_CONFIG", str(config)):
+            result = ensure_rdev_ssh_config("mp/new-rdev", timeout=30)
+
+        assert result is True
+        mock_popen.assert_called_once()
+        assert "rdev" in mock_popen.call_args[0][0]
+        mock_proc.terminate.assert_called_once()
+
+    @patch("orchestrator.terminal.ssh.subprocess.Popen")
+    def test_returns_false_when_process_dies_without_config(self, mock_popen, tmp_path):
+        """If rdev ssh exits before writing config, return False."""
+        config = tmp_path / "config.rdev"
+
+        mock_proc = MagicMock()
+        mock_proc.poll.return_value = 1  # process already exited
+        mock_popen.return_value = mock_proc
+
+        with patch("orchestrator.terminal.ssh._RDEV_SSH_CONFIG", str(config)):
+            result = ensure_rdev_ssh_config("mp/bad-rdev", timeout=30)
+
+        assert result is False
+
+    @patch(
+        "orchestrator.terminal.ssh.subprocess.Popen",
+        side_effect=FileNotFoundError("rdev not found"),
+    )
+    def test_returns_false_when_rdev_cli_missing(self, mock_popen, tmp_path):
+        """If rdev CLI is not installed, return False."""
+        with patch("orchestrator.terminal.ssh._RDEV_SSH_CONFIG", str(tmp_path / "nope")):
+            result = ensure_rdev_ssh_config("mp/session")
+        assert result is False

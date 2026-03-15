@@ -26,7 +26,8 @@ VALID_TRANSITIONS: dict[SessionStatus, set[SessionStatus]] = {
         SessionStatus.PAUSED,  # Stop called
     },
     SessionStatus.CONNECTING: {
-        SessionStatus.WORKING,  # Setup succeeded
+        SessionStatus.IDLE,  # Setup succeeded (no task assigned)
+        SessionStatus.WORKING,  # Setup succeeded (task assigned)
         SessionStatus.DISCONNECTED,  # Setup failed or connection lost
     },
     SessionStatus.WORKING: {

@@ -430,10 +430,12 @@ def create_session(body: SessionCreate, request: Request, db=Depends(get_db)):
                             detected_work_dir = detected
                             logger.info("Detected work_dir for %s: %s", sanitized_name, detected)
 
+                    # Start as idle — the hook will transition to "working"
+                    # once Claude actually begins executing.
                     repo.update_session(
                         bg_conn,
                         s.id,
-                        status="working",
+                        status="idle",
                         tunnel_pid=result.get("tunnel_pid"),
                         work_dir=detected_work_dir,
                     )

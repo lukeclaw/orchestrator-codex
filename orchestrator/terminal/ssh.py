@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import os
+import subprocess
 import time
 
 from orchestrator.terminal.manager import capture_output, send_keys
@@ -99,3 +100,81 @@ def wait_for_prompt(
         time.sleep(interval)
         elapsed += interval
     return False
+
+
+# --- rdev SSH config bootstrap ---
+
+_RDEV_SSH_CONFIG = os.path.expanduser("~/.ssh/config.rdev")
+
+
+def _rdev_ssh_config_has_host(host: str) -> bool:
+    """Check if ~/.ssh/config.rdev contains an entry for the given rdev host."""
+    try:
+        with open(_RDEV_SSH_CONFIG) as f:
+            for line in f:
+                if line.startswith("Host ") and host in line.split():
+                    return True
+    except (FileNotFoundError, OSError):
+        pass
+    return False
+
+
+def ensure_rdev_ssh_config(host: str, timeout: int = 30) -> bool:
+    """Ensure ~/.ssh/config.rdev has an entry for the given rdev host.
+
+    The rdev CLI creates SSH config entries on first ``rdev ssh`` connection.
+    For brand-new rdevs this entry won't exist, causing plain ``ssh host``
+    commands to fail with "Could not resolve hostname".
+
+    If the entry is missing, briefly runs ``rdev ssh --non-tmux`` to trigger
+    config generation, then terminates the connection.
+
+    Returns True if the config entry exists (or was successfully created).
+    """
+    if not is_rdev_host(host):
+        return True
+
+    if _rdev_ssh_config_has_host(host):
+        return True
+
+    logger.info("SSH config missing for %s, running rdev ssh to bootstrap", host)
+    _remove_stale_known_hosts_old()
+
+    try:
+        proc = subprocess.Popen(
+            ["rdev", "ssh", host, "--non-tmux"],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+    except (FileNotFoundError, OSError) as e:
+        logger.error("Failed to run rdev ssh for %s: %s", host, e)
+        return False
+
+    # Wait for the config entry to appear (rdev writes it before connecting)
+    deadline = time.time() + timeout
+    created = False
+    while time.time() < deadline:
+        time.sleep(1)
+        if _rdev_ssh_config_has_host(host):
+            created = True
+            break
+        if proc.poll() is not None:
+            break
+
+    # Terminate the SSH session — we only needed the config entry
+    try:
+        proc.terminate()
+        proc.wait(timeout=5)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        try:
+            proc.wait(timeout=2)
+        except Exception:
+            pass
+
+    if created:
+        logger.info("SSH config bootstrapped for %s", host)
+    else:
+        logger.error("Failed to bootstrap SSH config for %s within %ds", host, timeout)
+    return created
