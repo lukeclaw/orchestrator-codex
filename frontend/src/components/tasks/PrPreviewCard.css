@@ -500,22 +500,21 @@
   flex-shrink: 0;
 }
 
-/* Review popup — click-triggered, appears above the reviewer item */
+/* Review popup — fixed-positioned to escape overflow containers.
+   JS (popupRef) sets top/left/maxHeight based on the eye button's viewport position. */
 
 .pr-review-popup {
   display: flex;
   flex-direction: column;
-  position: absolute;
-  bottom: calc(100% + 6px);
-  left: calc(100% + 6px);
-  z-index: 100;
+  position: fixed;
+  z-index: 200;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   width: max-content;
   min-width: 360px;
   max-width: min(600px, 40vw);
-  max-height: min(500px, 50vh);
+  max-height: min(500px, 60vh);
   overflow: hidden;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
   animation: pr-popup-enter 150ms var(--ease-decelerate);

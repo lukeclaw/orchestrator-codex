@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { api, openUrl } from '../../api/client'
 import type { PrPreviewData } from '../../api/types'
 import ConfirmPopover from '../common/ConfirmPopover'
@@ -69,6 +69,46 @@ export default function PrPreviewCard({ url, initialData, onDataFetched }: PrPre
   const [openReviewPopup, setOpenReviewPopup] = useState<string | null>(null)
   const reviewsRef = useRef<HTMLDivElement | null>(null)
   const abortRef = useRef<AbortController | null>(null)
+
+  const popupNodeRef = useRef<HTMLDivElement | null>(null)
+  const popupBtnRef = useRef<HTMLElement | null>(null)
+
+  // Position the fixed popup relative to the eye button, clamped to the table wrapper.
+  const positionPopup = useCallback(() => {
+    const node = popupNodeRef.current
+    const btn = popupBtnRef.current
+    if (!node || !btn) return
+    const btnRect = btn.getBoundingClientRect()
+    const wrapper = btn.closest('.prs-table-wrapper') || btn.closest('.pr-preview-card')?.parentElement
+    const wrapperTop = wrapper ? wrapper.getBoundingClientRect().top : 0
+    const gap = 6
+    const popupBottom = btnRect.top - gap
+    // Allow extending below button when upward space is tight
+    const maxBottom = window.innerHeight - 20
+    const totalAvail = maxBottom - wrapperTop
+    node.style.maxHeight = `${Math.min(500, Math.max(200, totalAvail))}px`
+    const actualH = node.offsetHeight
+    node.style.left = `${btnRect.right + gap}px`
+    // Bottom stays near button for short content; top clamped to wrapper for tall content
+    node.style.top = `${Math.max(wrapperTop, popupBottom - actualH)}px`
+  }, [])
+
+  // Callback ref: store node, find its button, do initial positioning
+  const popupRef = useCallback((node: HTMLDivElement | null) => {
+    popupNodeRef.current = node
+    if (!node) { popupBtnRef.current = null; return }
+    popupBtnRef.current = node.parentElement?.querySelector('.pr-review-threads-btn') as HTMLElement | null
+    // Two rAFs: first lets maxHeight apply, second reads actual height
+    requestAnimationFrame(() => { positionPopup(); requestAnimationFrame(positionPopup) })
+  }, [positionPopup])
+
+  // Reposition on scroll so the popup follows the table
+  useEffect(() => {
+    if (!openReviewPopup) return
+    const handler = () => positionPopup()
+    window.addEventListener('scroll', handler, true) // capture to catch inner scroll containers
+    return () => window.removeEventListener('scroll', handler, true)
+  }, [openReviewPopup, positionPopup])
 
   // Close review popup on click outside
   useEffect(() => {
@@ -295,7 +335,7 @@ export default function PrPreviewCard({ url, initialData, onDataFetched }: PrPre
                             <span>{r.comment_threads.length}</span>
                           </button>
                           {openReviewPopup === r.reviewer && (
-                            <div className="pr-review-popup" onClick={e => e.stopPropagation()}>
+                            <div className="pr-review-popup" ref={popupRef} onClick={e => e.stopPropagation()}>
                               <div className="pr-review-popup-header">
                                 <span className="pr-review-popup-title">
                                   {r.reviewer}
