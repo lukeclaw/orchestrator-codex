@@ -230,6 +230,10 @@
   color: var(--text-primary);
 }
 
+/* Rdev state chip dot colors */
+.rdev-dot-running { background: #3fb950; }
+.rdev-dot-stopped { background: #d29922; }
+
 /* Worker grid */
 .worker-grid {
   display: grid;

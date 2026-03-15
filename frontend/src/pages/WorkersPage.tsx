@@ -306,15 +306,6 @@ export default function WorkersPage() {
             >
               <IconRefresh size={16} className={rdevsRefreshing ? 'spinning' : ''} />
             </button>
-            <CustomSelect
-              value={rdevStateFilter}
-              onChange={v => setRdevStateFilter(v as '' | 'RUNNING' | 'STOPPED')}
-              options={[
-                { value: '', label: `All (${rdevs.length})` },
-                { value: 'RUNNING', label: `Running (${runningCount})` },
-                { value: 'STOPPED', label: `Stopped (${stoppedCount})` },
-              ]}
-            />
             <button
               className="btn btn-primary btn-sm"
               onClick={() => setShowCreateRdevModal(true)}
@@ -431,6 +422,42 @@ export default function WorkersPage() {
         </>
       ) : (
         <>
+          {rdevs.length > 0 && (
+            <div className="status-summary-bar">
+              <button
+                className={`status-summary-item${!rdevStateFilter ? ' active' : ''}`}
+                onClick={() => setRdevStateFilter('')}
+                type="button"
+              >
+                <span className="status-summary-dot" style={{ background: 'var(--text-muted)' }} />
+                <span className="status-summary-count">{rdevs.length}</span>
+                <span className="status-summary-label">All</span>
+              </button>
+              {runningCount > 0 && (
+                <button
+                  className={`status-summary-item${rdevStateFilter === 'RUNNING' ? ' active' : ''}`}
+                  onClick={() => setRdevStateFilter(rdevStateFilter === 'RUNNING' ? '' : 'RUNNING')}
+                  type="button"
+                >
+                  <span className="status-summary-dot rdev-dot-running" />
+                  <span className="status-summary-count">{runningCount}</span>
+                  <span className="status-summary-label">Running</span>
+                </button>
+              )}
+              {stoppedCount > 0 && (
+                <button
+                  className={`status-summary-item${rdevStateFilter === 'STOPPED' ? ' active' : ''}`}
+                  onClick={() => setRdevStateFilter(rdevStateFilter === 'STOPPED' ? '' : 'STOPPED')}
+                  type="button"
+                >
+                  <span className="status-summary-dot rdev-dot-stopped" />
+                  <span className="status-summary-count">{stoppedCount}</span>
+                  <span className="status-summary-label">Stopped</span>
+                </button>
+              )}
+            </div>
+          )}
+
           {filteredRdevs.length > 0 ? (
             <RdevTable
               rdevs={filteredRdevs}
