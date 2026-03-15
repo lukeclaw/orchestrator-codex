@@ -36,7 +36,7 @@ interface AppState {
   prBadgeCount: number
   prCache: Record<string, { prs: PrSearchItem[]; fetchedAt: number }>
   prRefreshing: boolean
-  prError: string | null
+  prErrors: Record<string, string>
   fetchPrs: (tab: 'active' | 'recent', days?: number, refresh?: boolean) => void
 }
 
@@ -66,7 +66,7 @@ const AppContext = createContext<AppState>({
   prBadgeCount: 0,
   prCache: {},
   prRefreshing: false,
-  prError: null,
+  prErrors: {},
   fetchPrs: () => {},
 })
 
@@ -93,7 +93,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [prBadgeCount, setPrBadgeCount] = useState(0)
   const [prCache, setPrCache] = useState<Record<string, { prs: PrSearchItem[]; fetchedAt: number }>>({})
   const [prRefreshing, setPrRefreshing] = useState(false)
-  const [prError, setPrError] = useState<string | null>(null)
+  const [prErrors, setPrErrors] = useState<Record<string, string>>({})
   const prCacheRef = useRef<Record<string, { prs: PrSearchItem[]; fetchedAt: number }>>({})
   const location = useLocation()
 
@@ -169,7 +169,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const entry = { prs: data.prs, fetchedAt: now }
       prCacheRef.current[cacheKey] = entry
       setPrCache(prev => ({ ...prev, [cacheKey]: entry }))
-      setPrError(null)
+      setPrErrors(prev => {
+        if (!(cacheKey in prev)) return prev
+        const next = { ...prev }
+        delete next[cacheKey]
+        return next
+      })
 
       // Update badge from active tab
       if (cacheKey === 'active') {
@@ -178,9 +183,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
     } catch (e) {
       if (e instanceof Error && e.name === 'AbortError') return
       if (e instanceof ApiError && e.status === 401) {
-        setPrError('auth')
+        setPrErrors(prev => ({ ...prev, [cacheKey]: 'auth' }))
       } else {
-        setPrError(e instanceof Error ? e.message : 'Failed to fetch PRs')
+        setPrErrors(prev => ({ ...prev, [cacheKey]: e instanceof Error ? e.message : 'Failed to fetch PRs' }))
       }
     } finally {
       if (!ctrl.signal.aborted) {
@@ -397,7 +402,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   // Focus tracking now handled via WebSocket (see above)
 
   return (
-    <AppContext.Provider value={{ sessions, workers, projects, tasks, rdevs, notificationCount, updateAvailable, connected, loading, smartPastePayload, interactiveCliSessions, interactiveCliMinimized, browserViewSessions, browserViewMinimized, setSmartPastePayload, refresh: fetchAll, refreshRdevs, refreshNotificationCount, removeSession, closeInteractiveCli, closeBrowserView, setUpdateAvailable, prBadgeCount, prCache, prRefreshing, prError, fetchPrs }}>
+    <AppContext.Provider value={{ sessions, workers, projects, tasks, rdevs, notificationCount, updateAvailable, connected, loading, smartPastePayload, interactiveCliSessions, interactiveCliMinimized, browserViewSessions, browserViewMinimized, setSmartPastePayload, refresh: fetchAll, refreshRdevs, refreshNotificationCount, removeSession, closeInteractiveCli, closeBrowserView, setUpdateAvailable, prBadgeCount, prCache, prRefreshing, prErrors, fetchPrs }}>
       {children}
     </AppContext.Provider>
   )

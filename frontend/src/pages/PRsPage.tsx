@@ -93,7 +93,7 @@ function renderAutoMergeIcon(pr: PrSearchItem) {
 }
 
 export default function PRsPage() {
-  const { prCache, prRefreshing, prError, fetchPrs } = useApp()
+  const { prCache, prRefreshing, prErrors, fetchPrs } = useApp()
   const [tab, setTab] = useState<Tab>('active')
   const [days, setDays] = useState(7)
   const [expandedUrl, setExpandedUrl] = useState<string | null>(null)
@@ -108,6 +108,7 @@ export default function PRsPage() {
   const cached = prCache[cacheKey]
   const prs = cached?.prs ?? []
   const fetchedAt = cached?.fetchedAt ?? null
+  const prError = prErrors[cacheKey] ?? null
   const initialLoading = !cached && (prRefreshing || !prError)
 
   // Trigger fetch for current tab on mount or tab/days change
