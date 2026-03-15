@@ -147,6 +147,29 @@ select:focus {
   padding: 0 24px 20px;
 }
 
+/* Scroll-fade hints — applied via .scroll-fade or automatically on .page-content */
+.scroll-fade.fade-top,
+.page-content.fade-top {
+  mask-image: linear-gradient(to bottom, transparent, black 12px);
+  -webkit-mask-image: linear-gradient(to bottom, transparent, black 12px);
+}
+
+.scroll-fade.fade-bottom,
+.page-content.fade-bottom {
+  mask-image: linear-gradient(to top, transparent, black 12px);
+  -webkit-mask-image: linear-gradient(to top, transparent, black 12px);
+}
+
+.scroll-fade.fade-top.fade-bottom,
+.page-content.fade-top.fade-bottom {
+  mask-image: linear-gradient(to bottom,
+    transparent, black 12px,
+    black calc(100% - 12px), transparent);
+  -webkit-mask-image: linear-gradient(to bottom,
+    transparent, black 12px,
+    black calc(100% - 12px), transparent);
+}
+
 /* Panel */
 .panel {
   background: var(--surface);

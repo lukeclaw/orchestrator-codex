@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from 'react'
+import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useApp } from '../context/AppContext'
 import { useProjects } from '../hooks/useProjects'
@@ -18,19 +18,7 @@ export default function DashboardPage() {
   const { create: createProject } = useProjects()
   const [showAddWorker, setShowAddWorker] = useState(false)
   const [showAddProject, setShowAddProject] = useState(false)
-  const scrollRef = useRef<HTMLDivElement>(null)
-  const [hasOverflow, setHasOverflow] = useState(false)
-
   const activeProjects = projects.filter(p => p.status === 'active')
-
-  const checkOverflow = useCallback(() => {
-    const el = scrollRef.current
-    if (el) setHasOverflow(el.scrollHeight > el.clientHeight)
-  }, [])
-
-  useEffect(() => {
-    checkOverflow()
-  }, [activeProjects.length, checkOverflow])
 
   // Build session_id -> task lookup
   const taskBySession = new Map(
@@ -66,10 +54,8 @@ export default function DashboardPage() {
         title={<Link to="/projects" className="panel-header-link"><h2>Active Projects</h2></Link>}
       >
         {activeProjects.length > 0 ? (
-          <div className={`dashboard-projects-scroll-wrapper${hasOverflow ? ' has-overflow' : ''}`}>
-            <div className="dashboard-projects-scroll" ref={scrollRef}>
-              <ProjectsTable projects={activeProjects} hiddenColumns={['status', 'created']} />
-            </div>
+          <div className="dashboard-projects-scroll scroll-fade">
+            <ProjectsTable projects={activeProjects} hiddenColumns={['status', 'created']} />
           </div>
         ) : (
           <div className="dashboard-empty-state">

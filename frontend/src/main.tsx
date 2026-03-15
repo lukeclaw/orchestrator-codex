@@ -44,6 +44,24 @@ document.addEventListener('click', (e) => {
   }
 }, true)
 
+// Fade hints on scrollable .page-content / .scroll-fade containers
+const FADE_SELECTOR = '.page-content, .scroll-fade'
+
+function updateScrollFade(el: HTMLElement) {
+  const { scrollTop, scrollHeight, clientHeight } = el
+  el.classList.toggle('fade-top', scrollTop > 4)
+  el.classList.toggle('fade-bottom', scrollTop + clientHeight < scrollHeight - 4)
+}
+
+document.addEventListener('scroll', (e) => {
+  const el = e.target as HTMLElement
+  if (el.matches?.(FADE_SELECTOR)) updateScrollFade(el)
+}, true)
+
+new MutationObserver(() => {
+  document.querySelectorAll<HTMLElement>(FADE_SELECTOR).forEach(updateScrollFade)
+}).observe(document.body, { childList: true, subtree: true })
+
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <BrowserRouter>
