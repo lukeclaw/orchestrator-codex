@@ -7,6 +7,7 @@ import type {
   ThroughputDetailItem,
   WorkerHoursDetailItem,
   HeatmapDetailItem,
+  HumanHoursDetailItem,
   PrMergeItem,
 } from '../../api/types'
 import './TrendDetailModal.css'
@@ -54,7 +55,11 @@ function getTitle(selection: TrendDetailSelection): string {
   }
   if (selection.chart === 'worker_hours') {
     const tz = TZ_SHORT ? ` (${TZ_SHORT})` : ''
-    return `Worker Hours — ${formatDate(selection.date)}${tz}`
+    return `Hours — ${formatDate(selection.date)}${tz}`
+  }
+  if (selection.chart === 'human_hours') {
+    const tz = TZ_SHORT ? ` (${TZ_SHORT})` : ''
+    return `Your Hours — ${formatDate(selection.date)}${tz}`
   }
   const local = utcToLocal(selection.day_of_week, selection.hour)
   const dayName = DAY_NAMES[local.dayOfWeek]
@@ -64,7 +69,7 @@ function getTitle(selection: TrendDetailSelection): string {
 
 export function buildDetailQuery(selection: TrendDetailSelection, range: string): string {
   const params = new URLSearchParams({ chart: selection.chart })
-  if (selection.chart === 'throughput' || selection.chart === 'worker_hours') {
+  if (selection.chart === 'throughput' || selection.chart === 'worker_hours' || selection.chart === 'human_hours') {
     params.set('date', selection.date)
   } else {
     params.set('day_of_week', String(selection.day_of_week))
@@ -79,14 +84,29 @@ export default function TrendDetailModal({ selection, range, onClose, prDetailBy
   // Keep chart type paired with its items so a stale render never
   // dispatches to the wrong content component.
   const [result, setResult] = useState<{ chart: string; items: unknown[] } | null>(null)
+  const [humanItems, setHumanItems] = useState<HumanHoursDetailItem[]>([])
 
   useEffect(() => {
     if (!selection) return
     setLoading(true)
-    api<{ items: unknown[] }>(buildDetailQuery(selection, range))
+    setHumanItems([])
+
+    const mainFetch = api<{ items: unknown[] }>(buildDetailQuery(selection, range))
       .then(res => setResult({ chart: selection.chart, items: res.items }))
       .catch(() => setResult({ chart: selection.chart, items: [] }))
-      .finally(() => setLoading(false))
+
+    // When opening worker_hours detail, also fetch human hours for the same date
+    if (selection.chart === 'worker_hours') {
+      const humanFetch = api<{ items: HumanHoursDetailItem[] }>(
+        `/api/trends/detail?chart=human_hours&date=${selection.date}`
+      )
+        .then(res => setHumanItems(res.items))
+        .catch(() => setHumanItems([]))
+
+      Promise.all([mainFetch, humanFetch]).finally(() => setLoading(false))
+    } else {
+      mainFetch.finally(() => setLoading(false))
+    }
   }, [selection, range])
 
   if (!selection) return null
@@ -98,7 +118,7 @@ export default function TrendDetailModal({ selection, range, onClose, prDetailBy
       <div className="trend-detail-body">
         {showLoading ? (
           <p className="trend-detail-empty">Loading...</p>
-        ) : result.items.length === 0 ? (
+        ) : result.items.length === 0 && humanItems.length === 0 ? (
           <p className="trend-detail-empty">No data for this selection</p>
         ) : result.chart === 'throughput' ? (
           <ThroughputContent
@@ -106,7 +126,9 @@ export default function TrendDetailModal({ selection, range, onClose, prDetailBy
             prItems={selection.chart === 'throughput' ? prDetailByDay?.[selection.date] : undefined}
           />
         ) : result.chart === 'worker_hours' ? (
-          <WorkerHoursContent items={result.items as WorkerHoursDetailItem[]} />
+          <WorkerHoursContent items={result.items as WorkerHoursDetailItem[]} humanItems={humanItems} />
+        ) : result.chart === 'human_hours' ? (
+          <HumanHoursContent items={result.items as HumanHoursDetailItem[]} />
         ) : (
           <HeatmapContent items={result.items as HeatmapDetailItem[]} />
         )}
@@ -195,8 +217,13 @@ function ThroughputContent({ items, prItems }: { items: ThroughputDetailItem[]; 
   )
 }
 
-function WorkerHoursContent({ items }: { items: WorkerHoursDetailItem[] }) {
-  const totalHours = items.reduce((s, i) => s + i.total_hours, 0)
+function WorkerHoursContent({ items, humanItems = [] }: { items: WorkerHoursDetailItem[]; humanItems?: HumanHoursDetailItem[] }) {
+  const totalWorkerHours = items.reduce((s, i) => s + i.total_hours, 0)
+  const totalHumanHours = humanItems.reduce((s, i) => s + i.hours, 0)
+  const hasHuman = humanItems.length > 0
+
+  const summaryParts: string[] = []
+  summaryParts.push(`${items.length} worker${items.length !== 1 ? 's' : ''}: ${totalWorkerHours.toFixed(1)}h`)
 
   return (
     <>
@@ -205,7 +232,7 @@ function WorkerHoursContent({ items }: { items: WorkerHoursDetailItem[] }) {
         <div className="worker-hours-axis-row">
           <div className="worker-hours-label-col">
             <span className="worker-hours-summary">
-              {totalHours.toFixed(1)}h total, {items.length} worker{items.length !== 1 ? 's' : ''}
+              {summaryParts.join(' · ')}
             </span>
           </div>
           <div className="worker-hours-timeline-col">
@@ -218,6 +245,21 @@ function WorkerHoursContent({ items }: { items: WorkerHoursDetailItem[] }) {
             </div>
           </div>
         </div>
+
+        {/* Human hours row on top */}
+        {hasHuman && (
+          <div className="worker-hours-row">
+            <div className="worker-hours-label-col">
+              <div className="worker-hours-label">
+                <span className="worker-hours-name" style={{ color: 'var(--accent)', cursor: 'default' }}>You</span>
+                <span className="worker-hours-hours">{totalHumanHours.toFixed(1)}h</span>
+              </div>
+            </div>
+            <div className="worker-hours-timeline-col">
+              <TimelineBar intervals={humanItems} variant="human" />
+            </div>
+          </div>
+        )}
 
         {/* Worker rows */}
         {items.map(item => (
@@ -251,7 +293,48 @@ function WorkerHoursContent({ items }: { items: WorkerHoursDetailItem[] }) {
   )
 }
 
-function TimelineBar({ intervals }: { intervals: { start: string; end: string }[] }) {
+function HumanHoursContent({ items }: { items: HumanHoursDetailItem[] }) {
+  const totalHours = items.reduce((s, i) => s + i.hours, 0)
+
+  return (
+    <>
+      <p className="trend-detail-summary">
+        {totalHours.toFixed(1)}h active, {items.length} session{items.length !== 1 ? 's' : ''}
+      </p>
+      <div className="worker-hours-table">
+        <div className="worker-hours-axis-row">
+          <div className="worker-hours-label-col">
+            <span className="worker-hours-summary">
+              {totalHours.toFixed(1)}h total
+            </span>
+          </div>
+          <div className="worker-hours-timeline-col">
+            <div className="shared-axis">
+              {[0, 6, 12, 18, 24].map(h => (
+                <span key={h} className="shared-axis-label" style={{ left: `${(h / 24) * 100}%` }}>
+                  {h}
+                </span>
+              ))}
+            </div>
+          </div>
+        </div>
+        <div className="worker-hours-row">
+          <div className="worker-hours-label-col">
+            <div className="worker-hours-label">
+              <span className="worker-hours-name" style={{ color: 'var(--accent)', cursor: 'default' }}>You</span>
+              <span className="worker-hours-hours">{totalHours.toFixed(1)}h</span>
+            </div>
+          </div>
+          <div className="worker-hours-timeline-col">
+            <TimelineBar intervals={items} variant="human" />
+          </div>
+        </div>
+      </div>
+    </>
+  )
+}
+
+function TimelineBar({ intervals, variant }: { intervals: { start: string; end: string }[]; variant?: 'human' }) {
   return (
     <div className="timeline-bar">
       <div className="timeline-track" />
@@ -268,7 +351,7 @@ function TimelineBar({ intervals }: { intervals: { start: string; end: string }[
         return (
           <div
             key={i}
-            className="timeline-segment"
+            className={variant === 'human' ? 'timeline-segment timeline-segment-human' : 'timeline-segment'}
             style={{ left: `${left}%`, width: `${width}%` }}
           />
         )

@@ -232,6 +232,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
         setConnected(true)
         // Send current focus on connect
         ws.send(JSON.stringify({ type: 'focus_update', url: locationRef.current }))
+        // Send activity heartbeat on reconnect to prevent false idle gaps
+        ws.send(JSON.stringify({ type: 'user_activity' }))
       }
       ws.onclose = () => {
         wsRef.current = null
@@ -326,6 +328,30 @@ export function AppProvider({ children }: { children: ReactNode }) {
       ws.send(JSON.stringify({ type: 'focus_update', url: location.pathname }))
     }
   }, [location.pathname])
+
+  // Send user_activity heartbeat on interaction (throttled to 30s)
+  useEffect(() => {
+    let lastSent = 0
+    const THROTTLE_MS = 30_000
+
+    const onActivity = () => {
+      const now = Date.now()
+      if (now - lastSent > THROTTLE_MS && wsRef.current?.readyState === WebSocket.OPEN) {
+        wsRef.current.send(JSON.stringify({ type: 'user_activity' }))
+        lastSent = now
+      }
+    }
+
+    window.addEventListener('keydown', onActivity, { passive: true })
+    window.addEventListener('click', onActivity, { passive: true })
+    window.addEventListener('scroll', onActivity, { passive: true })
+
+    return () => {
+      window.removeEventListener('keydown', onActivity)
+      window.removeEventListener('click', onActivity)
+      window.removeEventListener('scroll', onActivity)
+    }
+  }, [])
 
   // Initial fetch + polling
   useEffect(() => {

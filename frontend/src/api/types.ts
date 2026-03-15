@@ -208,11 +208,14 @@ export interface WorkerHoursDay {
   hours: number
 }
 
+export type HumanHoursDay = WorkerHoursDay
+
 export interface TrendsData {
   range: string
   throughput: ThroughputDay[]
   heatmap: HeatmapCell[]
   worker_hours: WorkerHoursDay[]
+  human_hours: HumanHoursDay[]
 }
 
 export interface PrMergeItem {
@@ -242,6 +245,12 @@ export interface WorkerHoursDetailItem {
   intervals: { start: string; end: string }[]
   current_task: { id: string; title: string } | null
   deleted?: boolean
+}
+
+export interface HumanHoursDetailItem {
+  start: string
+  end: string
+  hours: number
 }
 
 export interface HeatmapDetailItem {
@@ -294,4 +303,5 @@ export interface PrSearchResponse {
 export type TrendDetailSelection =
   | { chart: 'throughput'; date: string }
   | { chart: 'worker_hours'; date: string }
+  | { chart: 'human_hours'; date: string }
   | { chart: 'heatmap'; day_of_week: number; hour: number }

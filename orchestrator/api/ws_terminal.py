@@ -50,6 +50,16 @@ logger = logging.getLogger(__name__)
 # Key: session_id, Value: timestamp (time.time())
 _session_last_input: dict[str, float] = {}
 
+# Module-level reference to the human activity tracker (set during app startup)
+_human_tracker = None
+
+
+def set_human_tracker(tracker) -> None:
+    """Set the module-level human tracker reference. Called during app startup."""
+    global _human_tracker
+    _human_tracker = tracker
+
+
 # How long to wait for user activity before background connection ops (seconds)
 USER_ACTIVITY_TIMEOUT = 30
 
@@ -73,6 +83,8 @@ STREAM_IDLE_TIMEOUT = 45.0  # 3x daemon heartbeat interval (15s)
 def record_user_input(session_id: str) -> None:
     """Record that user sent input to a session."""
     _session_last_input[session_id] = time.time()
+    if _human_tracker:
+        _human_tracker.record_heartbeat()
 
 
 def is_user_active(session_id: str, timeout: float = USER_ACTIVITY_TIMEOUT) -> bool:

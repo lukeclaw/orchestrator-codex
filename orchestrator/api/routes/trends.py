@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 
 from orchestrator.api.deps import get_db
 from orchestrator.api.routes.prs import _search_cache as pr_search_cache
-from orchestrator.state.repositories import status_events
+from orchestrator.state.repositories import human_activity, status_events
 
 router = APIRouter()
 
@@ -32,12 +32,14 @@ def get_trends(
     throughput = status_events.query_throughput(conn, since)
     heatmap = status_events.query_worker_heatmap(conn, heatmap_since)
     worker_hours = status_events.query_worker_hours(conn, since)
+    human_hours = human_activity.query_human_hours(conn, since)
 
     return {
         "range": range if range in VALID_RANGES else "7d",
         "throughput": throughput,
         "heatmap": heatmap,
         "worker_hours": worker_hours,
+        "human_hours": human_hours,
     }
 
 
@@ -60,6 +62,12 @@ def get_trend_detail(
         if not date:
             raise HTTPException(status_code=400, detail="date is required for worker_hours detail")
         items = status_events.query_worker_hours_detail(conn, date)
+        return {"chart": chart, "date": date, "items": items}
+
+    elif chart == "human_hours":
+        if not date:
+            raise HTTPException(status_code=400, detail="date is required for human_hours detail")
+        items = human_activity.query_human_hours_detail(conn, date)
         return {"chart": chart, "date": date, "items": items}
 
     elif chart == "heatmap":

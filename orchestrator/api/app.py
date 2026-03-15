@@ -88,6 +88,26 @@ async def lifespan(app: FastAPI):
         app.state.state_manager = state_manager
         await state_manager.start()
 
+    # Start human activity tracker
+    human_tracker = None
+    if db_path:
+        from orchestrator.core.human_tracker import HumanActivityTracker
+        from orchestrator.state.repositories import human_activity
+
+        human_tracker = HumanActivityTracker(app.state.conn_factory)
+        app.state.human_tracker = human_tracker
+        # Startup recovery: close stale intervals from crash/force-quit
+        try:
+            with app.state.conn_factory.connection() as _conn:
+                human_activity.close_stale_intervals(_conn)
+        except Exception:
+            logger.exception("Human activity startup recovery failed (non-fatal)")
+        await human_tracker.start()
+        # Set module-level reference for ws_terminal bridge
+        from orchestrator.api.ws_terminal import set_human_tracker
+
+        set_human_tracker(human_tracker)
+
     # Start the orchestrator engine (monitor, events, tunnel health)
     orch = Orchestrator(conn, config, db_path=db_path, tunnel_manager=tunnel_manager)
     app.state.orchestrator = orch
@@ -119,6 +139,16 @@ async def lifespan(app: FastAPI):
     except Exception:
         logger.exception("Status events cleanup failed (non-fatal)")
 
+    # Clean up old human activity events (180-day retention)
+    try:
+        from orchestrator.state.repositories.human_activity import (
+            cleanup_old_events as cleanup_human_events,
+        )
+
+        cleanup_human_events(conn, retention_days=180)
+    except Exception:
+        logger.exception("Human activity cleanup failed (non-fatal)")
+
     # Restore interactive CLI sessions from surviving tmux windows
     try:
         from orchestrator.terminal.interactive import restore_icli_windows
@@ -146,6 +176,10 @@ async def lifespan(app: FastAPI):
 
     # Stop rdev background refresh
     await stop_background_refresh()
+
+    # Stop human activity tracker
+    if human_tracker:
+        await human_tracker.stop()
 
     # Shutdown: stop monitor, state manager, tunnels
     logger.info("Orchestrator API shutting down")

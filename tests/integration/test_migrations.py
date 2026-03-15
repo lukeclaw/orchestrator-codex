@@ -21,7 +21,7 @@ def test_fresh_migration():
     # 26=claude_session_id, 27=status_events, 28=skills, 29=skill_overrides,
     # 30=simplify_context_categories, 31=rws_pty_id,
     # 32=soft_delete_sessions, 33=session_name_in_events,
-    # 34=drop_sessions_deleted_at
+    # 34=drop_sessions_deleted_at, 35=human_activity_events
     assert applied == [
         1,
         2,
@@ -56,6 +56,7 @@ def test_fresh_migration():
         32,
         33,
         34,
+        35,
     ]
 
     # Verify key tables exist
@@ -75,6 +76,7 @@ def test_fresh_migration():
         "status_events",
         "skills",
         "skill_overrides",
+        "human_activity_events",
     }
     assert expected_tables.issubset(table_names)
     # These tables should have been dropped by various migrations
@@ -138,6 +140,7 @@ def test_idempotent_rerun():
         32,
         33,
         34,
+        35,
     ]
 
     second = apply_migrations(conn)
@@ -149,7 +152,7 @@ def test_current_version_after_migration():
     conn = get_memory_connection()
     assert get_current_version(conn) == 0
     apply_migrations(conn)
-    assert get_current_version(conn) == 34
+    assert get_current_version(conn) == 35
     conn.close()
 
 

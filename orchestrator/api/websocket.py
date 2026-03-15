@@ -94,6 +94,10 @@ async def websocket_endpoint(websocket: WebSocket):
                 elif msg_type == "focus_update":
                     # Frontend proactively sending focus update
                     _current_focus_url = msg.get("url")
+                elif msg_type == "user_activity":
+                    tracker = getattr(websocket.app.state, "human_tracker", None)
+                    if tracker:
+                        tracker.record_heartbeat()
             except json.JSONDecodeError:
                 pass
     except WebSocketDisconnect:

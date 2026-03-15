@@ -293,6 +293,10 @@
   z-index: 1;
 }
 
+.timeline-segment-human {
+  background: var(--accent);
+}
+
 /* Heatmap grouped layout */
 .heatmap-table {
   display: flex;

@@ -19,7 +19,8 @@ export default function TrendsPanel() {
   const hasData = data && (
     data.throughput.length > 0 ||
     data.heatmap.length > 0 ||
-    data.worker_hours.length > 0
+    data.worker_hours.length > 0 ||
+    data.human_hours.length > 0
   )
 
   return (
@@ -53,6 +54,7 @@ export default function TrendsPanel() {
             />
             <WorkerHoursChart
               data={data!.worker_hours}
+              humanData={data!.human_hours}
               range={range}
               onPointClick={(date) => setDetailSelection({ chart: 'worker_hours', date })}
             />

@@ -34,6 +34,18 @@ describe('TrendDetailModal', () => {
       expect(url).not.toContain('range=')
     })
 
+    it('builds human_hours query with date', () => {
+      const selection: TrendDetailSelection = { chart: 'human_hours', date: '2026-03-10' }
+      const url = buildDetailQuery(selection, '7d')
+      expect(url).toBe('/api/trends/detail?chart=human_hours&date=2026-03-10')
+    })
+
+    it('does not include range for human_hours', () => {
+      const selection: TrendDetailSelection = { chart: 'human_hours', date: '2026-03-10' }
+      const url = buildDetailQuery(selection, '30d')
+      expect(url).not.toContain('range=')
+    })
+
     it('includes range only for heatmap', () => {
       const selection: TrendDetailSelection = { chart: 'heatmap', day_of_week: 0, hour: 0 }
       const url = buildDetailQuery(selection, '7d')
