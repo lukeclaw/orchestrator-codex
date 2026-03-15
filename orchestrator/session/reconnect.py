@@ -894,7 +894,7 @@ def _reconnect_rws_pty_worker(conn, session, repo, tunnel_manager):
         session_id=session.id,
         role="main",
     )
-    repo.update_session(conn, session.id, rws_pty_id=pty_id, status="working")
+    repo.update_session(conn, session.id, rws_pty_id=pty_id, status="waiting")
     logger.info("Reconnect RWS %s: created new PTY %s", session.name, pty_id)
 
     # 7. Verify
@@ -933,7 +933,7 @@ def _reconnect_rws_pty_worker(conn, session, repo, tunnel_manager):
             session_id=session.id,
             role="main",
         )
-        repo.update_session(conn, session.id, rws_pty_id=pty_id, status="working")
+        repo.update_session(conn, session.id, rws_pty_id=pty_id, status="waiting")
         logger.info("Reconnect RWS %s: retry created PTY %s", session.name, pty_id)
 
         # Second verify — if retry also fails, mark disconnected (not working)
@@ -1093,7 +1093,7 @@ def reconnect_remote_worker(
             session_id=session.id,
             role="main",
         )
-        repo.update_session(conn, session.id, rws_pty_id=pty_id, status="working")
+        repo.update_session(conn, session.id, rws_pty_id=pty_id, status="waiting")
         logger.info("Reconnect %s: created RWS PTY %s", session.name, pty_id)
 
         # Verify PTY survived startup (mirrors Path A verify step)
@@ -1132,7 +1132,7 @@ def reconnect_remote_worker(
                 session_id=session.id,
                 role="main",
             )
-            repo.update_session(conn, session.id, rws_pty_id=pty_id, status="working")
+            repo.update_session(conn, session.id, rws_pty_id=pty_id, status="waiting")
             logger.info("Reconnect %s: retry created PTY %s", session.name, pty_id)
 
             # Second verify — if retry also fails, mark disconnected (not working)

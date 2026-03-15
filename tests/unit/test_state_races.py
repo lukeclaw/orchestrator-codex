@@ -590,7 +590,7 @@ class TestReconnectExceptionHandling:
         """Verify reconnect_remote_worker sets status correctly on success
         and on exception.
 
-        Success path: creates RWS PTY and sets status to "working".
+        Success path: creates RWS PTY and sets status to "waiting".
         Error path: exception during RWS setup sets status to "error".
         """
         tracker = StatusTracker()
@@ -635,8 +635,9 @@ class TestReconnectExceptionHandling:
                 mock_repo,
             )
 
-        # Status was set to "working" -- this is the success path.
-        assert "working" in tracker.statuses
+        # Status was set to "waiting" -- this is the success path.
+        # (Claude's hooks will promote to "working" when it starts processing.)
+        assert "waiting" in tracker.statuses
 
         # Now simulate what happens if _ensure_rws_ready raises an exception.
         tracker2 = StatusTracker()
@@ -751,10 +752,10 @@ class TestConnectingStuckDetection:
     while a reconnect thread is about to complete successfully.
 
     Timeline:
-      T1 (reconnect): nearly done, about to set status "working"
+      T1 (reconnect): nearly done, about to set status "waiting"
       T2 (health-all): sees status "connecting" for >10 min, writes "disconnected"
-      T1 (reconnect): sets "working" (or "waiting")
-      Result: status momentarily becomes "disconnected", then "working" --
+      T1 (reconnect): sets "waiting"
+      Result: status momentarily becomes "disconnected", then "waiting" --
               the health check might have also triggered ANOTHER reconnect
               (double reconnect).
     """
