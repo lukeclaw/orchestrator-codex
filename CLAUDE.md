@@ -19,17 +19,18 @@ Point out any areas that can be improved before considering the task done.
 
 ## Testing
 
-Verify all changes with tests. Aim for full coverage of new and modified code paths. Tests should:
+Always update and verify tests for any code change. Aim for full coverage of new and modified code paths. Tests should:
 - Run fast — mock external dependencies (subprocess, network, file I/O) instead of hitting real services
 - Cover happy path, error cases, and edge cases
-- Use `uv run pytest <test_file> -v -o "addopts="` to run specific test files
+- Use `uv run pytest <test_file>` to run specific test files
+- The full test suite must complete within **30 seconds** (uses `-n auto` parallelism and 10s per-test timeout from `pyproject.toml`). Any test that causes the suite to exceed this must be fixed (reduce scope, add mocks, or split).
 
 ## Pre-Commit Checks
 
 Always run the linter, formatter, type checker, and tests before committing:
 1. `uv run ruff check . --fix && uv run ruff format .` — lint and format Python
 2. `cd frontend && npx tsc --noEmit` — type-check frontend (if frontend files changed)
-3. `uv run pytest -v -o "addopts="` — run the full test suite
+3. `uv run pytest` — run the full test suite
 
 Do not commit if there are failures caused by your changes.
 
