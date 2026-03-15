@@ -436,23 +436,29 @@
   justify-content: center;
   width: 28px;
   height: 28px;
-  border: 1px solid var(--border);
+  padding: 0;
+  border: none;
   border-radius: var(--radius);
   background: none;
-  color: var(--text-secondary);
   cursor: pointer;
-  transition: all 0.15s;
+  color: var(--text-secondary);
+  transition: all 0.15s ease;
 }
 
-.prs-page .btn-icon:hover {
-  background: var(--surface-hover);
-  color: var(--text-primary);
+.prs-page .btn-icon:hover:not(:disabled) {
+  color: var(--accent, #58a6ff);
 }
 
-.prs-page .btn-icon.spinning svg {
-  animation: prs-spin 0.8s linear infinite;
+.prs-page .btn-icon:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
-@keyframes prs-spin {
+.prs-page .btn-icon .spinning {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
   to { transform: rotate(360deg); }
 }

@@ -408,11 +408,12 @@ export default function PRsPage() {
             </span>
           )}
           <button
-            className={`btn-icon ${prRefreshing ? 'spinning' : ''}`}
+            className="btn btn-icon"
             onClick={() => fetchPrs(tab, days, true)}
+            disabled={prRefreshing}
             title="Refresh"
           >
-            <IconRefresh size={14} />
+            <IconRefresh size={16} className={prRefreshing ? 'spinning' : ''} />
           </button>
         </div>
       </div>

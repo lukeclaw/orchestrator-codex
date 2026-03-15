@@ -890,7 +890,7 @@
 
 .skel-line {
   height: 12px;
-  background: var(--surface-hover);
+  background: var(--surface-overlay);
   border-radius: 4px;
   animation: skel-shimmer 1.5s ease-in-out infinite;
 }
@@ -900,6 +900,6 @@
 .skel-w30 { width: 30%; }
 
 @keyframes skel-shimmer {
-  0%, 100% { opacity: 0.4; }
-  50% { opacity: 0.7; }
+  0%, 100% { opacity: 0.6; }
+  50% { opacity: 1; }
 }
