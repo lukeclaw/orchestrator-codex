@@ -292,14 +292,17 @@ export default function PRsPage() {
     </div>
   )
 
+  const isActive = tab === 'active'
+  const colCount = isActive ? 6 : 4
+
   const renderSkeletonRows = () => (
     <>
       {[...Array(5)].map((_, i) => (
         <tr key={i} className="prs-skel-row">
           <td className="pt-td"><div className="prs-skel-bar prs-skel-bar-medium" /><div className="prs-skel-bar prs-skel-bar-short" style={{ marginTop: 4 }} /></td>
           <td className="pt-td"><div className="prs-skel-bar prs-skel-bar-narrow" /></td>
-          <td className="pt-td" />
-          <td className="pt-td" />
+          {isActive && <td className="pt-td" />}
+          {isActive && <td className="pt-td" />}
           <td className="pt-td"><div className="prs-skel-bar prs-skel-bar-narrow" /></td>
           <td className="pt-td"><div className="prs-skel-bar prs-skel-bar-narrow" /></td>
         </tr>
@@ -422,8 +425,8 @@ export default function PRsPage() {
             <tr>
               <th className="pt-th">PR</th>
               <th className="pt-th">Status</th>
-              <th className="pt-th prs-col-icon">CI</th>
-              <th className="pt-th prs-col-icon">AM</th>
+              {isActive && <th className="pt-th prs-col-icon">CI</th>}
+              {isActive && <th className="pt-th prs-col-icon">AM</th>}
               <th className="pt-th">Task / Worker</th>
               <th className="pt-th">Updated</th>
             </tr>
@@ -438,12 +441,12 @@ export default function PRsPage() {
         <table className="pt-table">
           <thead>
             <tr>
-              <th className="pt-th sortable" onClick={() => handleSort(tab === 'active' ? 'attention' : 'pr')}>
-                PR {sortIndicator(tab === 'active' ? 'attention' : 'pr')}
+              <th className="pt-th sortable" onClick={() => handleSort(isActive ? 'attention' : 'pr')}>
+                PR {sortIndicator(isActive ? 'attention' : 'pr')}
               </th>
               <th className="pt-th sortable" onClick={() => handleSort('status')}>Status {sortIndicator('status')}</th>
-              <th className="pt-th prs-col-icon">CI</th>
-              <th className="pt-th prs-col-icon">AM</th>
+              {isActive && <th className="pt-th prs-col-icon">CI</th>}
+              {isActive && <th className="pt-th prs-col-icon">AM</th>}
               <th className="pt-th sortable" onClick={() => handleSort('task')}>Task / Worker {sortIndicator('task')}</th>
               <th className="pt-th sortable" onClick={() => handleSort('updated')}>Updated {sortIndicator('updated')}</th>
             </tr>
@@ -473,8 +476,8 @@ export default function PRsPage() {
                     </div>
                   </td>
                   <td className="pt-td">{renderStatusCell(pr)}</td>
-                  <td className="pt-td prs-col-icon">{renderCIIcon(pr)}</td>
-                  <td className="pt-td prs-col-icon">{renderAutoMergeIcon(pr)}</td>
+                  {isActive && <td className="pt-td prs-col-icon">{renderCIIcon(pr)}</td>}
+                  {isActive && <td className="pt-td prs-col-icon">{renderAutoMergeIcon(pr)}</td>}
                   <td className="pt-td">
                     <div className="prs-taskworker-cell">
                       <div>
@@ -510,7 +513,7 @@ export default function PRsPage() {
                 </tr>
                 {expandedUrl === pr.url && (
                   <tr className="prs-expanded-row">
-                    <td className="pt-td" colSpan={6}>
+                    <td className="pt-td" colSpan={colCount}>
                       <div className="prs-expanded-content">
                         <PrPreviewCard url={pr.url} />
                       </div>
