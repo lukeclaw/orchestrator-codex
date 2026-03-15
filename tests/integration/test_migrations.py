@@ -57,6 +57,7 @@ def test_fresh_migration():
         33,
         34,
         35,
+        36,
     ]
 
     # Verify key tables exist
@@ -141,6 +142,7 @@ def test_idempotent_rerun():
         33,
         34,
         35,
+        36,
     ]
 
     second = apply_migrations(conn)
@@ -152,7 +154,7 @@ def test_current_version_after_migration():
     conn = get_memory_connection()
     assert get_current_version(conn) == 0
     apply_migrations(conn)
-    assert get_current_version(conn) == 35
+    assert get_current_version(conn) == 36
     conn.close()
 
 

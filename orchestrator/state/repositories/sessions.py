@@ -132,6 +132,8 @@ def update_session(
     old_status = None
     session_type = None
     session_name = None
+    task_id = None
+    task_title = None
     if status is not None:
         row = conn.execute(
             "SELECT status, session_type, name FROM sessions WHERE id = ?", (id,)
@@ -140,6 +142,21 @@ def update_session(
             old_status = row["status"]
             session_type = row["session_type"]
             session_name = row["name"]
+
+            # Look up currently assigned task for worker sessions
+            if session_type == "worker":
+                from orchestrator.state.repositories import tasks as tasks_repo
+
+                assigned = tasks_repo.list_tasks(conn, assigned_session_id=id, parent_task_id=...)
+                for t in assigned:
+                    if t.status == "in_progress":
+                        task_id, task_title = t.id, t.title
+                        break
+                else:
+                    for t in assigned:
+                        if t.status == "todo":
+                            task_id, task_title = t.id, t.title
+                            break
 
     params.append(id)
     conn.execute(f"UPDATE sessions SET {', '.join(sets)} WHERE id = ?", params)
@@ -157,6 +174,8 @@ def update_session(
                 status,
                 session_type=session_type,
                 session_name=session_name,
+                task_id=task_id,
+                task_title=task_title,
             )
         except Exception:
             logger.debug("Failed to insert status event for session %s", id, exc_info=True)

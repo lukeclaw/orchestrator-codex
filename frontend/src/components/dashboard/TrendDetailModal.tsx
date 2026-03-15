@@ -334,7 +334,28 @@ function HumanHoursContent({ items }: { items: HumanHoursDetailItem[] }) {
   )
 }
 
-function TimelineBar({ intervals, variant }: { intervals: { start: string; end: string }[]; variant?: 'human' }) {
+const TASK_COLORS = [
+  'var(--green)',
+  '#a78bfa',   // purple
+  '#f59e0b',   // amber
+  '#06b6d4',   // cyan
+  '#f472b6',   // pink
+  '#34d399',   // emerald
+  '#fb923c',   // orange
+  '#60a5fa',   // blue
+]
+
+function hashTaskColor(taskId: string): string {
+  let h = 0
+  for (let i = 0; i < taskId.length; i++) h = ((h << 5) - h + taskId.charCodeAt(i)) | 0
+  return TASK_COLORS[Math.abs(h) % TASK_COLORS.length]
+}
+
+function TimelineBar({ intervals, variant }: { intervals: { start: string; end: string; task_id?: string; task_title?: string }[]; variant?: 'human' }) {
+  // Collect unique task IDs to decide whether to color-code
+  const taskIds = new Set(intervals.map(iv => iv.task_id).filter(Boolean))
+  const useTaskColors = variant !== 'human' && taskIds.size > 1
+
   return (
     <div className="timeline-bar">
       <div className="timeline-track" />
@@ -348,11 +369,24 @@ function TimelineBar({ intervals, variant }: { intervals: { start: string; end: 
         const durationHours = (end.getTime() - start.getTime()) / (1000 * 60 * 60)
         const left = (startHour / 24) * 100
         const width = Math.max((durationHours / 24) * 100, 0.5)
+
+        const startTime = start.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })
+        const endTime = end.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })
+        const tooltipParts = [`${startTime} – ${endTime} (${durationHours.toFixed(1)}h)`]
+        if (iv.task_title) tooltipParts.push(iv.task_title)
+
+        const bg = variant === 'human'
+          ? undefined
+          : useTaskColors && iv.task_id
+            ? hashTaskColor(iv.task_id)
+            : undefined
+
         return (
           <div
             key={i}
             className={variant === 'human' ? 'timeline-segment timeline-segment-human' : 'timeline-segment'}
-            style={{ left: `${left}%`, width: `${width}%` }}
+            style={{ left: `${left}%`, width: `${width}%`, ...(bg ? { background: bg } : {}) }}
+            title={tooltipParts.join('\n')}
           />
         )
       })}

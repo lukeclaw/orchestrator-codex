@@ -242,7 +242,7 @@ export interface ThroughputDetailItem {
 
 export interface WorkerHoursDetailItem {
   session_id: string; session_name: string; total_hours: number
-  intervals: { start: string; end: string }[]
+  intervals: { start: string; end: string; task_id?: string; task_title?: string }[]
   current_task: { id: string; title: string } | null
   deleted?: boolean
 }

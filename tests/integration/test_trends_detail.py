@@ -180,14 +180,19 @@ class TestQueryWorkerHoursDetail:
     def test_current_task_populated(self, populated_db):
         conn = populated_db["conn"]
         w1 = populated_db["sessions"]["w1"]
+        t2 = populated_db["tasks"]["t2"]
         today = _local_today()
 
         items = status_events.query_worker_hours_detail(conn, today)
         w1_item = next((i for i in items if i["session_id"] == w1.id), None)
-        if w1_item:
-            # t2 is assigned to w1 and in_progress
-            assert w1_item["current_task"] is not None
-            assert w1_item["current_task"]["title"] == "Setup CI pipeline"
+        assert w1_item is not None
+        # t2 is assigned to w1 and in_progress — captured in the status event
+        assert w1_item["current_task"] is not None
+        assert w1_item["current_task"]["title"] == "Setup CI pipeline"
+        # Interval should carry task context from the event
+        assert len(w1_item["intervals"]) >= 1
+        assert w1_item["intervals"][0]["task_id"] == t2.id
+        assert w1_item["intervals"][0]["task_title"] == "Setup CI pipeline"
 
     def test_empty_for_different_date(self, populated_db):
         conn = populated_db["conn"]
@@ -204,6 +209,8 @@ class TestQueryWorkerHoursDetail:
             for interval in item["intervals"]:
                 assert "start" in interval
                 assert "end" in interval
+                assert "task_id" in interval
+                assert "task_title" in interval
                 # Verify parseable ISO timestamps
                 start = datetime.fromisoformat(interval["start"])
                 end = datetime.fromisoformat(interval["end"])
@@ -217,6 +224,44 @@ class TestQueryWorkerHoursDetail:
         if len(items) >= 2:
             for i in range(len(items) - 1):
                 assert items[i]["total_hours"] >= items[i + 1]["total_hours"]
+
+    def test_interval_no_task(self, populated_db):
+        """Worker w2 has no assigned task — intervals should have None task fields."""
+        conn = populated_db["conn"]
+        w2 = populated_db["sessions"]["w2"]
+        today = _local_today()
+
+        items = status_events.query_worker_hours_detail(conn, today)
+        w2_item = next((i for i in items if i["session_id"] == w2.id), None)
+        assert w2_item is not None
+        for interval in w2_item["intervals"]:
+            assert interval["task_id"] is None
+            assert interval["task_title"] is None
+
+    def test_task_survives_deletion(self, db):
+        """Task context recorded in events survives task deletion."""
+        proj = projects.create_project(db, "Survivor Project", task_prefix="SRV")
+        t = tasks.create_task(db, proj.id, "Ephemeral task")
+        tasks.update_task(db, t.id, status="in_progress")
+
+        w = sessions.create_session(db, "worker-survivor", "host1", session_type="worker")
+        tasks.update_task(db, t.id, assigned_session_id=w.id)
+
+        # Start working — event captures task context
+        sessions.update_session(db, w.id, status="working")
+        # Delete the task
+        tasks.delete_task(db, t.id)
+        # Stop working
+        sessions.update_session(db, w.id, status="idle")
+
+        today = _local_today()
+        items = status_events.query_worker_hours_detail(db, today)
+        w_item = next((i for i in items if i["session_id"] == w.id), None)
+        assert w_item is not None
+        assert len(w_item["intervals"]) >= 1
+        # Task context should survive because it was denormalized at write time
+        assert w_item["intervals"][0]["task_id"] == t.id
+        assert w_item["intervals"][0]["task_title"] == "Ephemeral task"
 
 
 class TestQueryHeatmapDetail:

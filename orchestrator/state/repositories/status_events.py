@@ -18,13 +18,15 @@ def insert_event(
     is_subtask: bool = False,
     session_type: str | None = None,
     session_name: str | None = None,
+    task_id: str | None = None,
+    task_title: str | None = None,
 ) -> None:
     """Insert a status change event. Does NOT commit — caller handles that."""
     conn.execute(
         """INSERT INTO status_events
            (entity_type, entity_id, old_status, new_status,
-            is_subtask, session_type, session_name, timestamp)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+            is_subtask, session_type, session_name, task_id, task_title, timestamp)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (
             entity_type,
             entity_id,
@@ -33,6 +35,8 @@ def insert_event(
             int(is_subtask),
             session_type,
             session_name,
+            task_id,
+            task_title,
             utc_now_iso(),
         ),
     )
@@ -249,7 +253,7 @@ def query_worker_hours_detail(conn: sqlite3.Connection, date: str) -> list[dict]
     fetch_since = (target_start - timedelta(days=1)).astimezone(UTC).isoformat()
     fetch_until = (target_end + timedelta(hours=1)).astimezone(UTC).isoformat()
     rows = conn.execute(
-        """SELECT entity_id, new_status, timestamp, session_name
+        """SELECT entity_id, new_status, timestamp, session_name, task_id, task_title
            FROM status_events
            WHERE entity_type = 'session'
              AND session_type = 'worker'
@@ -260,13 +264,13 @@ def query_worker_hours_detail(conn: sqlite3.Connection, date: str) -> list[dict]
     ).fetchall()
 
     # Group events by worker, also track the latest session_name from events
-    workers: dict[str, list[tuple[str, str]]] = {}
+    workers: dict[str, list[tuple[str, str, str | None, str | None]]] = {}
     event_names: dict[str, str | None] = {}
     for r in rows:
         wid = r["entity_id"]
         if wid not in workers:
             workers[wid] = []
-        workers[wid].append((r["new_status"], r["timestamp"]))
+        workers[wid].append((r["new_status"], r["timestamp"], r["task_id"], r["task_title"]))
         if r["session_name"]:
             event_names[wid] = r["session_name"]
 
@@ -275,12 +279,16 @@ def query_worker_hours_detail(conn: sqlite3.Connection, date: str) -> list[dict]
     items = []
     for wid, events in workers.items():
         work_start: datetime | None = None
+        work_task_id: str | None = None
+        work_task_title: str | None = None
         intervals: list[dict] = []
 
-        for status, ts_str in events:
+        for status, ts_str, ev_task_id, ev_task_title in events:
             ts = _parse_ts(ts_str)
             if status == "working":
                 work_start = ts
+                work_task_id = ev_task_id
+                work_task_title = ev_task_title
             elif work_start is not None:
                 # Clamp interval to target date boundaries
                 clamped_start = max(work_start, target_start)
@@ -290,9 +298,13 @@ def query_worker_hours_detail(conn: sqlite3.Connection, date: str) -> list[dict]
                         {
                             "start": clamped_start.isoformat(),
                             "end": clamped_end.isoformat(),
+                            "task_id": work_task_id,
+                            "task_title": work_task_title,
                         }
                     )
                 work_start = None
+                work_task_id = None
+                work_task_title = None
 
         # Clamp open interval to now (or target_end)
         if work_start is not None:
@@ -303,6 +315,8 @@ def query_worker_hours_detail(conn: sqlite3.Connection, date: str) -> list[dict]
                     {
                         "start": clamped_start.isoformat(),
                         "end": clamped_end.isoformat(),
+                        "task_id": work_task_id,
+                        "task_title": work_task_title,
                     }
                 )
 
@@ -318,16 +332,12 @@ def query_worker_hours_detail(conn: sqlite3.Connection, date: str) -> list[dict]
         deleted = session is None
         session_name = session.name if session else event_names.get(wid, wid)
 
-        # V1 task correlation: look up current assignment
+        # Derive current_task from the last interval with task context
         current_task = None
-        if not deleted:
-            assigned_tasks = tasks_repo.list_tasks(
-                conn, assigned_session_id=wid, parent_task_id=...
-            )
-            for t in assigned_tasks:
-                if t.status in ("in_progress", "todo"):
-                    current_task = {"id": t.id, "title": t.title}
-                    break
+        for iv in reversed(intervals):
+            if iv.get("task_id"):
+                current_task = {"id": iv["task_id"], "title": iv["task_title"]}
+                break
 
         items.append(
             {
