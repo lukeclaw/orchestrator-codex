@@ -66,8 +66,27 @@
 }
 
 .atm-task-option:disabled {
-  opacity: 0.5;
+  opacity: 0.55;
   cursor: not-allowed;
+}
+
+.atm-task-option.atm-assigning {
+  background: rgba(88, 166, 255, 0.1);
+  border-color: rgba(88, 166, 255, 0.3);
+  opacity: 1;
+}
+
+.atm-assigning-label {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--accent);
+  margin-left: auto;
+  animation: atm-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes atm-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
 }
 
 /* Priority pill */

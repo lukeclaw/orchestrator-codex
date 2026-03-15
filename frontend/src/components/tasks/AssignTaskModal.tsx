@@ -27,6 +27,7 @@ export default function AssignTaskModal({ open, onClose, sessionId, sessionName 
   const { tasks, projects, refresh } = useApp()
   const notify = useNotify()
   const [assigning, setAssigning] = useState(false)
+  const [assigningTaskId, setAssigningTaskId] = useState<string | null>(null)
   const bodyRef = useRef<HTMLDivElement>(null)
   const [canScroll, setCanScroll] = useState(false)
 
@@ -84,6 +85,7 @@ export default function AssignTaskModal({ open, onClose, sessionId, sessionName 
   async function handleAssign(taskId: string) {
     if (assigning) return
     setAssigning(true)
+    setAssigningTaskId(taskId)
     try {
       // Prepare worker for task (non-blocking on failure)
       try {
@@ -105,6 +107,7 @@ export default function AssignTaskModal({ open, onClose, sessionId, sessionName 
       notify(e instanceof Error ? e.message : 'Failed to assign task', 'error')
     } finally {
       setAssigning(false)
+      setAssigningTaskId(null)
     }
   }
 
@@ -125,7 +128,7 @@ export default function AssignTaskModal({ open, onClose, sessionId, sessionName 
                 return (
                   <button
                     key={task.id}
-                    className="atm-task-option"
+                    className={`atm-task-option${assigningTaskId === task.id ? ' atm-assigning' : ''}`}
                     onClick={() => handleAssign(task.id)}
                     disabled={assigning}
                   >
@@ -134,7 +137,11 @@ export default function AssignTaskModal({ open, onClose, sessionId, sessionName 
                     </span>
                     {task.task_key && <span className="atm-task-key">{task.task_key}</span>}
                     <span className="atm-task-title">{task.title}</span>
-                    <span className={`atm-status status-${task.status}`}>{task.status.replace('_', ' ')}</span>
+                    {assigningTaskId === task.id ? (
+                      <span className="atm-assigning-label">Assigning...</span>
+                    ) : (
+                      <span className={`atm-status status-${task.status}`}>{task.status.replace('_', ' ')}</span>
+                    )}
                   </button>
                 )
               })}

@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useParams, Link, useNavigate } from 'react-router-dom'
 import { useApp } from '../context/AppContext'
+import { useNotify } from '../context/NotificationContext'
 import { api } from '../api/client'
 import {
   IconPencil,
@@ -35,6 +36,7 @@ export default function TaskDetailPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
   const { tasks, sessions, projects, refresh } = useApp()
+  const notify = useNotify()
 
   const task = tasks.find(t => t.id === id) || null
   const project = task ? projects.find(p => p.id === task.project_id) : null
@@ -52,6 +54,7 @@ export default function TaskDetailPage() {
   const [deleting, setDeleting] = useState(false)
   const [notesExpanded, setNotesExpanded] = useState(true)
   const [showAssignModal, setShowAssignModal] = useState(false)
+  const [assigningWorker, setAssigningWorker] = useState(false)
 
   // Reset editing states when navigating to a different task
   useEffect(() => {
@@ -128,15 +131,24 @@ export default function TaskDetailPage() {
   }
 
   const handleAssignChange = async (sessionId: string) => {
-    if (sessionId) {
-      try {
-        await api(`/api/sessions/${sessionId}/prepare-for-task`, { method: 'POST' })
-      } catch (err) {
-        console.error('Failed to prepare worker:', err)
+    const worker = sessions.find(s => s.id === sessionId)
+    setAssigningWorker(!!sessionId)
+    try {
+      if (sessionId) {
+        try {
+          await api(`/api/sessions/${sessionId}/prepare-for-task`, { method: 'POST' })
+        } catch (err) {
+          console.error('Failed to prepare worker:', err)
+        }
       }
+      setAssignedSession(sessionId)
+      await handleSaveField('assigned_session_id', sessionId || null)
+      if (sessionId && worker) {
+        notify(`Worker ${worker.name} assigned and notified`, 'success')
+      }
+    } finally {
+      setAssigningWorker(false)
     }
-    setAssignedSession(sessionId)
-    await handleSaveField('assigned_session_id', sessionId || null)
   }
 
   const handleDelete = async () => {
@@ -436,14 +448,16 @@ export default function TaskDetailPage() {
                     )
                   ) : (
                     <>
-                      {assignedWorker ? (
+                      {assigningWorker ? (
+                        <span className="sidebar-assigning">Assigning...</span>
+                      ) : assignedWorker ? (
                         <Link to={`/workers/${assignedWorker.id}`} className={`tdp-worker-link status-${assignedWorker.status}`}>
                           {assignedWorker.name}
                         </Link>
                       ) : (
                         <span className="sidebar-empty">Unassigned</span>
                       )}
-                      {isEditable && (
+                      {isEditable && !assigningWorker && (
                         <button
                           className="tdp-assign-icon-btn"
                           onClick={() => setShowAssignModal(true)}
