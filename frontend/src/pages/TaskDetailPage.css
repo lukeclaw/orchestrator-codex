@@ -1228,62 +1228,12 @@
   color: var(--green);
 }
 
-.tdp-worker-link.status-working {
-  background: rgba(88, 166, 255, 0.08);
-  color: var(--accent);
-}
-
-.tdp-worker-link.status-paused {
-  background: rgba(210, 153, 34, 0.08);
-  color: var(--yellow);
-}
-
-.tdp-worker-link.status-waiting {
-  background: rgba(210, 153, 34, 0.08);
-  color: var(--yellow);
-}
-
-.tdp-worker-link.status-disconnected {
-  background: rgba(248, 81, 73, 0.08);
-  color: var(--red);
-}
-
-.tdp-worker-link.status-connecting {
-  background: rgba(88, 166, 255, 0.08);
-  color: var(--accent);
-}
-
-.worker-status-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  flex-shrink: 0;
-  background: var(--text-muted);
-}
-
-.worker-status-dot.status-idle {
-  background: var(--green);
-}
-
-.worker-status-dot.status-working {
-  background: var(--accent);
-}
-
-.worker-status-dot.status-paused {
-  background: var(--yellow);
-}
-
-.worker-status-dot.status-waiting {
-  background: var(--yellow);
-}
-
-.worker-status-dot.status-disconnected {
-  background: var(--red);
-}
-
-.worker-status-dot.status-connecting {
-  background: var(--accent);
-}
+.tdp-worker-link.status-working      { background: rgba(88, 166, 255, 0.08);  color: var(--status-working); }
+.tdp-worker-link.status-idle          { background: rgba(63, 185, 80, 0.08);  color: var(--status-idle); }
+.tdp-worker-link.status-waiting       { background: rgba(210, 153, 34, 0.08); color: var(--status-waiting); }
+.tdp-worker-link.status-paused        { background: rgba(249, 115, 22, 0.08); color: var(--status-paused); }
+.tdp-worker-link.status-disconnected  { background: rgba(248, 81, 73, 0.08);  color: var(--status-disconnected); }
+.tdp-worker-link.status-connecting    { background: rgba(219, 109, 40, 0.08); color: var(--status-connecting); }
 
 .tdp-assign-icon-btn {
   display: flex;
@@ -1436,35 +1386,12 @@
   text-transform: capitalize;
 }
 
-.worker-status-label.status-idle {
-  background: rgba(63, 185, 80, 0.15);
-  color: var(--green);
-}
-
-.worker-status-label.status-working {
-  background: rgba(88, 166, 255, 0.15);
-  color: var(--accent);
-}
-
-.worker-status-label.status-paused {
-  background: rgba(210, 153, 34, 0.15);
-  color: var(--yellow);
-}
-
-.worker-status-label.status-waiting {
-  background: rgba(210, 153, 34, 0.15);
-  color: var(--yellow);
-}
-
-.worker-status-label.status-disconnected {
-  background: rgba(248, 81, 73, 0.15);
-  color: var(--red);
-}
-
-.worker-status-label.status-connecting {
-  background: rgba(88, 166, 255, 0.15);
-  color: var(--accent);
-}
+.worker-status-label.status-idle          { background: rgba(63, 185, 80, 0.15);  color: var(--status-idle); }
+.worker-status-label.status-working      { background: rgba(88, 166, 255, 0.15);  color: var(--status-working); }
+.worker-status-label.status-waiting       { background: rgba(210, 153, 34, 0.15); color: var(--status-waiting); }
+.worker-status-label.status-paused        { background: rgba(249, 115, 22, 0.15); color: var(--status-paused); }
+.worker-status-label.status-disconnected  { background: rgba(248, 81, 73, 0.15);  color: var(--status-disconnected); }
+.worker-status-label.status-connecting    { background: rgba(219, 109, 40, 0.15); color: var(--status-connecting); }
 
 .worker-current {
   font-size: 11px;
@@ -1573,21 +1500,6 @@
   background: var(--surface-hover);
 }
 
-.tdp-worker-preview-card .status-indicator {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  flex-shrink: 0;
-  background: var(--text-muted);
-}
-
-.tdp-worker-preview-card .status-indicator.working { background: #58a6ff; }
-.tdp-worker-preview-card .status-indicator.idle { background: var(--green); }
-.tdp-worker-preview-card .status-indicator.waiting { background: var(--yellow); }
-.tdp-worker-preview-card .status-indicator.paused { background: var(--orange, #f97316); }
-.tdp-worker-preview-card .status-indicator.disconnected { background: var(--red); }
-.tdp-worker-preview-card .status-indicator.connecting { background: var(--yellow); }
-
 .tdp-worker-preview-card .wc-type-tag {
   font-size: 11px;
   font-weight: 500;
@@ -1644,12 +1556,12 @@
   cursor: not-allowed;
 }
 
-.tdp-worker-preview-card.status-working { border-left-color: #58a6ff; }
-.tdp-worker-preview-card.status-idle { border-left-color: var(--green); }
-.tdp-worker-preview-card.status-waiting { border-left-color: var(--yellow); }
-.tdp-worker-preview-card.status-paused { border-left-color: var(--orange, #f97316); }
-.tdp-worker-preview-card.status-disconnected { border-left-color: var(--red); }
-.tdp-worker-preview-card.status-connecting { border-left-color: var(--accent); }
+.tdp-worker-preview-card.status-working      { border-left-color: var(--status-working); }
+.tdp-worker-preview-card.status-idle          { border-left-color: var(--status-idle); }
+.tdp-worker-preview-card.status-waiting       { border-left-color: var(--status-waiting); }
+.tdp-worker-preview-card.status-paused        { border-left-color: var(--status-paused); }
+.tdp-worker-preview-card.status-disconnected  { border-left-color: var(--status-disconnected); }
+.tdp-worker-preview-card.status-connecting    { border-left-color: var(--status-connecting); }
 
 .tdp-worker-preview-header {
   display: flex;

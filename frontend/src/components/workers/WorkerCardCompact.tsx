@@ -1,6 +1,7 @@
 import { useNavigate, Link } from 'react-router-dom'
 import type { Session, Task } from '../../api/types'
 import { timeAgo } from '../common/TimeAgo'
+import StatusDot from '../common/StatusDot'
 import './WorkerCardCompact.css'
 
 interface Props {
@@ -28,7 +29,7 @@ export default function WorkerCardCompact({ session, assignedTask, allRdev }: Pr
       onClick={() => navigate(`/workers/${session.id}`)}
     >
       <div className="wcc-header">
-        <span className={`status-indicator ${session.status}`} />
+        <StatusDot status={session.status} />
         <span className="wcc-name" title={session.name}>
           {hasPrefix && <span className="wcc-name-prefix">{namePrefix}_</span>}
           <span className="wcc-name-suffix">{nameSuffix}</span>

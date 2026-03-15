@@ -10,6 +10,7 @@ import CreateRdevModal from '../components/rdevs/CreateRdevModal'
 import CustomSelect from '../components/common/CustomSelect'
 import { IconRefresh, IconSessions, IconFilter, IconSearch, IconLaptop, IconServer } from '../components/common/Icons'
 import { useNotify } from '../context/NotificationContext'
+import { WORKER_STATUS_COLORS } from '../utils/statusColors'
 import './WorkersPage.css'
 
 type SortOption = 'last_viewed' | 'last_status_changed' | 'name' | 'status'
@@ -17,16 +18,6 @@ type SortOption = 'last_viewed' | 'last_status_changed' | 'name' | 'status'
 const SORT_KEY = 'orchestrator-worker-sort'
 
 const STATUS_ORDER = ['working', 'idle', 'waiting', 'paused', 'disconnected', 'connecting'] as const
-
-const STATUS_COLORS: Record<string, string> = {
-  working: '#58a6ff',
-  idle: '#3fb950',
-  waiting: '#d29922',
-  paused: '#f97316',
-  error: '#f85149',
-  disconnected: '#f85149',
-  connecting: '#d29922',
-}
 
 export default function WorkersPage() {
   const { workers, tasks, rdevs, refreshRdevs } = useApp()
@@ -337,7 +328,7 @@ export default function WorkersPage() {
                   onClick={() => setStatusFilter(statusFilter === status ? '' : status)}
                   type="button"
                 >
-                  <span className="status-summary-dot" style={{ background: STATUS_COLORS[status] }} />
+                  <span className="status-summary-dot" style={{ background: WORKER_STATUS_COLORS[status] }} />
                   <span className="status-summary-count">{statusCounts[status]}</span>
                   <span className="status-summary-label">{status.replace('_', ' ')}</span>
                 </button>

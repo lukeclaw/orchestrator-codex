@@ -184,36 +184,13 @@
   color: var(--text-primary);
 }
 
-/* Worker tag status colors — match tdp-worker-link */
-.pt-worker-tag.working {
-  background: rgba(88, 166, 255, 0.08);
-  color: var(--accent);
-}
-
-.pt-worker-tag.idle {
-  background: rgba(63, 185, 80, 0.08);
-  color: var(--green);
-}
-
-.pt-worker-tag.waiting {
-  background: rgba(210, 153, 34, 0.08);
-  color: var(--yellow);
-}
-
-.pt-worker-tag.paused {
-  background: rgba(210, 153, 34, 0.08);
-  color: var(--yellow);
-}
-
-.pt-worker-tag.disconnected {
-  background: rgba(248, 81, 73, 0.08);
-  color: var(--red);
-}
-
-.pt-worker-tag.connecting {
-  background: rgba(210, 153, 34, 0.08);
-  color: var(--yellow);
-}
+/* Worker tag status colors */
+.pt-worker-tag.working      { background: rgba(88, 166, 255, 0.08);  color: var(--status-working); }
+.pt-worker-tag.idle          { background: rgba(63, 185, 80, 0.08);  color: var(--status-idle); }
+.pt-worker-tag.waiting       { background: rgba(210, 153, 34, 0.08); color: var(--status-waiting); }
+.pt-worker-tag.paused        { background: rgba(249, 115, 22, 0.08); color: var(--status-paused); }
+.pt-worker-tag.disconnected  { background: rgba(248, 81, 73, 0.08);  color: var(--status-disconnected); }
+.pt-worker-tag.connecting    { background: rgba(219, 109, 40, 0.08); color: var(--status-connecting); }
 
 /* Status column */
 .pt-td.status {

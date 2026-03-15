@@ -300,38 +300,58 @@ select:focus {
   text-transform: capitalize;
 }
 
+/* Worker status dot — reusable colored circle */
+.status-dot,
+.status-indicator {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: var(--text-muted);
+}
+.status-dot.sm { width: 6px; height: 6px; }
+
+.status-dot.working,      .status-indicator.working      { background: var(--status-working); }
+.status-dot.idle,          .status-indicator.idle          { background: var(--status-idle); }
+.status-dot.waiting,       .status-indicator.waiting       { background: var(--status-waiting); }
+.status-dot.paused,        .status-indicator.paused        { background: var(--status-paused); }
+.status-dot.connecting,    .status-indicator.connecting    { background: var(--status-connecting); }
+.status-dot.disconnected,  .status-indicator.disconnected  { background: var(--status-disconnected); }
+.status-dot.error,         .status-indicator.error         { background: var(--status-error); }
+
 /* Worker statuses */
 .status-badge.working,
 .status-badge.in_progress {
   background: rgba(88,166,255,0.15);
-  color: var(--accent);
+  color: var(--status-working);
 }
 
 .status-badge.idle,
 .status-badge.todo {
   background: rgba(63,185,80,0.15);
-  color: var(--green);
+  color: var(--status-idle);
 }
 
 .status-badge.disconnected {
   background: rgba(248,81,73,0.15);
-  color: var(--red);
+  color: var(--status-disconnected);
 }
 
 .status-badge.waiting,
 .status-badge.blocked {
   background: rgba(210,153,34,0.15);
-  color: var(--yellow);
+  color: var(--status-waiting);
 }
 
 .status-badge.paused {
   background: rgba(249,115,22,0.15);
-  color: #f97316;
+  color: var(--status-paused);
 }
 
 .status-badge.connecting {
-  background: rgba(210, 153, 34, 0.15);
-  color: var(--yellow);
+  background: rgba(219, 109, 40, 0.15);
+  color: var(--status-connecting);
   animation: badge-connecting-pulse 1.5s ease-in-out infinite;
 }
 

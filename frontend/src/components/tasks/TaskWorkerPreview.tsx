@@ -10,6 +10,7 @@ import {
   IconRefresh,
 } from '../common/Icons'
 import ConfirmPopover from '../common/ConfirmPopover'
+import StatusDot from '../common/StatusDot'
 
 interface TaskWorkerPreviewProps {
   worker: Session
@@ -81,7 +82,7 @@ export default function TaskWorkerPreview({ worker, onRefresh }: TaskWorkerPrevi
     >
       <div className="tdp-worker-preview-header">
         <div className="tdp-worker-preview-left">
-          <span className={`status-indicator ${worker.status}`} />
+          <StatusDot status={worker.status} />
           <span className="tdp-worker-preview-name">
             {worker.name}
           </span>

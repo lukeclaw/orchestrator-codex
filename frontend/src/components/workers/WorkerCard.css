@@ -22,12 +22,12 @@
 }
 
 /* Status border colors */
-.worker-card.working { border-left-color: var(--accent); }
-.worker-card.idle { border-left-color: var(--green); }
-.worker-card.waiting { border-left-color: var(--yellow); }
-.worker-card.paused { border-left-color: var(--orange, #f97316); }
-.worker-card.disconnected { border-left-color: var(--red); }
-.worker-card.connecting { border-left-color: var(--yellow); }
+.worker-card.working { border-left-color: var(--status-working); }
+.worker-card.idle { border-left-color: var(--status-idle); }
+.worker-card.waiting { border-left-color: var(--status-waiting); }
+.worker-card.paused { border-left-color: var(--status-paused); }
+.worker-card.disconnected { border-left-color: var(--status-disconnected); }
+.worker-card.connecting { border-left-color: var(--status-connecting); }
 
 /* Header */
 .wc-header {
@@ -48,15 +48,8 @@
   flex: 1;
 }
 
-/* Status indicator with pulse animation for working */
-.worker-card .status-indicator {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  flex-shrink: 0;
-}
-
-.worker-card.working .status-indicator {
+/* Pulse animation for working status dot */
+.worker-card.working .status-dot {
   animation: status-pulse 2s ease-in-out infinite;
 }
 

@@ -1,6 +1,7 @@
 import { Link } from 'react-router-dom'
 import type { Project } from '../../api/types'
 import { timeAgo, parseLocalDate } from '../common/TimeAgo'
+import StatusDot from '../common/StatusDot'
 import './ProjectCard.css'
 
 interface Props {
@@ -95,7 +96,7 @@ export default function ProjectCard({ project }: Props) {
           {workerDetails.length > 0 ? (
             workerDetails.map(w => (
               <span key={w.id} className={`pc-worker ${w.status}`} title={`${w.name} (${w.status})`}>
-                <span className="pc-worker-dot" />
+                <StatusDot status={w.status} size="sm" />
                 {shortWorkerName(w.name)}
               </span>
             ))

@@ -38,6 +38,15 @@
   --success: #3fb950;
   --warning: #d29922;
 
+  /* Worker status colors — single source of truth */
+  --status-working: var(--accent);
+  --status-idle: var(--green);
+  --status-waiting: var(--yellow);
+  --status-paused: #f97316;
+  --status-connecting: var(--orange);
+  --status-disconnected: var(--red);
+  --status-error: var(--red);
+
   /* Sizing */
   --radius: 8px;
   --radius-lg: 12px;

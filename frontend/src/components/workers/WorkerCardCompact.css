@@ -16,12 +16,12 @@
 }
 
 /* Status border colors — matches WorkerCard */
-.wcc-card.working { border-left-color: var(--accent); }
-.wcc-card.idle { border-left-color: var(--green); }
-.wcc-card.waiting { border-left-color: var(--yellow); }
-.wcc-card.paused { border-left-color: var(--orange, #f97316); }
-.wcc-card.disconnected { border-left-color: var(--red); }
-.wcc-card.connecting { border-left-color: var(--yellow); }
+.wcc-card.working { border-left-color: var(--status-working); }
+.wcc-card.idle { border-left-color: var(--status-idle); }
+.wcc-card.waiting { border-left-color: var(--status-waiting); }
+.wcc-card.paused { border-left-color: var(--status-paused); }
+.wcc-card.disconnected { border-left-color: var(--status-disconnected); }
+.wcc-card.connecting { border-left-color: var(--status-connecting); }
 
 /* Header */
 .wcc-header {

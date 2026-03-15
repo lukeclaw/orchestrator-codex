@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { IconRefresh } from '../common/Icons'
+import StatusDot from '../common/StatusDot'
 import { api } from '../../api/client'
 import type { Task, Session } from '../../api/types'
 
@@ -85,7 +86,7 @@ export default function WorkerAssignModal({
                 onClick={() => handleAssign('')}
                 disabled={assigning}
               >
-                <span className="worker-status-dot" />
+                <StatusDot status="" />
                 <span className="worker-name">Unassign</span>
               </button>
             )}
@@ -102,7 +103,7 @@ export default function WorkerAssignModal({
                 }}
                 disabled={assigning}
               >
-                <span className={`worker-status-dot status-${s.status}`} />
+                <StatusDot status={s.status} />
                 <span className="worker-name">{s.name}</span>
                 {s.host.includes('/') ? <span className="wc-type-tag rdev">rdev</span> : s.host !== 'localhost' ? <span className="wc-type-tag ssh">ssh</span> : null}
                 {assigningId === s.id ? (
@@ -125,7 +126,7 @@ export default function WorkerAssignModal({
                 key={s.id}
                 className="tdp-worker-option disabled"
               >
-                <span className={`worker-status-dot status-${s.status}`} />
+                <StatusDot status={s.status} />
                 <span className="worker-name">{s.name}</span>
                 {s.host.includes('/') ? <span className="wc-type-tag rdev">rdev</span> : s.host !== 'localhost' ? <span className="wc-type-tag ssh">ssh</span> : null}
                 <span className={`worker-status-label status-${s.status}`}>{s.status}</span>

@@ -5,6 +5,7 @@ import { api } from '../../api/client'
 import { useNotify } from '../../context/NotificationContext'
 import { timeAgo } from '../common/TimeAgo'
 import { IconTrash, IconPause, IconPlay, IconStop, IconRefresh, IconBrain, IconKebab } from '../common/Icons'
+import StatusDot from '../common/StatusDot'
 
 import AssignTaskModal from '../tasks/AssignTaskModal'
 import './WorkerCard.css'
@@ -204,7 +205,7 @@ export default function WorkerCard({
     >
       <div className="wc-header">
         <div className="wc-header-left">
-          <span className={`status-indicator ${session.status}`} />
+          <StatusDot status={session.status} />
           {isRdev && session.name.includes('_') ? (
             <span className="wc-name">
               <span className="wc-name-prefix">{session.name.slice(0, session.name.indexOf('_') + 1)}</span>

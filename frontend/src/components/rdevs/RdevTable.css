@@ -116,23 +116,12 @@
   background: rgba(210, 153, 34, 0.08);
 }
 
-/* Worker status dot */
-.rt-worker-dot {
+/* Worker status dot — uses global .status-dot with size override */
+.worker-tag-link .status-dot {
   display: inline-block;
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
   margin-right: 6px;
   vertical-align: middle;
-  background: var(--text-muted);
 }
-
-.rt-worker-dot.working { background: #58a6ff; }
-.rt-worker-dot.idle { background: var(--green); }
-.rt-worker-dot.waiting { background: var(--yellow); }
-.rt-worker-dot.paused { background: var(--orange, #f97316); }
-.rt-worker-dot.disconnected { background: var(--red); }
-.rt-worker-dot.connecting { background: var(--yellow); }
 
 /* Worker tag link - clickable badge that links to worker */
 .worker-tag-link {
