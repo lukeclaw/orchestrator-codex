@@ -328,7 +328,10 @@ class TestEndpointIntegration:
             resp = client.post(f"/api/sessions/{sid}/send", json={"message": "fix the bug"})
 
         assert resp.status_code == 200
-        mock_rws.write_to_pty.assert_called_once_with("pty-test-123", "fix the bug\r")
+        calls = mock_rws.write_to_pty.call_args_list
+        assert len(calls) == 2
+        assert calls[0].args == ("pty-test-123", "fix the bug")
+        assert calls[1].args == ("pty-test-123", "\r")
 
     def test_type_uses_rws(self, rws_client):
         client, sid = rws_client
@@ -350,25 +353,34 @@ class TestEndpointIntegration:
         expected = f"\x1b[200~{text}\x1b[201~"
         mock_rws.write_to_pty.assert_called_once_with("pty-test-123", expected)
 
-    def test_pause_sends_escape(self, rws_client):
+    def test_pause_sends_ctrlc_and_escape(self, rws_client):
         client, sid = rws_client
         mock_rws = MagicMock()
         with patch(_RWS_GET, return_value=mock_rws):
             resp = client.post(f"/api/sessions/{sid}/pause")
 
         assert resp.status_code == 200
-        mock_rws.write_to_pty.assert_called_once_with("pty-test-123", "\x1b")
+        calls = mock_rws.write_to_pty.call_args_list
+        assert len(calls) == 2
+        assert calls[0].args == ("pty-test-123", "\x03")
+        assert calls[1].args == ("pty-test-123", "\x1b")
 
-    def test_continue_sends_continue(self, rws_client):
+    def test_continue_sends_interrupt_then_continue(self, rws_client):
         client, sid = rws_client
         mock_rws = MagicMock()
         with patch(_RWS_GET, return_value=mock_rws):
             resp = client.post(f"/api/sessions/{sid}/continue")
 
         assert resp.status_code == 200
-        mock_rws.write_to_pty.assert_called_once_with("pty-test-123", "continue\r")
+        calls = mock_rws.write_to_pty.call_args_list
+        # Ctrl-C, Escape, Ctrl-U, then "continue\r"
+        assert len(calls) == 4
+        assert calls[0].args == ("pty-test-123", "\x03")
+        assert calls[1].args == ("pty-test-123", "\x1b")
+        assert calls[2].args == ("pty-test-123", "\x15")
+        assert calls[3].args == ("pty-test-123", "continue\r")
 
-    def test_stop_sends_escape_and_clear(self, rws_client):
+    def test_stop_sends_interrupt_and_clear(self, rws_client):
         client, sid = rws_client
         mock_rws = MagicMock()
         with patch(_RWS_GET, return_value=mock_rws):
@@ -376,11 +388,14 @@ class TestEndpointIntegration:
 
         assert resp.status_code == 200
         calls = mock_rws.write_to_pty.call_args_list
-        assert len(calls) == 2
-        assert calls[0].args == ("pty-test-123", "\x1b")
-        assert calls[1].args == ("pty-test-123", "/clear\r")
+        # Ctrl-C, Escape, Ctrl-U, then "/clear\r"
+        assert len(calls) == 4
+        assert calls[0].args == ("pty-test-123", "\x03")
+        assert calls[1].args == ("pty-test-123", "\x1b")
+        assert calls[2].args == ("pty-test-123", "\x15")
+        assert calls[3].args == ("pty-test-123", "/clear\r")
 
-    def test_prepare_sends_escape_ctrlc_clear(self, rws_client):
+    def test_prepare_sends_interrupt_and_clear(self, rws_client):
         client, sid = rws_client
         mock_rws = MagicMock()
         with patch(_RWS_GET, return_value=mock_rws):
@@ -388,10 +403,12 @@ class TestEndpointIntegration:
 
         assert resp.status_code == 200
         calls = mock_rws.write_to_pty.call_args_list
-        assert len(calls) == 3
-        assert calls[0].args == ("pty-test-123", "\x1b")
-        assert calls[1].args == ("pty-test-123", "\x03")
-        assert calls[2].args == ("pty-test-123", "/clear\r")
+        # Ctrl-C, Escape, Ctrl-U, then "/clear\r"
+        assert len(calls) == 4
+        assert calls[0].args == ("pty-test-123", "\x03")
+        assert calls[1].args == ("pty-test-123", "\x1b")
+        assert calls[2].args == ("pty-test-123", "\x15")
+        assert calls[3].args == ("pty-test-123", "/clear\r")
 
     def test_preview_uses_rws(self, rws_client):
         client, sid = rws_client

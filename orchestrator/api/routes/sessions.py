@@ -123,6 +123,42 @@ def _serialize_session(s):
     }
 
 
+def _interrupt_and_send_command(session, command: str) -> None:
+    """Interrupt a Claude Code session and send a slash command reliably.
+
+    Follows the same sequence as brain_command which is proven to work:
+    1. Ctrl-C  — interrupt any streaming output
+    2. Escape  — exit any mode / dismiss prompts
+    3. Ctrl-U  — clear any leftover text in the input buffer
+    4. Type command literally
+    5. Brief sleep so TUI processes the text
+    6. Press Enter to submit
+
+    Works for both local (tmux) and remote (RWS PTY) sessions.
+    """
+    if is_remote_host(session.host) and session.rws_pty_id:
+        _write_to_rws_pty(session, "\x03")  # Ctrl-C
+        time.sleep(0.15)
+        _write_to_rws_pty(session, "\x1b")  # Escape
+        time.sleep(0.15)
+        _write_to_rws_pty(session, "\x15")  # Ctrl-U
+        time.sleep(0.1)
+        _write_to_rws_pty(session, command + "\r")
+    else:
+        from orchestrator.terminal.manager import send_keys_literal
+
+        tmux_sess, tmux_win = tmux_target(session.name)
+        send_keys(tmux_sess, tmux_win, "C-c", enter=False)
+        time.sleep(0.15)
+        send_keys(tmux_sess, tmux_win, "Escape", enter=False)
+        time.sleep(0.15)
+        send_keys(tmux_sess, tmux_win, "C-u", enter=False)
+        time.sleep(0.1)
+        send_keys_literal(tmux_sess, tmux_win, command)
+        time.sleep(0.1)
+        send_keys(tmux_sess, tmux_win, "", enter=True)
+
+
 def _write_to_rws_pty(session, data: str) -> bool:
     """Write data to a remote session's RWS PTY. Returns True on success."""
     from orchestrator.terminal.remote_worker_server import get_remote_worker_server
@@ -676,7 +712,12 @@ def send_message(session_id: str, body: SendMessage, request: Request, db=Depend
         raise HTTPException(404, "Session not found")
 
     if is_remote_host(s.host) and s.rws_pty_id:
-        success = _write_to_rws_pty(s, body.message + "\r")
+        # Write message text first, then Enter separately with a small delay
+        # so the TUI has time to process the pasted text before submitting.
+        success = _write_to_rws_pty(s, body.message)
+        if success:
+            time.sleep(0.15)
+            success = _write_to_rws_pty(s, "\r")
     else:
         from orchestrator.terminal.manager import TMUX_SESSION
         from orchestrator.terminal.session import send_to_session
@@ -880,14 +921,18 @@ def pause_session(session_id: str, db=Depends(get_db)):
         raise HTTPException(404, "Session not found")
     session_id = s.id
 
-    if is_remote_host(s.host) and s.rws_pty_id:
-        _write_to_rws_pty(s, "\x1b")
-    else:
-        tmux_sess, tmux_win = tmux_target(s.name)
-        try:
+    try:
+        if is_remote_host(s.host) and s.rws_pty_id:
+            _write_to_rws_pty(s, "\x03")  # Ctrl-C
+            time.sleep(0.1)
+            _write_to_rws_pty(s, "\x1b")  # Escape
+        else:
+            tmux_sess, tmux_win = tmux_target(s.name)
+            send_keys(tmux_sess, tmux_win, "C-c", enter=False)
+            time.sleep(0.1)
             send_keys(tmux_sess, tmux_win, "Escape", enter=False)
-        except Exception:
-            logger.warning("Could not send Escape to session %s", s.name, exc_info=True)
+    except Exception:
+        logger.warning("Could not send pause to session %s", s.name, exc_info=True)
 
     repo.update_session(db, session_id, status="paused")
     return {"ok": True, "message": f"Session {s.name} paused"}
@@ -901,17 +946,10 @@ def continue_session(session_id: str, db=Depends(get_db)):
         raise HTTPException(404, "Session not found")
     session_id = s.id
 
-    if is_remote_host(s.host) and s.rws_pty_id:
-        _write_to_rws_pty(s, "continue\r")
-    else:
-        tmux_sess, tmux_win = tmux_target(s.name)
-        try:
-            from orchestrator.terminal.manager import send_keys_literal
-
-            send_keys_literal(tmux_sess, tmux_win, "continue")
-            send_keys(tmux_sess, tmux_win, "", enter=True)
-        except Exception:
-            logger.warning("Could not send continue to session %s", s.name, exc_info=True)
+    try:
+        _interrupt_and_send_command(s, "continue")
+    except Exception:
+        logger.warning("Could not send continue to session %s", s.name, exc_info=True)
 
     repo.update_session(db, session_id, status="working")
     return {"ok": True, "message": f"Session {s.name} continued"}
@@ -925,25 +963,14 @@ def stop_session(session_id: str, db=Depends(get_db)):
         raise HTTPException(404, "Session not found")
     session_id = s.id
 
-    if is_remote_host(s.host) and s.rws_pty_id:
-        _write_to_rws_pty(s, "\x1b")
-        time.sleep(0.5)
-        _write_to_rws_pty(s, "/clear\r")
-    else:
-        tmux_sess, tmux_win = tmux_target(s.name)
-        try:
-            send_keys(tmux_sess, tmux_win, "Escape", enter=False)
-            time.sleep(0.5)
-            from orchestrator.terminal.manager import send_keys_literal
-
-            send_keys_literal(tmux_sess, tmux_win, "/clear")
-            send_keys(tmux_sess, tmux_win, "", enter=True)
-        except Exception:
-            logger.warning(
-                "Could not send stop commands to session %s",
-                s.name,
-                exc_info=True,
-            )
+    try:
+        _interrupt_and_send_command(s, "/clear")
+    except Exception:
+        logger.warning(
+            "Could not send stop commands to session %s",
+            s.name,
+            exc_info=True,
+        )
 
     # Unassign any tasks assigned to this session
     from orchestrator.state.repositories import tasks as tasks_repo
@@ -982,33 +1009,11 @@ def prepare_session_for_task(session_id: str, db=Depends(get_db)):
     if s.status in disconnected_statuses:
         raise HTTPException(400, f"Session is not connected (status: {s.status})")
 
-    if is_remote_host(s.host) and s.rws_pty_id:
-        _write_to_rws_pty(s, "\x1b")
-        time.sleep(0.3)
-        _write_to_rws_pty(s, "\x03")
-        time.sleep(0.5)
-        _write_to_rws_pty(s, "/clear\r")
+    try:
+        _interrupt_and_send_command(s, "/clear")
         logger.info("Prepared session %s for new task assignment", s.name)
-    else:
-        import subprocess
-
-        tmux_sess, tmux_win = tmux_target(s.name)
-        try:
-            send_keys(tmux_sess, tmux_win, "Escape", enter=False)
-            time.sleep(0.3)
-            subprocess.run(
-                ["tmux", "send-keys", "-t", f"{tmux_sess}:{tmux_win}", "C-c"],
-                capture_output=True,
-                timeout=2,
-            )
-            time.sleep(0.5)
-            from orchestrator.terminal.manager import send_keys_literal
-
-            send_keys_literal(tmux_sess, tmux_win, "/clear")
-            send_keys(tmux_sess, tmux_win, "", enter=True)
-            logger.info("Prepared session %s for new task assignment", s.name)
-        except Exception:
-            logger.warning("Could not fully prepare session %s", s.name, exc_info=True)
+    except Exception:
+        logger.warning("Could not fully prepare session %s", s.name, exc_info=True)
 
     return {"ok": True, "message": f"Session {s.name} prepared for new task"}
 

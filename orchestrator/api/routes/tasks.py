@@ -220,25 +220,36 @@ def update_task(task_id: str, body: TaskUpdate, request: Request, db=Depends(get
 
 
 def _notify_worker_of_assignment(db, task, request):
-    """Send task context to the assigned worker via tmux."""
+    """Send task context to the assigned worker."""
     try:
-        from orchestrator.terminal.session import send_to_session
+        import time
+
+        from orchestrator.terminal.ssh import is_remote_host
 
         session = sessions_repo.get_session(db, task.assigned_session_id)
         if not session:
             return
-
-        # Get tmux session name from app config
-        tmux_session = "orchestrator"
-        if hasattr(request.app.state, "orchestrator"):
-            tmux_session = request.app.state.orchestrator.tmux_session
 
         # Keep the notification concise — the worker's system prompt
         # instructs it to gather full context via CLI commands.
         message = (
             f"Task assigned: {task.title}. Follow your workflow to review the task and get started."
         )
-        send_to_session(session.name, message, tmux_session)
+
+        if is_remote_host(session.host) and session.rws_pty_id:
+            from orchestrator.api.routes.sessions import _write_to_rws_pty
+
+            _write_to_rws_pty(session, message)
+            time.sleep(0.15)
+            _write_to_rws_pty(session, "\r")
+        else:
+            from orchestrator.terminal.session import send_to_session
+
+            tmux_session = "orchestrator"
+            if hasattr(request.app.state, "orchestrator"):
+                tmux_session = request.app.state.orchestrator.tmux_session
+            send_to_session(session.name, message, tmux_session)
+
         logger.info("Notified worker %s of task assignment: %s", session.name, task.title)
     except Exception:
         logger.exception("Failed to notify worker of task assignment")
