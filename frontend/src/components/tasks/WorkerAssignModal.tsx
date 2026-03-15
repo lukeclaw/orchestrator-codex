@@ -3,6 +3,7 @@ import { IconRefresh } from '../common/Icons'
 import StatusDot from '../common/StatusDot'
 import { api } from '../../api/client'
 import type { Task, Session } from '../../api/types'
+import { useNotify } from '../../context/NotificationContext'
 
 interface WorkerAssignModalProps {
   task: Task
@@ -26,6 +27,7 @@ export default function WorkerAssignModal({
   onAssign,
   onClose,
 }: WorkerAssignModalProps) {
+  const notify = useNotify()
   const [assigning, setAssigning] = useState(false)
   const [assigningId, setAssigningId] = useState<string | null>(null)
 
@@ -35,6 +37,7 @@ export default function WorkerAssignModal({
       await api(`/api/sessions/${sessionId}/reconnect`, { method: 'POST' })
     } catch (err) {
       console.error('Failed to reconnect worker:', err)
+      notify('Failed to reconnect worker', 'error')
     }
   }
 

@@ -104,7 +104,7 @@ export default function ProjectForm({ open, onClose, onSubmit, initial, title = 
               onChange={e => setTargetDate(e.target.value)}
             />
           </div>
-          {error && <div style={{ color: 'var(--red)', fontSize: 13, marginTop: 8 }}>{error}</div>}
+          {error && <div className="form-error">{error}</div>}
         </div>
         <div className="modal-footer">
           <button type="button" className="btn btn-secondary" onClick={onClose}>Cancel</button>

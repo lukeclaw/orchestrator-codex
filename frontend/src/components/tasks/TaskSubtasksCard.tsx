@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { api } from '../../api/client'
 import type { Task } from '../../api/types'
 import { IconExternalLink, IconPlus } from '../common/Icons'
+import { useNotify } from '../../context/NotificationContext'
 
 const formatStatus = (s: string) => {
   switch (s) {
@@ -21,6 +22,7 @@ interface TaskSubtasksCardProps {
 }
 
 export default function TaskSubtasksCard({ task, isEditable, refresh }: TaskSubtasksCardProps) {
+  const notify = useNotify()
   const [subtasks, setSubtasks] = useState<Task[]>([])
   const [subtasksExpanded, setSubtasksExpanded] = useState(true)
   const [subtaskFilter, setSubtaskFilter] = useState<string>('all')
@@ -55,6 +57,7 @@ export default function TaskSubtasksCard({ task, isEditable, refresh }: TaskSubt
       refresh()
     } catch (err) {
       console.error('Failed to create subtask:', err)
+      notify('Failed to create subtask', 'error')
     } finally {
       setCreatingSubtask(false)
     }

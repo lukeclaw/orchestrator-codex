@@ -114,7 +114,7 @@ export default function TaskForm({ open, onClose, onSubmit, projects, defaultPro
               ))}
             </select>
           </div>
-          {error && <div style={{ color: 'var(--red)', fontSize: 13, marginTop: 8 }}>{error}</div>}
+          {error && <div className="form-error">{error}</div>}
         </div>
         <div className="modal-footer">
           <button type="button" className="btn btn-secondary" onClick={onClose}>Cancel</button>

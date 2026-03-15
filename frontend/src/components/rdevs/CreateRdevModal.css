@@ -44,16 +44,6 @@
   color: var(--text-secondary);
 }
 
-.form-error {
-  padding: 10px 12px;
-  margin-bottom: 16px;
-  background: var(--red-bg, rgba(239, 68, 68, 0.1));
-  border: 1px solid var(--red, #ef4444);
-  border-radius: 6px;
-  color: var(--red, #ef4444);
-  font-size: 13px;
-}
-
 .create-warning {
   padding: 10px 12px;
   background: var(--yellow-bg, rgba(234, 179, 8, 0.1));

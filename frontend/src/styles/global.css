@@ -559,6 +559,16 @@ select:focus {
   color: var(--text-muted);
 }
 
+.form-error {
+  padding: 10px 12px;
+  margin-top: 8px;
+  background: rgba(248, 81, 73, 0.12);
+  border: 1px solid var(--red);
+  border-radius: var(--radius);
+  color: var(--red);
+  font-size: 13px;
+}
+
 /* Input with browse button */
 .input-with-browse {
   display: flex;

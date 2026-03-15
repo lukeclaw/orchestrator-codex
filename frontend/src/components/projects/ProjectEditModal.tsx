@@ -113,7 +113,7 @@ export default function ProjectEditModal({ project, onClose, onUpdate, onDelete 
               />
             </div>
           </div>
-          {error && <div className="pem-error">{error}</div>}
+          {error && <div className="form-error">{error}</div>}
         </div>
         <div className="modal-footer pem-footer">
           <div className="pem-delete-area">

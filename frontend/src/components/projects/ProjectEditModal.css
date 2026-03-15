@@ -1,9 +1,3 @@
-.pem-error {
-  color: var(--red);
-  font-size: 13px;
-  margin-top: 8px;
-}
-
 .pem-footer {
   justify-content: space-between !important;
 }

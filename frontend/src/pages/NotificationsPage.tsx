@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { api, openUrl } from '../api/client'
 import { useApp } from '../context/AppContext'
+import { useNotify } from '../context/NotificationContext'
 import type { Notification } from '../api/types'
 import {
   IconCheck,
@@ -60,6 +61,7 @@ function groupByDate(notifications: Notification[]): DateGroup[] {
 
 export default function NotificationsPage() {
   const navigate = useNavigate()
+  const notify = useNotify()
   const { refreshNotificationCount } = useApp()
   const [notifications, setNotifications] = useState<Notification[]>([])
   const [activeCount, setActiveCount] = useState(0)
@@ -143,6 +145,7 @@ export default function NotificationsPage() {
       setActiveCount(countData.count)
     } catch (err) {
       console.error('Failed to fetch notifications:', err)
+      notify('Failed to load notifications', 'error')
     } finally {
       setLoading(false)
     }
@@ -165,6 +168,7 @@ export default function NotificationsPage() {
       }, 300)
     } catch (err) {
       console.error('Failed to dismiss notification:', err)
+      notify('Failed to dismiss notification', 'error')
     }
   }
 
@@ -174,6 +178,7 @@ export default function NotificationsPage() {
       setNotifications(prev => prev.filter(n => n.id !== id))
     } catch (err) {
       console.error('Failed to delete notification:', err)
+      notify('Failed to delete notification', 'error')
     }
   }
 
@@ -188,6 +193,7 @@ export default function NotificationsPage() {
       setNotifications(prev => prev.filter(n => !idSet.has(n.id)))
     } catch (err) {
       console.error('Failed to delete group:', err)
+      notify('Failed to delete notifications', 'error')
     }
   }
 
@@ -198,6 +204,7 @@ export default function NotificationsPage() {
       setNotifications(prev => prev.filter(n => n.id !== id))
     } catch (err) {
       console.error('Failed to restore notification:', err)
+      notify('Failed to restore notification', 'error')
     }
   }
 

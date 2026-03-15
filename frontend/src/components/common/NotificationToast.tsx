@@ -1,5 +1,3 @@
-import { useContext } from 'react'
-import { createContext } from 'react'
 import './NotificationToast.css'
 
 // Re-use the context from NotificationContext

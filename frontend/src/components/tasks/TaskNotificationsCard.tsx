@@ -10,6 +10,7 @@ import {
   IconCheck,
   IconExternalLink,
 } from '../common/Icons'
+import { useNotify } from '../../context/NotificationContext'
 
 function formatNotificationTime(dateStr: string): string {
   const d = parseDate(dateStr)
@@ -41,6 +42,7 @@ interface TaskNotificationsCardProps {
 }
 
 export default function TaskNotificationsCard({ taskId }: TaskNotificationsCardProps) {
+  const notify = useNotify()
   const [notifications, setNotifications] = useState<Notification[]>([])
   const [notificationsExpanded, setNotificationsExpanded] = useState(true)
   const [expandedNotifications, setExpandedNotifications] = useState<Set<string>>(new Set())
@@ -66,6 +68,7 @@ export default function TaskNotificationsCard({ taskId }: TaskNotificationsCardP
       }, 300)
     } catch (err) {
       console.error('Failed to dismiss notification:', err)
+      notify('Failed to dismiss notification', 'error')
     }
   }
 
