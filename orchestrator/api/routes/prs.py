@@ -21,7 +21,8 @@ router = APIRouter()
 
 # In-memory cache: key = "active" or "recent:7", value = (timestamp, response_dict)
 _search_cache: dict[str, tuple[float, dict]] = {}
-_SEARCH_CACHE_TTL = 600.0  # 10 minutes
+_SEARCH_CACHE_TTL_ACTIVE = 1200.0  # 20 minutes — matches frontend polling interval
+_SEARCH_CACHE_TTL_RECENT = 1200.0  # 20 minutes — matches frontend polling interval
 
 # Single GraphQL query fetches the PR list AND status details in one API call.
 _GRAPHQL_QUERY = """\
@@ -70,6 +71,32 @@ query($q: String!) {
             }
           }
         }
+      }
+    }
+  }
+}"""
+
+# Lightweight query for recent (closed) PRs — no CI, reviews, or mergeable status needed.
+_GRAPHQL_QUERY_RECENT = """\
+query($q: String!) {
+  search(query: $q, type: ISSUE, first: 100) {
+    nodes {
+      ... on PullRequest {
+        url
+        number
+        title
+        state
+        isDraft
+        author { login }
+        createdAt
+        updatedAt
+        closedAt
+        mergedAt
+        mergedBy { login }
+        additions
+        deletions
+        changedFiles
+        repository { nameWithOwner }
       }
     }
   }
@@ -285,18 +312,28 @@ async def search_prs(
     # Check cache
     if not refresh and cache_key in _search_cache:
         ts, cached = _search_cache[cache_key]
-        if time.time() - ts < _SEARCH_CACHE_TTL:
+        ttl = _SEARCH_CACHE_TTL_ACTIVE if cache_key == "active" else _SEARCH_CACHE_TTL_RECENT
+        if time.time() - ts < ttl:
             return cached
 
-    # Build search query string
+    # Build search query string and select GraphQL query
+    prev_entry = None
     if tab == "active":
         search_q = "type:pr author:@me is:open sort:updated-desc"
+        gql = _GRAPHQL_QUERY
     else:
-        cutoff = (datetime.now(UTC) - timedelta(days=days)).strftime("%Y-%m-%d")
-        search_q = f"type:pr author:@me is:closed closed:>{cutoff} sort:updated-desc"
+        # Incremental refresh: if stale cache exists, only fetch PRs closed since then
+        prev_entry = _search_cache.get(cache_key) if not refresh else None
+        if prev_entry:
+            since = datetime.fromtimestamp(prev_entry[0], UTC).strftime("%Y-%m-%d")
+            search_q = f"type:pr author:@me is:closed closed:>={since} sort:updated-desc"
+        else:
+            cutoff = (datetime.now(UTC) - timedelta(days=days)).strftime("%Y-%m-%d")
+            search_q = f"type:pr author:@me is:closed closed:>{cutoff} sort:updated-desc"
+        gql = _GRAPHQL_QUERY_RECENT
 
     try:
-        result = await _run_gh("graphql", "-f", f"query={_GRAPHQL_QUERY}", "-f", f"q={search_q}")
+        result = await _run_gh("graphql", "-f", f"query={gql}", "-f", f"q={search_q}")
     except HTTPException as e:
         if e.status_code == 429 and cache_key in _search_cache:
             _, cached = _search_cache[cache_key]
@@ -309,7 +346,33 @@ async def search_prs(
 
     nodes = (result.get("data") or {}).get("search", {}).get("nodes", [])
     fetched_at = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
-    prs = _parse_graphql_prs(nodes if isinstance(nodes, list) else [], fetched_at)
+    new_prs = _parse_graphql_prs(nodes if isinstance(nodes, list) else [], fetched_at)
+
+    # Merge with cached PRs for incremental recent refresh
+    if prev_entry:
+        cutoff_dt = datetime.now(UTC) - timedelta(days=days)
+        url_to_pr: dict[str, dict] = {}
+        for pr in prev_entry[1].get("prs", []):
+            closed_str = pr.get("closed_at") or pr.get("merged_at")
+            if closed_str:
+                try:
+                    closed_dt = datetime.fromisoformat(closed_str.replace("Z", "+00:00"))
+                    if closed_dt < cutoff_dt:
+                        continue  # prune PRs that fell outside the days window
+                except (ValueError, TypeError):
+                    pass
+            url_to_pr[pr["url"]] = pr
+        # New PRs override old ones (handles re-fetched duplicates)
+        for pr in new_prs:
+            url_to_pr[pr["url"]] = pr
+        prs = list(url_to_pr.values())
+    else:
+        prs = new_prs
+
+    # Reset task links before cross-referencing (ensures freshness after merge)
+    for pr in prs:
+        pr["linked_task"] = None
+        pr["linked_worker"] = None
 
     # Cross-reference with tasks
     if prs:

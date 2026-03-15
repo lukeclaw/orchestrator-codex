@@ -137,7 +137,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const wsRef = useRef<WebSocket | null>(null)
   const locationRef = useRef(location.pathname)
-  const prAbortRef = useRef<AbortController | null>(null)
+  const prAbortRef = useRef<Record<string, AbortController>>({})
 
 
   const fetchPrs = useCallback(async (tab: 'active' | 'recent', days = 7, refresh = false) => {
@@ -151,9 +151,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
       }
     }
 
-    prAbortRef.current?.abort()
+    // Per-key abort: only cancels a previous fetch for the same cache key
+    prAbortRef.current[cacheKey]?.abort()
     const ctrl = new AbortController()
-    prAbortRef.current = ctrl
+    prAbortRef.current[cacheKey] = ctrl
 
     setPrRefreshing(true)
 
@@ -198,9 +199,18 @@ export function AppProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     fetchPrs('active')
     const interval = setInterval(() => {
-      // Clear cache for active tab to force re-fetch
       delete prCacheRef.current['active']
       fetchPrs('active')
+    }, PR_CACHE_TTL)
+    return () => clearInterval(interval)
+  }, [fetchPrs])
+
+  // Background pre-fetch recent PRs (default 7 days) on mount and every 20 minutes
+  useEffect(() => {
+    fetchPrs('recent')
+    const interval = setInterval(() => {
+      delete prCacheRef.current['recent:7']
+      fetchPrs('recent')
     }, PR_CACHE_TTL)
     return () => clearInterval(interval)
   }, [fetchPrs])

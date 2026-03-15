@@ -1,6 +1,7 @@
 """Unit tests for the GET /api/prs endpoint (GraphQL-backed)."""
 
 import json
+import time as time_mod
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -761,3 +762,197 @@ def test_conflict_blocks_ready_to_ship(mock_gh, client):
 
     resp = client.get("/api/prs?tab=active")
     assert resp.json()["prs"][0]["attention_level"] == 1
+
+
+# --- Recent tab: simplified query and incremental refresh ---
+
+
+@patch.object(prs, "_run_gh", new_callable=AsyncMock)
+def test_recent_uses_simplified_query(mock_gh, client):
+    """Recent tab sends a lightweight GQL query without CI/review fields."""
+    mock_gh.return_value = _wrap_graphql(
+        _make_graphql_node(number=40, state="MERGED", merged_at="2026-03-11T12:00:00Z"),
+    )
+
+    client.get("/api/prs?tab=recent&days=7")
+
+    call_args = mock_gh.call_args[0]
+    query_arg = [a for a in call_args if a.startswith("query=")][0]
+    assert "reviewDecision" not in query_arg
+    assert "statusCheckRollup" not in query_arg
+    assert "autoMergeRequest" not in query_arg
+    assert "mergedAt" in query_arg
+
+
+@patch.object(prs, "_run_gh", new_callable=AsyncMock)
+def test_active_uses_full_query(mock_gh, client):
+    """Active tab still sends the full GQL query with CI/review fields."""
+    mock_gh.return_value = _wrap_graphql(_make_graphql_node())
+
+    client.get("/api/prs?tab=active")
+
+    call_args = mock_gh.call_args[0]
+    query_arg = [a for a in call_args if a.startswith("query=")][0]
+    assert "reviewDecision" in query_arg
+    assert "statusCheckRollup" in query_arg
+
+
+@patch.object(prs, "_run_gh", new_callable=AsyncMock)
+def test_recent_incremental_refresh(mock_gh, client):
+    """Incremental refresh merges new PRs with cached ones."""
+    # First call: full fetch
+    mock_gh.return_value = _wrap_graphql(
+        _make_graphql_node(number=40, state="MERGED", merged_at="2026-03-11T12:00:00Z"),
+    )
+    client.get("/api/prs?tab=recent&days=7")
+    assert mock_gh.call_count == 1
+
+    # Expire cache
+    ts, data = prs._search_cache["recent:7"]
+    prs._search_cache["recent:7"] = (ts - 2000, data)
+
+    # Second call: incremental fetch returns a new PR
+    mock_gh.return_value = _wrap_graphql(
+        _make_graphql_node(number=41, state="MERGED", merged_at="2026-03-14T10:00:00Z"),
+    )
+    resp = client.get("/api/prs?tab=recent&days=7")
+    assert mock_gh.call_count == 2
+
+    # Should have both old (#40) and new (#41) PRs
+    numbers = {pr["number"] for pr in resp.json()["prs"]}
+    assert numbers == {40, 41}
+
+    # Verify the incremental query used closed:>=
+    call_args = mock_gh.call_args[0]
+    q_arg = [a for a in call_args if a.startswith("q=")][0]
+    assert "closed:>=" in q_arg
+
+
+@patch.object(prs, "_run_gh", new_callable=AsyncMock)
+def test_recent_incremental_deduplicates(mock_gh, client):
+    """Incremental refresh updates existing PRs with fresh data."""
+    mock_gh.return_value = _wrap_graphql(
+        _make_graphql_node(
+            number=40, state="MERGED", title="Old title", merged_at="2026-03-11T12:00:00Z"
+        ),
+    )
+    client.get("/api/prs?tab=recent&days=7")
+
+    # Expire cache
+    ts, data = prs._search_cache["recent:7"]
+    prs._search_cache["recent:7"] = (ts - 2000, data)
+
+    # Same PR number returned with updated title
+    mock_gh.return_value = _wrap_graphql(
+        _make_graphql_node(
+            number=40, state="MERGED", title="Updated title", merged_at="2026-03-11T12:00:00Z"
+        ),
+    )
+    resp = client.get("/api/prs?tab=recent&days=7")
+
+    result_prs = resp.json()["prs"]
+    assert len(result_prs) == 1
+    assert result_prs[0]["title"] == "Updated title"
+
+
+@patch.object(prs, "_run_gh", new_callable=AsyncMock)
+def test_recent_incremental_prunes_expired(mock_gh, client):
+    """Incremental refresh removes PRs that fell outside the days window."""
+    # Seed cache directly with a PR whose closed_at is far in the past
+    old_pr = {
+        "url": "https://github.com/org/repo/pull/39",
+        "number": 39,
+        "title": "Old PR",
+        "repo": "org/repo",
+        "state": "closed",
+        "draft": False,
+        "author": "alice",
+        "created_at": "2026-02-01T10:00:00Z",
+        "updated_at": "2026-02-01T10:00:00Z",
+        "closed_at": "2026-02-01T12:00:00Z",
+        "merged_at": "2026-02-01T12:00:00Z",
+        "additions": 1,
+        "deletions": 1,
+        "changed_files": 1,
+        "review_decision": None,
+        "review_requests": [],
+        "auto_merge": False,
+        "ci_state": None,
+        "mergeable": None,
+        "attention_level": 3,
+        "merged_by": "bob",
+        "linked_task": None,
+        "linked_worker": None,
+    }
+    prs._search_cache["recent:7"] = (time_mod.time() - 2000, {"prs": [old_pr]})
+
+    # Incremental fetch returns no new PRs
+    mock_gh.return_value = _wrap_graphql()
+
+    resp = client.get("/api/prs?tab=recent&days=7")
+    assert len(resp.json()["prs"]) == 0
+
+
+@patch.object(prs, "_run_gh", new_callable=AsyncMock)
+def test_recent_manual_refresh_bypasses_incremental(mock_gh, client):
+    """Manual refresh=true does a full fetch, not incremental."""
+    mock_gh.return_value = _wrap_graphql(
+        _make_graphql_node(number=40, state="MERGED", merged_at="2026-03-11T12:00:00Z"),
+    )
+    client.get("/api/prs?tab=recent&days=7")
+
+    # Expire cache
+    ts, data = prs._search_cache["recent:7"]
+    prs._search_cache["recent:7"] = (ts - 2000, data)
+
+    # Manual refresh returns only a new PR
+    mock_gh.return_value = _wrap_graphql(
+        _make_graphql_node(number=41, state="MERGED", merged_at="2026-03-14T10:00:00Z"),
+    )
+    resp = client.get("/api/prs?tab=recent&days=7&refresh=true")
+
+    # Should only have the new PR (full fetch, no merge with cached)
+    result_prs = resp.json()["prs"]
+    assert len(result_prs) == 1
+    assert result_prs[0]["number"] == 41
+
+    # Verify the query used closed:> (not closed:>=)
+    call_args = mock_gh.call_args[0]
+    q_arg = [a for a in call_args if a.startswith("q=")][0]
+    assert "closed:>=" not in q_arg
+    assert "closed:>" in q_arg
+
+
+@patch.object(prs, "_run_gh", new_callable=AsyncMock)
+def test_recent_incremental_refreshes_task_links(mock_gh, client, conn):
+    """Incremental refresh re-runs task cross-referencing for all PRs."""
+    mock_gh.return_value = _wrap_graphql(
+        _make_graphql_node(number=40, state="MERGED", merged_at="2026-03-11T12:00:00Z"),
+    )
+    # First fetch — no task linked
+    resp = client.get("/api/prs?tab=recent&days=7")
+    assert resp.json()["prs"][0]["linked_task"] is None
+
+    # Now create a task that links to this PR
+    conn.execute(
+        "INSERT INTO projects (id, name, task_prefix) VALUES (?, ?, ?)",
+        ("proj-1", "Test", "TST"),
+    )
+    pr_link = json.dumps([{"url": "https://github.com/org/repo/pull/40"}])
+    conn.execute(
+        _INSERT_TASK.format(ts="CURRENT_TIMESTAMP"),
+        ("task-1", "proj-1", "Ship it", "done", 1, pr_link),
+    )
+    conn.commit()
+
+    # Expire cache and re-fetch
+    ts, data = prs._search_cache["recent:7"]
+    prs._search_cache["recent:7"] = (ts - 2000, data)
+
+    mock_gh.return_value = _wrap_graphql()  # no new PRs from GitHub
+    resp = client.get("/api/prs?tab=recent&days=7")
+
+    # Old cached PR should now have the task linked
+    pr = resp.json()["prs"][0]
+    assert pr["linked_task"] is not None
+    assert pr["linked_task"]["id"] == "task-1"
