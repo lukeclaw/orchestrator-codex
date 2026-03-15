@@ -49,9 +49,10 @@ A technical reference for the Claude Orchestrator's architectural design, applie
 ┌─────────────────────────────────────────────────────────────────────────┐
 │  FastAPI Server (localhost:8093)                                         │
 │                                                                         │
-│  ├─ REST Routes     (sessions, tasks, projects, context, skills, ...)   │
+│  ├─ REST Routes     (sessions, tasks, projects, prs, rdevs, context...) │
 │  ├─ WebSocket       (terminal streaming, state broadcast, browser view) │
 │  ├─ Orchestrator    (monitor loop, tunnel health loop, event bus)       │
+│  ├─ Human Tracker   (activity heartbeat → interval tracking)            │
 │  ├─ State Layer     (SQLite DB, repositories, migrations)               │
 │  └─ Session Layer   (health checks, reconnect pipeline, tunnel mgmt)    │
 │                                                                         │
@@ -86,10 +87,10 @@ A technical reference for the Claude Orchestrator's architectural design, applie
 
 The FastAPI application, route handlers, and real-time communication.
 
-- **`app.py`** — Application factory. Defines the `lifespan` context manager that handles startup (DB migrations, tmux reconciliation, tunnel recovery, orchestrator engine start) and shutdown. Mounts static files, CORS middleware, and all route routers.
+- **`app.py`** — Application factory. Defines the `lifespan` context manager that handles startup (DB migrations, tmux reconciliation, tunnel recovery, human tracker start, orchestrator engine start) and shutdown (human tracker stop, orchestrator stop). Mounts static files, CORS middleware, and all route routers.
 - **`deps.py`** — FastAPI dependency injection: database connection and config access.
-- **`websocket.py`** — State broadcast WebSocket (`/ws/state`). Pushes JSON messages for session status changes, task updates, and notifications to all connected clients.
-- **`ws_terminal.py`** — Terminal streaming WebSocket (`/ws/terminal/{session_id}`). Handles both local (pipe-pane via PtyStreamPool) and remote (RWS PTY stream) sessions. Manages initial sync (capture-pane snapshot), binary frame output, and text frame input (send-keys). Also handles interactive CLI WebSocket connections.
+- **`websocket.py`** — State broadcast WebSocket (`/ws/state`). Pushes JSON messages for session status changes, task updates, and notifications to all connected clients. Also handles `user_activity` heartbeat messages for human-hours tracking and `focus_update` messages for page focus tracking.
+- **`ws_terminal.py`** — Terminal streaming WebSocket (`/ws/terminal/{session_id}`). Handles both local (pipe-pane via PtyStreamPool) and remote (RWS PTY stream) sessions. Manages initial sync (capture-pane snapshot), binary frame output, and text frame input (send-keys). Also handles interactive CLI WebSocket connections. Terminal input triggers human activity heartbeats.
 - **`ws_browser_view.py`** — Browser view WebSocket (`/ws/browser-view/{session_id}`). Relays CDP screencast frames (JPEG) and input events between the frontend canvas and the CDP proxy.
 
 **Route modules** (`api/routes/`):
@@ -97,22 +98,23 @@ The FastAPI application, route handlers, and real-time communication.
 | Route file | Endpoints | Purpose |
 |------------|-----------|---------|
 | `sessions.py` | CRUD, start/stop/pause, health check, reconnect | Worker session management |
-| `tasks.py` | CRUD, assign, status transitions | Task lifecycle |
+| `tasks.py` | CRUD, assign, status transitions, subtasks | Task lifecycle |
 | `projects.py` | CRUD, list with stats | Project management |
 | `brain.py` | Start/stop, status, paste, deploy | Brain agent management |
 | `context.py` | CRUD, scope filtering | Context item management |
 | `skills.py` | CRUD, enable/disable, list built-in | Skill management |
 | `notifications.py` | List, dismiss, create | Notification management |
+| `prs.py` | Search (active/recent), attention levels | PR triage dashboard data |
+| `pr_preview.py` | Detail fetch, reviews, files, checks | Single PR detail for expanded view |
+| `rdevs.py` | List, create, delete, restart, stop | Remote dev instance management |
 | `files.py` | List dir, read file, stat, search | File explorer (local + remote via RWS) |
 | `browser_view.py` | Start/stop/status, CDP tunnel setup | Remote browser view lifecycle |
 | `interactive_cli.py` | Open/close, send input, capture | Interactive CLI sessions |
-| `trends.py` | Throughput, activity, utilization | Dashboard trend data |
+| `trends.py` | Throughput, activity, worker-hours, human-hours, detail | Dashboard trend data |
 | `backup.py` | Create/restore/list/delete/download | Database backup management |
 | `paste.py` | Smart paste handling | Clipboard intelligence |
-| `pr_preview.py` | Generate/view PR previews | PR diff generation |
-| `rdevs.py` | List, configure, health check | Remote dev machine management |
 | `settings.py` | Get/set config values | Application settings |
-| `dashboard.py` | Aggregated dashboard stats | Dashboard overview data |
+| `dashboard.py` | SPA fallback | Serves index.html for React Router |
 | `updates.py` | Version check | Auto-update support |
 
 ### 4.2 `orchestrator/core/` — Engine & Coordination
@@ -123,6 +125,7 @@ The central orchestration logic that ties the system together.
 - **`events.py`** — Lightweight pub/sub event bus. `publish(event_type, data)` and `subscribe(pattern, callback)`. Supports wildcard subscriptions (`"*"`). Used internally for loose coupling between components.
 - **`lifecycle.py`** — Startup and shutdown procedures. `startup_check()` reconciles the DB with tmux reality (marks sessions as disconnected if their tmux window is gone). `recover_tunnels()` re-adopts or restarts SSH tunnels after an orchestrator restart. `shutdown()` for clean exit.
 - **`state_manager.py`** — Centralized state change handler. Processes session status transitions and triggers side effects (notifications, event broadcasting, auto-reconnect).
+- **`human_tracker.py`** — Background async task that tracks operator activity. Receives heartbeats (in-memory timestamp updates) from WebSocket and terminal input handlers. Polls every 30s to manage activity intervals in the DB: starts a new interval when the user becomes active, closes it after 5 minutes of inactivity. Handles graceful shutdown (closing open intervals) and crash recovery (closing stale intervals on startup).
 
 ### 4.3 `orchestrator/terminal/` — tmux & Terminal Management
 
@@ -136,7 +139,7 @@ Everything related to terminal sessions, tmux interaction, and output processing
 - **`monitor.py`** — The background monitor loop. Periodically polls tmux pane content, runs the output parser, and updates session status in the DB.
 - **`markers.py`** — Terminal marker system for detecting specific output patterns and coordinating between input and output.
 - **`interactive.py`** — Interactive CLI session management. Opens/closes auxiliary terminal sessions (tmux window for local, RWS PTY for remote). Manages the lifecycle and I/O routing.
-- **`remote_worker_server.py`** — The RWS daemon script (deployed to remote hosts) and the client class (`RemoteWorkerServer`). The daemon handles PTY creation/management, file operations, and health pings over TCP/JSON-lines. The client manages connection pooling, auto-reconnect, and socket lifecycle.
+- **`remote_worker_server.py`** — The RWS daemon script (deployed to remote hosts) and the client class (`RemoteWorkerServer`). The daemon handles PTY creation/management, file operations, and health pings over TCP/JSON-lines. The client manages connection pooling, auto-reconnect, forward tunnel management, and socket lifecycle.
 - **`ssh.py`** — SSH utility functions: host type detection (`is_remote_host`), SSH command construction.
 - **`file_sync.py`** — File synchronization utilities for deploying agent configs to remote hosts.
 - **`claude_update.py`** — Claude Code version management and update detection.
@@ -145,10 +148,10 @@ Everything related to terminal sessions, tmux interaction, and output processing
 
 The resilience layer that keeps workers alive across failures.
 
-- **`health.py`** — Comprehensive health check system. Checks process liveness, SSH reachability, PTY responsiveness, and /tmp file integrity. `check_worker_health()` for individual workers, `check_all_workers_health()` for the periodic sweep. Includes the manifest-based /tmp recovery (`ensure_tmp_dir_health`, `ensure_brain_tmp_health`).
-- **`reconnect.py`** — The reconnect pipeline. `reconnect_local_worker()` and `reconnect_remote_worker()` implement sequential recovery: verify SSH → check tunnel → ensure RWS daemon → verify PTY → verify Claude process. Uses non-intrusive probes (`alternate_on` detection) and per-session `asyncio.Lock` to prevent concurrent reconnects.
+- **`health.py`** — Comprehensive health check system. Checks process liveness, SSH reachability, PTY responsiveness, and /tmp file integrity. `check_worker_health()` for individual workers, `check_all_workers_health()` for the periodic sweep. Includes the manifest-based /tmp recovery (`ensure_tmp_dir_health`, `ensure_brain_tmp_health`). Per-host circuit breaker (`_HostCircuitBreaker`) prevents health check storms against unreachable hosts.
+- **`reconnect.py`** — The reconnect pipeline. `reconnect_local_worker()` and `reconnect_remote_worker()` implement sequential recovery: verify SSH → check tunnel → ensure RWS daemon → verify PTY → verify Claude process. Uses non-intrusive probes (`alternate_on` detection) and per-session `asyncio.Lock` to prevent concurrent reconnects. Tracks `reconnect_step` in the DB for frontend progress display. Per-session attempt counting with backoff prevents infinite retry loops.
 - **`tunnel.py`** — `ReverseTunnelManager` — manages SSH reverse tunnels (`-R`) for rdev API access and forward tunnels (`-L`) for RWS/CDP. Tracks tunnel PIDs, provides startup/recovery/teardown, and handles the `ClearAllForwardings` SSH quirk.
-- **`tunnel_monitor.py`** — Background loop that periodically verifies tunnel health and restarts dead tunnels.
+- **`tunnel_monitor.py`** — Background loop that periodically verifies tunnel health and restarts dead tunnels. Uses a consecutive failure counter (max 5) to give up on persistently failing tunnels.
 - **`state_machine.py`** — Session state machine defining valid status transitions (e.g., idle→working, working→disconnected, disconnected→connecting).
 
 ### 4.5 `orchestrator/browser/` — CDP Proxy
@@ -164,8 +167,20 @@ SQLite database, schema migrations, and data access.
 
 - **`db.py`** — Database connection management. `get_connection()` returns a WAL-mode SQLite connection with busy timeout. `ConnectionFactory` creates fresh connections for write operations (avoids lock contention with the main read connection). `with_retry` decorator for transient lock errors.
 - **`models.py`** — Plain dataclasses mapping to DB tables: `Project`, `Session`, `Task`, `Config`, `ContextItem`, `Notification`, `Skill`, `InteractiveCLI`.
-- **`migrations/`** — Numbered SQL migration files (`001_initial.sql` through `028_add_skills.sql`). Applied in order by `migrations/runner.py` on startup. Idempotent (uses `CREATE TABLE IF NOT EXISTS`, etc.).
-- **`repositories/`** — Data access layer. One module per entity (`sessions.py`, `tasks.py`, `projects.py`, `config.py`, `context.py`, `notifications.py`, `skills.py`, `status_events.py`). Each provides CRUD functions that take a `sqlite3.Connection` and return dataclass instances.
+- **`migrations/`** — Numbered SQL migration files (`001_initial.sql` through `036_add_task_to_status_events.sql`). Applied in order by `migrations/runner.py` on startup. Idempotent (uses `CREATE TABLE IF NOT EXISTS`, etc.). Key migrations include: `027_add_status_events` (trends data), `031_add_rws_pty_id` (remote PTY tracking), `035_add_human_activity_events` (operator hours), `036_add_task_to_status_events` (per-interval task context).
+- **`repositories/`** — Data access layer. One module per entity:
+
+| Repository | Purpose |
+|------------|---------|
+| `sessions.py` | Session CRUD, status updates, reconnect fields |
+| `tasks.py` | Task CRUD, subtask queries, assignment |
+| `projects.py` | Project CRUD, stats aggregation |
+| `config.py` | Key-value configuration |
+| `context.py` | Context item CRUD with scope/category filtering |
+| `notifications.py` | Notification CRUD, PR comment metadata |
+| `skills.py` | Skill CRUD (custom + built-in discovery) |
+| `status_events.py` | Status transition log, trend aggregations (throughput, heatmap, worker-hours with detail and task context) |
+| `human_activity.py` | Activity interval CRUD, human-hours aggregation with cross-midnight splitting, stale interval recovery, cleanup |
 
 ### 4.7 `orchestrator/agents/` — Agent Deployment
 
@@ -197,9 +212,11 @@ Configuration and file deployment for Claude Code agents.
 | `/` | `DashboardPage` | Overview: stats, activity, worker grid, trends |
 | `/projects` | `ProjectsPage` | Project list with search/filter |
 | `/projects/:id` | `ProjectDetailPage` | Project detail with tasks |
-| `/tasks` | `TasksPage` | All tasks with kanban-style views |
-| `/tasks/:id` | `TaskDetailPage` | Task detail with terminal, notes, artifacts |
+| `/tasks` | `TasksPage` | All tasks with table + kanban board views |
+| `/tasks/:id` | `TaskDetailPage` | Task detail with terminal, notes, subtasks, artifacts |
+| `/prs` | `PRsPage` | PR triage dashboard with attention levels |
 | `/workers` | `WorkersPage` | Worker grid with status, actions |
+| `/workers/rdevs` | `WorkersPage` | Rdev management tab |
 | `/workers/:id` | `SessionDetailPage` | Live terminal, file explorer, browser view |
 | `/context` | `ContextPage` | Context item management |
 | `/skills` | `SkillsPage` | Skill management |
@@ -208,29 +225,37 @@ Configuration and file deployment for Claude Code agents.
 
 ### 5.2 State Management
 
-- **`AppContext`** (`context/AppContext.tsx`) — Global state provider. Holds: sessions (workers), projects, tasks, notifications, connection status. Establishes the WebSocket connection to `/ws/state` and processes incoming messages to update state. Provides auto-reconnect with exponential backoff.
+- **`AppContext`** (`context/AppContext.tsx`) — Global state provider. Holds: sessions (workers), projects, tasks, notifications, connection status. Establishes the WebSocket connection to `/ws/state` and processes incoming messages to update state. Provides auto-reconnect with exponential backoff. Sends throttled `user_activity` heartbeats on user interaction (click, keyboard, scroll) for human-hours tracking. Triggers periodic health checks.
 - **Page-local hooks** — Each page uses custom hooks for data fetching and local state: `useTrends`, `useSkills`, `useContextItems`, `useSettings`, etc. These hooks encapsulate API calls and polling logic.
 
 ### 5.3 Component Organization
 
 ```
 frontend/src/
-├── api/              # API client functions (fetch wrappers)
+├── api/              # API client functions (fetch wrappers), types.ts
 ├── components/
-│   ├── brain/        # BrainPanel (resizable side panel with xterm.js)
-│   ├── common/       # Shared: Modal, ConfirmPopover, ErrorBoundary,
-│   │                 #   Markdown, TimeAgo, Icons, FilterBar, SmartPastePopup
-│   ├── context/      # Context item list, editor, scope selector
-│   ├── dashboard/    # Stats bar, activity feed, worker grid, trends charts
-│   ├── projects/     # Project cards, project form, project detail sections
-│   ├── rdevs/        # Remote dev machine management UI
-│   ├── sessions/     # Session cards, session detail components, file explorer,
-│   │                 #   browser view canvas, interactive CLI overlay
-│   ├── skills/       # Skill list, skill editor, built-in vs custom views
-│   ├── tasks/        # Task cards, task form, task detail sections,
-│   │                 #   artifacts viewer, notes editor
-│   ├── terminal/     # xterm.js wrapper, terminal toolbar, reconnect overlay
-│   └── workers/      # Worker cards, worker actions, status badges
+│   ├── brain/        # BrainPanel (resizable side panel), BrainTerminal
+│   ├── browser/      # BrowserView (CDP screencast canvas)
+│   ├── common/       # Shared: Modal, ConfirmPopover, CustomSelect, SlidingTabs,
+│   │                 #   ErrorBoundary, Markdown, TimeAgo, Icons, SmartPastePopup,
+│   │                 #   NotificationToast, TagDropdown, GettingStartedModal, linkify
+│   ├── context/      # ContextModal (create/edit)
+│   ├── dashboard/    # TrendsPanel, TrendDetailModal, ThroughputChart,
+│   │                 #   WorkerHoursChart (dual Y-axis with human hours),
+│   │                 #   WorkerHeatmap, RecentActivity, CollapsiblePanel
+│   ├── file-explorer/ # File tree, file viewer, three-pane layout
+│   ├── layout/       # Header, StatsBar
+│   ├── projects/     # ProjectsTable, ProjectCard, ProjectForm, ProjectEditModal
+│   ├── rdevs/        # RdevTable, CreateRdevModal
+│   ├── sessions/     # AddSessionModal
+│   ├── sidebar/      # Sidebar (nav items, badges), SidebarItem
+│   ├── skills/       # SkillCard, SkillModal
+│   ├── tasks/        # TaskBoard (kanban), TaskTable, TaskCard, TaskForm,
+│   │                 #   TaskWorkerPreview, AssignTaskModal, WorkerAssignModal,
+│   │                 #   PrPreviewCard, TaskNotificationsCard, TaskLinksCard,
+│   │                 #   TaskSubtasksCard, prUtils
+│   ├── terminal/     # TerminalView (with reconnect overlay), InteractiveCLI
+│   └── workers/      # WorkerCard, WorkerCardCompact
 ├── context/          # React context providers (AppContext)
 ├── hooks/            # Custom React hooks
 ├── layouts/          # AppLayout (sidebar + main + brain panel)
@@ -242,7 +267,7 @@ frontend/src/
 
 | Channel | Protocol | Data Format | Purpose |
 |---------|----------|-------------|---------|
-| `/ws/state` | WebSocket | JSON | State broadcast: session updates, task changes, notifications |
+| `/ws/state` | WebSocket | JSON | State broadcast: session updates, task changes, notifications, user activity heartbeats |
 | `/ws/terminal/{id}` | WebSocket | Binary (output), Text (input) | Live terminal streaming |
 | `/ws/browser-view/{id}` | WebSocket | Binary (JPEG frames), Text (input events) | Remote browser screencast |
 | `/ws/interactive-cli/{id}` | WebSocket | Binary + Text | Interactive CLI terminal |
@@ -269,7 +294,7 @@ Early versions used tmux control-mode (`%output` events) for terminal streaming.
 - **Single file:** No database server to install, configure, or maintain. The DB is just a file on disk.
 - **WAL mode:** Allows concurrent readers while a writer holds the lock. The monitor loop and API handlers can read simultaneously.
 - **ConnectionFactory:** Write operations create fresh connections via a factory to avoid blocking the main read connection. A `with_retry` decorator handles transient `SQLITE_BUSY` errors.
-- **Migrations:** Numbered SQL files applied sequentially on startup. Idempotent DDL ensures safe re-runs.
+- **Migrations:** Numbered SQL files (001-036) applied sequentially on startup. Idempotent DDL ensures safe re-runs.
 
 ### Reverse Tunnels for rdev Communication
 
@@ -287,10 +312,21 @@ The solution:
 2. If TUI is active, the Claude process is alive — skip to verification, don't try to relaunch.
 3. If TUI is not active, the pane is at a shell prompt — safe to send commands.
 4. Each reconnect step is sequential and atomic: fix SSH, then tunnel, then daemon, then PTY, then Claude.
+5. Each step writes `reconnect_step` to the DB so the frontend can show progress.
+6. Per-session attempt counting prevents infinite reconnect loops.
 
 ### Agent Deployment SOT
 
 All agent configuration files (/tmp/orchestrator/{session_id}/) are generated by two canonical functions. This eliminates the bug class where different code paths (initial setup, reconnect, health recovery) produce slightly different file sets. The manifest file enables fast health verification without re-deploying.
+
+### Human Activity Tracking
+
+The operator's active time is tracked via a lightweight heartbeat → interval model:
+- Frontend sends throttled `user_activity` WebSocket messages (max once per 30s) on click/keyboard/scroll.
+- Terminal input also triggers heartbeats.
+- A background task polls every 30s: if the last heartbeat is within the 5-minute idle timeout, an activity interval is open in the DB; otherwise it's closed.
+- Crash recovery: stale open intervals are conservatively closed on startup.
+- This produces accurate active-time data without per-event storage cost.
 
 ### Tauri for Desktop Packaging
 
@@ -340,24 +376,27 @@ Health check detects: PTY dead or SSH unreachable
     ▼
 1. Check SSH connectivity (tcp ping + ssh banner)
     │ ✗ → wait, retry with backoff
-    ▼ ✓
-2. Check/restart reverse tunnel (-R 8093)
+    ▼ ✓                                         reconnect_step=
+2. Check/restart reverse tunnel (-R 8093)        "tunnel"
     │ ✗ → restart tunnel, verify
     ▼ ✓
-3. Check/restart forward tunnel (-L 9741)
+3. Check/restart forward tunnel (-L 9741)        "daemon"
     │ ✗ → restart tunnel, verify
     ▼ ✓
-4. Check RWS daemon health (TCP ping to 9741)
+4. Check RWS daemon health (TCP ping to 9741)    "daemon"
     │ ✗ → deploy + start daemon
     ▼ ✓
-5. Check PTY session alive (pty_id still valid)
-    │ ✗ → create new PTY
+5. Check PTY session alive (pty_id still valid)  "pty_check"
+    │ ✗ → deploy configs ("deploy"), create new PTY ("pty_create")
     ▼ ✓
-6. Check Claude process (alternate_on detection)
+6. Verify Claude process (alternate_on)          "verify"
     │ ✗ → launch Claude with --resume
     ▼ ✓
-7. Update DB status → "working" or "idle"
+7. Update DB status → "working" or "idle"        step cleared
 ```
+
+On failure: status → "disconnected", reconnect_step preserved (shows where it failed).
+On max attempts exceeded: auto-reconnect paused, user notified.
 
 ### Worker Lifecycle State Machine
 
@@ -385,11 +424,34 @@ Health check detects: PTY dead or SSH unreachable
           └──────────────────→ │ disconnected │ ────────────────→ │ connecting │
                                └──────────────┘                   └─────┬──────┘
                                       ▲                                  │
-                                      │  failed                          │ success
+                                      │  failed (or max attempts)        │ success
                                       └──────────────────────────────────┘
                                                                          │
                                                                          ▼
                                                                   idle or working
+```
+
+### Human Activity Tracking
+
+```
+User interaction (click/key/scroll)
+    │
+    │ throttled (max 1/30s)
+    ▼
+WebSocket { type: "user_activity" }
+    │                                     Terminal input (ws_terminal.py)
+    │                                         │
+    ▼                                         ▼
+HumanActivityTracker.record_heartbeat()  ← also called from terminal input
+    │
+    │ updates in-memory _last_heartbeat timestamp
+    │
+    ▼ (every 30s poll)
+Is now - _last_heartbeat < 5 min?
+    │
+    ├─ YES, no open interval → INSERT human_activity_events (start_time=now)
+    ├─ NO, open interval exists → UPDATE end_time = last_heartbeat
+    └─ Otherwise → no-op
 ```
 
 ---
@@ -401,32 +463,43 @@ Quick reference: "I want to understand/modify X" → where to look.
 | What | File(s) | Notes |
 |------|---------|-------|
 | **API server setup** | `api/app.py` | Lifespan, middleware, route mounting |
-| **REST endpoints** | `api/routes/*.py` | One file per resource |
+| **REST endpoints** | `api/routes/*.py` | One file per resource (20 route modules) |
 | **Terminal streaming** | `terminal/pty_stream.py`, `api/ws_terminal.py` | PtyStreamReader/Pool + WebSocket handler |
 | **Terminal input** | `api/ws_terminal.py`, `terminal/control.py` | WebSocket text frames → tmux send-keys |
 | **Output parsing** | `terminal/output_parser.py` | Regex detection of Claude states |
 | **Session creation** | `terminal/session.py` | Local + remote worker setup |
-| **Worker health checks** | `session/health.py` | Process, SSH, PTY, manifest checks |
-| **Reconnect logic** | `session/reconnect.py` | Sequential pipeline, TUI guard |
+| **Worker health checks** | `session/health.py` | Process, SSH, PTY, manifest checks, circuit breaker |
+| **Reconnect logic** | `session/reconnect.py` | Sequential pipeline, TUI guard, step tracking, attempt counting |
 | **SSH tunnel management** | `session/tunnel.py` | ReverseTunnelManager |
-| **Remote daemon (RWS)** | `terminal/remote_worker_server.py` | Daemon script + client + pool |
+| **Tunnel health loop** | `session/tunnel_monitor.py` | Periodic tunnel verification with failure counting |
+| **Remote daemon (RWS)** | `terminal/remote_worker_server.py` | Daemon script + client + pool + forward tunnels |
 | **Agent file deployment** | `agents/deploy.py` | SOT functions, manifests |
 | **Browser view (CDP)** | `browser/cdp_proxy.py`, `api/ws_browser_view.py` | Screencast + input relay |
 | **Interactive CLI** | `terminal/interactive.py`, `api/routes/interactive_cli.py` | PiP terminal sessions |
 | **File explorer backend** | `api/routes/files.py` | Local + RWS file ops |
-| **Database schema** | `state/migrations/versions/*.sql` | Numbered migrations |
-| **Data models** | `state/models.py` | Dataclasses: Project, Session, Task, etc. |
-| **Data access** | `state/repositories/*.py` | CRUD per entity |
+| **PR triage data** | `api/routes/prs.py` | GitHub GraphQL, attention levels, caching |
+| **PR detail** | `api/routes/pr_preview.py` | Single PR reviews, files, checks |
+| **Rdev management** | `api/routes/rdevs.py` | Rdev lifecycle, background refresh |
+| **Human activity tracking** | `core/human_tracker.py`, `state/repositories/human_activity.py` | Heartbeat → interval → hours aggregation |
+| **Trends/analytics** | `api/routes/trends.py`, `state/repositories/status_events.py` | Throughput, heatmap, worker-hours, human-hours, detail views |
+| **Database schema** | `state/migrations/versions/*.sql` | 36 numbered migrations |
+| **Data models** | `state/models.py` | Dataclasses: Project, Session, Task, Config, ContextItem, Notification, Skill, InteractiveCLI |
+| **Data access** | `state/repositories/*.py` | CRUD per entity (9 repository modules) |
 | **DB connection** | `state/db.py` | WAL mode, ConnectionFactory, retry |
 | **Monitor loop** | `terminal/monitor.py`, `core/orchestrator.py` | Periodic tmux state polling |
 | **Event bus** | `core/events.py` | Pub/sub for internal events |
 | **Startup/shutdown** | `core/lifecycle.py` | Reconciliation, tunnel recovery |
 | **Config loading** | `main.py`, `config.yaml` | YAML config |
-| **Frontend entry** | `frontend/src/main.tsx`, `App.tsx` | React root, router |
-| **Global state** | `frontend/src/context/AppContext.tsx` | WebSocket, sessions, tasks |
+| **Frontend entry** | `frontend/src/main.tsx`, `App.tsx` | React root, router (13 routes) |
+| **Global state** | `frontend/src/context/AppContext.tsx` | WebSocket, sessions, tasks, activity heartbeats |
+| **Frontend types** | `frontend/src/api/types.ts` | All API response interfaces |
 | **Design tokens** | `frontend/src/styles/global.css` | Colors, spacing, components |
-| **Terminal component** | `frontend/src/components/terminal/` | xterm.js wrapper |
-| **Page components** | `frontend/src/pages/*.tsx` | One per route |
+| **Terminal component** | `frontend/src/components/terminal/` | xterm.js wrapper, reconnect overlay |
+| **Trends components** | `frontend/src/components/dashboard/` | TrendsPanel, charts, detail modal |
+| **PRs page** | `frontend/src/pages/PRsPage.tsx` | Attention-based PR triage |
+| **Task views** | `frontend/src/components/tasks/` | Table, board, cards, subtasks, links, PR preview |
+| **Page components** | `frontend/src/pages/*.tsx` | One per route (12 pages) |
+| **Sidebar** | `frontend/src/components/sidebar/` | Navigation, badges (unread, PR attention) |
 | **Tauri config** | `src-tauri/tauri.conf.json`, `src-tauri/src/main.rs` | Window behavior, sidecar |
 | **Build scripts** | `scripts/build_app.sh`, `scripts/build_sidecar.py` | App packaging |
 | **Version management** | `pyproject.toml`, `scripts/bump-version.sh` | Single source of truth |

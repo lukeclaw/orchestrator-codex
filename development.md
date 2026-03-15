@@ -208,19 +208,22 @@ This starts an interactive CLI shell with commands like `/help`, `/status`, `/ad
 orchestrator/
 ├── config.yaml              # Bootstrap config (server, DB, tmux settings)
 ├── orchestrator/            # Python backend
-│   ├── api/                 # FastAPI routes & WebSocket
-│   ├── automation/          # Auto-approve engine
-│   ├── core/                # Orchestrator engine & event bus
-│   ├── llm/                 # LLM brain, context selector
-│   ├── recovery/            # Snapshot & re-brief
-│   ├── scheduler/           # Task assignment
-│   ├── state/               # DB, models, repositories
-│   └── terminal/            # tmux management, monitor, output parser
+│   ├── api/                 # FastAPI routes (20 modules) & WebSocket handlers
+│   ├── agents/              # Agent deployment (SOT for worker/brain tmp dirs)
+│   ├── browser/             # CDP proxy for remote browser view
+│   ├── core/                # Orchestrator engine, event bus, human tracker
+│   ├── session/             # Health checks, reconnect pipeline, tunnel mgmt
+│   ├── state/               # DB, models, repositories (9 modules), migrations (36)
+│   └── terminal/            # tmux management, monitor, output parser, RWS
 ├── frontend/                # React + TypeScript dashboard
 │   └── src/
-│       ├── pages/           # Dashboard, Workers, Projects, etc.
-│       ├── components/      # Reusable UI components
-│       └── context/         # AppContext (state management)
+│       ├── pages/           # 12 page components (Dashboard, PRs, Tasks, etc.)
+│       ├── components/      # Reusable UI components (16 directories)
+│       ├── api/             # API client functions, types.ts
+│       └── context/         # AppContext (state management, WebSocket, heartbeats)
+├── agents/                  # Agent prompts, hooks, and built-in skills
+│   ├── brain/               # Brain agent config (prompt.md, skills/, hooks/)
+│   └── worker/              # Worker agent config (prompt.md, skills/, hooks/)
 ├── src-tauri/               # Tauri shell (Rust)
 │   ├── src/lib.rs           # App setup, sidecar lifecycle, window events
 │   ├── tauri.conf.json      # Bundle config, CSP, dev/prod URLs
@@ -228,10 +231,17 @@ orchestrator/
 ├── scripts/
 │   ├── build_sidecar.py     # Builds PyInstaller onedir bundle
 │   └── build_app.sh         # Full production build script
+├── docs/                    # Design documentation
+│   ├── features.md          # Complete feature reference
+│   ├── architecture.md      # Technical architecture & code map
+│   └── design_logs/         # Per-feature design logs
 ├── orchestrator.spec        # PyInstaller spec (onedir mode)
-├── prompts/                 # CLAUDE.md templates for brain & workers
 └── data/                    # SQLite DB & logs (gitignored)
 ```
+
+For detailed documentation:
+- **[docs/features.md](docs/features.md)** — Complete feature reference: what the orchestrator does, how users interact with it, every feature from major to minor.
+- **[docs/architecture.md](docs/architecture.md)** — Technical architecture: design principles, backend/frontend structure, data flows, critical design choices, and a code map for navigating the codebase.
 
 ### API Docs
 
