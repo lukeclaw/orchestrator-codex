@@ -17,12 +17,14 @@ def insert_event(
     new_status: str,
     is_subtask: bool = False,
     session_type: str | None = None,
+    session_name: str | None = None,
 ) -> None:
     """Insert a status change event. Does NOT commit — caller handles that."""
     conn.execute(
         """INSERT INTO status_events
-           (entity_type, entity_id, old_status, new_status, is_subtask, session_type, timestamp)
-           VALUES (?, ?, ?, ?, ?, ?, ?)""",
+           (entity_type, entity_id, old_status, new_status,
+            is_subtask, session_type, session_name, timestamp)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
         (
             entity_type,
             entity_id,
@@ -30,6 +32,7 @@ def insert_event(
             new_status,
             int(is_subtask),
             session_type,
+            session_name,
             utc_now_iso(),
         ),
     )
@@ -246,7 +249,7 @@ def query_worker_hours_detail(conn: sqlite3.Connection, date: str) -> list[dict]
     fetch_since = (target_start - timedelta(days=1)).astimezone(UTC).isoformat()
     fetch_until = (target_end + timedelta(hours=1)).astimezone(UTC).isoformat()
     rows = conn.execute(
-        """SELECT entity_id, new_status, timestamp
+        """SELECT entity_id, new_status, timestamp, session_name
            FROM status_events
            WHERE entity_type = 'session'
              AND session_type = 'worker'
@@ -256,13 +259,16 @@ def query_worker_hours_detail(conn: sqlite3.Connection, date: str) -> list[dict]
         (fetch_since, fetch_until),
     ).fetchall()
 
-    # Group events by worker
+    # Group events by worker, also track the latest session_name from events
     workers: dict[str, list[tuple[str, str]]] = {}
+    event_names: dict[str, str | None] = {}
     for r in rows:
         wid = r["entity_id"]
         if wid not in workers:
             workers[wid] = []
         workers[wid].append((r["new_status"], r["timestamp"]))
+        if r["session_name"]:
+            event_names[wid] = r["session_name"]
 
     now = datetime.now(UTC)
 
@@ -309,15 +315,19 @@ def query_worker_hours_detail(conn: sqlite3.Connection, date: str) -> list[dict]
         )
 
         session = sessions_repo.get_session(conn, wid)
-        session_name = session.name if session else wid
+        deleted = session is None
+        session_name = session.name if session else event_names.get(wid, wid)
 
         # V1 task correlation: look up current assignment
         current_task = None
-        assigned_tasks = tasks_repo.list_tasks(conn, assigned_session_id=wid, parent_task_id=...)
-        for t in assigned_tasks:
-            if t.status in ("in_progress", "todo"):
-                current_task = {"id": t.id, "title": t.title}
-                break
+        if not deleted:
+            assigned_tasks = tasks_repo.list_tasks(
+                conn, assigned_session_id=wid, parent_task_id=...
+            )
+            for t in assigned_tasks:
+                if t.status in ("in_progress", "todo"):
+                    current_task = {"id": t.id, "title": t.title}
+                    break
 
         items.append(
             {
@@ -326,6 +336,7 @@ def query_worker_hours_detail(conn: sqlite3.Connection, date: str) -> list[dict]
                 "total_hours": round(total_hours, 2),
                 "intervals": intervals,
                 "current_task": current_task,
+                "deleted": deleted,
             }
         )
 
@@ -342,7 +353,7 @@ def query_heatmap_detail(
     Returns [{date, session_id, session_name, timestamp}] ordered by timestamp DESC.
     """
     rows = conn.execute(
-        """SELECT entity_id, timestamp
+        """SELECT entity_id, timestamp, session_name
            FROM status_events
            WHERE entity_type = 'session'
              AND new_status = 'working'
@@ -357,7 +368,7 @@ def query_heatmap_detail(
     items = []
     for r in rows:
         session = sessions_repo.get_session(conn, r["entity_id"])
-        session_name = session.name if session else r["entity_id"]
+        session_name = session.name if session else (r["session_name"] or r["entity_id"])
         ts = _parse_ts(r["timestamp"])
         items.append(
             {

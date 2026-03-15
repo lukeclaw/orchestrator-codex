@@ -131,13 +131,15 @@ def update_session(
     # Read old status before UPDATE for event tracking
     old_status = None
     session_type = None
+    session_name = None
     if status is not None:
         row = conn.execute(
-            "SELECT status, session_type FROM sessions WHERE id = ?", (id,)
+            "SELECT status, session_type, name FROM sessions WHERE id = ?", (id,)
         ).fetchone()
         if row:
             old_status = row["status"]
             session_type = row["session_type"]
+            session_name = row["name"]
 
     params.append(id)
     conn.execute(f"UPDATE sessions SET {', '.join(sets)} WHERE id = ?", params)
@@ -147,7 +149,15 @@ def update_session(
         try:
             from orchestrator.state.repositories.status_events import insert_event
 
-            insert_event(conn, "session", id, old_status, status, session_type=session_type)
+            insert_event(
+                conn,
+                "session",
+                id,
+                old_status,
+                status,
+                session_type=session_type,
+                session_name=session_name,
+            )
         except Exception:
             logger.debug("Failed to insert status event for session %s", id, exc_info=True)
 

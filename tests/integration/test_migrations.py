@@ -19,7 +19,9 @@ def test_fresh_migration():
     # 19=drop_tunnel_pane, 20=drop_skill_templates, 21=drop_tmux_window,
     # 22=drop_dead_tables, 24=notification_metadata, 25=auto_reconnect,
     # 26=claude_session_id, 27=status_events, 28=skills, 29=skill_overrides,
-    # 30=simplify_context_categories, 31=rws_pty_id
+    # 30=simplify_context_categories, 31=rws_pty_id,
+    # 32=soft_delete_sessions, 33=session_name_in_events,
+    # 34=drop_sessions_deleted_at
     assert applied == [
         1,
         2,
@@ -51,6 +53,9 @@ def test_fresh_migration():
         29,
         30,
         31,
+        32,
+        33,
+        34,
     ]
 
     # Verify key tables exist
@@ -130,6 +135,9 @@ def test_idempotent_rerun():
         29,
         30,
         31,
+        32,
+        33,
+        34,
     ]
 
     second = apply_migrations(conn)
@@ -141,7 +149,7 @@ def test_current_version_after_migration():
     conn = get_memory_connection()
     assert get_current_version(conn) == 0
     apply_migrations(conn)
-    assert get_current_version(conn) == 31
+    assert get_current_version(conn) == 34
     conn.close()
 
 

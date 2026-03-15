@@ -224,9 +224,13 @@ function WorkerHoursContent({ items }: { items: WorkerHoursDetailItem[] }) {
           <div key={item.session_id} className="worker-hours-row">
             <div className="worker-hours-label-col">
               <div className="worker-hours-label">
-                <Link to={`/workers/${item.session_id}`} className="worker-hours-name" onClick={e => e.stopPropagation()}>
-                  {item.session_name}
-                </Link>
+                {item.deleted ? (
+                  <span className="worker-hours-name deleted">{item.session_name}</span>
+                ) : (
+                  <Link to={`/workers/${item.session_id}`} className="worker-hours-name" onClick={e => e.stopPropagation()}>
+                    {item.session_name}
+                  </Link>
+                )}
                 <span className="worker-hours-hours">{item.total_hours.toFixed(1)}h</span>
               </div>
               {item.current_task && (
@@ -258,9 +262,9 @@ function TimelineBar({ intervals }: { intervals: { start: string; end: string }[
         const start = new Date(iv.start)
         const end = new Date(iv.end)
         const startHour = start.getHours() + start.getMinutes() / 60
-        const endHour = end.getHours() + end.getMinutes() / 60
+        const durationHours = (end.getTime() - start.getTime()) / (1000 * 60 * 60)
         const left = (startHour / 24) * 100
-        const width = Math.max(((endHour - startHour) / 24) * 100, 0.5)
+        const width = Math.max((durationHours / 24) * 100, 0.5)
         return (
           <div
             key={i}

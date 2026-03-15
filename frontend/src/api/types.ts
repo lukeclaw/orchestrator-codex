@@ -241,6 +241,7 @@ export interface WorkerHoursDetailItem {
   session_id: string; session_name: string; total_hours: number
   intervals: { start: string; end: string }[]
   current_task: { id: string; title: string } | null
+  deleted?: boolean
 }
 
 export interface HeatmapDetailItem {
