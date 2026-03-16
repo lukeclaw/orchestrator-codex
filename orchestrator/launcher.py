@@ -36,6 +36,7 @@ def setup_path():
         [
             "/usr/local/bin",
             "/opt/homebrew/bin",
+            "/usr/local/linkedin/bin",
         ]
     )
 
