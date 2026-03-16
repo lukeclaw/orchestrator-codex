@@ -81,7 +81,7 @@ Follow the MP's PR template checklist, plus:
 3. **Address comments** — Evaluate feedback, make code changes if needed
 4. **Reply** — Adjust tone:
    - **Human reviewers** (priority): Conversational — explain reasoning, invite follow-up.
-   - **Bots** (`Copilot`, `github-actions[bot]`, `linkedin-svc`, etc.): Only act on clearly valid feedback. Keep short. Bots won't read replies.
+   - **Bots** (`Copilot`, `github-actions[bot]`, etc.): Only act on clearly valid feedback. Keep short. Bots won't read replies.
 5. **Push fixes** — Commit and push (rebase pattern)
 6. **Notify immediately** — before moving to next PR. Include PR number/title, exact comment URL(s), and **full reply text** (not a summary):
    ```bash

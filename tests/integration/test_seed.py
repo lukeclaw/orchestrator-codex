@@ -56,7 +56,7 @@ def test_seed_context_items(db):
     titles = {item.title for item in items}
 
     # These should exist
-    assert "LinkedIn rdev VM Workflow" in titles
+    assert "rdev VM Workflow" in titles
     assert "Creating rdev Workers" in titles
 
     # These should NOT exist (removed)

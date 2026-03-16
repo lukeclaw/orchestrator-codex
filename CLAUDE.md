@@ -4,6 +4,17 @@
 
 Save all temporary files (screenshots, test outputs, scratch files) to `tmp/` — never the repo root. The `tmp/` directory is gitignored.
 
+## Security
+
+This app has a larger attack surface than a typical CLI tool — it runs an HTTP server reachable by any local process and executes shell commands on local and remote hosts. See `development.md` for the full threat model. Key rules:
+
+- **Shell injection**: Always `shlex.quote()` user-controlled values in shell commands (`subprocess.run()`, `tmux.send_keys()`, SSH). No exceptions.
+- **Input validation**: Sanitize names/paths at the API boundary with allowlist regex. See `_sanitize_worker_name()` in `api/routes/sessions.py`.
+- **URL validation**: Use `urlparse()`, never string prefix checks. Validate scheme + netloc.
+- **CORS**: Origins are locked to specific localhost/Tauri values in `api/app.py`. Do not widen to `"*"`.
+- **CSP**: No `unsafe-eval` in `src-tauri/tauri.conf.json`. Do not add it.
+- **Secrets**: Use macOS Keychain (pattern in `api/routes/backup.py`), not plaintext DB storage.
+
 ## Code Quality
 
 Before committing Python changes, run `uv run ruff check . --fix && uv run ruff format .` to lint and format the code.
@@ -14,6 +25,7 @@ After completing a change, review your own work as a senior software architect. 
 - Code duplication that should be refactored
 - Naming clarity and consistent conventions
 - Performance concerns (e.g., N+1 queries, redundant I/O)
+- **Security: shell injection, unsanitized input, credential exposure** (see Security section above)
 
 Point out any areas that can be improved before considering the task done.
 

@@ -14,7 +14,7 @@ Workers on rdev frequently use Playwright to automate browser tasks. When a brow
 
 The obvious fix — port-tunneling the website's port to localhost — **does not work** for auth flows:
 
-- **OAuth redirect URLs** are registered against the real domain (`*.linkedin.com`). Redirecting to `localhost` fails validation.
+- **OAuth redirect URLs** are registered against the real domain. Redirecting to `localhost` fails validation.
 - **Cookie domains** are scoped to the real hostname. Cookies set on `localhost` are invisible to the actual service.
 - **CORS policies** reject `localhost` as an origin.
 

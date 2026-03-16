@@ -375,7 +375,7 @@ def _copy_dir_to_remote(
 def ensure_rdev_node(tmux_session: str, window_name: str, remote_tmp_dir: str):
     """Install Node 24 via volta and create symlinks in node-bin/.
 
-    Rdev images ship Node 16 via a LinkedIn wrapper that force-resets volta's
+    Rdev images ship Node 16 via a system wrapper that force-resets volta's
     platform.json on every invocation.  We bypass both the wrapper and the volta
     shim by symlinking the actual Node 24 binary into a dedicated directory
     that gets placed first in PATH.

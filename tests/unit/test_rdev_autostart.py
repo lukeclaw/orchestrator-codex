@@ -20,7 +20,7 @@ class TestGetRdevState:
 
         mock_result = MagicMock()
         mock_result.stdout = (
-            "Name  | my-mp/my-session\nState | Running\nHost  | some-host.linkedin.com\n"
+            "Name  | my-mp/my-session\nState | Running\nHost  | some-host.example.com\n"
         )
         with patch("orchestrator.session.reconnect.subprocess.run", return_value=mock_result):
             assert _get_rdev_state("my-mp/my-session") == "RUNNING"
@@ -79,7 +79,7 @@ class TestEnsureRdevRunning:
 
         # Non-rdev host (no slash) should always return True
         with patch("orchestrator.session.reconnect._get_rdev_state") as mock_state:
-            result = _ensure_rdev_running("sess-1", "some-plain-host.linkedin.com")
+            result = _ensure_rdev_running("sess-1", "some-plain-host.example.com")
             assert result is True
             mock_state.assert_not_called()
 

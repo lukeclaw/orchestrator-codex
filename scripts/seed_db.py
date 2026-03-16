@@ -93,8 +93,8 @@ def seed_context(conn):
     """Seed default global context items."""
     items = [
         (
-            "LinkedIn rdev VM Workflow",
-            """LinkedIn engineers use rdev VMs for developing on multiproduct (MP) repositories.
+            "rdev VM Workflow",
+            """Developers use rdev VMs for developing on remote repositories.
 
 ## Listing rdev Sessions
 
@@ -155,6 +155,7 @@ Use `rdev list` to discover available rdev sessions before creating workers.""",
         "Orchestrator Architecture Overview",
         "Task and Sub-task Conventions",
         "Connecting Workers to rdev VMs",
+        "LinkedIn rdev VM Workflow",
     ]
     existing = context_repo.list_context(conn, scope="global")
     existing_titles = {item.title: item for item in existing}

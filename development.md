@@ -1,311 +1,160 @@
+# Development Guide
+
+Practices, conventions, and security requirements for developing on the Orchestrator codebase.
+
+For architecture and code map, see [architecture.md](architecture.md). For feature descriptions, see [features.md](features.md).
+
+---
+
+## 1. Security Model
+
+### Why this app requires extra vigilance
+
+The Orchestrator is not a simple localhost tool. It introduces attack surface that does not exist when running CLI tools directly in a terminal:
+
+- **Network-exposed API.** An HTTP/WebSocket server on `127.0.0.1:8093` is reachable by any process on the machine — browser tabs, VS Code extensions, npm packages, and malware. A malicious website can `fetch("http://localhost:8093/api/sessions")` to enumerate sessions or inject commands. Localhost service attacks are a [well-documented class of browser-based exploits](https://portswigger.net/research/cracking-the-lens-targeting-https-hidden-attack-surface).
+
+- **Shell commands from HTTP parameters.** When the API receives session names, file paths, or remote directories and passes them to `subprocess.run()` or `tmux.send_keys()`, unquoted values become shell injection vectors. A crafted session name like `; rm -rf /` could execute arbitrary commands.
+
+- **Multiplied blast radius.** A single vulnerability exposes all concurrent sessions simultaneously. The SQLite database containing session metadata, task history, and configuration is also readable by any local process.
+
+- **Remote host propagation.** The app manages SSH tunnels and executes commands on remote hosts. A shell injection in an SSH command could propagate to remote infrastructure — turning a local vulnerability into remote code execution.
+
+- **Weakened permission model.** All Claude Code instances run with `--dangerously-skip-permissions`, disabling built-in safety prompts. The human-in-the-loop safeguard that exists in direct terminal usage is absent.
+
+- **Web-context attack classes.** The web UI introduces CORS misconfiguration, XSS via rendered content, and CSP bypasses — none of which exist for a terminal application.
+
+### Security rules for contributors
+
+Every change should be evaluated against these rules:
+
+1. **Quote all shell interpolations.** Use `shlex.quote()` on every user-controlled or externally-sourced value that appears in a shell command string. This includes `subprocess.run()` calls, `tmux.send_keys()` commands, and SSH remote commands. Even values that "should" be safe (UUIDs, known-format IDs) must be quoted as defense-in-depth.
+
+2. **Validate at the API boundary.** User-provided names, paths, and identifiers must be sanitized when they enter the system — not downstream. Use allowlist regex patterns, enforce length limits, and strip dangerous characters. See `_sanitize_worker_name()` in `api/routes/sessions.py` for the canonical pattern.
+
+3. **Use `urlparse()` for URL validation.** Never validate URLs with string prefix checks (`url.startswith("http")`). Always parse with `urllib.parse.urlparse()` and validate scheme + netloc. This prevents `javascript:`, `file://`, `data:`, and other dangerous scheme injection.
+
+4. **Keep CORS origins locked.** The `allow_origins` list in `api/app.py` is restricted to specific localhost and Tauri origins. Do not widen to `"*"`. This is a deliberate security boundary that blocks cross-origin requests from malicious browser tabs.
+
+5. **Maintain the CSP.** The Tauri Content Security Policy in `src-tauri/tauri.conf.json` does not include `unsafe-eval`. Do not add it. No frontend code should use `eval()`, `new Function()`, or other dynamic code execution.
+
+6. **Store secrets in the OS keychain.** Backup encryption passwords use macOS Keychain (via the `security` CLI) with a SQLite DB fallback for non-macOS or CI environments. Any new secret storage must follow this same pattern — never store passwords or tokens in plaintext in the database.
+
+7. **Use `re.escape()` for dynamic regex patterns.** When user-controlled values are interpolated into regular expressions (e.g., `grep -E` patterns), escape them with `re.escape()` to prevent regex injection.
+
+### Security test coverage
+
+Security-related tests live in `tests/unit/test_security.py`. When adding new input handling, URL processing, shell command construction, or credential management, add corresponding test cases covering:
+- Normal/happy-path input
+- Shell metacharacter injection attempts
+- Boundary values (empty string, max length, special characters)
+- Scheme injection for URLs
+- Credential storage and retrieval round-trips
+
+---
+
+## 2. Development Setup
+
 ### Prerequisites
 
-- Python 3.11+
-- Node.js 20+
-- tmux 3.x (`brew install tmux`)
-- [uv](https://docs.astral.sh/uv/) (Python package manager)
-- Rust toolchain + Tauri CLI (only for macOS app builds — see [Installing Rust](#installing-rust))
+- Python 3.13+ (managed via `uv`)
+- Node.js 24+ (managed via `volta`)
+- tmux (installed via Homebrew or system package manager)
 
-### 1. Backend
+### Running locally
 
 ```bash
-cd orchestrator
+# Backend
+uv run uvicorn orchestrator.api.app:create_app --factory --host 127.0.0.1 --port 8093
 
-# Install dependencies
-uv sync
-
-# Start the API server (runs on http://localhost:8093)
-uv run uvicorn orchestrator.api.app:create_app --factory --reload --port 8093
-```
-
-### 2. Frontend
-
-```bash
-cd orchestrator/frontend
-
-# Install dependencies
-npm install
-# or
-yarn install
-
-# Start dev server (runs on http://localhost:5173, proxies API to :8093)
-npm run dev
-# or
-yarn dev
-```
-
-### 3. Open Dashboard
-
-- **Frontend Dev Server**: http://localhost:5173 (hot reload, proxies to backend)
-- **Backend API**: http://localhost:8093/api
-
-## macOS App
-
-The orchestrator is packaged as a native macOS app using Tauri. The `.app` bundle is fully self-contained — it includes Python, all dependencies, tmux, and the built frontend.
-
-### Installing Rust
-
-Install the Rust toolchain via [rustup](https://rustup.rs/):
-
-```bash
-curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-```
-
-After installation, restart your terminal (or run `source "$HOME/.cargo/env"`), then install the Tauri CLI:
-
-```bash
-cargo install tauri-cli
-```
-
-### Building the App
-
-```bash
-# Full build (frontend + PyInstaller sidecar + Tauri app)
-./scripts/build_app.sh
-
-# Skip frontend rebuild if unchanged
-./scripts/build_app.sh --skip-frontend
-```
-
-Output:
-- `src-tauri/target/release/bundle/macos/Orchestrator.app`
-- `src-tauri/target/release/bundle/dmg/Orchestrator_*.dmg`
-
-### App Behavior
-
-- **Close button / Cmd+W** — Hides the window. The app stays in the dock and the server keeps running.
-- **Click dock icon** — Restores the window.
-- **Cmd+Q / Quit from dock** — Fully quits the app and stops the server.
-
-## Development
-
-### Browser-Only (no Tauri)
-
-**Terminal 1 — Backend with auto-reload:**
-```bash
-uv run uvicorn orchestrator.api.app:create_app --factory --reload --port 8093
-```
-
-**Terminal 2 — Frontend with HMR:**
-```bash
+# Frontend (separate terminal)
 cd frontend && npm run dev
 ```
 
-Open http://localhost:5173. Vite proxies API/WS calls to the backend on :8093.
+The backend runs at `http://localhost:8093`, the frontend dev server at `http://localhost:5173`.
 
-### With Tauri Window
+---
 
-To develop inside the native Tauri window (for testing dock behavior, window events, etc.):
+## 3. Code Quality
 
-**Terminal 1 — Backend with auto-reload:**
-```bash
-uv run uvicorn orchestrator.api.app:create_app --factory --reload --port 8093
-```
-
-**Terminal 2 — Tauri + Vite:**
-```bash
-cd src-tauri
-cargo tauri dev
-```
-
-In dev mode, Tauri opens the Vite dev server directly and does **not** spawn the bundled sidecar. The production app and dev workflow are fully isolated.
-
-### Avoiding Duplicate Dev Servers
-
-The backend (`:8093`) and frontend (`:5173`) each bind to a fixed port. Starting a second instance will fail with "address already in use." Before starting, check if one is already running:
+### Linting and formatting
 
 ```bash
-# Check if the backend is already running on port 8093
-lsof -iTCP:8093 -sTCP:LISTEN
-
-# Check if the Vite dev server is already running on port 5173
-lsof -iTCP:5173 -sTCP:LISTEN
-
-# Kill a specific process by PID
-kill <pid>
+uv run ruff check . --fix && uv run ruff format .
 ```
 
-**Common pitfall with `cargo tauri dev`:** Tauri's `beforeDevCommand` (`cd frontend && npm run dev`) automatically starts Vite on `:5173`. If you already have Vite running in another terminal, this will fail. Either stop the existing Vite process first, or run the backend + Vite manually and skip `cargo tauri dev` (use the browser-only workflow instead).
+Run before every commit. The ruff configuration in `pyproject.toml` enforces consistent style.
 
-### Capturing Logs During Development
-
-#### Backend logs
-
-The Python server writes application logs to **`data/orchestrator.log`** automatically on startup (level configurable via `config.yaml` → `logging.level`). This file is always available — even when the server is running in a different terminal or was started by someone else.
+### Type checking
 
 ```bash
-# Read recent backend logs
-tail -100 data/orchestrator.log
-
-# Follow logs in real time
-tail -f data/orchestrator.log
+cd frontend && npx tsc --noEmit
 ```
 
-In dev mode, logs also go to **stderr** in the terminal running uvicorn. To capture _everything_ including uvicorn access logs (which bypass Python logging) to a file that can be inspected later:
+Run when frontend files are modified.
+
+### Testing
 
 ```bash
-uv run uvicorn orchestrator.api.app:create_app --factory --reload --port 8093 2>&1 | tee tmp/server.log
+uv run pytest                    # full suite (must complete in <30s)
+uv run pytest tests/unit/test_security.py  # security tests only
+uv run pytest <test_file> -v     # specific file with verbose output
 ```
 
-#### Accessing logs from Claude Code (or other AI agents)
+Tests must:
+- Run fast — mock external dependencies (subprocess, network, file I/O)
+- Cover happy path, error cases, and edge cases
+- Include security-relevant test cases for any input handling or command construction
 
-When a dev server is already running in another terminal, Claude Code can't see its stdout/stderr. Use these file-based approaches instead:
+### Pre-commit checklist
 
-- **Backend application logs**: Read `data/orchestrator.log` — always written in dev mode.
-- **Backend access logs** (uvicorn HTTP request lines): Only available if the server was started with `| tee tmp/server.log` (see above). If not, the log file still has application-level logs which cover most debugging needs.
-- **Frontend build/runtime errors**: Not captured to a file by default. Open `http://localhost:5173` in a browser and use devtools, or check the Vite terminal manually.
+1. `uv run ruff check . --fix && uv run ruff format .`
+2. `cd frontend && npx tsc --noEmit` (if frontend files changed)
+3. `uv run pytest`
+4. Review your own diff for security issues: unquoted shell interpolations, unsanitized input, credential exposure
 
-**Recommended dev workflow when using Claude Code:**
+---
 
-Start the backend with tee so all output (application logs + uvicorn access logs) is captured to a file:
-```bash
-uv run uvicorn orchestrator.api.app:create_app --factory --reload --port 8093 2>&1 | tee tmp/server.log
-```
+## 4. Code Review Guidelines
 
-Then Claude Code can inspect logs with:
-```bash
-# Application logs (always available)
-tail -100 data/orchestrator.log
+When reviewing changes, pay special attention to:
 
-# Full server output including access logs (if started with tee)
-tail -100 tmp/server.log
-```
+### Security (highest priority)
 
-#### Frontend logs
+- [ ] All user-controlled values in shell commands are `shlex.quote()`'d
+- [ ] New API inputs are validated/sanitized at the boundary
+- [ ] No new `allow_origins=["*"]` or CORS widening
+- [ ] No `unsafe-eval` added to CSP
+- [ ] URLs validated with `urlparse()`, not string prefix
+- [ ] No plaintext secrets in the database
+- [ ] New `subprocess.run()` calls don't use `shell=True` with unsanitized input
+- [ ] Dynamic regex patterns use `re.escape()` on user input
 
-**Browser-only workflow** (`npm run dev` + open `http://localhost:5173`): Use the normal Chrome/Firefox devtools (`Cmd+Option+J`).
+### Correctness
 
-**Tauri window** (`cargo tauri dev`): Options for accessing frontend console logs:
-- **Open devtools inside Tauri**: Press `Cmd+Option+I` in the Tauri window (enabled automatically in debug builds).
-- **Use a regular browser in parallel**: Since Tauri dev mode just loads `http://localhost:5173`, open that same URL in Chrome/Safari to get full devtools. Both the Tauri window and the browser will work simultaneously against the same backend.
+- [ ] Error cases handled gracefully
+- [ ] No N+1 queries or redundant I/O
+- [ ] Tests cover the change adequately
+- [ ] State transitions follow the session state machine
 
-Vite build errors and HMR status appear in the terminal where `npm run dev` (or `cargo tauri dev`) is running.
+### Conventions
 
-#### Tauri (Rust) logs
+- [ ] Frontend uses `<ConfirmPopover>`, never `window.confirm()`
+- [ ] Dates use the correct parser (`parseLocalDate` vs `parseDate`)
+- [ ] CSS follows the design system (`.btn`, `.panel`, `.form-group select`)
+- [ ] Temporary files go to `tmp/`, not the repo root
 
-When running `cargo tauri dev`, `eprintln!` output (prefixed `[tauri]`) appears in that terminal. In dev mode, the Python sidecar is **not** spawned — you run the backend separately — so `[sidecar]` lines don't appear.
+---
 
-#### Packaged app logs
+## 5. Architecture Quick Reference
 
-For debugging production builds:
-- Python server log: `~/Library/Application Support/Orchestrator/orchestrator.log`
-- Tauri/sidecar stderr: captured and printed with `[sidecar]` prefix. View by launching the app from a terminal:
-  ```bash
-  /Applications/Orchestrator.app/Contents/MacOS/Orchestrator
-  ```
+| Layer | Key files | Notes |
+|-------|-----------|-------|
+| API boundary (input validation) | `api/routes/sessions.py`, `api/app.py` | Sanitize here, not downstream |
+| Shell command construction | `terminal/session.py`, `terminal/file_sync.py`, `session/reconnect.py` | Always `shlex.quote()` |
+| Credential storage | `api/routes/backup.py` | Keychain helpers pattern |
+| CORS configuration | `api/app.py` | Locked origin list |
+| CSP configuration | `src-tauri/tauri.conf.json` | No `unsafe-eval` |
+| Security tests | `tests/unit/test_security.py` | Sanitization, URL validation, keychain |
 
-### CLI Mode
-
-```bash
-uv run orchestrator
-```
-
-This starts an interactive CLI shell with commands like `/help`, `/status`, `/add`, etc.
-
-### Project Structure
-
-```
-orchestrator/
-├── config.yaml              # Bootstrap config (server, DB, tmux settings)
-├── orchestrator/            # Python backend
-│   ├── api/                 # FastAPI routes (20 modules) & WebSocket handlers
-│   ├── agents/              # Agent deployment (SOT for worker/brain tmp dirs)
-│   ├── browser/             # CDP proxy for remote browser view
-│   ├── core/                # Orchestrator engine, event bus, human tracker
-│   ├── session/             # Health checks, reconnect pipeline, tunnel mgmt
-│   ├── state/               # DB, models, repositories (9 modules), migrations (36)
-│   └── terminal/            # tmux management, monitor, output parser, RWS
-├── frontend/                # React + TypeScript dashboard
-│   └── src/
-│       ├── pages/           # 12 page components (Dashboard, PRs, Tasks, etc.)
-│       ├── components/      # Reusable UI components (16 directories)
-│       ├── api/             # API client functions, types.ts
-│       └── context/         # AppContext (state management, WebSocket, heartbeats)
-├── agents/                  # Agent prompts, hooks, and built-in skills
-│   ├── brain/               # Brain agent config (prompt.md, skills/, hooks/)
-│   └── worker/              # Worker agent config (prompt.md, skills/, hooks/)
-├── src-tauri/               # Tauri shell (Rust)
-│   ├── src/lib.rs           # App setup, sidecar lifecycle, window events
-│   ├── tauri.conf.json      # Bundle config, CSP, dev/prod URLs
-│   └── loading.html         # Splash screen during server startup
-├── scripts/
-│   ├── build_sidecar.py     # Builds PyInstaller onedir bundle
-│   └── build_app.sh         # Full production build script
-├── docs/                    # Design documentation
-│   ├── features.md          # Complete feature reference
-│   ├── architecture.md      # Technical architecture & code map
-│   └── design_logs/         # Per-feature design logs
-├── orchestrator.spec        # PyInstaller spec (onedir mode)
-└── data/                    # SQLite DB & logs (gitignored)
-```
-
-For detailed documentation:
-- **[docs/features.md](docs/features.md)** — Complete feature reference: what the orchestrator does, how users interact with it, every feature from major to minor.
-- **[docs/architecture.md](docs/architecture.md)** — Technical architecture: design principles, backend/frontend structure, data flows, critical design choices, and a code map for navigating the codebase.
-
-### API Docs
-
-When the backend is running, OpenAPI docs are available at:
-- http://localhost:8093/docs (Swagger UI)
-- http://localhost:8093/redoc (ReDoc)
-
-## Database
-
-**IMPORTANT:** The orchestrator uses a single SQLite database. Do NOT create additional database files.
-
-| File | Purpose |
-|------|---------|
-| `data/orchestrator.db` | **Production database** — used by the server |
-
-The database path is configured in `config.yaml`:
-```yaml
-database:
-  path: "data/orchestrator.db"    # Relative to project root
-```
-
-### Applying Migrations
-
-Migrations run automatically on server startup. To manually apply migrations:
-
-```bash
-cd orchestrator
-.venv/bin/python -c "
-from orchestrator.state.db import get_connection
-from orchestrator.state.migrations.runner import apply_migrations
-conn = get_connection('data/orchestrator.db')  # ALWAYS use this path
-apply_migrations(conn)
-conn.close()
-"
-```
-
-### Checking Database Schema
-
-```bash
-.venv/bin/python -c "
-from orchestrator.state.db import get_connection
-conn = get_connection('data/orchestrator.db')
-cursor = conn.execute('PRAGMA table_info(sessions)')
-print([row[1] for row in cursor.fetchall()])
-conn.close()
-"
-```
-
-### Try the Demo
-
-The fastest way to see the orchestrator in action — no tmux, no API keys, no setup beyond `uv`:
-
-```bash
-uv sync
-uv run uvicorn demo.app:create_demo_app --factory --port 8094
-```
-
-Open http://localhost:8094 — you'll see 3 projects, 5 workers, and ~15 tasks pre-loaded with realistic data. See [`demo/README.md`](demo/README.md) for details.
-
-## Configuration
-
-Edit `config.yaml` for:
-- Server port (`server.port`)
-- Database path (`database.path`) — **do not change unless you know what you're doing**
-- tmux session name (`tmux.session_name`)
-- Monitoring intervals
-- Logging level
+For the full code map and architectural deep-dive, see [architecture.md](architecture.md).
