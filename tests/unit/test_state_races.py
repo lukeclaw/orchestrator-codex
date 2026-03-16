@@ -209,9 +209,10 @@ class TestPauseVsAutoReconnect:
         # Now user pauses
         tracker.update_session(db, session.id, status="paused")
 
-        # The status sequence shows the conflict
+        # The status sequence shows the conflict: "idle" because no task
+        # is assigned (with a task, _recovery_status would return "waiting")
         assert "connecting" in tracker.statuses
-        assert "waiting" in tracker.statuses
+        assert "idle" in tracker.statuses
         assert "paused" in tracker.statuses
 
     def test_pause_endpoint_does_not_check_current_status(self):
@@ -635,9 +636,10 @@ class TestReconnectExceptionHandling:
                 mock_repo,
             )
 
-        # Status was set to "waiting" -- this is the success path.
-        # (Claude's hooks will promote to "working" when it starts processing.)
-        assert "waiting" in tracker.statuses
+        # Status was set to "idle" (no task assigned with mock DB).
+        # With a real task, _recovery_status would return "waiting".
+        # Claude's hooks will promote to "working" when it starts processing.
+        assert "idle" in tracker.statuses
 
         # Now simulate what happens if _ensure_rws_ready raises an exception.
         tracker2 = StatusTracker()

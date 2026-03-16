@@ -148,8 +148,8 @@ class TestReconnectRemoteWorkerRWSPath:
                 tunnel_manager=mock_tm,
             )
 
-        # PTY still alive -- should set status to waiting
-        mock_repo.update_session.assert_any_call(db, "test-session-id", status="waiting")
+        # PTY still alive -- no task assigned so _recovery_status returns "idle"
+        mock_repo.update_session.assert_any_call(db, "test-session-id", status="idle")
 
     @patch("orchestrator.session.reconnect._copy_configs_to_remote")
     @patch("orchestrator.session.reconnect._ensure_local_configs_exist")

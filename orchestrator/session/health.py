@@ -707,7 +707,11 @@ def _check_rws_pty_health(db, session, tunnel_manager=None) -> dict:
     rws = _server_pool.get(session.host)
     # Fast-fail: if the forward tunnel process is dead, skip socket check.
     # poll() returns int (exit code) when dead, None when alive.
-    if rws is not None and rws._tunnel_proc is not None and isinstance(rws._tunnel_proc.poll(), int):
+    if (
+        rws is not None
+        and rws._tunnel_proc is not None
+        and isinstance(rws._tunnel_proc.poll(), int)
+    ):
         logger.info("Health check RWS: %s forward tunnel dead, skipping socket check", session.name)
         rws = None  # skip to SSH fallback
     if rws is not None:
@@ -797,8 +801,10 @@ def _check_rws_pty_health(db, session, tunnel_manager=None) -> dict:
 
                 current_status = session.status
                 if current_status in ("error", "disconnected", "connecting"):
-                    repo.update_session(db, session.id, status="waiting")
-                    current_status = "waiting"
+                    from orchestrator.session.reconnect import _recovery_status
+
+                    current_status = _recovery_status(db, session.id)
+                    repo.update_session(db, session.id, status=current_status)
 
                 result = {
                     "alive": True,
@@ -843,11 +849,15 @@ def _check_rws_pty_health(db, session, tunnel_manager=None) -> dict:
             timeout=5,
         )
         if "ALIVE" in result.stdout:
-            if session.status in ("disconnected", "error"):
-                repo.update_session(db, session.id, status="waiting")
+            current = session.status
+            if current in ("disconnected", "error"):
+                from orchestrator.session.reconnect import _recovery_status
+
+                current = _recovery_status(db, session.id)
+                repo.update_session(db, session.id, status=current)
             return {
                 "alive": True,
-                "status": "waiting",
+                "status": current,
                 "reason": "Claude alive (SSH fallback)",
                 "tunnel_alive": tunnel_alive,
             }
@@ -963,9 +973,14 @@ def check_and_update_worker_health(db, session, tunnel_manager=None) -> dict:
         )
 
     if session.status in ("disconnected", "error"):
-        repo.update_session(db, session.id, status="waiting")
-        logger.info("Health check: %s recovered from %s to waiting", session.name, session.status)
-        return {"alive": True, "status": "waiting", "reason": reason}
+        from orchestrator.session.reconnect import _recovery_status
+
+        recovered = _recovery_status(db, session.id)
+        repo.update_session(db, session.id, status=recovered)
+        logger.info(
+            "Health check: %s recovered from %s to %s", session.name, session.status, recovered
+        )
+        return {"alive": True, "status": recovered, "reason": reason}
     return {"alive": True, "status": session.status, "reason": reason}
 
 

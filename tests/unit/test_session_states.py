@@ -106,7 +106,7 @@ class TestStatusTransitions:
     @patch("orchestrator.session.health.is_remote_host")
     @patch("orchestrator.session.health.repo")
     @patch("orchestrator.api.routes.sessions.repo")
-    def test_disconnected_to_waiting_on_health_recover(
+    def test_disconnected_to_idle_on_health_recover_no_task(
         self,
         mock_route_repo,
         mock_health_repo,
@@ -115,7 +115,7 @@ class TestStatusTransitions:
         mock_win_exists,
         db,
     ):
-        """Health check finding alive Claude should recover disconnected -> waiting."""
+        """Health recover with no assigned task should set idle."""
         from orchestrator.api.routes.sessions import health_check_session
 
         mock_is_remote.return_value = False
@@ -135,18 +135,17 @@ class TestStatusTransitions:
         result = health_check_session("test-id", mock_request, db=db)
 
         assert result["alive"] is True
-        assert result["status"] == "waiting"
+        assert result["status"] == "idle"
         mock_health_repo.update_session.assert_called_once()
-        # Verify the DB was updated with status="waiting"
         _, kwargs = mock_health_repo.update_session.call_args
-        assert kwargs["status"] == "waiting"
+        assert kwargs["status"] == "idle"
 
     @patch("orchestrator.session.health.window_exists", return_value=True)
     @patch("orchestrator.session.health.check_claude_running_local")
     @patch("orchestrator.session.health.is_remote_host")
     @patch("orchestrator.session.health.repo")
     @patch("orchestrator.api.routes.sessions.repo")
-    def test_error_to_waiting_on_health_recover(
+    def test_disconnected_to_waiting_on_health_recover_with_task(
         self,
         mock_route_repo,
         mock_health_repo,
@@ -155,7 +154,61 @@ class TestStatusTransitions:
         mock_win_exists,
         db,
     ):
-        """Health check finding alive Claude should recover error -> waiting."""
+        """Health recover with assigned task should set waiting."""
+        from orchestrator.api.routes.sessions import health_check_session
+        from orchestrator.state.repositories import (
+            projects as projects_repo,
+        )
+        from orchestrator.state.repositories import (
+            sessions as sessions_repo,
+        )
+        from orchestrator.state.repositories import (
+            tasks as tasks_repo,
+        )
+
+        # Create a real session and task in the DB so _recovery_status finds it
+        project = projects_repo.create_project(db, name="test-project")
+        session = sessions_repo.create_session(db, name="test-worker", host="localhost")
+        task = tasks_repo.create_task(db, project_id=project.id, title="Test task")
+        tasks_repo.update_task(db, task.id, assigned_session_id=session.id, status="in_progress")
+
+        mock_is_remote.return_value = False
+        mock_check_claude.return_value = (True, "Claude process running in pane")
+
+        mock_session = MagicMock()
+        mock_session.id = session.id
+        mock_session.name = "test-worker"
+        mock_session.host = "localhost"
+        mock_session.status = "disconnected"
+
+        mock_route_repo.get_session.return_value = mock_session
+
+        mock_request = MagicMock()
+        mock_request.app.state.tunnel_manager = None
+
+        result = health_check_session(session.id, mock_request, db=db)
+
+        assert result["alive"] is True
+        assert result["status"] == "waiting"
+        mock_health_repo.update_session.assert_called_once()
+        _, kwargs = mock_health_repo.update_session.call_args
+        assert kwargs["status"] == "waiting"
+
+    @patch("orchestrator.session.health.window_exists", return_value=True)
+    @patch("orchestrator.session.health.check_claude_running_local")
+    @patch("orchestrator.session.health.is_remote_host")
+    @patch("orchestrator.session.health.repo")
+    @patch("orchestrator.api.routes.sessions.repo")
+    def test_error_to_idle_on_health_recover_no_task(
+        self,
+        mock_route_repo,
+        mock_health_repo,
+        mock_is_remote,
+        mock_check_claude,
+        mock_win_exists,
+        db,
+    ):
+        """Health check finding alive Claude should recover error -> idle (no task)."""
         from orchestrator.api.routes.sessions import health_check_session
 
         mock_is_remote.return_value = False
@@ -175,7 +228,7 @@ class TestStatusTransitions:
         result = health_check_session("test-id", mock_request, db=db)
 
         assert result["alive"] is True
-        assert result["status"] == "waiting"
+        assert result["status"] == "idle"
         mock_health_repo.update_session.assert_called_once()
 
     @patch("orchestrator.session.health.window_exists", return_value=True)

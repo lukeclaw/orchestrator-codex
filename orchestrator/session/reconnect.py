@@ -42,6 +42,25 @@ _PW_INSTALL_CMD = (
 )
 
 
+def _recovery_status(conn, session_id: str) -> str:
+    """Return the appropriate status after reconnect/recovery.
+
+    Returns "waiting" if the worker has any assigned task, "idle" otherwise.
+    The idle case is rare — it means the worker finished its task before
+    being assigned a new one.
+    """
+    try:
+        from orchestrator.state.repositories import tasks as tasks_repo
+
+        assigned = tasks_repo.list_tasks(conn, assigned_session_id=session_id, parent_task_id=...)
+        if assigned:
+            return "waiting"
+        return "idle"
+    except Exception:
+        # Default to "waiting" if task lookup fails (safer assumption)
+        return "waiting"
+
+
 # =============================================================================
 # TUI Safety Guard
 # =============================================================================
@@ -837,7 +856,7 @@ def _reconnect_rws_pty_worker(conn, session, repo, tunnel_manager):
 
     if our_pty and our_pty["alive"]:
         # PTY still running — nothing to do! Browser will auto-reconnect.
-        repo.update_session(conn, session.id, status="waiting")
+        repo.update_session(conn, session.id, status=_recovery_status(conn, session.id))
         logger.info("Reconnect RWS %s: PTY still alive, nothing to do", session.name)
         return
 
@@ -856,7 +875,8 @@ def _reconnect_rws_pty_worker(conn, session, repo, tunnel_manager):
         )
         if by_session:
             pty_id = by_session["pty_id"]
-            repo.update_session(conn, session.id, rws_pty_id=pty_id, status="waiting")
+            status = _recovery_status(conn, session.id)
+            repo.update_session(conn, session.id, rws_pty_id=pty_id, status=status)
             logger.info(
                 "Reconnect RWS %s: found alive PTY %s by session_id, re-attached",
                 session.name,
@@ -896,7 +916,8 @@ def _reconnect_rws_pty_worker(conn, session, repo, tunnel_manager):
         session_id=session.id,
         role="main",
     )
-    repo.update_session(conn, session.id, rws_pty_id=pty_id, status="waiting")
+    status = _recovery_status(conn, session.id)
+    repo.update_session(conn, session.id, rws_pty_id=pty_id, status=status)
     logger.info("Reconnect RWS %s: created new PTY %s", session.name, pty_id)
 
     # 7. Verify
@@ -935,7 +956,8 @@ def _reconnect_rws_pty_worker(conn, session, repo, tunnel_manager):
             session_id=session.id,
             role="main",
         )
-        repo.update_session(conn, session.id, rws_pty_id=pty_id, status="waiting")
+        status = _recovery_status(conn, session.id)
+        repo.update_session(conn, session.id, rws_pty_id=pty_id, status=status)
         logger.info("Reconnect RWS %s: retry created PTY %s", session.name, pty_id)
 
         # Second verify — if retry also fails, mark disconnected (not working)
@@ -1051,7 +1073,8 @@ def reconnect_remote_worker(
             if existing:
                 # PTY still alive — just re-attach, no need to restart anything
                 pty_id = existing["pty_id"]
-                repo.update_session(conn, session.id, rws_pty_id=pty_id, status="waiting")
+                status = _recovery_status(conn, session.id)
+                repo.update_session(conn, session.id, rws_pty_id=pty_id, status=status)
                 logger.info(
                     "Reconnect %s: found existing alive PTY %s, re-attached",
                     session.name,
@@ -1095,7 +1118,8 @@ def reconnect_remote_worker(
             session_id=session.id,
             role="main",
         )
-        repo.update_session(conn, session.id, rws_pty_id=pty_id, status="waiting")
+        status = _recovery_status(conn, session.id)
+        repo.update_session(conn, session.id, rws_pty_id=pty_id, status=status)
         logger.info("Reconnect %s: created RWS PTY %s", session.name, pty_id)
 
         # Verify PTY survived startup (mirrors Path A verify step)
@@ -1134,7 +1158,8 @@ def reconnect_remote_worker(
                 session_id=session.id,
                 role="main",
             )
-            repo.update_session(conn, session.id, rws_pty_id=pty_id, status="waiting")
+            status = _recovery_status(conn, session.id)
+            repo.update_session(conn, session.id, rws_pty_id=pty_id, status=status)
             logger.info("Reconnect %s: retry created PTY %s", session.name, pty_id)
 
             # Second verify — if retry also fails, mark disconnected (not working)
@@ -1477,7 +1502,7 @@ def trigger_reconnect(
                 session, tmux_sess, tmux_win, api_port, tmp_dir, conn=db
             )
             if success:
-                repo.update_session(db, session.id, status="waiting")
+                repo.update_session(db, session.id, status=_recovery_status(db, session.id))
             else:
                 repo.update_session(db, session.id, status="disconnected")
             return {"ok": success, "async": False}
