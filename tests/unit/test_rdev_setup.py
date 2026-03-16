@@ -127,6 +127,43 @@ class TestSetupRemoteWorker:
         call_kwargs = mock_rws.create_pty.call_args
         assert call_kwargs.kwargs.get("session_id") == "session-id-success"
 
+    @patch(_MOCK_SSH_CONFIG, return_value=True)
+    @patch("orchestrator.terminal.session.time.sleep")
+    @patch("orchestrator.terminal.session._ensure_rws_ready")
+    @patch("orchestrator.terminal.session._copy_dir_to_remote_ssh", return_value=True)
+    @patch("orchestrator.terminal.session.subprocess")
+    def test_setup_env_runs_on_rdev(
+        self, mock_subprocess, mock_copy, mock_rws_ready, _sleep, _ssh_cfg, db
+    ):
+        """setup_env (PATH fix + claude update) should run via RWS for rdev hosts."""
+        seed_all(db)
+
+        mock_rws = MagicMock()
+        mock_rws.create_pty.return_value = "pty-upd001"
+        mock_rws.execute.return_value = {"ptys": [{"pty_id": "pty-upd001", "alive": True}]}
+        mock_rws.setup_env.return_value = {
+            "status": "ok",
+            "path_updated": True,
+            "ran_update": True,
+        }
+        mock_rws_ready.return_value = mock_rws
+
+        mock_tunnel_manager = MagicMock()
+        mock_tunnel_manager.start_tunnel.return_value = 11111
+
+        result = setup_remote_worker(
+            db,
+            "session-id-update",
+            "w7",
+            "subs-mt/test",
+            "orchestrator",
+            8093,
+            tunnel_manager=mock_tunnel_manager,
+        )
+
+        assert result["ok"] is True
+        mock_rws.setup_env.assert_called_once()
+
     @patch(_MOCK_SSH_CONFIG, return_value=False)
     @patch("orchestrator.terminal.session.time.sleep")
     @patch("orchestrator.terminal.session.subprocess")

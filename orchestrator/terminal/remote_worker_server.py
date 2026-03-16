@@ -768,6 +768,47 @@ _REMOTE_WORKER_SERVER_SCRIPT = textwrap.dedent("""\
                     })
             return {"status": "ok", "browsers": result}
 
+    # ── Environment setup ─────────────────────────────────────────────────
+
+    def handle_setup_env(cmd):
+        # Ensure $HOME/.local/bin is on PATH and run `claude update`.
+        # Hard-coded action -- no arbitrary commands accepted.
+        # Rdev images often ship with stale PATH and outdated Claude.
+        home = os.path.expanduser("~")
+        local_bin = os.path.join(home, ".local", "bin")
+
+        # 1. Ensure PATH includes ~/.local/bin for this daemon process
+        #    (affects future subprocess calls within this daemon)
+        current_path = os.environ.get("PATH", "")
+        if local_bin not in current_path.split(os.pathsep):
+            os.environ["PATH"] = local_bin + os.pathsep + current_path
+
+        # 2. Run claude update (best-effort, never blocks setup)
+        update_result = {"ran_update": False, "update_output": ""}
+        claude_bin = shutil.which("claude")
+        if claude_bin:
+            try:
+                proc = subprocess.run(
+                    [claude_bin, "update"],
+                    capture_output=True,
+                    timeout=60,
+                    env={**os.environ, "PATH": os.environ["PATH"]},
+                )
+                update_result["ran_update"] = True
+                update_result["update_output"] = (
+                    proc.stdout.decode("utf-8", errors="replace")[:500]
+                )
+                update_result["return_code"] = proc.returncode
+            except Exception as e:
+                update_result["update_output"] = str(e)
+
+        return {
+            "status": "ok",
+            "local_bin": local_bin,
+            "path_updated": local_bin in os.environ.get("PATH", ""),
+            **update_result,
+        }
+
     # ── PTY management ────────────────────────────────────────────────────
 
     class PtySession:
@@ -1005,6 +1046,7 @@ _REMOTE_WORKER_SERVER_SCRIPT = textwrap.dedent("""\
         "browser_start": handle_browser_start,
         "browser_stop": handle_browser_stop,
         "browser_status": handle_browser_status,
+        "setup_env": handle_setup_env,
     }
 
     # ── Connection management ─────────────────────────────────────────────
@@ -2013,6 +2055,14 @@ class RemoteWorkerServer:
         if "error" in resp:
             raise RuntimeError(f"Browser status failed on {self.host}: {resp['error']}")
         return resp
+
+    def setup_env(self) -> dict:
+        """Ensure PATH includes ~/.local/bin and run ``claude update`` on the remote.
+
+        This is a hard-coded action — the daemon does not accept arbitrary
+        commands.  Returns a dict with ``path_updated``, ``ran_update``, etc.
+        """
+        return self.execute({"action": "setup_env"}, timeout=90.0)
 
     def is_alive(self) -> bool:
         """Check if the tunnel and command socket are still connected."""

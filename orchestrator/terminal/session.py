@@ -597,6 +597,23 @@ def setup_remote_worker(
         # 6. Ensure RWS daemon is running
         rws = _ensure_rws_ready(host, timeout=30)
 
+        # 6.5. Fix PATH and update Claude via RWS daemon.
+        #      Rdev images ship with stale PATH (missing ~/.local/bin) and
+        #      outdated Claude binaries.  The daemon runs a hard-coded
+        #      setup_env action — no arbitrary commands are accepted.
+        if is_rdev_host(host) or update_before_start:
+            try:
+                env_result = rws.setup_env()
+                logger.info(
+                    "setup_env on %s for %s: path_updated=%s, ran_update=%s",
+                    host,
+                    name,
+                    env_result.get("path_updated"),
+                    env_result.get("ran_update"),
+                )
+            except Exception:
+                logger.warning("setup_env failed on %s for %s, continuing", host, name)
+
         # 7. Build Claude command and create PTY
         claude_cmd = _build_claude_command(
             session_id,
