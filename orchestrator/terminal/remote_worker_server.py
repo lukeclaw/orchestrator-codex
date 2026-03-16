@@ -1848,18 +1848,26 @@ class RemoteWorkerServer:
         line, _ = buf.split(b"\n", 1)
         return line.decode("utf-8")
 
-    def execute(self, command: dict[str, Any], timeout: float = 15.0) -> dict:
+    def execute(
+        self, command: dict[str, Any], timeout: float = 15.0, connect_timeout: float | None = None
+    ) -> dict:
         """Send a JSON command and return the parsed JSON response.
 
         Thread-safe: uses a lock to serialize access to the command socket.
         Retries once on connection failure (closed connection, broken pipe,
         etc.) by reconnecting and re-sending the command.
+
+        Args:
+            command: JSON-serializable dict to send.
+            timeout: Timeout for the response read (seconds).
+            connect_timeout: Timeout for socket connect + handshake (seconds).
+                Defaults to 10.0 if not specified.
         """
         last_err: Exception | None = None
         for attempt in range(2):
             # Reconnect outside the lock — this may block on TCP connect /
             # SSH handshake and we don't want to stall other callers.
-            self._ensure_connected()
+            self._ensure_connected(connect_timeout=connect_timeout)
             with self._lock:
                 # Re-check: another thread may have cleared _cmd_sock while
                 # we waited for the lock.
@@ -1904,13 +1912,13 @@ class RemoteWorkerServer:
         # Should not reach here, but safety net
         raise RuntimeError(f"Remote connection failed: {last_err}")
 
-    def _ensure_connected(self) -> None:
+    def _ensure_connected(self, connect_timeout: float | None = None) -> None:
         """Reconnect the command socket if it's dead but the tunnel is alive."""
         if self._cmd_sock is not None:
             return
         if self._tunnel_proc is not None and self._tunnel_proc.poll() is None:
             try:
-                self._connect_command_socket()
+                self._connect_command_socket(timeout=connect_timeout or 10.0)
                 logger.info("Auto-reconnected command socket for %s", self.host)
             except Exception:
                 raise RuntimeError("Remote host not connected")

@@ -6,8 +6,14 @@ Covers:
 - PTY exit hardening (daemon empty PTY list -> no pty_exit)
 - Stream idle timeout detection
 - Pool lock narrowing (get_remote_worker_server lock scope)
+- In-flight guard for health-check-all
+- Host-level deduplication
+- Fast-fail for dead forward tunnel
+- connect_timeout parameter forwarding
 """
 
+import asyncio
+import threading
 import time
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
@@ -186,7 +192,6 @@ class TestPtyExitHardeningStreamEOF:
     async def test_pty_not_in_list_not_confirmed_dead(self):
         """When daemon's PTY list doesn't contain our PTY ID (daemon restarted),
         we should NOT confirm dead — health check will sort it out."""
-        import asyncio
 
         from orchestrator.api.ws_terminal import stream_remote_pty
         from tests.test_pty_stream import FakeWebSocket
@@ -231,7 +236,6 @@ class TestPtyExitHardeningStreamEOF:
 
     async def test_pty_in_list_dead_confirms_dead(self):
         """When daemon's PTY list has our PTY with alive=False, confirm dead."""
-        import asyncio
 
         from orchestrator.api.ws_terminal import stream_remote_pty
         from tests.test_pty_stream import FakeWebSocket
@@ -289,7 +293,6 @@ class TestStreamIdleTimeout:
     async def test_idle_timeout_closes_stream_without_pty_exit(self):
         """When socket returns None (timeout) for >STREAM_IDLE_TIMEOUT seconds,
         stream_closed should be set without pty_exited."""
-        import asyncio
 
         from orchestrator.api.ws_terminal import stream_remote_pty
         from tests.test_pty_stream import FakeWebSocket
@@ -419,3 +422,225 @@ class TestPoolLockNarrowing:
         server.stop.assert_called()
         # A new background start should have been kicked off
         mock_thread.start.assert_called_once()
+
+
+# ===========================================================================
+# In-Flight Guard
+# ===========================================================================
+
+
+class TestInFlightGuard:
+    """Verify _health_check_all_lock prevents concurrent health-check-all."""
+
+    async def test_rejects_concurrent(self):
+        """Acquiring the lock first causes async wrapper to return in_progress."""
+        from orchestrator.session.health import (
+            _health_check_all_lock,
+            check_all_workers_health_async,
+        )
+
+        _health_check_all_lock.acquire()
+        try:
+            result = await check_all_workers_health_async(sessions=[], db_path="/fake/db.sqlite")
+            assert result["status"] == "in_progress"
+            assert "already running" in result["message"]
+        finally:
+            _health_check_all_lock.release()
+
+    async def test_lock_released_on_error(self):
+        """Lock is released even when check_all_workers_health raises."""
+        from orchestrator.session.health import (
+            _health_check_all_lock,
+            check_all_workers_health_async,
+        )
+
+        with (
+            patch(
+                "orchestrator.session.health.check_all_workers_health",
+                side_effect=RuntimeError("boom"),
+            ),
+            patch(
+                "orchestrator.state.db.get_connection",
+                return_value=MagicMock(),
+            ),
+        ):
+            with pytest.raises(RuntimeError, match="boom"):
+                await check_all_workers_health_async(sessions=[], db_path="/fake/db.sqlite")
+
+        # Lock should be released — we can acquire it again
+        assert _health_check_all_lock.acquire(blocking=False)
+        _health_check_all_lock.release()
+
+
+# ===========================================================================
+# Host-Level Deduplication
+# ===========================================================================
+
+
+class TestHostDeduplication:
+    """Verify host-level dedup in check_all_workers_health."""
+
+    @patch("orchestrator.session.health.repo.update_session")
+    @patch("orchestrator.session.health._host_breaker")
+    @patch("orchestrator.session.health.check_and_update_worker_health")
+    def test_single_probe_per_host_on_failure(self, mock_check, mock_breaker, mock_update):
+        """3 sessions on same host, all fail. Only 1 probe call, all 3 disconnected."""
+        from orchestrator.session.health import check_all_workers_health
+
+        mock_breaker.should_skip.return_value = False
+
+        mock_check.return_value = {
+            "alive": False,
+            "status": "disconnected",
+            "reason": "RWS unavailable",
+        }
+
+        sessions = [
+            _make_session(name=f"w{i}", host="user/shared-rdev", session_id=f"sess-{i}")
+            for i in range(3)
+        ]
+
+        db = MagicMock()
+        result = check_all_workers_health(db, sessions, db_path=None)
+
+        # Only 1 probe call (not 3)
+        assert mock_check.call_count == 1
+        # All 3 should be in disconnected list
+        assert len(result["disconnected"]) == 3
+
+    @patch("orchestrator.session.health._host_breaker")
+    @patch("orchestrator.session.health.check_and_update_worker_health")
+    def test_success_checks_peers_individually(self, mock_check, mock_breaker):
+        """3 sessions on same host, probe succeeds -> all 3 get individual checks."""
+        from orchestrator.session.health import check_all_workers_health
+
+        mock_breaker.should_skip.return_value = False
+
+        mock_check.return_value = {
+            "alive": True,
+            "status": "working",
+            "reason": "ok",
+        }
+
+        sessions = [
+            _make_session(name=f"w{i}", host="user/shared-rdev", session_id=f"sess-{i}")
+            for i in range(3)
+        ]
+
+        db = MagicMock()
+        result = check_all_workers_health(db, sessions, db_path=None)
+
+        # All 3 should be checked individually (probe + 2 peers)
+        assert mock_check.call_count == 3
+        assert len(result["alive"]) == 3
+
+
+# ===========================================================================
+# Fast-Fail Dead Tunnel
+# ===========================================================================
+
+
+class TestFastFailDeadTunnel:
+    """Verify dead forward tunnel skips execute() and falls to SSH fallback."""
+
+    @patch("orchestrator.session.health.repo.update_session")
+    @patch("orchestrator.session.health.subprocess.run")
+    def test_dead_tunnel_skips_execute(self, mock_subprocess, mock_update):
+        """When tunnel proc is dead, execute() should never be called."""
+        import subprocess as _subprocess
+
+        from orchestrator.session.health import _check_rws_pty_health
+
+        mock_rws = MagicMock()
+        mock_rws._tunnel_proc = MagicMock()
+        mock_rws._tunnel_proc.poll.return_value = 1  # dead
+
+        session = _make_session(
+            name="w1", host="user/rdev-1", session_id="sess-1", rws_pty_id="pty-1"
+        )
+        db = MagicMock()
+
+        # SSH fallback will fail too
+        mock_subprocess.side_effect = _subprocess.TimeoutExpired(cmd="ssh", timeout=5)
+
+        with patch(
+            "orchestrator.terminal.remote_worker_server._server_pool",
+            {"user/rdev-1": mock_rws},
+        ):
+            result = _check_rws_pty_health(db, session, tunnel_manager=MagicMock())
+
+        # execute() should NOT have been called (fast-fail skipped it)
+        mock_rws.execute.assert_not_called()
+        assert result["alive"] is False
+
+
+# ===========================================================================
+# connect_timeout Forwarding
+# ===========================================================================
+
+
+class TestConnectTimeoutForwarding:
+    """Verify connect_timeout is forwarded to _connect_command_socket."""
+
+    def test_execute_forwards_connect_timeout(self):
+        """execute(connect_timeout=3) passes 3 to _connect_command_socket."""
+        from orchestrator.terminal.remote_worker_server import RemoteWorkerServer
+
+        server = RemoteWorkerServer.__new__(RemoteWorkerServer)
+        server.host = "test-host"
+        server._tunnel_proc = MagicMock()
+        server._tunnel_proc.poll.return_value = None  # alive
+        server._cmd_sock = None
+        server._cmd_buffer = bytearray()
+        server._local_port = 12345
+        server._lock = threading.Lock()
+
+        connect_timeouts = []
+
+        def mock_connect(timeout=10.0):
+            connect_timeouts.append(timeout)
+            # Simulate successful connect
+            server._cmd_sock = MagicMock()
+            server._cmd_sock.recv.return_value = b'{"ok": true}\n'
+            server._cmd_sock.settimeout = MagicMock()
+            server._cmd_buffer = bytearray(b'{"ok": true}\n')
+
+        server._connect_command_socket = mock_connect
+
+        result = server.execute({"action": "test"}, timeout=2, connect_timeout=3)
+
+        assert connect_timeouts[0] == 3
+        assert result == {"ok": True}
+
+
+# ===========================================================================
+# Reduced Timeouts in Bulk Check
+# ===========================================================================
+
+
+class TestReducedTimeouts:
+    """Verify SSH fallback uses reduced timeouts."""
+
+    @patch("orchestrator.session.health.subprocess.run")
+    def test_ssh_fallback_reduced_timeouts(self, mock_subprocess):
+        """SSH fallback should use ConnectTimeout=3 and timeout=5."""
+        from orchestrator.session.health import _check_rws_pty_health
+
+        session = _make_session(
+            name="w1", host="user/rdev-1", session_id="sess-1", rws_pty_id="pty-1"
+        )
+        db = MagicMock()
+
+        mock_subprocess.return_value = MagicMock(stdout="ALIVE", returncode=0)
+
+        with patch(
+            "orchestrator.terminal.remote_worker_server._server_pool",
+            {},  # no RWS available -> goes to SSH fallback
+        ):
+            _check_rws_pty_health(db, session, tunnel_manager=MagicMock())
+
+        # Verify the SSH call used reduced timeouts
+        call_args = mock_subprocess.call_args
+        cmd_list = call_args[0][0]
+        assert "ConnectTimeout=3" in cmd_list
+        assert call_args[1]["timeout"] == 5

@@ -4,6 +4,7 @@ Functions to check the status of Claude processes, screen sessions,
 SSH tunnels, and SSH connections for both local and rdev workers.
 """
 
+import asyncio
 import logging
 import os
 import shlex
@@ -130,6 +131,9 @@ class _ReconnectBackoff:
 
 
 _reconnect_backoff = _ReconnectBackoff()
+
+# Guard to prevent concurrent health-check-all runs
+_health_check_all_lock = threading.Lock()
 
 
 def find_tunnel_pids(host: str) -> list[int]:
@@ -701,9 +705,14 @@ def _check_rws_pty_health(db, session, tunnel_manager=None) -> dict:
 
     # 2. Check RWS PTY via daemon
     rws = _server_pool.get(session.host)
+    # Fast-fail: if the forward tunnel process is dead, skip socket check.
+    # poll() returns int (exit code) when dead, None when alive.
+    if rws is not None and rws._tunnel_proc is not None and isinstance(rws._tunnel_proc.poll(), int):
+        logger.info("Health check RWS: %s forward tunnel dead, skipping socket check", session.name)
+        rws = None  # skip to SSH fallback
     if rws is not None:
         try:
-            resp = rws.execute({"action": "pty_list"}, timeout=3)
+            resp = rws.execute({"action": "pty_list"}, timeout=2, connect_timeout=3)
             ptys = resp.get("ptys", [])
 
             # Look up our PTY by ID first, then fall back to session_id
@@ -776,7 +785,7 @@ def _check_rws_pty_health(db, session, tunnel_manager=None) -> dict:
 
                 # Check RWS daemon version
                 try:
-                    info = rws.execute({"action": "server_info"}, timeout=3)
+                    info = rws.execute({"action": "server_info"}, timeout=2, connect_timeout=3)
                     daemon_version = info.get("version", "")
                     if daemon_version != _SCRIPT_HASH:
                         logger.warning(
@@ -828,10 +837,10 @@ def _check_rws_pty_health(db, session, tunnel_manager=None) -> dict:
             f" | grep -q {shlex.quote(session.id)} && echo ALIVE || echo DEAD"
         )
         result = subprocess.run(
-            ["ssh", "-o", "ConnectTimeout=5", "-o", "BatchMode=yes", session.host, check_cmd],
+            ["ssh", "-o", "ConnectTimeout=3", "-o", "BatchMode=yes", session.host, check_cmd],
             capture_output=True,
             text=True,
-            timeout=8,
+            timeout=5,
         )
         if "ALIVE" in result.stdout:
             if session.status in ("disconnected", "error"):
@@ -1062,35 +1071,102 @@ def check_all_workers_health(
             if db_path and conn is not db:
                 conn.close()
 
-    max_workers = min(4, len(to_check)) if to_check else 1
-    with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        futures = {executor.submit(_check_one, s, pre): s for s, pre in to_check}
-        for future in as_completed(futures, timeout=25):
-            try:
-                s, result, is_precheck = future.result(timeout=20)
-            except Exception:
-                s = futures[future]
-                result = {"alive": True, "status": s.status}
-                is_precheck = False
-
-            if is_precheck:
-                # Disconnected pre-check path
-                if result.get("alive"):
-                    results["checked"] += 1
-                    results["alive"].append(s.name)
-                else:
-                    if s.auto_reconnect:
-                        auto_reconnect_candidates.append(s)
-                    else:
-                        results["disconnected"].append(s.name)
-            else:
+    def _tally_result(s, result, is_precheck):
+        """Tally a single health-check result into the results dict."""
+        if is_precheck:
+            if result.get("alive"):
                 results["checked"] += 1
-                if result.get("alive"):
-                    results["alive"].append(s.name)
-                else:  # disconnected
+                results["alive"].append(s.name)
+            else:
+                if s.auto_reconnect:
+                    auto_reconnect_candidates.append(s)
+                else:
                     results["disconnected"].append(s.name)
-                    if s.auto_reconnect:
-                        auto_reconnect_candidates.append(s)
+        else:
+            results["checked"] += 1
+            if result.get("alive"):
+                results["alive"].append(s.name)
+            else:
+                results["disconnected"].append(s.name)
+                if s.auto_reconnect:
+                    auto_reconnect_candidates.append(s)
+
+    # Host-level deduplication: group remote sessions by host, probe one per host
+    local_checks = []  # (session, is_precheck)
+    host_groups: dict[str, list[tuple]] = {}  # host -> [(session, is_precheck), ...]
+    for s, pre in to_check:
+        host = getattr(s, "host", "localhost")
+        if is_remote_host(host):
+            host_groups.setdefault(host, []).append((s, pre))
+        else:
+            local_checks.append((s, pre))
+
+    # Pick one probe per remote host; remaining are peers
+    probe_checks = []  # (session, is_precheck) — one per host
+    host_peers: dict[str, list[tuple]] = {}  # host -> remaining sessions
+    for host, group in host_groups.items():
+        probe_checks.append(group[0])
+        if len(group) > 1:
+            host_peers[host] = group[1:]
+
+    first_pass = local_checks + probe_checks
+    max_workers = min(4, len(first_pass)) if first_pass else 1
+
+    # Track probe results per host for dedup
+    host_probe_results: dict[str, dict] = {}
+
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        futures = {executor.submit(_check_one, s, pre): (s, pre) for s, pre in first_pass}
+        for future in as_completed(futures, timeout=15):
+            try:
+                s, result, is_precheck = future.result(timeout=12)
+            except Exception:
+                s, is_precheck = futures[future]
+                result = {"alive": True, "status": s.status}
+
+            _tally_result(s, result, is_precheck)
+
+            # Record probe result for host dedup
+            host = getattr(s, "host", "localhost")
+            if is_remote_host(host) and host in host_peers:
+                host_probe_results[host] = result
+
+        # Second pass: for hosts where probe succeeded, check peers individually.
+        # For hosts where probe failed, apply failure to all peers (skip checks).
+        second_pass = []
+        for host, peers in host_peers.items():
+            probe_result = host_probe_results.get(host)
+            if probe_result and not probe_result.get("alive"):
+                # Host unreachable — apply failure to all peers without checking
+                for s, pre in peers:
+                    from orchestrator.state.db import get_connection
+
+                    conn = get_connection(db_path) if db_path else db
+                    try:
+                        repo.update_session(conn, s.id, status="disconnected")
+                    finally:
+                        if db_path and conn is not db:
+                            conn.close()
+                    _host_breaker.record_failure(host)
+                    fail_result = {
+                        "alive": False,
+                        "status": "disconnected",
+                        "reason": f"Host {host} unreachable (dedup from probe)",
+                    }
+                    _tally_result(s, fail_result, pre)
+            else:
+                # Host reachable (or probe timed out) — check peers individually
+                second_pass.extend(peers)
+
+        if second_pass:
+            peer_futures = {executor.submit(_check_one, s, pre): (s, pre) for s, pre in second_pass}
+            for future in as_completed(peer_futures, timeout=15):
+                try:
+                    s, result, is_precheck = future.result(timeout=12)
+                except Exception:
+                    s, is_precheck = peer_futures[future]
+                    result = {"alive": True, "status": s.status}
+                _tally_result(s, result, is_precheck)
 
     # Auto-reconnect eligible workers
     for s in auto_reconnect_candidates:
@@ -1123,3 +1199,49 @@ def check_all_workers_health(
             logger.warning("Auto-reconnect: failed to start reconnect for %s: %s", s.name, e)
 
     return results
+
+
+async def check_all_workers_health_async(
+    sessions,
+    db_path: str | None = None,
+    api_port: int = 8093,
+    tunnel_manager=None,
+) -> dict:
+    """Non-blocking async wrapper around check_all_workers_health.
+
+    Uses an in-flight guard to reject concurrent calls, and offloads
+    the blocking health check to the default executor so it doesn't
+    block the uvicorn event loop.
+
+    The executor thread creates its own DB connection from ``db_path``
+    (same pattern as ``_check_one``).
+
+    Returns:
+        Health check results dict, or {"status": "in_progress", ...}
+        if another health check is already running.
+    """
+    if not _health_check_all_lock.acquire(blocking=False):
+        return {"status": "in_progress", "message": "Health check already running"}
+    try:
+
+        def _run():
+            from orchestrator.state.db import get_connection
+
+            conn = get_connection(db_path) if db_path else None
+            if conn is None:
+                raise RuntimeError("db_path required for async health check")
+            try:
+                return check_all_workers_health(
+                    conn,
+                    sessions,
+                    db_path=db_path,
+                    api_port=api_port,
+                    tunnel_manager=tunnel_manager,
+                )
+            finally:
+                conn.close()
+
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(None, _run)
+    finally:
+        _health_check_all_lock.release()

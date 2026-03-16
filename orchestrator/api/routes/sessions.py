@@ -14,7 +14,7 @@ from pydantic import BaseModel
 from orchestrator.api.deps import get_db
 from orchestrator.session import (
     WORKER_BASE_DIR,
-    check_all_workers_health,
+    check_all_workers_health_async,
     check_and_update_worker_health,
     cleanup_reconnect_lock,
     get_reconnect_step,
@@ -1084,8 +1084,8 @@ def health_check_session(session_id: str, request: Request, db=Depends(get_db)):
 
 
 @router.post("/sessions/health-check-all")
-def health_check_all_sessions(request: Request, db=Depends(get_db)):
-    """Run health check on all active worker sessions.
+async def health_check_all_sessions(request: Request, db=Depends(get_db)):
+    """Run health check on all active worker sessions (non-blocking).
 
     For remote workers: checks RWS PTY status.
     For local workers: uses ps | grep to check Claude process.
@@ -1093,6 +1093,11 @@ def health_check_all_sessions(request: Request, db=Depends(get_db)):
     Updates worker status automatically.
     If a worker has auto_reconnect enabled and is found disconnected,
     automatically triggers reconnection.
+
+    The blocking health-check work is offloaded to a thread pool so
+    the uvicorn event loop stays responsive.  An in-flight guard prevents
+    concurrent health-check-all runs (returns immediately if one is
+    already in progress).
 
     Returns:
         {"checked": int, "disconnected": list[str],
@@ -1105,15 +1110,18 @@ def health_check_all_sessions(request: Request, db=Depends(get_db)):
     db_path = getattr(request.app.state, "db_path", None)
     tunnel_manager = getattr(request.app.state, "tunnel_manager", None)
 
-    result = check_all_workers_health(
-        db,
+    result = await check_all_workers_health_async(
         sessions,
         db_path=db_path,
         api_port=api_port,
         tunnel_manager=tunnel_manager,
     )
 
-    # --- Brain tmp dir health check ---
+    # If another health check is already in progress, return immediately
+    if result.get("status") == "in_progress":
+        return result
+
+    # --- Brain tmp dir health check (fast, local I/O only) ---
     try:
         from orchestrator.session.health import ensure_brain_tmp_health
 

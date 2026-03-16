@@ -364,15 +364,21 @@ export function AppProvider({ children }: { children: ReactNode }) {
   // Periodic health check to detect disconnected workers (every 5 minutes)
   useEffect(() => {
     const healthCheck = async () => {
+      const controller = new AbortController()
+      const abortTimeout = setTimeout(() => controller.abort(), 30000)
       try {
-        const result = await api<{ disconnected: string[]; auto_reconnected: string[] }>('/api/sessions/health-check-all', { method: 'POST' })
+        const result = await api<{ status?: string; disconnected?: string[]; auto_reconnected?: string[] }>('/api/sessions/health-check-all', { method: 'POST', signal: controller.signal })
+        // Skip refresh if another health check was already in progress
+        if (result.status === 'in_progress') return
         if ((result.disconnected && result.disconnected.length > 0) ||
             (result.auto_reconnected && result.auto_reconnected.length > 0)) {
           // Refresh data if any workers were marked disconnected or auto-reconnected
           fetchAll()
         }
       } catch {
-        // Ignore health check errors
+        // Ignore health check errors (including abort)
+      } finally {
+        clearTimeout(abortTimeout)
       }
     }
     

@@ -2,6 +2,7 @@
 
 from orchestrator.session.health import (
     check_all_workers_health,
+    check_all_workers_health_async,
     check_and_update_worker_health,
     check_claude_process_local,
     check_claude_running_local,
@@ -48,6 +49,7 @@ __all__ = [
     "check_claude_running_local",
     "check_and_update_worker_health",
     "check_all_workers_health",
+    "check_all_workers_health_async",
     # Reconnect
     "TUIActiveError",
     "safe_send_keys",
