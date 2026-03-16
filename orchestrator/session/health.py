@@ -806,6 +806,13 @@ def _check_rws_pty_health(db, session, tunnel_manager=None) -> dict:
                     current_status = _recovery_status(db, session.id)
                     repo.update_session(db, session.id, status=current_status)
 
+                # Clear stale reconnect_step (e.g. "failed:daemon") now that
+                # the worker is confirmed alive — prevents the brain from
+                # misinterpreting a past transient failure as a current issue.
+                from orchestrator.session.reconnect import clear_reconnect_step
+
+                clear_reconnect_step(session.id)
+
                 result = {
                     "alive": True,
                     "status": current_status,
@@ -855,6 +862,9 @@ def _check_rws_pty_health(db, session, tunnel_manager=None) -> dict:
 
                 current = _recovery_status(db, session.id)
                 repo.update_session(db, session.id, status=current)
+            from orchestrator.session.reconnect import clear_reconnect_step
+
+            clear_reconnect_step(session.id)
             return {
                 "alive": True,
                 "status": current,

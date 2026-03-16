@@ -208,3 +208,95 @@ def test_reconnect_rws_pty_worker_sets_steps_in_order():
         _reconnect_rws_pty_worker(MagicMock(), session, mock_repo, mock_tunnel)
 
     assert steps_seen == ["tunnel", "daemon", "pty_check", "deploy", "pty_create", "verify"]
+
+
+# ---------------------------------------------------------------------------
+# Health check clears stale reconnect_step when worker is alive
+# ---------------------------------------------------------------------------
+
+
+def test_health_check_clears_stale_reconnect_step_rws_alive():
+    """_check_rws_pty_health should clear a stale 'failed:daemon' step
+    when the RWS PTY is found alive."""
+    from orchestrator.session.health import _check_rws_pty_health
+
+    session = SimpleNamespace(
+        id="sess-1",
+        name="test-worker",
+        host="user/rdev-1",
+        rws_pty_id="pty-1",
+        work_dir="/home/user",
+        status="waiting",
+    )
+
+    # Simulate stale failed:daemon from a previous reconnect attempt
+    _set_reconnect_step("sess-1", "failed:daemon")
+    assert get_reconnect_step("sess-1") == "failed:daemon"
+
+    mock_rws = MagicMock()
+    mock_rws._tunnel_proc = MagicMock()
+    mock_rws._tunnel_proc.poll.return_value = None  # alive
+    # PTY alive response
+    mock_rws.execute.side_effect = [
+        {"ptys": [{"pty_id": "pty-1", "alive": True}]},
+        {"version": "matching-hash"},  # server_info
+    ]
+
+    mock_tunnel = MagicMock()
+    mock_tunnel.is_alive.return_value = True
+
+    db = MagicMock()
+
+    with (
+        patch(
+            "orchestrator.terminal.remote_worker_server._server_pool",
+            {"user/rdev-1": mock_rws},
+        ),
+        patch(
+            "orchestrator.terminal.remote_worker_server._SCRIPT_HASH",
+            "matching-hash",
+        ),
+        patch("orchestrator.session.health.ensure_tmp_dir_health", return_value={}),
+    ):
+        result = _check_rws_pty_health(db, session, tunnel_manager=mock_tunnel)
+
+    assert result["alive"] is True
+    # The stale reconnect_step should have been cleared
+    assert get_reconnect_step("sess-1") is None
+
+
+def test_health_check_clears_stale_reconnect_step_ssh_fallback():
+    """_check_rws_pty_health should clear stale reconnect_step when
+    Claude is found alive via SSH fallback."""
+    from orchestrator.session.health import _check_rws_pty_health
+
+    session = SimpleNamespace(
+        id="sess-2",
+        name="test-worker-2",
+        host="user/rdev-2",
+        rws_pty_id="pty-2",
+        work_dir="/home/user",
+        status="waiting",
+    )
+
+    _set_reconnect_step("sess-2", "failed:daemon")
+
+    mock_tunnel = MagicMock()
+    mock_tunnel.is_alive.return_value = True
+
+    db = MagicMock()
+
+    with (
+        patch(
+            "orchestrator.terminal.remote_worker_server._server_pool",
+            {},  # no RWS -> SSH fallback
+        ),
+        patch(
+            "orchestrator.session.health.subprocess.run",
+            return_value=MagicMock(stdout="ALIVE", returncode=0),
+        ),
+    ):
+        result = _check_rws_pty_health(db, session, tunnel_manager=mock_tunnel)
+
+    assert result["alive"] is True
+    assert get_reconnect_step("sess-2") is None
