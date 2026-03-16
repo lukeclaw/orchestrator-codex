@@ -1,6 +1,12 @@
 ---
 name: pr-workflow
-description: Full PR lifecycle — checking PR status, reconciling state, creating PRs, handling reviews, addressing CI failures, and merging. Use this skill for ANY pull request activity.
+description: >
+  MANDATORY for ALL pull request work. This skill contains CRITICAL organizational conventions
+  for GitHub PRs that Claude cannot know without reading it — including required branch naming
+  prefixes, draft-first PR policy, working hours restrictions, orchestrator subtask integration,
+  and company-specific bot reviewer handling. Skipping this skill WILL result in incorrect PR
+  procedures. Invoke for ANY task involving: PR creation, PR reviews, rebasing, merge conflicts,
+  CI checks, or closing PRs.
 ---
 
 ## Step 0: Verify Environment and Reconcile State
@@ -81,7 +87,7 @@ Follow the MP's PR template checklist, plus:
 3. **Address comments** — Evaluate feedback, make code changes if needed
 4. **Reply** — Adjust tone:
    - **Human reviewers** (priority): Conversational — explain reasoning, invite follow-up.
-   - **Bots** (`Copilot`, `github-actions[bot]`, etc.): Only act on clearly valid feedback. Keep short. Bots won't read replies.
+   - **Bots** (`Copilot`, `github-actions[bot]`, `linkedin-svc`, etc.): Only act on clearly valid feedback. Keep short. Bots won't read replies.
 5. **Push fixes** — Commit and push (rebase pattern)
 6. **Notify immediately** — before moving to next PR. Include PR number/title, exact comment URL(s), and **full reply text** (not a summary):
    ```bash
