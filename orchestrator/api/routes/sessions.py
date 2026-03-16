@@ -211,14 +211,18 @@ def _strip_terminal_noise(text: str) -> str:
 def _capture_preview(s) -> str:
     """Capture terminal preview for a session (plain text, ANSI stripped)."""
     if is_remote_host(s.host) and s.rws_pty_id:
-        return _capture_rws_pty(s)
+        text = _capture_rws_pty(s)
+    else:
+        tmux_sess, tmux_win = tmux_target(s.name)
+        try:
+            content = capture_pane_with_escapes(tmux_sess, tmux_win, lines=0)
+            text = _strip_terminal_noise(content)
+        except Exception:
+            return ""
 
-    tmux_sess, tmux_win = tmux_target(s.name)
-    try:
-        content = capture_pane_with_escapes(tmux_sess, tmux_win, lines=0)
-        return _strip_terminal_noise(content)
-    except Exception:
-        return ""
+    # Strip trailing blank lines so "last N lines" slicing in the frontend
+    # picks up actual content instead of empty rows from the terminal pane.
+    return text.rstrip("\n")
 
 
 # Preview cache: avoids tmux contention during active typing.
