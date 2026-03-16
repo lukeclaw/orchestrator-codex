@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import platform
+import subprocess
 from datetime import UTC
 
 from fastapi import APIRouter, Depends, Request
@@ -29,6 +31,132 @@ _KEY_LAST_STATUS = "backup.last_status"
 _KEY_SCHEDULE_HOURS = "backup.schedule_hours"
 
 _DEFAULT_RETENTION = 5
+
+# Keychain service/account identifiers
+_KC_SERVICE = "orchestrator-backup"
+_KC_ACCOUNT = "orchestrator"
+
+
+def _keychain_available() -> bool:
+    """Return True if macOS Keychain is available."""
+    return platform.system() == "Darwin"
+
+
+def _keychain_set(password: str) -> bool:
+    """Store a password in macOS Keychain. Returns True on success."""
+    try:
+        subprocess.run(
+            [
+                "security",
+                "add-generic-password",
+                "-U",  # update if exists
+                "-a",
+                _KC_ACCOUNT,
+                "-s",
+                _KC_SERVICE,
+                "-w",
+                password,
+            ],
+            capture_output=True,
+            timeout=10,
+            check=True,
+        )
+        return True
+    except Exception:
+        logger.debug("Keychain set failed", exc_info=True)
+        return False
+
+
+def _keychain_get() -> str | None:
+    """Retrieve a password from macOS Keychain. Returns None if not found."""
+    try:
+        result = subprocess.run(
+            [
+                "security",
+                "find-generic-password",
+                "-a",
+                _KC_ACCOUNT,
+                "-s",
+                _KC_SERVICE,
+                "-w",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        if result.returncode == 0:
+            return result.stdout.strip()
+        return None
+    except Exception:
+        logger.debug("Keychain get failed", exc_info=True)
+        return None
+
+
+def _keychain_delete() -> bool:
+    """Delete a password from macOS Keychain. Returns True on success."""
+    try:
+        subprocess.run(
+            [
+                "security",
+                "delete-generic-password",
+                "-a",
+                _KC_ACCOUNT,
+                "-s",
+                _KC_SERVICE,
+            ],
+            capture_output=True,
+            timeout=10,
+            check=True,
+        )
+        return True
+    except Exception:
+        logger.debug("Keychain delete failed", exc_info=True)
+        return False
+
+
+def _set_password(conn, password: str) -> None:
+    """Store backup password in Keychain (preferred) with DB fallback."""
+    if _keychain_available() and _keychain_set(password):
+        # Remove from DB if it was stored there previously
+        config_repo.set_config(conn, _KEY_PASSWORD, "", category="backup")
+        return
+    # Fallback: store in DB (non-macOS or keychain failure)
+    config_repo.set_config(conn, _KEY_PASSWORD, password, category="backup")
+
+
+def _get_password(conn) -> str | None:
+    """Retrieve backup password from Keychain (preferred) with DB fallback.
+
+    Lazily migrates DB-stored passwords to Keychain on first read.
+    """
+    if _keychain_available():
+        kc_pw = _keychain_get()
+        if kc_pw:
+            return kc_pw
+        # Keychain empty — check DB for migration
+        db_pw = config_repo.get_config_value(conn, _KEY_PASSWORD)
+        if db_pw:
+            # Migrate to Keychain
+            if _keychain_set(db_pw):
+                config_repo.set_config(conn, _KEY_PASSWORD, "", category="backup")
+                logger.info("Migrated backup password from DB to macOS Keychain")
+            return db_pw
+        return None
+    # Non-macOS fallback
+    return config_repo.get_config_value(conn, _KEY_PASSWORD) or None
+
+
+def _has_password(conn) -> bool:
+    """Check if a backup password is configured (Keychain or DB)."""
+    return _get_password(conn) is not None
+
+
+def _clear_password(conn) -> None:
+    """Remove backup password from both Keychain and DB."""
+    if _keychain_available():
+        _keychain_delete()
+    config_repo.set_config(conn, _KEY_PASSWORD, "", category="backup")
+
 
 # Scheduled backup state
 _backup_schedule_task: asyncio.Task | None = None
@@ -84,7 +212,7 @@ async def _scheduled_backup_loop(db_path: str) -> None:
 
                 # Time to run a backup
                 backup_dir = config_repo.get_config_value(conn, _KEY_DIR)
-                password = config_repo.get_config_value(conn, _KEY_PASSWORD)
+                password = _get_password(conn)
                 retention = config_repo.get_config_value(conn, _KEY_RETENTION, _DEFAULT_RETENTION)
             finally:
                 conn.close()
@@ -177,7 +305,7 @@ def trigger_backup(request: Request, db=Depends(get_db)):
             "error": "Backup directory not configured. Set it via PUT /api/backup/settings.",
         }
 
-    password = config_repo.get_config_value(db, _KEY_PASSWORD)
+    password = _get_password(db)
     if not password:
         return {
             "ok": False,
@@ -205,7 +333,7 @@ def trigger_backup(request: Request, db=Depends(get_db)):
 def get_backup_settings(db=Depends(get_db)):
     """Get backup configuration."""
     backup_dir = config_repo.get_config_value(db, _KEY_DIR)
-    has_password = config_repo.get_config_value(db, _KEY_PASSWORD) is not None
+    has_password = _has_password(db)
     retention = config_repo.get_config_value(db, _KEY_RETENTION, _DEFAULT_RETENTION)
     last_run = config_repo.get_config_value(db, _KEY_LAST_RUN)
     last_status = config_repo.get_config_value(db, _KEY_LAST_STATUS)
@@ -238,7 +366,7 @@ def update_backup_settings(body: BackupSettingsUpdate, db=Depends(get_db)):
         updated.append("directory")
 
     if body.password is not None:
-        config_repo.set_config(db, _KEY_PASSWORD, body.password, category="backup")
+        _set_password(db, body.password)
         updated.append("password")
 
     if body.retention_count is not None:
@@ -299,7 +427,7 @@ async def restore_from_backup(body: BackupRestoreRequest, request: Request):
     cfg_conn = get_connection(db_path)
     try:
         backup_dir = config_repo.get_config_value(cfg_conn, _KEY_DIR)
-        password = config_repo.get_config_value(cfg_conn, _KEY_PASSWORD)
+        password = _get_password(cfg_conn)
     finally:
         cfg_conn.close()
 

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import shlex
 import subprocess
 
 logger = logging.getLogger(__name__)
@@ -49,7 +50,7 @@ def sync_file_to_remote(local_path: str, host: str, remote_path: str) -> bool:
     remote_dir = os.path.dirname(remote_path)
     try:
         mkdir_result = subprocess.run(
-            ["ssh", *_SSH_OPTS, host, f"mkdir -p {remote_dir}"],
+            ["ssh", *_SSH_OPTS, host, f"mkdir -p {shlex.quote(remote_dir)}"],
             capture_output=True,
             text=True,
             timeout=30,
@@ -60,7 +61,7 @@ def sync_file_to_remote(local_path: str, host: str, remote_path: str) -> bool:
 
         with open(local_path, "rb") as f:
             cat_result = subprocess.run(
-                ["ssh", *_SSH_OPTS, host, f"cat > {remote_path}"],
+                ["ssh", *_SSH_OPTS, host, f"cat > {shlex.quote(remote_path)}"],
                 stdin=f,
                 capture_output=True,
                 timeout=60,
@@ -98,7 +99,7 @@ def sync_file_from_remote(host: str, remote_path: str, local_path: str) -> bool:
     try:
         with open(local_path, "wb") as f:
             cat_result = subprocess.run(
-                ["ssh", *_SSH_OPTS, host, f"cat {remote_path}"],
+                ["ssh", *_SSH_OPTS, host, f"cat {shlex.quote(remote_path)}"],
                 stdout=f,
                 stderr=subprocess.PIPE,
                 timeout=60,

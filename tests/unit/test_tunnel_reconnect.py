@@ -626,17 +626,17 @@ class TestKillOrphanClaudeProcessesRemote:
 
     @patch("orchestrator.session.reconnect.subprocess.run")
     def test_kills_with_both_ids(self, mock_run):
-        """Should grep for both session.id and claude_session_id."""
+        """Should grep for both session.id and claude_session_id (re-escaped)."""
         from orchestrator.session.reconnect import _kill_orphan_claude_processes_remote
 
         mock_run.return_value = MagicMock(returncode=0)
         _kill_orphan_claude_processes_remote("user/vm", "sess-1", "claude-2")
 
         cmd = mock_run.call_args[0][0]
-        # SSH command should include grep pattern with both IDs
+        # SSH command should include re.escape'd IDs in grep -E pattern
         ssh_cmd = cmd[-1] if isinstance(cmd, list) else cmd
-        assert "sess-1" in ssh_cmd
-        assert "claude-2" in ssh_cmd
+        assert r"sess\-1" in ssh_cmd
+        assert r"claude\-2" in ssh_cmd
 
     @patch("orchestrator.session.reconnect.subprocess.run")
     def test_single_id_when_no_claude_session_id(self, mock_run):
@@ -648,7 +648,7 @@ class TestKillOrphanClaudeProcessesRemote:
 
         cmd = mock_run.call_args[0][0]
         ssh_cmd = cmd[-1] if isinstance(cmd, list) else cmd
-        assert "sess-1" in ssh_cmd
+        assert r"sess\-1" in ssh_cmd
 
     @patch("orchestrator.session.reconnect.subprocess.run")
     def test_ssh_failure_handled_gracefully(self, mock_run):

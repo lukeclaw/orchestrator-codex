@@ -6,6 +6,7 @@ SSH tunnels, and SSH connections for both local and rdev workers.
 
 import logging
 import os
+import shlex
 import signal
 import subprocess
 import threading
@@ -824,7 +825,7 @@ def _check_rws_pty_health(db, session, tunnel_manager=None) -> dict:
     try:
         check_cmd = (
             "ps aux | grep -v grep | grep -E 'claude (-r|--|--settings)'"
-            f" | grep -q '{session.id}' && echo ALIVE || echo DEAD"
+            f" | grep -q {shlex.quote(session.id)} && echo ALIVE || echo DEAD"
         )
         result = subprocess.run(
             ["ssh", "-o", "ConnectTimeout=5", "-o", "BatchMode=yes", session.host, check_cmd],

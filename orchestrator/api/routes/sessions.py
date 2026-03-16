@@ -341,11 +341,15 @@ def toggle_auto_reconnect(session_id: str, request: Request, db=Depends(get_db))
 
 
 def _sanitize_worker_name(name: str) -> str:
-    r"""Sanitize worker name to avoid folder structure issues.
+    r"""Sanitize worker name for safe use in paths and shell commands.
 
-    Replaces / and \ with _ since these affect directory paths.
+    - Strips whitespace and leading/trailing dashes
+    - Replaces shell metacharacters with _
+    - Enforces max length of 100 chars
     """
-    return re.sub(r"[/\\]", "_", name.strip())
+    name = name.strip().strip("-")
+    name = re.sub(r"[^a-zA-Z0-9._@: -]", "_", name)
+    return name[:100]
 
 
 @router.post("/sessions", status_code=201)

@@ -236,8 +236,14 @@ def create_app(
     # CORS
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["*"],
-        allow_credentials=True,
+        allow_origins=[
+            "http://localhost:8093",
+            "http://127.0.0.1:8093",
+            "http://localhost:5173",
+            "http://127.0.0.1:5173",
+            "tauri://localhost",
+        ],
+        allow_credentials=False,
         allow_methods=["*"],
         allow_headers=["*"],
     )
@@ -335,9 +341,11 @@ def create_app(
     async def open_url(request: dict):
         import platform
         import subprocess
+        from urllib.parse import urlparse
 
         url = request.get("url", "")
-        if not url or not (url.startswith("http://") or url.startswith("https://")):
+        parsed = urlparse(url)
+        if parsed.scheme not in ("http", "https") or not parsed.netloc:
             return {"status": "error", "message": "Invalid URL"}
         try:
             if platform.system() == "Darwin":

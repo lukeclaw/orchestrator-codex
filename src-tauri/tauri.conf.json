@@ -21,7 +21,7 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self' 'unsafe-inline' 'unsafe-eval'; connect-src http://127.0.0.1:8093 ws://127.0.0.1:8093 http://localhost:8093 ws://localhost:8093 http://localhost:5173 ws://localhost:5173; img-src http://127.0.0.1:8093 http://localhost:8093 data: blob:; font-src data:; style-src 'self' 'unsafe-inline'"
+      "csp": "default-src 'self' 'unsafe-inline'; connect-src http://127.0.0.1:8093 ws://127.0.0.1:8093 http://localhost:8093 ws://localhost:8093 http://localhost:5173 ws://localhost:5173; img-src http://127.0.0.1:8093 http://localhost:8093 data: blob:; font-src data:; style-src 'self' 'unsafe-inline'"
     }
   },
   "bundle": {

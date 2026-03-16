@@ -332,15 +332,17 @@ def _cleanup_stale_claude_session_remote(host: str, session_id: str):
     - Any Claude process whose command line contains the session ID
     """
     try:
+        safe_id = shlex.quote(session_id)
+        safe_jsonl = shlex.quote(f"{session_id}.jsonl")
         cleanup_cmd = (
             # Delete stale session files (.jsonl) AND session directories
-            f"find ~/.claude/projects -name '{session_id}.jsonl' -delete 2>/dev/null; "
-            f"find ~/.claude/projects -maxdepth 2 -type d -name '{session_id}' "
+            f"find ~/.claude/projects -name {safe_jsonl} -delete 2>/dev/null; "
+            f"find ~/.claude/projects -maxdepth 2 -type d -name {safe_id} "
             f"-exec rm -rf {{}} + 2>/dev/null; "
             # Kill orphaned Claude processes
             f"ps aux | grep -v grep "
             f"| grep -E 'claude (-r|--|--settings)' "
-            f"| grep '{session_id}' "
+            f"| grep {safe_id} "
             f"| awk '{{print $2}}' "
             f"| xargs -r kill 2>/dev/null || true"
         )
@@ -367,11 +369,11 @@ def _kill_orphan_claude_processes_remote(
     ids = [session_id]
     if claude_session_id and claude_session_id != session_id:
         ids.append(claude_session_id)
-    grep_pattern = "|".join(ids)
+    grep_pattern = "|".join(re.escape(i) for i in ids)
     kill_cmd = (
         f"ps aux | grep -v grep "
         f"| grep -E 'claude (-r|--|--settings)' "
-        f"| grep -E '{grep_pattern}' "
+        f"| grep -E {shlex.quote(grep_pattern)} "
         f"| awk '{{print $2}}' "
         f"| xargs -r kill 2>/dev/null || true"
     )

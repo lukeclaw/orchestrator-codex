@@ -3,6 +3,7 @@
 import base64
 import logging
 import os
+import shlex
 import shutil
 import time
 import uuid
@@ -139,7 +140,7 @@ def start_brain(db=Depends(get_db)):
             }
 
         # ── Pane is at a shell prompt (new or leftover) — launch ────
-        tmux.send_keys(tmux.TMUX_SESSION, BRAIN_SESSION_NAME, f"cd {brain_dir}")
+        tmux.send_keys(tmux.TMUX_SESSION, BRAIN_SESSION_NAME, f"cd {shlex.quote(brain_dir)}")
         tmux.send_keys(tmux.TMUX_SESSION, BRAIN_SESSION_NAME, path_export)
 
         # Optionally update Claude Code before launching

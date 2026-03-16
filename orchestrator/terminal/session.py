@@ -54,7 +54,7 @@ def create_session(
 
     # cd to working directory if specified
     if work_dir:
-        tmux.send_keys(tmux_session, name, f"cd {work_dir}")
+        tmux.send_keys(tmux_session, name, f"cd {shlex.quote(work_dir)}")
         time.sleep(0.5)
 
     # Persist to DB
@@ -266,7 +266,7 @@ def _copy_dir_to_remote_ssh(local_dir: str, host: str, remote_dir: str) -> bool:
                 "-o",
                 "BatchMode=yes",
                 host,
-                f"mkdir -p {remote_dir}",
+                f"mkdir -p {shlex.quote(remote_dir)}",
             ],
             capture_output=True,
             text=True,
@@ -291,7 +291,7 @@ def _copy_dir_to_remote_ssh(local_dir: str, host: str, remote_dir: str) -> bool:
                 "-o",
                 "BatchMode=yes",
                 host,
-                f"tar xzf - -C {remote_dir}",
+                f"tar xzf - -C {shlex.quote(remote_dir)}",
             ],
             stdin=tar_proc.stdout,
             stdout=subprocess.PIPE,
@@ -336,7 +336,7 @@ def _copy_dir_to_remote(
     Kept for backwards compatibility with non-rdev hosts.
     """
     # Create remote directory
-    tmux.send_keys(tmux_session, window_name, f"mkdir -p {remote_dir}", enter=True)
+    tmux.send_keys(tmux_session, window_name, f"mkdir -p {shlex.quote(remote_dir)}", enter=True)
     time.sleep(0.3)
 
     # Pack and send via heredoc (more reliable than echo for large content)
@@ -363,7 +363,7 @@ def _copy_dir_to_remote(
     tmux.send_keys(
         tmux_session,
         window_name,
-        f"base64 -d /tmp/_orch_transfer.b64 | tar xzf - -C {remote_dir}"
+        f"base64 -d /tmp/_orch_transfer.b64 | tar xzf - -C {shlex.quote(remote_dir)}"
         " && rm -f /tmp/_orch_transfer.b64",
         enter=True,
     )
