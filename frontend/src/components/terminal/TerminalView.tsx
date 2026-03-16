@@ -676,19 +676,20 @@ export default function TerminalView({ sessionId, wsPath, sendPath, sessionStatu
     : RECONNECT_STEPS_ALL.filter(s => s.key !== 'rdev_start')
 
   // Determine overlay type (mutually exclusive, in priority order)
-  const isReconnecting = (
-    sessionStatus === 'connecting' || (ready && connectionState === 'reconnecting')
-  )
+  //
+  // 'reconnect' = step-progress UI (session-level reconnect: rdev → tunnel → daemon → PTY)
+  // 'lost'      = simple message ("Reconnecting in Xs" / "Connection lost" / Retry button)
+  //
+  // Only show step-progress when a session-level reconnect is active (sessionStatus
+  // === 'connecting') or a step has failed.  Pure WS-level reconnects (e.g. interactive
+  // CLI stream drop, transient network blip) use the simpler 'lost' overlay.
   const showFailedOverlay = (
     (sessionStatus === 'disconnected' || sessionStatus === 'error') && isFailed
   )
-  const isInitialSetup = isLocked && !ready && !hasReconnectStep
 
-  let overlayType: 'reconnect' | 'initial' | 'lost' | null = null
-  if (isReconnecting || showFailedOverlay) {
+  let overlayType: 'reconnect' | 'lost' | null = null
+  if (showFailedOverlay || sessionStatus === 'connecting') {
     overlayType = 'reconnect'
-  } else if (isInitialSetup) {
-    overlayType = 'initial'
   } else if (ready && connectionState !== 'connected') {
     overlayType = 'lost'
   }
@@ -860,13 +861,11 @@ export default function TerminalView({ sessionId, wsPath, sendPath, sessionStatu
           ) : (
             <div className="terminal-overlay-content">
               <span className="terminal-overlay-message">
-                {overlayType === 'initial'
-                  ? 'Setting up connection...'
-                  : connectionState === 'reconnecting'
-                    ? `Reconnecting${reconnectCountdown ? ` in ${reconnectCountdown}s` : '...'}`
-                    : sessionStatus === 'disconnected'
-                      ? 'Worker disconnected'
-                      : 'Connection lost'}
+                {connectionState === 'reconnecting'
+                  ? `Reconnecting${reconnectCountdown ? ` in ${reconnectCountdown}s` : '...'}`
+                  : sessionStatus === 'disconnected'
+                    ? 'Worker disconnected'
+                    : 'Connection lost'}
               </span>
               {connectionState === 'disconnected' && sessionStatus === 'disconnected' && (
                 <span className="terminal-overlay-hint">Use the reconnect button above to reconnect, or enable auto-reconnect</span>

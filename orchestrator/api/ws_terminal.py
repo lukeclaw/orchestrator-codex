@@ -636,7 +636,7 @@ async def stream_remote_pty(
     session_id: str,
     pty_id: str,
     rws_host: str,
-) -> None:
+) -> bool:
     """Proxy between a WebSocket client and a remote PTY via RWS daemon.
 
     Opens a dedicated PTY stream connection to the RWS daemon, then:
@@ -645,6 +645,9 @@ async def stream_remote_pty(
 
     The PTY stays alive on the daemon even after the WebSocket disconnects,
     enabling reattach with history replay.
+
+    Returns True if the PTY process exited, False if the stream dropped
+    for other reasons (tunnel death, idle timeout, WS disconnect).
     """
 
     from orchestrator.terminal.remote_worker_server import get_remote_worker_server
@@ -661,7 +664,7 @@ async def stream_remote_pty(
     if rws is None:
         await websocket.send_json({"type": "error", "message": f"RWS not available for {rws_host}"})
         await websocket.close(code=4004)
-        return
+        return False
 
     try:
         stream_sock, initial_data = rws.connect_pty_stream(pty_id)
@@ -688,7 +691,7 @@ async def stream_remote_pty(
         else:
             await websocket.send_json({"type": "error", "message": f"PTY stream failed: {e}"})
         await websocket.close(code=4004)
-        return
+        return False
 
     # Send any initial data (ringbuffer history replay)
     if initial_data:
@@ -696,7 +699,7 @@ async def stream_remote_pty(
             await websocket.send_bytes(initial_data)
         except Exception:
             stream_sock.close()
-            return
+            return False
 
     # --- Background task: read from PTY stream → send to WebSocket --------
     stream_buffer = bytearray()
@@ -841,12 +844,19 @@ async def stream_remote_pty(
                 # Clear rws_pty_id so health check knows Claude exited
                 if session_id:
                     try:
-                        from orchestrator.state.repositories import sessions as _repo
+                        from orchestrator.state.repositories import (
+                            sessions as _repo,
+                        )
 
                         _db = _get_conn(websocket)
                         _owns = getattr(websocket.app.state, "conn_factory", None) is not None
                         try:
-                            _repo.update_session(_db, session_id, rws_pty_id=None, status="idle")
+                            _repo.update_session(
+                                _db,
+                                session_id,
+                                rws_pty_id=None,
+                                status="idle",
+                            )
                         finally:
                             if _owns:
                                 _db.close()
@@ -867,6 +877,8 @@ async def stream_remote_pty(
                 pass
         if session_id:
             clear_user_activity(session_id)
+
+        return pty_exited
 
 
 def _blocking_recv(sock, bufsize: int = 65536, timeout: float = 1.0) -> bytes | None:
@@ -917,8 +929,27 @@ async def ws_interactive_cli(websocket: WebSocket, session_id: str):
 
     # Route to RWS PTY streaming if this is a remote PTY-backed CLI
     if cli.remote_pty_id and cli.rws_host:
-        await stream_remote_pty(websocket, session_id, cli.remote_pty_id, cli.rws_host)
-        _active_clis.pop(session_id, None)
+        pty_exited = await stream_remote_pty(websocket, session_id, cli.remote_pty_id, cli.rws_host)
+        if pty_exited:
+            # PTY process exited (user typed "exit", process crashed, etc.)
+            # Remove from registry — no point retrying a dead PTY.
+            _active_clis.pop(session_id, None)
+            # stream_remote_pty only sends pty_exit when it can confirm with
+            # the daemon (confirmed_dead=True).  For the interactive CLI we
+            # always want the frontend to stop retrying, so send pty_exit and
+            # close with 4005 as a safety net.  Duplicate pty_exit is harmless
+            # (frontend uses a ref flag).
+            try:
+                await websocket.send_json({"type": "pty_exit"})
+            except Exception:
+                pass
+            try:
+                await websocket.close(code=4005)
+            except Exception:
+                pass
+        # Otherwise keep in registry — stream dropped due to tunnel death /
+        # idle timeout, PTY may still be alive.  Frontend WS retries will
+        # find the CLI and re-stream once the tunnel recovers.
     else:
         tmux_sess = "orchestrator"
 
