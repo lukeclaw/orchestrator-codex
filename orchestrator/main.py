@@ -51,7 +51,14 @@ def setup_logging(config: dict):
 
     lp = paths.log_path()
     lp.parent.mkdir(parents=True, exist_ok=True)
-    handlers.append(logging.FileHandler(str(lp)))
+    from logging.handlers import RotatingFileHandler
+
+    # 15 MB active + 1 backup = 30 MB total cap.  When the active file
+    # hits 15 MB it is renamed to .log.1 (a cheap rename, not a rewrite)
+    # and a fresh file is opened.  This also handles legacy oversized logs
+    # gracefully: the big file becomes .log.1 and is replaced on the next
+    # rotation cycle.
+    handlers.append(RotatingFileHandler(str(lp), maxBytes=15_000_000, backupCount=1))
 
     logging.basicConfig(
         level=level,
