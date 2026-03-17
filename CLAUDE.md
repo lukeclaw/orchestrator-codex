@@ -80,3 +80,7 @@ When working with dates and times in the frontend, always be aware of timezone i
 ## Design Docs
 
 The design documents are at `docs/` folder. `docs/features.md` and `docs/architecture.md` are the aggregated references. Detailed design logs are in `docs/design_logs/`. Keep them updated for relevant topics, and add new design logs for major changes or feature additions.
+
+## Development Learnings
+
+Past mistakes, root causes, and rules are documented in `docs/learnings/`. Consult these before working on related areas -- especially health checks, reconnect logic, migrations, and socket/PTY streaming. Add new learning files when you discover a bug pattern or design flaw worth remembering. See `docs/learnings/README.md` for the full index.
