@@ -250,6 +250,9 @@ class TestPtyExitHardeningStreamEOF:
         mock_rws.execute.return_value = {"ptys": [{"pty_id": "pty-abc", "alive": False}]}
 
         mock_update = MagicMock()
+        mock_get_session = MagicMock()
+        # get_session returns session still referencing this PTY
+        mock_get_session.return_value = MagicMock(rws_pty_id="pty-abc")
 
         with (
             patch(
@@ -259,6 +262,14 @@ class TestPtyExitHardeningStreamEOF:
             patch(
                 "orchestrator.state.repositories.sessions.update_session",
                 mock_update,
+            ),
+            patch(
+                "orchestrator.state.repositories.sessions.get_session",
+                mock_get_session,
+            ),
+            patch(
+                "orchestrator.session.reconnect._recovery_status",
+                return_value="idle",
             ),
             patch("orchestrator.api.ws_terminal._get_conn") as mock_get_conn,
             patch(
@@ -278,7 +289,7 @@ class TestPtyExitHardeningStreamEOF:
 
         # Should send pty_exit — PTY confirmed dead
         assert any(m.get("type") == "pty_exit" for m in ws.sent_json)
-        # Should clear DB (use any_call to avoid interference from background reconnect threads)
+        # Should clear DB with recovery status
         mock_update.assert_any_call(db_conn, "sess-1", rws_pty_id=None, status="idle")
 
 

@@ -841,7 +841,9 @@ async def stream_remote_pty(
                     await websocket.send_json({"type": "pty_exit"})
                 except Exception:
                     pass
-                # Clear rws_pty_id so health check knows Claude exited
+                # Clear rws_pty_id so health check knows Claude exited.
+                # Only clear if the session still references THIS pty_id —
+                # a concurrent reconnect may have already assigned a new PTY.
                 if session_id:
                     try:
                         from orchestrator.state.repositories import (
@@ -851,12 +853,19 @@ async def stream_remote_pty(
                         _db = _get_conn(websocket)
                         _owns = getattr(websocket.app.state, "conn_factory", None) is not None
                         try:
-                            _repo.update_session(
-                                _db,
-                                session_id,
-                                rws_pty_id=None,
-                                status="idle",
-                            )
+                            fresh = _repo.get_session(_db, session_id)
+                            if fresh and fresh.rws_pty_id == pty_id:
+                                from orchestrator.session.reconnect import (
+                                    _recovery_status,
+                                )
+
+                                status = _recovery_status(_db, session_id)
+                                _repo.update_session(
+                                    _db,
+                                    session_id,
+                                    rws_pty_id=None,
+                                    status=status,
+                                )
                         finally:
                             if _owns:
                                 _db.close()

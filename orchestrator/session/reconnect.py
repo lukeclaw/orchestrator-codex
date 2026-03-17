@@ -54,10 +54,19 @@ def _recovery_status(conn, session_id: str) -> str:
 
         assigned = tasks_repo.list_tasks(conn, assigned_session_id=session_id, parent_task_id=...)
         if assigned:
+            logger.info(
+                "_recovery_status(%s): found %d assigned tasks -> waiting",
+                session_id,
+                len(assigned),
+            )
             return "waiting"
+        logger.info("_recovery_status(%s): no assigned tasks -> idle", session_id)
         return "idle"
     except Exception:
-        # Default to "waiting" if task lookup fails (safer assumption)
+        logger.exception(
+            "_recovery_status(%s): task lookup failed, defaulting to waiting",
+            session_id,
+        )
         return "waiting"
 
 
