@@ -644,3 +644,169 @@ class TestReducedTimeouts:
         cmd_list = call_args[0][0]
         assert "ConnectTimeout=3" in cmd_list
         assert call_args[1]["timeout"] == 5
+
+
+# ===========================================================================
+# Auto-Reconnect from DB
+# ===========================================================================
+
+
+class TestAutoReconnectFromDb:
+    """Verify auto-reconnect queries the DB instead of using in-memory candidates."""
+
+    @patch("orchestrator.session.health._host_breaker")
+    @patch("orchestrator.session.health.check_and_update_worker_health")
+    def test_exception_defaults_to_not_alive(self, mock_check, mock_breaker):
+        """When check_and_update_worker_health raises, result should report alive=False."""
+        from orchestrator.session.health import check_all_workers_health
+
+        mock_breaker.should_skip.return_value = False
+        mock_check.side_effect = RuntimeError("SSH exploded")
+
+        session = _make_session(
+            name="w1", host="user/rdev-1", session_id="sess-1", auto_reconnect=False
+        )
+        db = MagicMock()
+        db.execute = MagicMock()
+        # list_sessions returns empty — no reconnect candidates
+        with patch("orchestrator.session.health.repo") as mock_repo:
+            mock_repo.list_sessions.return_value = []
+            result = check_all_workers_health(db, [session], db_path=None)
+
+        # The session should be in disconnected, not alive
+        assert "w1" not in result["alive"]
+        assert "w1" in result["disconnected"]
+
+    @patch("orchestrator.session.health._host_breaker")
+    @patch("orchestrator.session.health.check_and_update_worker_health")
+    def test_auto_reconnect_queries_db_after_checks(self, mock_check, mock_breaker):
+        """After health checks, auto-reconnect should query DB for disconnected workers."""
+        from orchestrator.session.health import check_all_workers_health
+
+        mock_breaker.should_skip.return_value = False
+        mock_check.return_value = {
+            "alive": False,
+            "status": "disconnected",
+            "reason": "dead",
+        }
+
+        session = _make_session(
+            name="w1",
+            host="user/rdev-1",
+            session_id="sess-1",
+            auto_reconnect=True,
+        )
+        # DB returns disconnected session with auto_reconnect=True
+        db_session = _make_session(
+            name="w1",
+            host="user/rdev-1",
+            session_id="sess-1",
+            auto_reconnect=True,
+            status="disconnected",
+        )
+
+        db = MagicMock()
+        with (
+            patch("orchestrator.session.health.repo") as mock_repo,
+            patch("orchestrator.session.reconnect.trigger_reconnect") as mock_trigger,
+        ):
+            mock_repo.list_sessions.return_value = [db_session]
+            mock_repo.get_session.return_value = db_session
+            mock_trigger.return_value = {"ok": True}
+
+            result = check_all_workers_health(db, [session], db_path=None)
+
+        mock_trigger.assert_called_once()
+        assert "w1" in result["auto_reconnected"]
+        # list_sessions should have been called for both "disconnected" and "error"
+        assert mock_repo.list_sessions.call_count == 2
+
+    @patch("orchestrator.session.health._host_breaker")
+    @patch("orchestrator.session.health.check_and_update_worker_health")
+    def test_circuit_breaker_skipped_not_auto_reconnected(self, mock_check, mock_breaker):
+        """Sessions skipped by circuit breaker should not be auto-reconnected."""
+        from orchestrator.session.health import check_all_workers_health
+
+        # Circuit breaker skips this host
+        mock_breaker.should_skip.return_value = True
+        mock_check.return_value = {"alive": False, "status": "disconnected"}
+
+        session = _make_session(
+            name="w1",
+            host="user/rdev-1",
+            session_id="sess-1",
+            auto_reconnect=True,
+            status="disconnected",
+        )
+
+        # DB returns the session as disconnected (it IS disconnected in DB)
+        db_session = _make_session(
+            name="w1",
+            host="user/rdev-1",
+            session_id="sess-1",
+            auto_reconnect=True,
+            status="disconnected",
+        )
+
+        db = MagicMock()
+        with (
+            patch("orchestrator.session.health.repo") as mock_repo,
+            patch("orchestrator.session.reconnect.trigger_reconnect") as mock_trigger,
+        ):
+            mock_repo.list_sessions.return_value = [db_session]
+            mock_repo.get_session.return_value = db_session
+
+            result = check_all_workers_health(db, [session], db_path=None)
+
+        # Should be deferred (circuit breaker), NOT auto-reconnected
+        assert "w1" in result["deferred"]
+        mock_trigger.assert_not_called()
+
+    @patch("orchestrator.session.health._host_breaker")
+    @patch("orchestrator.session.health.check_and_update_worker_health")
+    def test_as_completed_timeout_still_runs_auto_reconnect(self, mock_check, mock_breaker):
+        """Even if as_completed times out, auto-reconnect loop should still run."""
+
+        from orchestrator.session.health import check_all_workers_health
+
+        mock_breaker.should_skip.return_value = False
+        mock_check.return_value = {
+            "alive": False,
+            "status": "disconnected",
+            "reason": "dead",
+        }
+
+        session = _make_session(
+            name="w1",
+            host="user/rdev-1",
+            session_id="sess-1",
+            auto_reconnect=True,
+        )
+
+        db_session = _make_session(
+            name="w1",
+            host="user/rdev-1",
+            session_id="sess-1",
+            auto_reconnect=True,
+            status="disconnected",
+        )
+
+        # Mock as_completed to raise TimeoutError immediately
+        def fake_as_completed(futures, timeout=None):
+            raise TimeoutError("simulated timeout")
+
+        db = MagicMock()
+        with (
+            patch("orchestrator.session.health.repo") as mock_repo,
+            patch("orchestrator.session.reconnect.trigger_reconnect") as mock_trigger,
+            patch("orchestrator.session.health.as_completed", fake_as_completed),
+        ):
+            mock_repo.list_sessions.return_value = [db_session]
+            mock_repo.get_session.return_value = db_session
+            mock_trigger.return_value = {"ok": True}
+
+            result = check_all_workers_health(db, [session], db_path=None)
+
+        # Auto-reconnect should still have fired using DB query
+        mock_trigger.assert_called_once()
+        assert "w1" in result["auto_reconnected"]

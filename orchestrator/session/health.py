@@ -1032,7 +1032,7 @@ def check_all_workers_health(
         "deferred": [],
     }
 
-    auto_reconnect_candidates = []
+    skipped_session_ids = set()  # Track CB-skipped sessions
 
     # Separate sessions into groups: those needing health check vs skipped
     to_check = []  # (session, is_disconnected_precheck) tuples
@@ -1054,8 +1054,6 @@ def check_all_workers_health(
                             int(elapsed // 60),
                         )
                         results["disconnected"].append(s.name)
-                        if s.auto_reconnect:
-                            auto_reconnect_candidates.append(s)
                 except Exception:
                     pass
             continue
@@ -1064,6 +1062,7 @@ def check_all_workers_health(
         host = getattr(s, "host", "localhost")
         if is_remote_host(host) and _host_breaker.should_skip(host):
             results["deferred"].append(s.name)
+            skipped_session_ids.add(s.id)
             continue
 
         if s.status == "disconnected":
@@ -1091,7 +1090,8 @@ def check_all_workers_health(
             host = getattr(session, "host", "localhost")
             if is_remote_host(host):
                 _host_breaker.record_failure(host)
-            return session, {"alive": True, "status": session.status, "reason": str(e)}, is_precheck
+            result = {"alive": False, "status": session.status, "reason": str(e)}
+            return session, result, is_precheck
         finally:
             if db_path and conn is not db:
                 conn.close()
@@ -1103,18 +1103,13 @@ def check_all_workers_health(
                 results["checked"] += 1
                 results["alive"].append(s.name)
             else:
-                if s.auto_reconnect:
-                    auto_reconnect_candidates.append(s)
-                else:
-                    results["disconnected"].append(s.name)
+                results["disconnected"].append(s.name)
         else:
             results["checked"] += 1
             if result.get("alive"):
                 results["alive"].append(s.name)
             else:
                 results["disconnected"].append(s.name)
-                if s.auto_reconnect:
-                    auto_reconnect_candidates.append(s)
 
     # Host-level deduplication: group remote sessions by host, probe one per host
     local_checks = []  # (session, is_precheck)
@@ -1142,19 +1137,22 @@ def check_all_workers_health(
 
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         futures = {executor.submit(_check_one, s, pre): (s, pre) for s, pre in first_pass}
-        for future in as_completed(futures, timeout=15):
-            try:
-                s, result, is_precheck = future.result(timeout=12)
-            except Exception:
-                s, is_precheck = futures[future]
-                result = {"alive": True, "status": s.status}
+        try:
+            for future in as_completed(futures, timeout=15):
+                try:
+                    s, result, is_precheck = future.result(timeout=12)
+                except Exception:
+                    s, is_precheck = futures[future]
+                    result = {"alive": False, "status": s.status, "reason": "health check failed"}
 
-            _tally_result(s, result, is_precheck)
+                _tally_result(s, result, is_precheck)
 
-            # Record probe result for host dedup
-            host = getattr(s, "host", "localhost")
-            if is_remote_host(host) and host in host_peers:
-                host_probe_results[host] = result
+                # Record probe result for host dedup
+                host = getattr(s, "host", "localhost")
+                if is_remote_host(host) and host in host_peers:
+                    host_probe_results[host] = result
+        except TimeoutError:
+            logger.warning("Health check: as_completed timed out, some workers not checked")
 
         # Second pass: for hosts where probe succeeded, check peers individually.
         # For hosts where probe failed, apply failure to all peers (skip checks).
@@ -1185,28 +1183,50 @@ def check_all_workers_health(
 
         if second_pass:
             peer_futures = {executor.submit(_check_one, s, pre): (s, pre) for s, pre in second_pass}
-            for future in as_completed(peer_futures, timeout=15):
-                try:
-                    s, result, is_precheck = future.result(timeout=12)
-                except Exception:
-                    s, is_precheck = peer_futures[future]
-                    result = {"alive": True, "status": s.status}
-                _tally_result(s, result, is_precheck)
+            try:
+                for future in as_completed(peer_futures, timeout=15):
+                    try:
+                        s, result, is_precheck = future.result(timeout=12)
+                    except Exception:
+                        s, is_precheck = peer_futures[future]
+                        result = {
+                            "alive": False,
+                            "status": s.status,
+                            "reason": "health check failed",
+                        }
+                    _tally_result(s, result, is_precheck)
+            except TimeoutError:
+                logger.warning(
+                    "Health check: as_completed timed out (second pass), some workers not checked"
+                )
 
-    # Auto-reconnect eligible workers
-    for s in auto_reconnect_candidates:
+    # Auto-reconnect: query DB as source of truth.
+    # Health-check threads already wrote correct statuses. ThreadPoolExecutor
+    # context manager guarantees all threads completed before we reach here.
+    reconnect_pool = []
+    for _status in ("disconnected", "error"):
+        reconnect_pool.extend(repo.list_sessions(db, status=_status, session_type="worker"))
+
+    # Deduplicate by session ID
+    seen_ids: set[str] = set()
+    unique_pool = []
+    for s in reconnect_pool:
+        if s.id not in seen_ids:
+            seen_ids.add(s.id)
+            unique_pool.append(s)
+
+    for s in unique_pool:
+        if not s.auto_reconnect:
+            continue
+        if s.id in skipped_session_ids:
+            continue
         if is_user_active(s.id):
-            logger.info(
-                "Auto-reconnect: deferring %s — user active in pane",
-                s.name,
-            )
+            logger.info("Auto-reconnect: deferring %s — user active in pane", s.name)
             results["deferred"].append(s.name)
             continue
         if _reconnect_backoff.should_skip(s.id):
             logger.debug("Auto-reconnect: backoff active for %s, skipping", s.name)
             continue
-        # Re-read session from DB — background health-check threads may have
-        # updated fields (rws_pty_id, status) since we built the candidate list.
         fresh = repo.get_session(db, s.id)
         if fresh is None or fresh.status not in ("disconnected", "error"):
             continue

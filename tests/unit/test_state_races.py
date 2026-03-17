@@ -322,6 +322,7 @@ class TestDeletedSessionDuringHealthCheck:
             # the auto-reconnect loop, so get_session returns disconnected.
             disconnected = _make_session(status="disconnected", auto_reconnect=True)
             mock_repo.get_session.return_value = disconnected
+            mock_repo.list_sessions.return_value = [disconnected]
             from orchestrator.session.health import check_all_workers_health
 
             results = check_all_workers_health(db, [session])
@@ -434,6 +435,7 @@ class TestDualConcurrentHealthChecks:
             # (health check updates status to disconnected before auto-reconnect)
             disconnected = _make_session(status="disconnected", auto_reconnect=True)
             mock_repo.get_session.return_value = disconnected
+            mock_repo.list_sessions.return_value = [disconnected]
             from orchestrator.session.health import check_all_workers_health
 
             check_all_workers_health(MagicMock(), [session])
@@ -793,6 +795,7 @@ class TestConnectingStuckDetection:
             # Fix 5: check_all re-reads session from DB before reconnect
             disconnected_session = _make_session(status="disconnected", auto_reconnect=True)
             mock_repo.get_session.return_value = disconnected_session
+            mock_repo.list_sessions.return_value = [disconnected_session]
             from orchestrator.session.health import check_all_workers_health
 
             results = check_all_workers_health(db, [session])
@@ -822,6 +825,7 @@ class TestConnectingStuckDetection:
             ) as mock_trigger,
         ):
             mock_repo.update_session = tracker.update_session
+            mock_repo.list_sessions.return_value = []
             from orchestrator.session.health import check_all_workers_health
 
             check_all_workers_health(db, [session])
@@ -1048,6 +1052,7 @@ class TestCombinedRaceScenarios:
             # Fix 5: get_session returns fresh state (disconnected after health check)
             disconnected = _make_session(status="disconnected", auto_reconnect=True)
             mock_repo.get_session.return_value = disconnected
+            mock_repo.list_sessions.return_value = [disconnected]
             from orchestrator.session.health import check_all_workers_health
 
             check_all_workers_health(MagicMock(), [session])
