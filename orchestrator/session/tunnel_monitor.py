@@ -90,6 +90,7 @@ async def _check_all_tunnels(
 
     checked = 0
     restarted = 0
+    newly_disconnected = []
     # Sessions whose process is alive but need a connectivity probe
     needs_probe: list = []
 
@@ -104,7 +105,10 @@ async def _check_all_tunnels(
 
         # Fast check: is the tunnel process alive?
         if not tunnel_manager.is_alive(s.id):
-            restarted += await _restart_tunnel(tunnel_manager, conn, s, reason="process dead")
+            ok = await _restart_tunnel(tunnel_manager, conn, s, reason="process dead")
+            restarted += ok
+            if not ok:
+                newly_disconnected.append(s)
             continue
 
         # Process is alive — queue for deep probe if this is a probe cycle
@@ -116,12 +120,48 @@ async def _check_all_tunnels(
         probe_results = await _probe_tunnels_concurrent(tunnel_manager, needs_probe)
         for s, is_healthy in probe_results:
             if not is_healthy:
-                restarted += await _restart_tunnel(
+                ok = await _restart_tunnel(
                     tunnel_manager,
                     conn,
                     s,
                     reason="connectivity probe failed",
                 )
+                restarted += ok
+                if not ok:
+                    newly_disconnected.append(s)
+
+    # Mark unreachable workers as disconnected so the UI reflects reality
+    # immediately, rather than waiting for the next 5-minute health check.
+    # The health check's auto-reconnect will recover them when connectivity
+    # returns.
+    if newly_disconnected:
+        for s in newly_disconnected:
+            if s.status not in ("disconnected", "connecting", "error"):
+                sessions_repo.update_session(conn, s.id, status="disconnected")
+        names = [s.name for s in newly_disconnected]
+        logger.warning(
+            "Tunnel monitor: marked %d workers disconnected (tunnel restart failed): %s",
+            len(names),
+            ", ".join(names),
+        )
+        # Publish events so the UI updates via WebSocket
+        try:
+            from orchestrator.core.events import Event, publish
+
+            for s in newly_disconnected:
+                publish(
+                    Event(
+                        type="session.status_changed",
+                        data={
+                            "session_id": s.id,
+                            "session_name": s.name,
+                            "old_status": s.status,
+                            "new_status": "disconnected",
+                        },
+                    )
+                )
+        except Exception:
+            pass  # best-effort
 
     if checked > 0:
         msg = "Tunnel monitor: checked %d tunnels, restarted %d"
@@ -162,7 +202,7 @@ async def _probe_tunnels_concurrent(tunnel_manager, sessions) -> list[tuple]:
 async def _restart_tunnel(tunnel_manager, conn, session, *, reason: str) -> int:
     """Restart a single tunnel. Returns 1 on success, 0 on failure.
 
-    Gives up after MAX_CONSECUTIVE_FAILURES and marks the session as error.
+    Caller (_check_all_tunnels) marks sessions disconnected on failure.
     """
     from orchestrator.session.tunnel import ReverseTunnelManager
 
@@ -174,8 +214,6 @@ async def _restart_tunnel(tunnel_manager, conn, session, *, reason: str) -> int:
             failure_count,
             last_error,
         )
-        # Don't change session status — tunnel health != worker health.
-        # The health check (_check_rws_pty_health) is the authority on session status.
         return 0
 
     logger.warning(

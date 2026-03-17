@@ -388,8 +388,8 @@ class TestTunnelHealthLoop:
         mock_repo.update_session.assert_called_once_with(mock_conn, "sess-1", tunnel_pid=12345)
 
     @patch("orchestrator.session.tunnel_monitor.sessions_repo")
-    async def test_check_all_tunnels_no_db_update_on_restart_failure(self, mock_repo):
-        """Should not update DB when restart returns None."""
+    async def test_check_all_tunnels_marks_disconnected_on_restart_failure(self, mock_repo):
+        """Should mark session disconnected when restart fails."""
         from orchestrator.session.tunnel_monitor import _check_all_tunnels
 
         mock_session = MagicMock()
@@ -404,13 +404,14 @@ class TestTunnelHealthLoop:
         mock_tm.restart_tunnel.return_value = None
         mock_tm.get_failure_info.return_value = (0, None)
 
-        await _check_all_tunnels(MagicMock(), mock_tm)
+        mock_conn = MagicMock()
+        await _check_all_tunnels(mock_conn, mock_tm)
 
-        mock_repo.update_session.assert_not_called()
+        mock_repo.update_session.assert_called_once_with(mock_conn, "sess-1", status="disconnected")
 
     @patch("orchestrator.session.tunnel_monitor.sessions_repo")
-    async def test_skips_restart_after_max_failures(self, mock_repo):
-        """Should not attempt restart after max failures, and should NOT change session status."""
+    async def test_skips_restart_after_max_failures_but_marks_disconnected(self, mock_repo):
+        """Should not attempt restart after max failures, but should mark disconnected."""
         from orchestrator.session.tunnel_monitor import _check_all_tunnels
 
         mock_session = MagicMock()
@@ -429,8 +430,8 @@ class TestTunnelHealthLoop:
 
         # Should NOT attempt restart
         mock_tm.restart_tunnel.assert_not_called()
-        # Should NOT change session status (tunnel health != worker health)
-        mock_repo.update_session.assert_not_called()
+        # Should mark disconnected — worker is unreachable
+        mock_repo.update_session.assert_called_once_with(mock_conn, "sess-1", status="disconnected")
 
     @patch("orchestrator.session.tunnel_monitor.sessions_repo")
     async def test_logs_attempt_count_on_restart(self, mock_repo, caplog):
