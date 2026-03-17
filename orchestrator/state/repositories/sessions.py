@@ -70,8 +70,9 @@ def create_session(
     now = utc_now_iso()
     conn.execute(
         """INSERT INTO sessions
-           (id, name, host, work_dir, session_type, last_status_changed_at, claude_session_id)
-           VALUES (?, ?, ?, ?, ?, ?, ?)""",
+           (id, name, host, work_dir, session_type,
+            last_status_changed_at, claude_session_id, auto_reconnect)
+           VALUES (?, ?, ?, ?, ?, ?, ?, 1)""",
         (id, name, host, work_dir, session_type, now, id),
     )
     conn.commit()

@@ -96,6 +96,45 @@ class TestMigrateLegacyScreenSessions:
         mock_run.assert_not_called()
         mock_sessions.update_session.assert_not_called()
 
+    @pytest.mark.parametrize(
+        "status", ["working", "waiting", "screen_detached", "connecting", "error"]
+    )
+    @patch("subprocess.run")
+    @patch("orchestrator.core.lifecycle.sessions")
+    @patch("orchestrator.terminal.ssh.is_remote_host")
+    def test_migrates_all_active_legacy_statuses(
+        self, mock_is_remote, mock_sessions, mock_run, status
+    ):
+        """Any active legacy status (not idle/disconnected) should trigger migration."""
+        from orchestrator.core.lifecycle import migrate_legacy_screen_sessions
+
+        session = _make_session(status=status, rws_pty_id=None)
+        mock_sessions.list_sessions.return_value = [session]
+        mock_is_remote.return_value = True
+        conn = MagicMock()
+
+        migrate_legacy_screen_sessions(conn)
+
+        mock_run.assert_called_once()
+        mock_sessions.update_session.assert_called_once_with(conn, "sess-1", status="disconnected")
+
+    @patch("subprocess.run")
+    @patch("orchestrator.core.lifecycle.sessions")
+    @patch("orchestrator.terminal.ssh.is_remote_host")
+    def test_skips_disconnected_sessions(self, mock_is_remote, mock_sessions, mock_run):
+        """status=disconnected + no rws_pty_id -> skip (not legacy, just cleared on disconnect)."""
+        from orchestrator.core.lifecycle import migrate_legacy_screen_sessions
+
+        session = _make_session(status="disconnected", rws_pty_id=None)
+        mock_sessions.list_sessions.return_value = [session]
+        mock_is_remote.return_value = True
+        conn = MagicMock()
+
+        migrate_legacy_screen_sessions(conn)
+
+        mock_run.assert_not_called()
+        mock_sessions.update_session.assert_not_called()
+
     @patch("subprocess.run")
     @patch("orchestrator.core.lifecycle.sessions")
     @patch("orchestrator.terminal.ssh.is_remote_host")

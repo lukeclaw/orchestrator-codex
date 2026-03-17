@@ -87,7 +87,7 @@ def migrate_legacy_screen_sessions(conn: sqlite3.Connection):
     legacy = [
         s
         for s in all_sessions
-        if is_remote_host(s.host) and not s.rws_pty_id and s.status != "idle"
+        if is_remote_host(s.host) and not s.rws_pty_id and s.status not in ("idle", "disconnected")
     ]
     if not legacy:
         return

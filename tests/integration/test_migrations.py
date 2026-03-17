@@ -21,7 +21,8 @@ def test_fresh_migration():
     # 26=claude_session_id, 27=status_events, 28=skills, 29=skill_overrides,
     # 30=simplify_context_categories, 31=rws_pty_id,
     # 32=soft_delete_sessions, 33=session_name_in_events,
-    # 34=drop_sessions_deleted_at, 35=human_activity_events
+    # 34=drop_sessions_deleted_at, 35=human_activity_events,
+    # 36=add_task_to_status_events, 37=fix_auto_reconnect_default
     assert applied == [
         1,
         2,
@@ -58,6 +59,7 @@ def test_fresh_migration():
         34,
         35,
         36,
+        37,
     ]
 
     # Verify key tables exist
@@ -143,6 +145,7 @@ def test_idempotent_rerun():
         34,
         35,
         36,
+        37,
     ]
 
     second = apply_migrations(conn)
@@ -154,7 +157,7 @@ def test_current_version_after_migration():
     conn = get_memory_connection()
     assert get_current_version(conn) == 0
     apply_migrations(conn)
-    assert get_current_version(conn) == 36
+    assert get_current_version(conn) == 37
     conn.close()
 
 
