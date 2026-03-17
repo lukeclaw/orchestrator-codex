@@ -13,6 +13,9 @@ Lessons learned during development -- mistakes made (often by Claude Code), root
 | 5 | [005-migration-side-effects.md](005-migration-side-effects.md) | Migration side effects | Data migrations that override user preferences need communication |
 | 6 | [006-test-discipline.md](006-test-discipline.md) | Test assertion discipline | Don't weaken assertions to fix flaky tests; fix the root cause |
 | 7 | [007-reconnect-postmortem-2026-03.md](007-reconnect-postmortem-2026-03.md) | Reconnect post-mortem (March 2026) | Full analysis of commits d238d5e, 71b4d76, c17473d |
+| 8 | [008-never-kill-daemon-on-transient-failure.md](008-never-kill-daemon-on-transient-failure.md) | Never kill daemon on transient failure | Don't destroy remote resources to recover from local connection failures |
+| 9 | [009-tunnel-monitor-must-update-status.md](009-tunnel-monitor-must-update-status.md) | Tunnel monitor must update status | The component that detects a failure should propagate it |
+| 10 | [010-patch-endpoint-must-be-task-aware.md](010-patch-endpoint-must-be-task-aware.md) | PATCH endpoint must be task-aware | Always call `_recovery_status()` when setting status to "idle" |
 
 ## Origin
 
