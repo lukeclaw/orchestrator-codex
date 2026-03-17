@@ -589,19 +589,19 @@ class TestDaemonKillRestart:
             # Should not raise
             rws.kill_remote_daemon()
 
-    def test_background_start_retries_after_kill(self, _reset_pool):
-        """_start_in_background retries with daemon kill when first start fails."""
+    def test_background_start_retries_without_killing_daemon(self, _reset_pool):
+        """_start_in_background retries without killing daemon when first start fails."""
         start_calls = []
 
         def mock_start(self_rws, timeout=30.0):
             start_calls.append(len(start_calls))
             if len(start_calls) == 1:
-                raise RuntimeError("daemon stuck")
-            # Second call succeeds
+                raise RuntimeError("tunnel failed")
+            # Second call succeeds (daemon is reused)
 
         with (
             patch.object(RemoteWorkerServer, "start", mock_start),
-            patch.object(RemoteWorkerServer, "kill_remote_daemon"),
+            patch.object(RemoteWorkerServer, "kill_remote_daemon") as mock_kill,
         ):
             with pytest.raises(RuntimeError, match="Connecting to remote host"):
                 get_remote_worker_server("retry-host")
@@ -616,12 +616,14 @@ class TestDaemonKillRestart:
 
         assert "retry-host" in _server_pool
         assert len(start_calls) == 2
+        # Daemon should NOT be killed — it may have active PTYs
+        mock_kill.assert_not_called()
 
-    def test_background_start_gives_up_after_kill_fails(self, _reset_pool):
-        """_start_in_background gives up when even the daemon-kill retry fails."""
+    def test_background_start_gives_up_without_killing_daemon(self, _reset_pool):
+        """_start_in_background gives up when retry also fails, without killing daemon."""
         with (
             patch.object(RemoteWorkerServer, "start", side_effect=RuntimeError("broken")),
-            patch.object(RemoteWorkerServer, "kill_remote_daemon"),
+            patch.object(RemoteWorkerServer, "kill_remote_daemon") as mock_kill,
         ):
             with pytest.raises(RuntimeError, match="Connecting to remote host"):
                 get_remote_worker_server("fail-host")
@@ -635,6 +637,8 @@ class TestDaemonKillRestart:
 
         # Server never made it to the pool
         assert "fail-host" not in _server_pool
+        # Daemon should NOT be killed
+        mock_kill.assert_not_called()
 
 
 # ---------------------------------------------------------------------------

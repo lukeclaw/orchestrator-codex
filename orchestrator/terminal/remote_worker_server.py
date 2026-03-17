@@ -2275,25 +2275,25 @@ def get_remote_worker_server(host: str) -> RemoteWorkerServer:
                 logger.info("Remote worker server ready for %s", host)
             except Exception:
                 logger.warning(
-                    "Background start of RWS for %s failed, "
-                    "killing daemon and retrying (final resort)",
+                    "Background start of RWS for %s failed, retrying",
                     host,
                     exc_info=True,
                 )
-                # Final resort: kill the remote daemon and start fresh
+                # Retry: deploy daemon (reuses if alive) + tunnel + socket.
+                # Do NOT kill the daemon — it may have active PTYs with
+                # running Claude sessions that we'd destroy.
                 try:
                     s2 = RemoteWorkerServer(host)
-                    s2.kill_remote_daemon()
                     s2.start()
                     with _pool_lock:
                         _server_pool[host] = s2
                     logger.info(
-                        "Remote worker server ready for %s (after daemon restart)",
+                        "Remote worker server ready for %s (retry succeeded)",
                         host,
                     )
                 except Exception:
                     logger.warning(
-                        "Final resort start of RWS for %s also failed",
+                        "Retry start of RWS for %s also failed",
                         host,
                         exc_info=True,
                     )
