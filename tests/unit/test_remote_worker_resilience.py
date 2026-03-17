@@ -385,8 +385,8 @@ class TestPoolLockNarrowing:
         server._connect_command_socket = mock_reconnect
 
         with (
-            patch("orchestrator.terminal.remote_worker_server._server_pool", {"test-host": server}),
-            patch("orchestrator.terminal.remote_worker_server._starting", {}),
+            patch("orchestrator.terminal._rws_pool._server_pool", {"test-host": server}),
+            patch("orchestrator.terminal._rws_pool._starting", {}),
         ):
             from orchestrator.terminal.remote_worker_server import get_remote_worker_server
 
@@ -415,8 +415,8 @@ class TestPoolLockNarrowing:
         starting = {}
 
         with (
-            patch("orchestrator.terminal.remote_worker_server._server_pool", pool),
-            patch("orchestrator.terminal.remote_worker_server._starting", starting),
+            patch("orchestrator.terminal._rws_pool._server_pool", pool),
+            patch("orchestrator.terminal._rws_pool._starting", starting),
             patch("threading.Thread") as mock_thread_cls,
         ):
             mock_thread = MagicMock()
@@ -576,7 +576,7 @@ class TestFastFailDeadTunnel:
         mock_subprocess.side_effect = _subprocess.TimeoutExpired(cmd="ssh", timeout=5)
 
         with patch(
-            "orchestrator.terminal.remote_worker_server._server_pool",
+            "orchestrator.terminal._rws_pool._server_pool",
             {"user/rdev-1": mock_rws},
         ):
             result = _check_rws_pty_health(db, session, tunnel_manager=MagicMock())
@@ -646,7 +646,7 @@ class TestReducedTimeouts:
         mock_subprocess.return_value = MagicMock(stdout="ALIVE", returncode=0)
 
         with patch(
-            "orchestrator.terminal.remote_worker_server._server_pool",
+            "orchestrator.terminal._rws_pool._server_pool",
             {},  # no RWS available -> goes to SSH fallback
         ):
             _check_rws_pty_health(db, session, tunnel_manager=MagicMock())

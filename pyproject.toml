@@ -67,6 +67,7 @@ markers = [
 [tool.ruff]
 target-version = "py311"
 line-length = 100
+exclude = ["orchestrator/terminal/_rws_daemon.py"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "N", "W", "UP"]

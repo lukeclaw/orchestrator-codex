@@ -62,7 +62,7 @@ class TestRemoteWorkerServerClient:
         assert rws._tunnel_proc is None
         assert rws._cmd_sock is None
 
-    @patch("orchestrator.terminal.remote_worker_server.subprocess.Popen")
+    @patch("orchestrator.terminal._rws_client.subprocess.Popen")
     def test_deploy_daemon_success(self, mock_popen):
         """Test successful daemon deployment via SSH."""
         mock_proc = MagicMock()
@@ -83,7 +83,7 @@ class TestRemoteWorkerServerClient:
         assert args[0] == "ssh"
         assert "test-host" in args
 
-    @patch("orchestrator.terminal.remote_worker_server.subprocess.Popen")
+    @patch("orchestrator.terminal._rws_client.subprocess.Popen")
     def test_deploy_daemon_reuse(self, mock_popen):
         """Test daemon deployment when an existing daemon is found."""
         mock_proc = MagicMock()
@@ -99,7 +99,7 @@ class TestRemoteWorkerServerClient:
 
         assert rws._remote_pid == 99999
 
-    @patch("orchestrator.terminal.remote_worker_server.subprocess.Popen")
+    @patch("orchestrator.terminal._rws_client.subprocess.Popen")
     def test_deploy_daemon_timeout(self, mock_popen):
         """Test daemon deployment timeout."""
         import subprocess
@@ -113,7 +113,7 @@ class TestRemoteWorkerServerClient:
         with pytest.raises(RuntimeError, match="timed out"):
             rws._deploy_daemon(timeout=10.0)
 
-    @patch("orchestrator.terminal.remote_worker_server.subprocess.Popen")
+    @patch("orchestrator.terminal._rws_client.subprocess.Popen")
     def test_deploy_daemon_no_output(self, mock_popen):
         """Test daemon deployment with no stdout output."""
         mock_proc = MagicMock()
@@ -570,7 +570,7 @@ class TestDaemonKillRestart:
     def test_kill_remote_daemon_runs_ssh(self):
         """kill_remote_daemon() SSHes to kill the remote PID."""
         rws = RemoteWorkerServer("test-host")
-        with patch("orchestrator.terminal.remote_worker_server.subprocess.run") as mock_run:
+        with patch("orchestrator.terminal._rws_client.subprocess.run") as mock_run:
             mock_run.return_value = MagicMock(stdout="killed 12345", returncode=0)
             rws.kill_remote_daemon()
         mock_run.assert_called_once()
@@ -583,7 +583,7 @@ class TestDaemonKillRestart:
         """kill_remote_daemon() does not raise on SSH failure."""
         rws = RemoteWorkerServer("test-host")
         with patch(
-            "orchestrator.terminal.remote_worker_server.subprocess.run",
+            "orchestrator.terminal._rws_client.subprocess.run",
             side_effect=OSError("ssh not found"),
         ):
             # Should not raise
@@ -985,13 +985,13 @@ class TestTunnelSSHOpts:
         rws = RemoteWorkerServer("test-host")
         rws._local_port = 12345
 
-        with patch("orchestrator.terminal.remote_worker_server.subprocess.Popen") as mock_popen:
+        with patch("orchestrator.terminal._rws_client.subprocess.Popen") as mock_popen:
             mock_proc = MagicMock()
             mock_proc.poll.return_value = None
             mock_popen.return_value = mock_proc
 
-            with patch("orchestrator.terminal.remote_worker_server.time.sleep"):
-                with patch("orchestrator.terminal.remote_worker_server.socket.socket"):
+            with patch("orchestrator.terminal._rws_client.time.sleep"):
+                with patch("orchestrator.terminal._rws_client.socket.socket"):
                     rws._start_tunnel()
 
             cmd = mock_popen.call_args[0][0]
@@ -1007,7 +1007,7 @@ class TestTunnelPortProbe:
         rws = RemoteWorkerServer("test-host")
         rws._local_port = 12345
 
-        target = "orchestrator.terminal.remote_worker_server.socket.create_connection"
+        target = "orchestrator.terminal._rws_client.socket.create_connection"
         with patch(target) as mock_conn:
             mock_sock = MagicMock()
             mock_conn.return_value.__enter__ = MagicMock(return_value=mock_sock)
@@ -1020,7 +1020,7 @@ class TestTunnelPortProbe:
         rws._local_port = 12345
 
         with patch(
-            "orchestrator.terminal.remote_worker_server.socket.create_connection",
+            "orchestrator.terminal._rws_client.socket.create_connection",
             side_effect=ConnectionRefusedError,
         ):
             assert rws._is_tunnel_port_open() is False

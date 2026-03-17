@@ -8,7 +8,7 @@ import pytest
 class TestForceRestartServer:
     """Test the force_restart_server function."""
 
-    @patch("orchestrator.terminal.remote_worker_server.RemoteWorkerServer")
+    @patch("orchestrator.terminal._rws_pool.RemoteWorkerServer")
     def test_kills_old_daemon_and_starts_new(self, mock_rws_cls):
         from orchestrator.terminal.remote_worker_server import (
             _pool_lock,
@@ -37,7 +37,7 @@ class TestForceRestartServer:
             with _pool_lock:
                 _server_pool.pop("testhost", None)
 
-    @patch("orchestrator.terminal.remote_worker_server.RemoteWorkerServer")
+    @patch("orchestrator.terminal._rws_pool.RemoteWorkerServer")
     def test_starts_fresh_when_no_old_server(self, mock_rws_cls):
         from orchestrator.terminal.remote_worker_server import (
             _pool_lock,
@@ -61,7 +61,7 @@ class TestForceRestartServer:
             with _pool_lock:
                 _server_pool.pop("newhost", None)
 
-    @patch("orchestrator.terminal.remote_worker_server.RemoteWorkerServer")
+    @patch("orchestrator.terminal._rws_pool.RemoteWorkerServer")
     def test_raises_on_start_failure(self, mock_rws_cls):
         from orchestrator.terminal.remote_worker_server import (
             _pool_lock,
