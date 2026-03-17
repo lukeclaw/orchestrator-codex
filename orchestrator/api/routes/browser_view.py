@@ -199,12 +199,12 @@ async def _auto_start_browser_and_retry(
         if is_remote_host(host):
             rws = await _wait_for_rws(host)
             try:
-                rws.start_browser(session_id, port=cdp_port)
+                await asyncio.to_thread(rws.start_browser, session_id, port=cdp_port)
             except RuntimeError as e:
                 if "Unknown action" in str(e):
                     logger.warning("Stale RWS daemon on %s, redeploying", host)
                     rws = force_restart_server(host)
-                    rws.start_browser(session_id, port=cdp_port)
+                    await asyncio.to_thread(rws.start_browser, session_id, port=cdp_port)
                 else:
                     raise
             # Remote: tunnel doesn't exist yet, so we can't poll localhost.

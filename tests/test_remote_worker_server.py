@@ -1103,3 +1103,71 @@ class TestTunnelPortProbe:
             with patch.object(rws, "_connect_command_socket"):
                 rws._ensure_connected()
                 rws._connect_command_socket.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# Browser start polling
+# ---------------------------------------------------------------------------
+
+
+class TestStartBrowserPolling:
+    """Test start_browser() polling when daemon returns 'installing' status."""
+
+    def test_immediate_success(self):
+        """start_browser() returns immediately on normal success."""
+        rws = RemoteWorkerServer("test-host")
+
+        mock_sock = MagicMock(spec=socket.socket)
+        mock_sock.recv.return_value = (
+            json.dumps({"status": "ok", "pid": 1234, "port": 9222}).encode() + b"\n"
+        )
+        rws._cmd_sock = mock_sock
+        rws._cmd_buffer = bytearray()
+
+        result = rws.start_browser("session-1", port=9222)
+        assert result["status"] == "ok"
+        assert result["pid"] == 1234
+
+    def test_polls_on_installing_then_succeeds(self):
+        """start_browser() polls when daemon says 'installing', then succeeds."""
+        rws = RemoteWorkerServer("test-host")
+        responses = [
+            {"status": "installing"},
+            {"status": "installing"},
+            {"status": "ok", "pid": 5678, "port": 9222},
+        ]
+
+        with (
+            patch.object(rws, "execute", side_effect=responses) as mock_exec,
+            patch("time.sleep"),
+        ):
+            result = rws.start_browser("session-1", port=9222, timeout=60.0)
+
+        assert result["status"] == "ok"
+        assert result["pid"] == 5678
+        assert mock_exec.call_count == 3
+
+    def test_timeout_during_polling(self):
+        """start_browser() raises on timeout while polling 'installing'."""
+        rws = RemoteWorkerServer("test-host")
+
+        with (
+            patch.object(rws, "execute", return_value={"status": "installing"}),
+            patch("time.sleep"),
+        ):
+            with pytest.raises(RuntimeError, match="timed out"):
+                rws.start_browser("session-1", port=9222, timeout=0.01)
+
+    def test_error_response_raises(self):
+        """start_browser() raises on error response (not 'installing')."""
+        rws = RemoteWorkerServer("test-host")
+
+        mock_sock = MagicMock(spec=socket.socket)
+        mock_sock.recv.return_value = (
+            json.dumps({"error": "Port 9222 is already in use"}).encode() + b"\n"
+        )
+        rws._cmd_sock = mock_sock
+        rws._cmd_buffer = bytearray()
+
+        with pytest.raises(RuntimeError, match="Port 9222 is already in use"):
+            rws.start_browser("session-1", port=9222)

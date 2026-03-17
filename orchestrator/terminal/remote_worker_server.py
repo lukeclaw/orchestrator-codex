@@ -163,7 +163,7 @@ def _render_pty_to_text(raw: bytes, cols: int = 200, rows: int = 50, last_n: int
 _REMOTE_WORKER_SERVER_SCRIPT = textwrap.dedent("""\
     import json, os, sys, socket, selectors, signal, time, errno
     import pty as pty_mod, struct, fcntl, termios, subprocess, shutil
-    import base64, tempfile, re, uuid
+    import base64, tempfile, re, uuid, threading
 
     LISTEN_HOST = "127.0.0.1"
     LISTEN_PORT = 9741
@@ -576,17 +576,65 @@ _REMOTE_WORKER_SERVER_SCRIPT = textwrap.dedent("""\
         except Exception:
             pass
 
+    def _find_npx():
+        \"\"\"Find npx binary, setting up Node 24 via volta if needed.
+
+        The daemon runs with minimal PATH (non-interactive SSH), so npx
+        from nvm/volta shims is not available.  Search known locations and
+        bootstrap Node 24 via volta if needed.
+        \"\"\"
+        import glob as _glob
+
+        # 1. Check existing node-bin symlinks (created by ensure_rdev_node)
+        for npx_path in sorted(
+            _glob.glob("/tmp/orchestrator/workers/*/node-bin/npx"), reverse=True
+        ):
+            if os.path.isfile(npx_path) and os.access(npx_path, os.X_OK):
+                return npx_path
+
+        # 2. Try to set up Node 24 via volta (rdev ships volta at ~/.volta)
+        volta = os.path.expanduser("~/.volta/bin/volta")
+        if os.path.isfile(volta) and os.access(volta, os.X_OK):
+            try:
+                subprocess.run(
+                    [volta, "install", "node@24"],
+                    timeout=60,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
+            except (subprocess.TimeoutExpired, OSError):
+                pass
+            try:
+                result = subprocess.run(
+                    [volta, "which", "npx"],
+                    capture_output=True, text=True, timeout=10,
+                )
+                if result.returncode == 0 and result.stdout.strip():
+                    npx_path = result.stdout.strip()
+                    if os.path.isfile(npx_path) and os.access(npx_path, os.X_OK):
+                        return npx_path
+            except (subprocess.TimeoutExpired, OSError):
+                pass
+
+        # 3. Fallback: bare PATH lookup
+        return shutil.which("npx")
+
     def _install_chromium():
         \"\"\"Install Chromium via Playwright, return the binary path or None.\"\"\"
-        npx = shutil.which("npx")
+        npx = _find_npx()
         if not npx:
             return None
+        # Ensure npx can find node by prepending its directory to PATH
+        env = os.environ.copy()
+        npx_dir = os.path.dirname(os.path.realpath(npx))
+        env["PATH"] = npx_dir + ":" + env.get("PATH", "")
         try:
             subprocess.run(
                 [npx, "playwright", "install", "chromium"],
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
                 timeout=300,
+                env=env,
             )
         except (subprocess.TimeoutExpired, OSError):
             return None
@@ -643,6 +691,21 @@ _REMOTE_WORKER_SERVER_SCRIPT = textwrap.dedent("""\
         except (OSError, ProcessLookupError):
             pass
 
+    # Background Chromium install state (avoids blocking the event loop)
+    _chromium_install = {"active": False, "result": None, "error": None}
+
+    def _bg_install_chromium():
+        \"\"\"Run _install_chromium() in a background thread, updating _chromium_install.\"\"\"
+        try:
+            path = _install_chromium()
+            _chromium_install["result"] = path
+            _chromium_install["error"] = None if path else "install returned None"
+        except Exception as exc:
+            _chromium_install["result"] = None
+            _chromium_install["error"] = str(exc)
+        finally:
+            _chromium_install["active"] = False
+
     def handle_browser_start(cmd):
         session_id = cmd.get("session_id", "")
         port = cmd.get("port", 9222)
@@ -675,7 +738,20 @@ _REMOTE_WORKER_SERVER_SCRIPT = textwrap.dedent("""\
         if not chromium_path:
             chromium_path = _find_chromium()
         if not chromium_path:
-            chromium_path = _install_chromium()
+            # Check background install state
+            if _chromium_install["active"]:
+                return {"status": "installing"}
+            if _chromium_install["result"]:
+                chromium_path = _chromium_install["result"]
+                _chromium_install["result"] = None
+            else:
+                # Start background install thread
+                _chromium_install["active"] = True
+                _chromium_install["result"] = None
+                _chromium_install["error"] = None
+                t = threading.Thread(target=_bg_install_chromium, daemon=True)
+                t.start()
+                return {"status": "installing"}
         if not chromium_path:
             return {"error": "Chromium not found and auto-install failed"}
 
@@ -2056,9 +2132,16 @@ class RemoteWorkerServer:
         session_id: str,
         port: int = 9222,
         chromium_path: str | None = None,
-        timeout: float = 30.0,
+        timeout: float = 300.0,
     ) -> dict:
-        """Start a browser on the remote daemon. Returns status dict with pid/port."""
+        """Start a browser on the remote daemon. Returns status dict with pid/port.
+
+        If the daemon returns ``{"status": "installing"}`` (Chromium being
+        installed in a background thread), this method polls every 5 s until
+        the install finishes or *timeout* is reached.
+        """
+        import time as _time
+
         request: dict[str, Any] = {
             "action": "browser_start",
             "session_id": session_id,
@@ -2066,10 +2149,21 @@ class RemoteWorkerServer:
         }
         if chromium_path:
             request["chromium_path"] = chromium_path
-        resp = self.execute(request, timeout=timeout)
-        if "error" in resp:
-            raise RuntimeError(f"Browser start failed on {self.host}: {resp['error']}")
-        return resp
+        deadline = _time.monotonic() + timeout
+        while True:
+            remaining = deadline - _time.monotonic()
+            if remaining <= 0:
+                raise RuntimeError(
+                    f"Browser start timed out on {self.host} after {timeout}s "
+                    "(Chromium install may still be running)"
+                )
+            resp = self.execute(request, timeout=min(remaining, 30.0))
+            if "error" in resp:
+                raise RuntimeError(f"Browser start failed on {self.host}: {resp['error']}")
+            if resp.get("status") == "installing":
+                _time.sleep(min(5.0, remaining))
+                continue
+            return resp
 
     def stop_browser(self, session_id: str) -> None:
         """Stop a browser on the remote daemon."""
