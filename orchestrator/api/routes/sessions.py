@@ -527,17 +527,33 @@ def update_session(session_id: str, body: SessionUpdate, db=Depends(get_db)):
         raise HTTPException(404, "Session not found")
     session_id = s.id
 
+    # Guard: when a hook requests "idle", check if the worker has assigned
+    # tasks and promote to "waiting".  Prevents the SessionStart hook from
+    # overwriting task-aware status set by the reconnect flow.
+    effective_status = body.status
+    if body.status == "idle":
+        from orchestrator.session.reconnect import _recovery_status
+
+        effective_status = _recovery_status(db, session_id)
+        if effective_status != body.status:
+            logger.info(
+                "PATCH /sessions/%s: promoted status %r -> %r (tasks assigned)",
+                session_id,
+                body.status,
+                effective_status,
+            )
+
     old_status = s.status
     updated = repo.update_session(
         db,
         session_id,
-        status=body.status,
+        status=effective_status,
         takeover_mode=body.takeover_mode,
         claude_session_id=body.claude_session_id,
     )
 
     # Publish event for WebSocket broadcast if status changed
-    if body.status and body.status != old_status:
+    if effective_status and effective_status != old_status:
         from orchestrator.core.events import Event, publish
 
         publish(
@@ -547,7 +563,7 @@ def update_session(session_id: str, body: SessionUpdate, db=Depends(get_db)):
                     "session_id": session_id,
                     "session_name": s.name,
                     "old_status": old_status,
-                    "new_status": body.status,
+                    "new_status": effective_status,
                 },
             )
         )

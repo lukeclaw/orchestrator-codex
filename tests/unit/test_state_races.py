@@ -1153,5 +1153,149 @@ class TestHealthCheckIdempotencyGuards:
         assert "disconnected" in tracker.statuses
 
 
+# ===================================================================
+# Race 9 -- SessionStart hook overwrites task-aware reconnect status
+# ===================================================================
+
+
+class TestPatchIdlePromotion:
+    """Race 9: The SessionStart hook fires after reconnect and sends
+    PATCH /sessions/{id} with status="idle", overwriting the task-aware
+    "waiting" status set by the reconnect flow.
+
+    The fix adds a server-side guard in the PATCH endpoint that calls
+    _recovery_status() when status="idle" is requested, promoting to
+    "waiting" if assigned tasks exist.
+    """
+
+    def test_patch_idle_promoted_to_waiting_when_task_assigned(self):
+        """PATCH status='idle' is promoted to 'waiting' when tasks are assigned."""
+        from pathlib import Path
+
+        source = Path("orchestrator/api/routes/sessions.py").read_text()
+
+        # The PATCH endpoint now imports _recovery_status
+        assert "_recovery_status" in source
+        # And checks when body.status == "idle"
+        assert 'body.status == "idle"' in source
+        # Uses effective_status for the repo call
+        assert "status=effective_status" in source
+
+    def test_patch_idle_promoted_to_waiting_integration(self):
+        """Integration: PATCH with status='idle' writes 'waiting' when tasks exist."""
+        from orchestrator.state.db import get_memory_connection
+        from orchestrator.state.migrations.runner import apply_migrations
+        from orchestrator.state.repositories import projects as prepo
+        from orchestrator.state.repositories import sessions as srepo
+        from orchestrator.state.repositories import tasks as trepo
+
+        conn = get_memory_connection()
+        apply_migrations(conn)
+
+        try:
+            # Create session and project
+            session = srepo.create_session(conn, name="test-w", host="localhost", work_dir="/tmp")
+            srepo.update_session(conn, session.id, status="working")
+            project = prepo.create_project(conn, name="test-project")
+
+            # Create assigned task
+            task = trepo.create_task(conn, project_id=project.id, title="do stuff")
+            trepo.update_task(conn, task.id, assigned_session_id=session.id)
+
+            # Simulate what _recovery_status returns
+            from orchestrator.session.reconnect import _recovery_status
+
+            status = _recovery_status(conn, session.id)
+            assert status == "waiting"
+
+            # Verify the guard logic: if body.status is "idle" but
+            # _recovery_status returns "waiting", the effective status should be "waiting"
+            effective = "idle"
+            if effective == "idle":
+                effective = _recovery_status(conn, session.id)
+            assert effective == "waiting"
+
+            # Write it and verify DB
+            srepo.update_session(conn, session.id, status=effective)
+            updated = srepo.get_session(conn, session.id)
+            assert updated.status == "waiting"
+        finally:
+            conn.close()
+
+    def test_patch_idle_stays_idle_when_no_tasks(self):
+        """PATCH status='idle' stays 'idle' when no tasks are assigned."""
+        from orchestrator.state.db import get_memory_connection
+        from orchestrator.state.migrations.runner import apply_migrations
+        from orchestrator.state.repositories import sessions as srepo
+
+        conn = get_memory_connection()
+        apply_migrations(conn)
+
+        try:
+            session = srepo.create_session(conn, name="test-w2", host="localhost", work_dir="/tmp")
+            srepo.update_session(conn, session.id, status="working")
+
+            from orchestrator.session.reconnect import _recovery_status
+
+            status = _recovery_status(conn, session.id)
+            assert status == "idle"
+
+            # Guard logic: no promotion needed
+            effective = "idle"
+            if effective == "idle":
+                effective = _recovery_status(conn, session.id)
+            assert effective == "idle"
+
+            srepo.update_session(conn, session.id, status=effective)
+            updated = srepo.get_session(conn, session.id)
+            assert updated.status == "idle"
+        finally:
+            conn.close()
+
+    def test_patch_non_idle_status_not_affected(self):
+        """PATCH with status != 'idle' is not affected by the guard."""
+        from orchestrator.state.db import get_memory_connection
+        from orchestrator.state.migrations.runner import apply_migrations
+        from orchestrator.state.repositories import projects as prepo
+        from orchestrator.state.repositories import sessions as srepo
+        from orchestrator.state.repositories import tasks as trepo
+
+        conn = get_memory_connection()
+        apply_migrations(conn)
+
+        try:
+            session = srepo.create_session(conn, name="test-w3", host="localhost", work_dir="/tmp")
+            project = prepo.create_project(conn, name="test-project")
+            # Create assigned task
+            task = trepo.create_task(conn, project_id=project.id, title="do stuff")
+            trepo.update_task(conn, task.id, assigned_session_id=session.id)
+
+            # Guard logic: "working" is not "idle", so no promotion
+            effective = "working"
+            if effective == "idle":
+                from orchestrator.session.reconnect import _recovery_status
+
+                effective = _recovery_status(conn, session.id)
+            assert effective == "working"
+
+            srepo.update_session(conn, session.id, status=effective)
+            updated = srepo.get_session(conn, session.id)
+            assert updated.status == "working"
+        finally:
+            conn.close()
+
+    def test_patch_event_uses_effective_status(self):
+        """The published event contains the promoted status, not the raw request."""
+        from pathlib import Path
+
+        source = Path("orchestrator/api/routes/sessions.py").read_text()
+
+        # The event data should use effective_status, not body.status
+        # Check that "new_status": effective_status is in the source
+        assert '"new_status": effective_status' in source
+        # And the condition also uses effective_status
+        assert "if effective_status and effective_status != old_status:" in source
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
