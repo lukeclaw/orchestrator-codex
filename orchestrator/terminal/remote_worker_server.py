@@ -38,19 +38,6 @@ _TUNNEL_SSH_OPTS = ["-o", "ControlMaster=no", "-o", "ControlPath=none", *_SSH_OP
 
 RWS_REMOTE_PORT = 9741
 
-# Substrings that indicate a connectivity issue (VPN down, SSH timeout, etc.)
-# Used to decide log level — concise warning vs full traceback.
-_CONNECTIVITY_HINTS = (
-    "timed out",
-    "forward tunnel",
-    "Network is unreachable",
-    "No route to host",
-    "Connection refused",
-    "Connection reset",
-    "Could not resolve hostname",
-    "Daemon deployment",
-)
-
 
 def _render_pty_to_text(raw: bytes, cols: int = 200, rows: int = 50, last_n: int = 30) -> str:
     """Render raw PTY bytes into display text using a minimal VT emulator.
@@ -2279,12 +2266,6 @@ def get_remote_worker_server(host: str) -> RemoteWorkerServer:
             raise RuntimeError("Connecting to remote host\u2026")
 
         # Kick off background start
-        def _is_conn_err(exc: BaseException) -> bool:
-            msg = str(exc)
-            return any(s in msg for s in _CONNECTIVITY_HINTS) or isinstance(
-                exc, (subprocess.TimeoutExpired, ConnectionError, OSError, TimeoutError)
-            )
-
         def _start_in_background() -> None:
             try:
                 s = RemoteWorkerServer(host)
@@ -2292,20 +2273,13 @@ def get_remote_worker_server(host: str) -> RemoteWorkerServer:
                 with _pool_lock:
                     _server_pool[host] = s
                 logger.info("Remote worker server ready for %s", host)
-            except Exception as e1:
-                if _is_conn_err(e1):
-                    logger.warning(
-                        "Background start of RWS for %s failed (connectivity): %s",
-                        host,
-                        e1,
-                    )
-                else:
-                    logger.warning(
-                        "Background start of RWS for %s failed, "
-                        "killing daemon and retrying (final resort)",
-                        host,
-                        exc_info=True,
-                    )
+            except Exception:
+                logger.warning(
+                    "Background start of RWS for %s failed, "
+                    "killing daemon and retrying (final resort)",
+                    host,
+                    exc_info=True,
+                )
                 # Final resort: kill the remote daemon and start fresh
                 try:
                     s2 = RemoteWorkerServer(host)
@@ -2317,19 +2291,12 @@ def get_remote_worker_server(host: str) -> RemoteWorkerServer:
                         "Remote worker server ready for %s (after daemon restart)",
                         host,
                     )
-                except Exception as e2:
-                    if _is_conn_err(e2):
-                        logger.warning(
-                            "Final resort start of RWS for %s also failed (connectivity): %s",
-                            host,
-                            e2,
-                        )
-                    else:
-                        logger.warning(
-                            "Final resort start of RWS for %s also failed",
-                            host,
-                            exc_info=True,
-                        )
+                except Exception:
+                    logger.warning(
+                        "Final resort start of RWS for %s also failed",
+                        host,
+                        exc_info=True,
+                    )
             finally:
                 with _pool_lock:
                     _starting.pop(host, None)
