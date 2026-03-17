@@ -565,6 +565,7 @@ class TestFastFailDeadTunnel:
         mock_rws = MagicMock()
         mock_rws._tunnel_proc = MagicMock()
         mock_rws._tunnel_proc.poll.return_value = 1  # dead
+        mock_rws._is_tunnel_port_open.return_value = False  # port also closed
 
         session = _make_session(
             name="w1", host="user/rdev-1", session_id="sess-1", rws_pty_id="pty-1"

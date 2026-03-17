@@ -711,6 +711,7 @@ def _check_rws_pty_health(db, session, tunnel_manager=None) -> dict:
         rws is not None
         and rws._tunnel_proc is not None
         and isinstance(rws._tunnel_proc.poll(), int)
+        and not rws._is_tunnel_port_open(timeout=2.0)
     ):
         logger.info("Health check RWS: %s forward tunnel dead, skipping socket check", session.name)
         rws = None  # skip to SSH fallback

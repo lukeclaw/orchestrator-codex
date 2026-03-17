@@ -30,7 +30,26 @@ from orchestrator.terminal.file_sync import _SSH_OPTS
 
 logger = logging.getLogger(__name__)
 
+# SSH options for the forward tunnel — must NOT use ControlMaster
+# so the tunnel process stays alive as the connection owner (not a slave).
+# SSH uses first-match-wins for -o directives, so prepending ensures our
+# overrides take precedence over the ControlMaster=auto in _SSH_OPTS.
+_TUNNEL_SSH_OPTS = ["-o", "ControlMaster=no", "-o", "ControlPath=none", *_SSH_OPTS]
+
 RWS_REMOTE_PORT = 9741
+
+# Substrings that indicate a connectivity issue (VPN down, SSH timeout, etc.)
+# Used to decide log level — concise warning vs full traceback.
+_CONNECTIVITY_HINTS = (
+    "timed out",
+    "forward tunnel",
+    "Network is unreachable",
+    "No route to host",
+    "Connection refused",
+    "Connection reset",
+    "Could not resolve hostname",
+    "Daemon deployment",
+)
 
 
 def _render_pty_to_text(raw: bytes, cols: int = 200, rows: int = 50, last_n: int = 30) -> str:
@@ -1746,7 +1765,7 @@ class RemoteWorkerServer:
 
         tunnel_cmd = [
             "ssh",
-            *_SSH_OPTS,
+            *_TUNNEL_SSH_OPTS,
             "-N",  # No remote command
             "-L",
             f"{self._local_port}:127.0.0.1:{RWS_REMOTE_PORT}",
@@ -1763,8 +1782,18 @@ class RemoteWorkerServer:
         time.sleep(0.5)
 
         if self._tunnel_proc.poll() is not None:
-            stderr = self._tunnel_proc.stderr.read().decode() if self._tunnel_proc.stderr else ""
-            raise RuntimeError(f"SSH forward tunnel to {self.host} failed immediately: {stderr}")
+            # Process exited — check if port is still forwarded (e.g. via ControlMaster)
+            if not self._is_tunnel_port_open(timeout=2.0):
+                stderr = (
+                    self._tunnel_proc.stderr.read().decode() if self._tunnel_proc.stderr else ""
+                )
+                raise RuntimeError(
+                    f"SSH forward tunnel to {self.host} failed immediately: {stderr}"
+                )
+            logger.warning(
+                "Tunnel process exited but port %d is open (ControlMaster), continuing",
+                self._local_port,
+            )
 
         logger.info(
             "Forward tunnel established: 127.0.0.1:%d -> %s:127.0.0.1:%d",
@@ -1776,15 +1805,19 @@ class RemoteWorkerServer:
     def _connect_command_socket(self, timeout: float = 10.0) -> None:
         """Connect a command TCP socket through the forward tunnel."""
         assert self._local_port is not None
-        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        sock.settimeout(timeout)
 
-        # Retry connection a few times (tunnel may still be establishing)
+        # Retry connection a few times (tunnel may still be establishing).
+        # A fresh socket is needed each attempt because macOS marks a socket
+        # as failed after a connect() error — reusing it yields EINVAL.
+        sock = None
         for attempt in range(5):
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.settimeout(timeout)
             try:
                 sock.connect(("127.0.0.1", self._local_port))
                 break
             except (ConnectionRefusedError, OSError):
+                sock.close()
                 if attempt == 4:
                     raise RuntimeError(
                         f"Cannot connect to RWS on {self.host} via tunnel "
@@ -1916,7 +1949,10 @@ class RemoteWorkerServer:
         """Reconnect the command socket if it's dead but the tunnel is alive."""
         if self._cmd_sock is not None:
             return
-        if self._tunnel_proc is not None and self._tunnel_proc.poll() is None:
+        tunnel_alive = self._tunnel_proc is not None and (
+            self._tunnel_proc.poll() is None or self._is_tunnel_port_open()
+        )
+        if tunnel_alive:
             try:
                 self._connect_command_socket(timeout=connect_timeout or 10.0)
                 logger.info("Auto-reconnected command socket for %s", self.host)
@@ -2072,10 +2108,26 @@ class RemoteWorkerServer:
         """
         return self.execute({"action": "setup_env"}, timeout=90.0)
 
+    def _is_tunnel_port_open(self, timeout: float = 2.0) -> bool:
+        """Check if the tunnel's local forwarded port accepts TCP connections.
+
+        Used as a fallback when ``poll()`` reports the tunnel process as dead —
+        the port may still work via SSH ControlMaster multiplexing.
+        """
+        if self._local_port is None:
+            return False
+        try:
+            with socket.create_connection(("127.0.0.1", self._local_port), timeout=timeout):
+                pass
+            return True
+        except (ConnectionRefusedError, OSError, TimeoutError):
+            return False
+
     def is_alive(self) -> bool:
         """Check if the tunnel and command socket are still connected."""
         if self._tunnel_proc is not None and self._tunnel_proc.poll() is not None:
-            return False
+            if not self._is_tunnel_port_open():
+                return False
         if self._cmd_sock is None:
             return False
         # Quick ping test
@@ -2175,6 +2227,7 @@ def get_remote_worker_server(host: str) -> RemoteWorkerServer:
     # Phase 1: Quick check under lock (dict reads/writes only — microseconds)
     server = None
     needs_reconnect = False
+    possibly_dead = False
     with _pool_lock:
         server = _server_pool.get(host)
         if server is not None:
@@ -2183,14 +2236,26 @@ def get_remote_worker_server(host: str) -> RemoteWorkerServer:
                     return server
                 needs_reconnect = True
             else:
-                # Tunnel dead — remove stale server
+                # Process exited — need TCP check outside lock
+                possibly_dead = True
+
+    # Phase 1.5: TCP health check OUTSIDE the lock (may take up to 2s)
+    if server is not None and possibly_dead:
+        if server._is_tunnel_port_open(timeout=2.0):
+            # Port still works (e.g. ControlMaster forwarding) — treat as alive
+            if server._cmd_sock is not None:
+                return server
+            needs_reconnect = True
+            possibly_dead = False
+        else:
+            # Truly dead — remove stale server
+            with _pool_lock:
                 try:
                     server.stop()
                 except Exception:
                     pass
                 _server_pool.pop(host, None)
-                server = None
-                needs_reconnect = False
+            server = None
 
     # Phase 2: Socket reconnect OUTSIDE the lock (can take up to 10s)
     if server is not None and needs_reconnect:
@@ -2214,6 +2279,12 @@ def get_remote_worker_server(host: str) -> RemoteWorkerServer:
             raise RuntimeError("Connecting to remote host\u2026")
 
         # Kick off background start
+        def _is_conn_err(exc: BaseException) -> bool:
+            msg = str(exc)
+            return any(s in msg for s in _CONNECTIVITY_HINTS) or isinstance(
+                exc, (subprocess.TimeoutExpired, ConnectionError, OSError, TimeoutError)
+            )
+
         def _start_in_background() -> None:
             try:
                 s = RemoteWorkerServer(host)
@@ -2221,13 +2292,20 @@ def get_remote_worker_server(host: str) -> RemoteWorkerServer:
                 with _pool_lock:
                     _server_pool[host] = s
                 logger.info("Remote worker server ready for %s", host)
-            except Exception:
-                logger.warning(
-                    "Background start of RWS for %s failed, "
-                    "killing daemon and retrying (final resort)",
-                    host,
-                    exc_info=True,
-                )
+            except Exception as e1:
+                if _is_conn_err(e1):
+                    logger.warning(
+                        "Background start of RWS for %s failed (connectivity): %s",
+                        host,
+                        e1,
+                    )
+                else:
+                    logger.warning(
+                        "Background start of RWS for %s failed, "
+                        "killing daemon and retrying (final resort)",
+                        host,
+                        exc_info=True,
+                    )
                 # Final resort: kill the remote daemon and start fresh
                 try:
                     s2 = RemoteWorkerServer(host)
@@ -2239,12 +2317,19 @@ def get_remote_worker_server(host: str) -> RemoteWorkerServer:
                         "Remote worker server ready for %s (after daemon restart)",
                         host,
                     )
-                except Exception:
-                    logger.warning(
-                        "Final resort start of RWS for %s also failed",
-                        host,
-                        exc_info=True,
-                    )
+                except Exception as e2:
+                    if _is_conn_err(e2):
+                        logger.warning(
+                            "Final resort start of RWS for %s also failed (connectivity): %s",
+                            host,
+                            e2,
+                        )
+                    else:
+                        logger.warning(
+                            "Final resort start of RWS for %s also failed",
+                            host,
+                            exc_info=True,
+                        )
             finally:
                 with _pool_lock:
                     _starting.pop(host, None)

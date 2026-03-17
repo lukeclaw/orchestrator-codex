@@ -255,14 +255,15 @@ class TestRemoteWorkerServerClient:
         assert result[1]["alive"] is False
 
     def test_is_alive_tunnel_dead(self):
-        """Test is_alive when tunnel process has exited."""
+        """Test is_alive when tunnel process has exited and port is closed."""
         rws = RemoteWorkerServer("test-host")
         mock_proc = MagicMock()
         mock_proc.poll.return_value = 1  # Process exited
         rws._tunnel_proc = mock_proc
         rws._cmd_sock = MagicMock()
 
-        assert rws.is_alive() is False
+        with patch.object(rws, "_is_tunnel_port_open", return_value=False):
+            assert rws.is_alive() is False
 
     def test_is_alive_no_socket(self):
         """Test is_alive when command socket is None."""
@@ -340,16 +341,17 @@ class TestServerPool:
         assert result is rws
 
     def test_get_remote_worker_server_stale(self):
-        """Test that a stale server (dead tunnel) is removed."""
+        """Test that a stale server (dead tunnel + closed port) is removed."""
         rws = RemoteWorkerServer("test-host")
         mock_proc = MagicMock()
         mock_proc.poll.return_value = 1  # Tunnel dead
         rws._tunnel_proc = mock_proc
         _server_pool["test-host"] = rws
 
-        with patch.object(RemoteWorkerServer, "start"):
-            with pytest.raises(RuntimeError, match="Connecting to remote host"):
-                get_remote_worker_server("test-host")
+        with patch.object(rws, "_is_tunnel_port_open", return_value=False):
+            with patch.object(RemoteWorkerServer, "start"):
+                with pytest.raises(RuntimeError, match="Connecting to remote host"):
+                    get_remote_worker_server("test-host")
 
         assert "test-host" not in _server_pool
 
@@ -455,15 +457,16 @@ class TestSocketReconnection:
                 rws.execute({"action": "ping"})
 
     def test_execute_raises_when_no_tunnel(self):
-        """execute() raises immediately when tunnel is dead."""
+        """execute() raises immediately when tunnel is dead and port closed."""
         rws = RemoteWorkerServer("test-host")
         mock_proc = MagicMock()
         mock_proc.poll.return_value = 1  # Tunnel dead
         rws._tunnel_proc = mock_proc
         rws._cmd_sock = None
 
-        with pytest.raises(RuntimeError, match="Remote host not connected"):
-            rws.execute({"action": "ping"})
+        with patch.object(rws, "_is_tunnel_port_open", return_value=False):
+            with pytest.raises(RuntimeError, match="Remote host not connected"):
+                rws.execute({"action": "ping"})
 
     def test_execute_raises_when_no_tunnel_proc(self):
         """execute() raises when tunnel_proc is None."""
@@ -947,3 +950,152 @@ class TestDaemonProtocol:
         assert "class PtySession" in _REMOTE_WORKER_SERVER_SCRIPT
         assert "master_fd" in _REMOTE_WORKER_SERVER_SCRIPT
         assert "stream_conns" in _REMOTE_WORKER_SERVER_SCRIPT
+
+
+# ---------------------------------------------------------------------------
+# Tunnel SSH Options & TCP Port Probe
+# ---------------------------------------------------------------------------
+
+
+class TestTunnelSSHOpts:
+    """Verify _TUNNEL_SSH_OPTS disables ControlMaster for the forward tunnel."""
+
+    def test_tunnel_ssh_opts_disables_control_master(self):
+        """_TUNNEL_SSH_OPTS must have ControlMaster=no before ControlMaster=auto."""
+        from orchestrator.terminal.remote_worker_server import _TUNNEL_SSH_OPTS
+
+        # Find indices of both ControlMaster values
+        opts_str = " ".join(_TUNNEL_SSH_OPTS)
+        idx_no = opts_str.index("ControlMaster=no")
+        idx_auto = opts_str.index("ControlMaster=auto")
+        assert idx_no < idx_auto, "ControlMaster=no must come before auto (SSH first-match-wins)"
+
+    def test_tunnel_ssh_opts_has_control_path_none(self):
+        """_TUNNEL_SSH_OPTS must contain ControlPath=none."""
+        from orchestrator.terminal.remote_worker_server import _TUNNEL_SSH_OPTS
+
+        assert "ControlPath=none" in _TUNNEL_SSH_OPTS
+
+    def test_start_tunnel_uses_tunnel_opts(self):
+        """_start_tunnel() must use _TUNNEL_SSH_OPTS, not _SSH_OPTS."""
+        rws = RemoteWorkerServer("test-host")
+        rws._local_port = 12345
+
+        with patch("orchestrator.terminal.remote_worker_server.subprocess.Popen") as mock_popen:
+            mock_proc = MagicMock()
+            mock_proc.poll.return_value = None
+            mock_popen.return_value = mock_proc
+
+            with patch("orchestrator.terminal.remote_worker_server.time.sleep"):
+                with patch("orchestrator.terminal.remote_worker_server.socket.socket"):
+                    rws._start_tunnel()
+
+            cmd = mock_popen.call_args[0][0]
+            # The command should contain ControlMaster=no (from _TUNNEL_SSH_OPTS)
+            assert "ControlMaster=no" in cmd
+
+
+class TestTunnelPortProbe:
+    """Tests for _is_tunnel_port_open() and its integration with health checks."""
+
+    def test_is_tunnel_port_open_success(self):
+        """Port probe returns True when TCP connection succeeds."""
+        rws = RemoteWorkerServer("test-host")
+        rws._local_port = 12345
+
+        target = "orchestrator.terminal.remote_worker_server.socket.create_connection"
+        with patch(target) as mock_conn:
+            mock_sock = MagicMock()
+            mock_conn.return_value.__enter__ = MagicMock(return_value=mock_sock)
+            mock_conn.return_value.__exit__ = MagicMock(return_value=False)
+            assert rws._is_tunnel_port_open() is True
+
+    def test_is_tunnel_port_open_failure(self):
+        """Port probe returns False when TCP connection is refused."""
+        rws = RemoteWorkerServer("test-host")
+        rws._local_port = 12345
+
+        with patch(
+            "orchestrator.terminal.remote_worker_server.socket.create_connection",
+            side_effect=ConnectionRefusedError,
+        ):
+            assert rws._is_tunnel_port_open() is False
+
+    def test_is_tunnel_port_open_no_port(self):
+        """Port probe returns False when no local port is set."""
+        rws = RemoteWorkerServer("test-host")
+        rws._local_port = None
+        assert rws._is_tunnel_port_open() is False
+
+    def test_is_alive_process_dead_but_port_open(self):
+        """is_alive() continues to ping when process exited but port is open."""
+        rws = RemoteWorkerServer("test-host")
+        mock_proc = MagicMock()
+        mock_proc.poll.return_value = 1  # Process exited
+        rws._tunnel_proc = mock_proc
+        rws._cmd_sock = MagicMock()
+
+        with patch.object(rws, "_is_tunnel_port_open", return_value=True):
+            # Should NOT short-circuit to False — it should proceed to ping
+            with patch.object(rws, "execute", return_value={"status": "pong"}):
+                assert rws.is_alive() is True
+
+    def test_is_alive_process_dead_and_port_closed(self):
+        """is_alive() returns False when process exited and port is closed."""
+        rws = RemoteWorkerServer("test-host")
+        mock_proc = MagicMock()
+        mock_proc.poll.return_value = 1
+        rws._tunnel_proc = mock_proc
+        rws._cmd_sock = MagicMock()
+
+        with patch.object(rws, "_is_tunnel_port_open", return_value=False):
+            assert rws.is_alive() is False
+
+    def test_pool_check_process_dead_but_port_open(self):
+        """Server stays in pool when process exited but port is still open."""
+        rws = RemoteWorkerServer("test-host")
+        mock_proc = MagicMock()
+        mock_proc.poll.return_value = 1  # Process exited
+        rws._tunnel_proc = mock_proc
+        rws._cmd_sock = MagicMock()  # Socket exists
+        _server_pool["test-host"] = rws
+
+        try:
+            with patch.object(rws, "_is_tunnel_port_open", return_value=True):
+                result = get_remote_worker_server("test-host")
+            assert result is rws
+            assert "test-host" in _server_pool
+        finally:
+            _server_pool.pop("test-host", None)
+
+    def test_pool_check_truly_dead(self):
+        """Server removed from pool when process exited and port is closed."""
+        rws = RemoteWorkerServer("test-host")
+        mock_proc = MagicMock()
+        mock_proc.poll.return_value = 1
+        rws._tunnel_proc = mock_proc
+        rws._cmd_sock = MagicMock()
+        _server_pool["test-host"] = rws
+
+        try:
+            with patch.object(rws, "_is_tunnel_port_open", return_value=False):
+                with patch.object(RemoteWorkerServer, "start"):
+                    with pytest.raises(RuntimeError, match="Connecting to remote host"):
+                        get_remote_worker_server("test-host")
+            assert "test-host" not in _server_pool
+        finally:
+            _server_pool.pop("test-host", None)
+
+    def test_ensure_connected_tcp_fallback(self):
+        """_ensure_connected() reconnects when process dead but port open."""
+        rws = RemoteWorkerServer("test-host")
+        mock_proc = MagicMock()
+        mock_proc.poll.return_value = 1  # Process exited
+        rws._tunnel_proc = mock_proc
+        rws._cmd_sock = None
+        rws._local_port = 12345
+
+        with patch.object(rws, "_is_tunnel_port_open", return_value=True):
+            with patch.object(rws, "_connect_command_socket"):
+                rws._ensure_connected()
+                rws._connect_command_socket.assert_called_once()
