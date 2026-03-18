@@ -18,6 +18,7 @@ Lessons learned during development -- mistakes made (often by Claude Code), root
 | 10 | [010-patch-endpoint-must-be-task-aware.md](010-patch-endpoint-must-be-task-aware.md) | PATCH endpoint must be task-aware | Always call `_recovery_status()` when setting status to "idle" |
 | 11 | [011-daemon-path-non-interactive-ssh.md](011-daemon-path-non-interactive-ssh.md) | Daemon PATH in non-interactive SSH | Never assume binaries are on PATH in daemon launched via SSH |
 | 12 | [012-pyinstaller-text-read-files.md](012-pyinstaller-text-read-files.md) | PyInstaller misses text-read files | Files loaded via `read_text()`/`open()` must be added to `datas` in the spec |
+| 13 | [013-nonblocking-sendall-and-rendering-strips-colors.md](013-nonblocking-sendall-and-rendering-strips-colors.md) | Non-blocking sendall & rendering strips colors | Never `sendall()` on non-blocking sockets; VT renderers strip colors — send raw bytes for display |
 
 ## Origin
 
