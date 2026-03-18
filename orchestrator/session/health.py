@@ -1039,7 +1039,7 @@ def check_all_workers_health(
     to_check = []  # (session, is_disconnected_precheck) tuples
     for s in sessions:
         if s.status == "connecting":
-            # Check if stuck connecting for too long (>10 min)
+            # Check if stuck connecting for too long (>2 min)
             if s.last_status_changed_at:
                 try:
                     ts = s.last_status_changed_at.replace("Z", "+00:00")
@@ -1047,7 +1047,7 @@ def check_all_workers_health(
                     if dt.tzinfo is None:
                         dt = dt.astimezone()
                     elapsed = (datetime.now(UTC) - dt.astimezone(UTC)).total_seconds()
-                    if elapsed > 600:  # 10 minutes
+                    if elapsed > 120:  # 2 minutes
                         repo.update_session(db, s.id, status="disconnected")
                         logger.warning(
                             "Health check: %s stuck in connecting for %dm, marking disconnected",

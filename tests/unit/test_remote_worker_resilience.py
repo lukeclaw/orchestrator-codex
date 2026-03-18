@@ -376,7 +376,7 @@ class TestPoolLockNarrowing:
         # Track that reconnect succeeds (returns before hitting lock code)
         reconnect_called = False
 
-        def mock_reconnect():
+        def mock_reconnect(timeout=10.0):
             nonlocal reconnect_called
             reconnect_called = True
             # Simulate successful reconnect
@@ -387,6 +387,8 @@ class TestPoolLockNarrowing:
         with (
             patch("orchestrator.terminal._rws_pool._server_pool", {"test-host": server}),
             patch("orchestrator.terminal._rws_pool._starting", {}),
+            patch("orchestrator.terminal._rws_pool._reconnecting", set()),
+            patch("orchestrator.terminal._rws_pool._last_start_fail", {}),
         ):
             from orchestrator.terminal.remote_worker_server import get_remote_worker_server
 
@@ -406,7 +408,7 @@ class TestPoolLockNarrowing:
         server._cmd_sock = None  # socket dead
         server.stop = MagicMock()
 
-        def mock_reconnect():
+        def mock_reconnect(timeout=10.0):
             raise RuntimeError("reconnect failed")
 
         server._connect_command_socket = mock_reconnect
@@ -417,6 +419,8 @@ class TestPoolLockNarrowing:
         with (
             patch("orchestrator.terminal._rws_pool._server_pool", pool),
             patch("orchestrator.terminal._rws_pool._starting", starting),
+            patch("orchestrator.terminal._rws_pool._reconnecting", set()),
+            patch("orchestrator.terminal._rws_pool._last_start_fail", {}),
             patch("threading.Thread") as mock_thread_cls,
         ):
             mock_thread = MagicMock()

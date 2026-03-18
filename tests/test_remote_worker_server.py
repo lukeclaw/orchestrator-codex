@@ -16,6 +16,8 @@ import pytest
 from orchestrator.terminal.remote_worker_server import (
     RWS_REMOTE_PORT,
     RemoteWorkerServer,
+    _last_start_fail,
+    _reconnecting,
     _server_pool,
     _starting,
     ensure_rws_starting,
@@ -35,6 +37,8 @@ def _reset_pool():
     """Reset the global server pool between tests."""
     _server_pool.clear()
     _starting.clear()
+    _reconnecting.clear()
+    _last_start_fail.clear()
     yield
     # Clean up any remaining servers
     for host, server in list(_server_pool.items()):
@@ -44,6 +48,8 @@ def _reset_pool():
             pass
     _server_pool.clear()
     _starting.clear()
+    _reconnecting.clear()
+    _last_start_fail.clear()
 
 
 # ---------------------------------------------------------------------------
@@ -639,6 +645,102 @@ class TestDaemonKillRestart:
         assert "fail-host" not in _server_pool
         # Daemon should NOT be killed
         mock_kill.assert_not_called()
+
+    def test_background_start_cleans_up_tunnel_on_failure(self, _reset_pool):
+        """Failed start() must call stop() to kill the orphaned SSH tunnel process."""
+        stop_calls = []
+
+        def mock_start(self_rws, timeout=30.0):
+            # Simulate: tunnel started, then socket connect fails
+            self_rws._tunnel_proc = MagicMock()
+            raise RuntimeError("socket connect failed")
+
+        def mock_stop(self_rws):
+            stop_calls.append(self_rws.host)
+            # Don't actually call stop — just track the call
+
+        with (
+            patch.object(RemoteWorkerServer, "start", mock_start),
+            patch.object(RemoteWorkerServer, "stop", mock_stop),
+        ):
+            with pytest.raises(RuntimeError, match="Connecting to remote host"):
+                get_remote_worker_server("leak-host")
+
+            import time
+
+            for _ in range(50):
+                if "leak-host" not in _starting:
+                    break
+                time.sleep(0.1)
+
+        # stop() should have been called for both the first attempt and the retry
+        assert stop_calls.count("leak-host") == 2, (
+            f"Expected 2 stop() calls (first + retry), got {stop_calls}"
+        )
+
+    def test_backoff_after_failure(self, _reset_pool):
+        """After both attempts fail, further starts are suppressed for _BACKOFF_SECS."""
+        with patch.object(RemoteWorkerServer, "start", side_effect=RuntimeError("broken")):
+            with pytest.raises(RuntimeError, match="Connecting to remote host"):
+                get_remote_worker_server("backoff-host")
+
+            import time
+
+            for _ in range(50):
+                if "backoff-host" not in _starting:
+                    break
+                time.sleep(0.1)
+
+        # Now the backoff timer should be set — next call should raise immediately
+        # without starting a background thread
+        with pytest.raises(RuntimeError, match="retry in"):
+            get_remote_worker_server("backoff-host")
+
+        # No new background thread should have been started
+        assert "backoff-host" not in _starting
+
+    def test_backoff_expires(self, _reset_pool):
+        """After _BACKOFF_SECS, the backoff expires and a new start is allowed."""
+        import time as time_mod
+
+        # Set a backoff that's already expired
+        _last_start_fail["expired-host"] = time_mod.monotonic() - 60
+
+        with (
+            patch.object(RemoteWorkerServer, "start", side_effect=RuntimeError("still broken")),
+        ):
+            with pytest.raises(RuntimeError, match="Connecting to remote host"):
+                get_remote_worker_server("expired-host")
+
+        # A background thread should have been started (backoff expired)
+        assert "expired-host" in _starting
+
+    def test_phase2_concurrency_guard(self, _reset_pool):
+        """Only one thread should enter Phase 2 reconnect per host."""
+        from orchestrator.terminal._rws_pool import _reconnecting
+
+        server = RemoteWorkerServer.__new__(RemoteWorkerServer)
+        server.host = "guard-host"
+        server._tunnel_proc = MagicMock()
+        server._tunnel_proc.poll.return_value = None  # tunnel alive
+        server._cmd_sock = None  # socket dead → needs reconnect
+
+        # Pre-mark host as reconnecting
+        _reconnecting.add("guard-host")
+        _server_pool["guard-host"] = server
+
+        # Should skip Phase 2 and go to Phase 3 (background start)
+        with patch("threading.Thread") as mock_thread_cls:
+            mock_thread = MagicMock()
+            mock_thread.is_alive.return_value = True
+            mock_thread_cls.return_value = mock_thread
+
+            with pytest.raises(RuntimeError, match="Connecting"):
+                get_remote_worker_server("guard-host")
+
+        # Reconnect should NOT have been attempted (guard blocked it)
+        # Instead it should have gone to Phase 3 (background start)
+        mock_thread.start.assert_called_once()
 
 
 # ---------------------------------------------------------------------------

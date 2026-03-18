@@ -20,7 +20,10 @@ from orchestrator.terminal._rws_client import (
     RemoteWorkerServer,
 )
 from orchestrator.terminal._rws_pool import (
+    _BACKOFF_SECS,
+    _last_start_fail,
     _pool_lock,
+    _reconnecting,
     _server_pool,
     _starting,
     ensure_rws_starting,
@@ -33,11 +36,14 @@ from orchestrator.terminal._rws_pty_renderer import _render_pty_to_text
 __all__ = [
     "RemoteWorkerServer",
     "RWS_REMOTE_PORT",
+    "_BACKOFF_SECS",
     "_BOOTSTRAP_TMPL",
     "_REMOTE_WORKER_SERVER_SCRIPT",
     "_SCRIPT_HASH",
     "_TUNNEL_SSH_OPTS",
+    "_last_start_fail",
     "_pool_lock",
+    "_reconnecting",
     "_render_pty_to_text",
     "_server_pool",
     "_starting",

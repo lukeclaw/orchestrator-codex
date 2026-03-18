@@ -752,12 +752,12 @@ class TestReconnectExceptionHandling:
 
 
 class TestConnectingStuckDetection:
-    """Race 7: check_all_workers_health marks 'connecting' as stuck (>10 min)
+    """Race 7: check_all_workers_health marks 'connecting' as stuck (>2 min)
     while a reconnect thread is about to complete successfully.
 
     Timeline:
       T1 (reconnect): nearly done, about to set status "waiting"
-      T2 (health-all): sees status "connecting" for >10 min, writes "disconnected"
+      T2 (health-all): sees status "connecting" for >2 min, writes "disconnected"
       T1 (reconnect): sets "waiting"
       Result: status momentarily becomes "disconnected", then "waiting" --
               the health check might have also triggered ANOTHER reconnect
@@ -807,8 +807,8 @@ class TestConnectingStuckDetection:
         assert session.name in results["auto_reconnected"]
 
     def test_connecting_just_under_threshold_not_marked_stuck(self):
-        """Session connecting for 9 minutes should NOT be marked stuck."""
-        recent_time = (datetime.now(UTC) - timedelta(minutes=9)).isoformat()
+        """Session connecting for 1 minute should NOT be marked stuck (threshold is 2 min)."""
+        recent_time = (datetime.now(UTC) - timedelta(minutes=1)).isoformat()
         session = _make_session(
             status="connecting",
             auto_reconnect=True,

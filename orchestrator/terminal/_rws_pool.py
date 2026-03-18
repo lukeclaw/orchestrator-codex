@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import threading
+import time
 
 from orchestrator.terminal._rws_client import RemoteWorkerServer
 
@@ -15,6 +16,13 @@ logger = logging.getLogger(__name__)
 _server_pool: dict[str, RemoteWorkerServer] = {}
 _starting: dict[str, threading.Thread] = {}
 _pool_lock = threading.Lock()
+
+# Concurrency guard: only one thread per host enters Phase 2 socket reconnect
+_reconnecting: set[str] = set()
+
+# Backoff: suppress rapid background starts after failure
+_last_start_fail: dict[str, float] = {}
+_BACKOFF_SECS: float = 30.0
 
 
 def get_remote_worker_server(host: str) -> RemoteWorkerServer:
@@ -57,20 +65,34 @@ def get_remote_worker_server(host: str) -> RemoteWorkerServer:
                 _server_pool.pop(host, None)
             server = None
 
-    # Phase 2: Socket reconnect OUTSIDE the lock (can take up to 10s)
+    # Phase 2: Socket reconnect OUTSIDE the lock (reduced timeout: 2s)
+    # Concurrency guard: only one thread per host attempts reconnect
     if server is not None and needs_reconnect:
-        try:
-            server._connect_command_socket()
-            logger.info("Reconnected command socket for %s", host)
-            return server
-        except Exception:
-            logger.warning("Socket reconnect failed for %s, restarting", host)
-            with _pool_lock:
-                try:
-                    server.stop()
-                except Exception:
-                    pass
-                _server_pool.pop(host, None)
+        entered = False
+        with _pool_lock:
+            if host not in _reconnecting:
+                _reconnecting.add(host)
+                entered = True
+
+        if not entered:
+            # Another thread is already reconnecting — skip to Phase 3
+            pass
+        else:
+            try:
+                server._connect_command_socket(timeout=2.0)
+                logger.info("Reconnected command socket for %s", host)
+                return server
+            except Exception:
+                logger.warning("Socket reconnect failed for %s, restarting", host)
+                with _pool_lock:
+                    try:
+                        server.stop()
+                    except Exception:
+                        pass
+                    _server_pool.pop(host, None)
+            finally:
+                with _pool_lock:
+                    _reconnecting.discard(host)
 
     # Phase 3: No server available — check if already starting, else kick off background
     with _pool_lock:
@@ -78,15 +100,34 @@ def get_remote_worker_server(host: str) -> RemoteWorkerServer:
         if host in _starting and _starting[host].is_alive():
             raise RuntimeError("Connecting to remote host\u2026")
 
+        # Backoff: suppress rapid retries after failure
+        fail_time = _last_start_fail.get(host)
+        if fail_time is not None:
+            elapsed = time.monotonic() - fail_time
+            if elapsed < _BACKOFF_SECS:
+                raise RuntimeError(
+                    f"Connecting to remote host\u2026 (retry in {int(_BACKOFF_SECS - elapsed)}s)"
+                )
+            # Backoff expired — allow retry
+            del _last_start_fail[host]
+
         # Kick off background start
         def _start_in_background() -> None:
+            s = None
             try:
                 s = RemoteWorkerServer(host)
                 s.start()
                 with _pool_lock:
                     _server_pool[host] = s
+                    _last_start_fail.pop(host, None)
                 logger.info("Remote worker server ready for %s", host)
             except Exception:
+                # Clean up leaked SSH tunnel from failed start
+                if s is not None:
+                    try:
+                        s.stop()
+                    except Exception:
+                        pass
                 logger.warning(
                     "Background start of RWS for %s failed, retrying",
                     host,
@@ -95,16 +136,26 @@ def get_remote_worker_server(host: str) -> RemoteWorkerServer:
                 # Retry: deploy daemon (reuses if alive) + tunnel + socket.
                 # Do NOT kill the daemon — it may have active PTYs with
                 # running Claude sessions that we'd destroy.
+                s2 = None
                 try:
                     s2 = RemoteWorkerServer(host)
                     s2.start()
                     with _pool_lock:
                         _server_pool[host] = s2
+                        _last_start_fail.pop(host, None)
                     logger.info(
                         "Remote worker server ready for %s (retry succeeded)",
                         host,
                     )
                 except Exception:
+                    # Clean up leaked SSH tunnel from failed retry
+                    if s2 is not None:
+                        try:
+                            s2.stop()
+                        except Exception:
+                            pass
+                    with _pool_lock:
+                        _last_start_fail[host] = time.monotonic()
                     logger.warning(
                         "Retry start of RWS for %s also failed",
                         host,
@@ -186,4 +237,6 @@ def shutdown_all_rws_servers() -> None:
                 logger.debug("Error stopping RWS for %s", host, exc_info=True)
         _server_pool.clear()
         _starting.clear()
+        _reconnecting.clear()
+        _last_start_fail.clear()
     logger.info("All remote worker servers shut down")
