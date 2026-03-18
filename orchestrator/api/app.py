@@ -122,6 +122,15 @@ async def lifespan(app: FastAPI):
     except Exception:
         logger.exception("Control client cleanup failed (non-fatal)")
 
+    # Clean up orphaned pipe-pane cat processes from previous server runs.
+    # These prevent FIFOs from receiving EOF and cause zombie PtyStreamReaders.
+    try:
+        from orchestrator.terminal.pty_stream import cleanup_orphaned_pipe_pane_processes
+
+        cleanup_orphaned_pipe_pane_processes()
+    except Exception:
+        logger.exception("Pipe-pane process cleanup failed (non-fatal)")
+
     # Clean up old images if data/images/ exceeds size cap
     try:
         from orchestrator.api.routes.paste import cleanup_images, get_images_dir
@@ -183,6 +192,14 @@ async def lifespan(app: FastAPI):
 
     # Shutdown: stop monitor, state manager, tunnels
     logger.info("Orchestrator API shutting down")
+
+    # Stop all PTY stream readers (pipe-pane cat processes)
+    try:
+        from orchestrator.terminal.pty_stream import PtyStreamPool
+
+        await PtyStreamPool.get_instance().stop_all()
+    except Exception:
+        logger.exception("PtyStreamPool shutdown failed (non-fatal)")
 
     # Stop remote worker server clients (forward tunnels)
     from orchestrator.terminal.remote_worker_server import shutdown_all_rws_servers

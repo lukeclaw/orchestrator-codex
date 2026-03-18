@@ -38,6 +38,7 @@ logger = logging.getLogger(__name__)
 FIFO_DIR = "/tmp/orchestrator_pty"
 STARTUP_TIMEOUT = 3.0  # seconds to wait for first byte from pipe-pane
 EAGER_RESTART_DELAY = 0.5  # seconds before attempting eager restart after EOF
+ZOMBIE_TIMEOUT = 30.0  # seconds without data before reader is considered zombie
 
 # ---------------------------------------------------------------------------
 # tmux version detection
@@ -154,6 +155,7 @@ class PtyStreamReader:
         self._eof_callback: Callable[[], Awaitable[None]] | None = None
         self._startup_timer: asyncio.TimerHandle | None = None
         self._got_first_byte = False
+        self._last_data_time: float = 0.0  # 0 = pre-start (grace period)
         # Stateful ESC k stripping (reuse existing logic)
         self._strip_state: dict[str, bool] = {
             "in_title": False,
@@ -164,6 +166,17 @@ class PtyStreamReader:
     def is_alive(self) -> bool:
         """True if reader is running and has not received EOF."""
         return self._running and not self._eof
+
+    def is_stale(self, timeout: float = ZOMBIE_TIMEOUT) -> bool:
+        """True if reader is running but has received no data for *timeout* seconds.
+
+        Returns False if the reader is not running, already EOF, or hasn't
+        been started yet (``_last_data_time == 0``).
+        """
+        if not self._running or self._eof or self._last_data_time == 0.0:
+            return False
+        now = asyncio.get_running_loop().time()
+        return (now - self._last_data_time) > timeout
 
     async def start(
         self,
@@ -277,6 +290,7 @@ class PtyStreamReader:
 
         self._running = True
         self._got_first_byte = False
+        self._last_data_time = asyncio.get_running_loop().time()
 
         # Start startup timeout — if no data within STARTUP_TIMEOUT, log warning
         loop = asyncio.get_running_loop()
@@ -320,6 +334,8 @@ class PtyStreamReader:
         """Handle incoming raw bytes from the FIFO."""
         if not self._running:
             return
+
+        self._last_data_time = asyncio.get_running_loop().time()
 
         if not self._got_first_byte:
             self._got_first_byte = True
@@ -446,8 +462,19 @@ class PtyStreamPool:
         async with self._lock:
             reader = self._readers.get(pane_id)
             if reader and reader.is_alive:
-                self._consumers.setdefault(pane_id, set()).add(callback)
-                return True
+                if reader.is_stale():
+                    logger.warning(
+                        "PtyStreamReader for pane %s is zombie "
+                        "(alive but no data for %.0fs) — restarting",
+                        pane_id,
+                        ZOMBIE_TIMEOUT,
+                    )
+                    await reader.stop()
+                    del self._readers[pane_id]
+                    reader = None  # fall through to create new reader
+                else:
+                    self._consumers.setdefault(pane_id, set()).add(callback)
+                    return True
 
             # Need a new reader (first subscriber or previous reader died)
             if reader:
@@ -580,7 +607,11 @@ class PtyStreamPool:
             self._consumers.clear()
 
     def _cleanup_stale_fifos(self) -> None:
-        """Remove stale FIFOs from previous server crashes."""
+        """Remove stale FIFOs and regular files from previous server crashes.
+
+        Orphan ``cat`` processes can create regular files when the FIFO
+        doesn't exist yet, so we clean up both FIFOs and regular files.
+        """
         fifo_dir = Path(FIFO_DIR)
         if not fifo_dir.exists():
             return
@@ -588,8 +619,9 @@ class PtyStreamPool:
         for entry in fifo_dir.iterdir():
             if not entry.name.endswith(".fifo"):
                 continue
-            if stat.S_ISFIFO(entry.stat().st_mode):
-                # Only remove FIFOs not owned by our PID
+            mode = entry.stat().st_mode
+            if stat.S_ISFIFO(mode) or stat.S_ISREG(mode):
+                # Only remove entries not owned by our PID
                 # (format: <pane_id>_<pid>.fifo)
                 parts = entry.stem.rsplit("_", 1)
                 if len(parts) == 2:
@@ -601,6 +633,59 @@ class PtyStreamPool:
                         pass
                 try:
                     entry.unlink()
-                    logger.debug("Cleaned up stale FIFO: %s", entry)
+                    logger.debug("Cleaned up stale FIFO/file: %s", entry)
                 except OSError:
                     pass
+
+
+# ---------------------------------------------------------------------------
+# Orphan process cleanup
+# ---------------------------------------------------------------------------
+
+
+def cleanup_orphaned_pipe_pane_processes() -> int:
+    """Kill orphaned ``cat`` processes from previous pipe-pane sessions.
+
+    When the orchestrator server restarts without cleanly stopping its
+    pipe-pane ``cat > FIFO`` processes, the child process gets reparented
+    to PID 1 (launchd/init).  These zombies accumulate and can prevent
+    FIFOs from receiving EOF.
+
+    Returns the number of orphaned processes killed.
+    """
+    import subprocess
+
+    our_pid = os.getpid()
+    killed = 0
+    try:
+        result = subprocess.run(
+            ["ps", "-eo", "pid,ppid,command"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        for line in result.stdout.splitlines():
+            if "orchestrator_pty" not in line or "cat" not in line:
+                continue
+            parts = line.split(None, 2)
+            if len(parts) < 3:
+                continue
+            pid, ppid = int(parts[0]), int(parts[1])
+            if pid == our_pid:
+                continue
+            # Only kill processes whose parent is init (ppid=1) — orphaned
+            if ppid == 1:
+                try:
+                    os.kill(pid, 15)  # SIGTERM
+                    killed += 1
+                    logger.info(
+                        "Killed orphaned pipe-pane cat process pid=%d (ppid=1)",
+                        pid,
+                    )
+                except ProcessLookupError:
+                    pass
+    except Exception:
+        logger.exception("Failed to clean up orphaned pipe-pane processes")
+    if killed:
+        logger.info("Cleaned up %d orphaned pipe-pane cat process(es)", killed)
+    return killed

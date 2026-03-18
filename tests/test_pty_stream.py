@@ -18,9 +18,11 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from orchestrator.terminal.pty_stream import (
+    ZOMBIE_TIMEOUT,
     PtyStreamPool,
     PtyStreamReader,
     _parse_tmux_version,
+    cleanup_orphaned_pipe_pane_processes,
     get_tmux_version,
     reset_tmux_version_cache,
     set_tmux_version_cache,
@@ -297,6 +299,7 @@ class TestPtyStreamPool:
 
         mock_reader = AsyncMock(spec=PtyStreamReader)
         mock_reader.is_alive = True
+        mock_reader.is_stale = MagicMock(return_value=False)
         mock_reader.start = AsyncMock(return_value=True)
 
         cb1 = AsyncMock()
@@ -344,6 +347,7 @@ class TestPtyStreamPool:
 
         mock_reader = AsyncMock(spec=PtyStreamReader)
         mock_reader.is_alive = True
+        mock_reader.is_stale = MagicMock(return_value=False)
         mock_reader.start = AsyncMock(return_value=True)
         mock_reader.stop = AsyncMock()
 
@@ -968,3 +972,194 @@ class TestStreamRemotePtyCleanup:
 
         assert not any(m.get("type") == "pty_exit" for m in ws.sent_json)
         mock_update.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# Zombie detection: is_stale() and _last_data_time
+# ---------------------------------------------------------------------------
+
+
+class TestPtyStreamReaderStaleness:
+    """Tests for zombie/staleness detection in PtyStreamReader."""
+
+    async def test_last_data_time_updated_on_data(self):
+        """_last_data_time should update when _on_data is called."""
+        reader = PtyStreamReader("sess", "win", "%5")
+        reader._running = True
+        reader._callback = AsyncMock()
+        assert reader._last_data_time == 0.0
+
+        await reader._on_data(b"hello")
+
+        assert reader._last_data_time > 0.0
+
+    async def test_is_stale_false_when_data_recent(self):
+        """Reader with recent data should not be stale."""
+        reader = PtyStreamReader("sess", "win", "%5")
+        reader._running = True
+        reader._callback = AsyncMock()
+        reader._last_data_time = asyncio.get_running_loop().time()
+
+        assert not reader.is_stale()
+
+    async def test_is_stale_true_after_timeout(self):
+        """Reader with old _last_data_time should be stale."""
+        reader = PtyStreamReader("sess", "win", "%5")
+        reader._running = True
+        # Set _last_data_time far in the past
+        reader._last_data_time = asyncio.get_running_loop().time() - ZOMBIE_TIMEOUT - 1
+
+        assert reader.is_stale()
+
+    async def test_is_stale_false_when_not_running(self):
+        """Stopped reader should not be stale (avoid false positive)."""
+        reader = PtyStreamReader("sess", "win", "%5")
+        reader._running = False
+        reader._last_data_time = asyncio.get_running_loop().time() - ZOMBIE_TIMEOUT - 1
+
+        assert not reader.is_stale()
+
+    async def test_is_stale_false_before_first_data(self):
+        """_last_data_time == 0 means pre-start — not stale."""
+        reader = PtyStreamReader("sess", "win", "%5")
+        reader._running = True
+        reader._last_data_time = 0.0
+
+        assert not reader.is_stale()
+
+
+# ---------------------------------------------------------------------------
+# PtyStreamPool: zombie restart via subscribe()
+# ---------------------------------------------------------------------------
+
+
+class TestPtyStreamPoolZombieRestart:
+    """Tests for subscribe() restarting zombie (stale) readers."""
+
+    async def test_subscribe_restarts_zombie_reader(self, tmp_fifo_dir):
+        """subscribe() should stop a stale reader and create a new one."""
+        set_tmux_version_cache(3, 4)
+        pool = PtyStreamPool()
+
+        # Set up a "zombie" reader — alive but stale
+        old_reader = AsyncMock(spec=PtyStreamReader)
+        old_reader.is_alive = True
+        old_reader.is_stale = MagicMock(return_value=True)
+        old_reader.stop = AsyncMock()
+        pool._readers["%5"] = old_reader
+
+        new_reader = AsyncMock(spec=PtyStreamReader)
+        new_reader.is_alive = True
+        new_reader.is_stale = MagicMock(return_value=False)
+        new_reader.start = AsyncMock(return_value=True)
+
+        callback = AsyncMock()
+
+        with patch(
+            "orchestrator.terminal.pty_stream.PtyStreamReader",
+            return_value=new_reader,
+        ):
+            result = await pool.subscribe("%5", "sess", "win", callback)
+
+        assert result is True
+        old_reader.stop.assert_awaited_once()
+        new_reader.start.assert_awaited_once()
+        assert pool._readers["%5"] is new_reader
+        assert callback in pool._consumers["%5"]
+
+    async def test_subscribe_keeps_healthy_reader(self, tmp_fifo_dir):
+        """subscribe() should reuse a non-stale alive reader."""
+        set_tmux_version_cache(3, 4)
+        pool = PtyStreamPool()
+
+        reader = AsyncMock(spec=PtyStreamReader)
+        reader.is_alive = True
+        reader.is_stale = MagicMock(return_value=False)
+        pool._readers["%5"] = reader
+
+        callback = AsyncMock()
+        result = await pool.subscribe("%5", "sess", "win", callback)
+
+        assert result is True
+        # Should NOT stop or restart the reader
+        reader.stop.assert_not_awaited()
+        assert pool._readers["%5"] is reader
+        assert callback in pool._consumers["%5"]
+
+
+# ---------------------------------------------------------------------------
+# Stale FIFO cleanup: regular files
+# ---------------------------------------------------------------------------
+
+
+class TestCleanupStaleFifosRegularFiles:
+    """Test that _cleanup_stale_fifos also removes regular .fifo files."""
+
+    def test_cleanup_stale_fifos_removes_regular_files(self, tmp_fifo_dir):
+        """Regular .fifo files (created by orphan cat) should be cleaned up."""
+        fifo_dir = Path(tmp_fifo_dir)
+        fifo_dir.mkdir(parents=True, exist_ok=True)
+
+        # Create a regular file with .fifo extension (orphan cat artifact)
+        regular_file = fifo_dir / "5_99999.fifo"
+        regular_file.write_bytes(b"stale data")
+        assert regular_file.exists()
+
+        # Create one with our PID (should NOT be removed)
+        our_file = fifo_dir / f"6_{os.getpid()}.fifo"
+        our_file.write_bytes(b"our data")
+
+        PtyStreamPool()
+
+        assert not regular_file.exists()
+        assert our_file.exists()
+
+        # Cleanup
+        our_file.unlink()
+
+
+# ---------------------------------------------------------------------------
+# Orphan process cleanup
+# ---------------------------------------------------------------------------
+
+
+class TestCleanupOrphanedPipePaneProcesses:
+    """Test cleanup_orphaned_pipe_pane_processes()."""
+
+    def test_kills_orphaned_cat_processes(self):
+        """Should SIGTERM orphaned cat processes with orchestrator_pty in command."""
+        ps_output = (
+            "  PID  PPID COMMAND\n"
+            "  100     1 sh -c exec cat > /tmp/orchestrator_pty/5_9999.fifo\n"
+            "  200   500 sh -c exec cat > /tmp/orchestrator_pty/6_9999.fifo\n"
+            "  300     1 vim somefile\n"
+        )
+        mock_result = MagicMock()
+        mock_result.stdout = ps_output
+
+        with (
+            patch("subprocess.run", return_value=mock_result),
+            patch("os.kill") as mock_kill,
+        ):
+            killed = cleanup_orphaned_pipe_pane_processes()
+
+        assert killed == 1
+        # Only pid=100 should be killed (ppid=1 + matches orchestrator_pty + cat)
+        mock_kill.assert_called_once_with(100, 15)
+
+    def test_does_not_kill_parented_processes(self):
+        """Processes with a real parent (ppid != 1) should not be killed."""
+        ps_output = (
+            "  PID  PPID COMMAND\n  200   500 sh -c exec cat > /tmp/orchestrator_pty/6_9999.fifo\n"
+        )
+        mock_result = MagicMock()
+        mock_result.stdout = ps_output
+
+        with (
+            patch("subprocess.run", return_value=mock_result),
+            patch("os.kill") as mock_kill,
+        ):
+            killed = cleanup_orphaned_pipe_pane_processes()
+
+        assert killed == 0
+        mock_kill.assert_not_called()
