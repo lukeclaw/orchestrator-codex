@@ -45,6 +45,8 @@ a = Analysis(
         ("config.yaml", "."),
         # SQL migrations (needed at runtime)
         *migration_files,
+        # Daemon script read as raw text (not imported), so PyInstaller won't auto-detect it
+        ("orchestrator/terminal/_rws_daemon.py", "orchestrator/terminal"),
     ],
     hiddenimports=[
         # Uvicorn internals
