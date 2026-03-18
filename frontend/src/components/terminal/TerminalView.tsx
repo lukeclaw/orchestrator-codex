@@ -195,6 +195,7 @@ export default function TerminalView({ sessionId, wsPath, sendPath, sessionStatu
     }
 
     ws.onclose = (event) => {
+      console.debug(`[Terminal] ws.onclose code=${event.code} reason=${event.reason} attempt=${reconnectAttemptRef.current}`)
       scrollDisposable.dispose()
       if (writeRafId !== null) { cancelAnimationFrame(writeRafId); writeRafId = null }
       pendingWrites.length = 0

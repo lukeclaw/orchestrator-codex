@@ -650,7 +650,12 @@ async def stream_remote_pty(
     for other reasons (tunnel death, idle timeout, WS disconnect).
     """
 
+    import base64
+
     from orchestrator.terminal.remote_worker_server import get_remote_worker_server
+
+    logger.info("stream_remote_pty: enter session=%s pty=%s host=%s", session_id, pty_id, rws_host)
+    t0 = time.monotonic()
 
     # Wait for RWS daemon connection (may need to establish SSH forward tunnel)
     rws = None
@@ -662,12 +667,13 @@ async def stream_remote_pty(
             if attempt < 14:
                 await asyncio.sleep(2)
     if rws is None:
+        logger.warning("stream_remote_pty: RWS not available for %s", rws_host)
         await websocket.send_json({"type": "error", "message": f"RWS not available for {rws_host}"})
         await websocket.close(code=4004)
         return False
 
     try:
-        stream_sock, initial_data = rws.connect_pty_stream(pty_id)
+        stream_sock, initial_data = rws.connect_pty_stream(pty_id, skip_ringbuffer=True)
     except RuntimeError as e:
         err_msg = str(e)
         pty_gone = "PTY not found" in err_msg
@@ -693,13 +699,41 @@ async def stream_remote_pty(
         await websocket.close(code=4004)
         return False
 
-    # Send any initial data (ringbuffer history replay)
+    # Send history as raw bytes to preserve ANSI colors/styles.
+    # When skip_ringbuffer is honoured (new daemon), initial_data is empty
+    # and we fetch raw bytes via the reliable command socket instead.
+    # Old daemons ignore the flag and send the ringbuffer on the stream socket.
     if initial_data:
+        # Old daemon didn't honour skip_ringbuffer — send raw bytes (fallback)
+        logger.info(
+            "stream_remote_pty: old daemon fallback, initial_data=%d bytes",
+            len(initial_data),
+        )
         try:
             await websocket.send_bytes(initial_data)
         except Exception:
             stream_sock.close()
             return False
+    else:
+        # New daemon: fetch raw ringbuffer via command socket (reliable,
+        # blocking TCP — no busy-loop risk) and send as binary frame.
+        # Prefixed with clear-screen + cursor-home so xterm.js starts clean.
+        try:
+            resp = rws.execute({"action": "pty_capture", "pty_id": pty_id}, timeout=5)
+            raw_b64 = resp.get("raw")
+            if raw_b64:
+                raw_bytes = base64.b64decode(raw_b64)
+                # Clear screen, then replay raw bytes (preserves colors/SGR)
+                await websocket.send_bytes(b"\x1b[2J\x1b[H" + raw_bytes)
+                logger.info(
+                    "stream_remote_pty: sent raw history via cmd socket (%d bytes)",
+                    len(raw_bytes),
+                )
+        except Exception:
+            logger.debug(
+                "stream_remote_pty: history fetch failed, continuing without",
+                exc_info=True,
+            )
 
     # --- Background task: read from PTY stream → send to WebSocket --------
     stream_buffer = bytearray()
@@ -741,10 +775,12 @@ async def stream_remote_pty(
         """Batch stream bytes and send as binary WebSocket frames."""
         while not stream_closed.is_set():
             await flush_event.wait()
-            # Adaptive batch: 1ms for small buffers, 8ms for bursts
-            await asyncio.sleep(0.001)
+            # Adaptive batch: 3ms base (coalesces SSH-fragmented escape
+            # sequences), 16ms total for large bursts.  Remote PTY already
+            # has 5-50ms SSH tunnel latency so this adds negligible overhead.
+            await asyncio.sleep(0.003)
             if len(stream_buffer) > 512:
-                await asyncio.sleep(0.007)
+                await asyncio.sleep(0.013)
             flush_event.clear()
             if stream_buffer:
                 data = bytes(stream_buffer)
@@ -887,6 +923,15 @@ async def stream_remote_pty(
         if session_id:
             clear_user_activity(session_id)
 
+        elapsed = time.monotonic() - t0
+        exit_reason = "pty_exited" if pty_exited else "stream_closed"
+        logger.info(
+            "stream_remote_pty: exit session=%s pty=%s reason=%s duration=%.1fs",
+            session_id,
+            pty_id,
+            exit_reason,
+            elapsed,
+        )
         return pty_exited
 
 

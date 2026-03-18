@@ -2,6 +2,7 @@
 
 import pytest
 
+from orchestrator.terminal._rws_pty_renderer import render_pty_screen
 from orchestrator.terminal.remote_worker_server import _render_pty_to_text
 
 
@@ -104,6 +105,74 @@ class TestRenderPtyToText:
         raw = b"\x1b[38;5;123mColored\x1b[0m text"
         result = _render_pty_to_text(raw, cols=80, rows=24, last_n=0)
         assert result.strip() == "Colored text"
+
+
+class TestRenderPtyScreen:
+    """Test the VT screen renderer with scrollback support."""
+
+    def test_plain_text(self):
+        content, cx, cy = render_pty_screen(b"Hello World", cols=80, rows=24)
+        assert "Hello World" in content
+        assert cx == 11
+        assert cy == 0
+
+    def test_cursor_position(self):
+        content, cx, cy = render_pty_screen(b"Hello\r\nWorld", cols=80, rows=24)
+        lines = content.split("\n")
+        assert lines[0] == "Hello"
+        assert lines[1] == "World"
+        assert cx == 5
+        assert cy == 1
+
+    def test_scrollback_captured(self):
+        """Lines scrolled off the top are captured in scrollback."""
+        raw = b"Line1\r\nLine2\r\nLine3\r\nLine4"
+        content, cx, cy = render_pty_screen(raw, cols=80, rows=3)
+        lines = content.split("\n")
+        # Line1 scrolled into scrollback; Line2-4 on screen
+        assert lines[0] == "Line1"
+        assert lines[1] == "Line2"
+        assert lines[2] == "Line3"
+        assert lines[3] == "Line4"
+
+    def test_scrollback_limit(self):
+        """Scrollback is capped at scrollback_limit."""
+        raw = b""
+        for i in range(20):
+            raw += f"Line{i}\r\n".encode()
+        content, _, _ = render_pty_screen(raw, cols=80, rows=3, scrollback_limit=5)
+        lines = content.split("\n")
+        # 5 scrollback + up to 3 visible screen lines
+        assert len(lines) <= 8
+
+    def test_erase_display_clears_screen(self):
+        raw = b"Old text\x1b[2J\x1b[1;1HNew text"
+        content, _, _ = render_pty_screen(raw, cols=80, rows=24)
+        assert "Old text" not in content
+        assert "New text" in content
+
+    def test_empty_input(self):
+        content, cx, cy = render_pty_screen(b"", cols=80, rows=24)
+        assert content == ""
+        assert cx == 0
+        assert cy == 0
+
+    def test_sgr_stripped(self):
+        raw = b"\x1b[1mBold\x1b[0m Normal"
+        content, _, _ = render_pty_screen(raw, cols=80, rows=24)
+        assert "Bold Normal" in content
+
+    def test_osc_skipped(self):
+        raw = b"\x1b]0;Title\x07Hello"
+        content, _, _ = render_pty_screen(raw, cols=80, rows=24)
+        assert "Hello" in content
+        assert "Title" not in content
+
+    def test_carriage_return_overwrites(self):
+        raw = b"XXXXX\rHello"
+        content, _, _ = render_pty_screen(raw, cols=80, rows=24)
+        assert "Hello" in content
+        assert "XXXXX" not in content
 
 
 if __name__ == "__main__":

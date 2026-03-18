@@ -413,13 +413,16 @@ class RemoteWorkerServer:
             raise RuntimeError(f"PTY create failed on {self.host}: {resp['error']}")
         return resp["pty_id"]
 
-    def connect_pty_stream(self, pty_id: str, timeout: float = 10.0) -> tuple[socket.socket, bytes]:
+    def connect_pty_stream(
+        self, pty_id: str, timeout: float = 10.0, skip_ringbuffer: bool = False
+    ) -> tuple[socket.socket, bytes]:
         """Open a dedicated TCP connection for PTY streaming.
 
         Returns ``(sock, initial_data)`` where:
           - *sock* receives raw PTY output bytes (server→client) and accepts
             JSON-line input/resize commands (client→server), in non-blocking mode.
           - *initial_data* contains ringbuffer history bytes replayed on attach.
+            Empty when *skip_ringbuffer* is True and the daemon supports it.
         """
         assert self._local_port is not None
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -427,7 +430,10 @@ class RemoteWorkerServer:
         sock.connect(("127.0.0.1", self._local_port))
 
         # Send PTY stream handshake
-        handshake = json.dumps({"type": "pty_stream", "pty_id": pty_id}).encode() + b"\n"
+        hs: dict[str, Any] = {"type": "pty_stream", "pty_id": pty_id}
+        if skip_ringbuffer:
+            hs["skip_ringbuffer"] = True
+        handshake = json.dumps(hs).encode() + b"\n"
         sock.sendall(handshake)
 
         # Read handshake ack (first line)

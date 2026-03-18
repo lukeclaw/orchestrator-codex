@@ -3,6 +3,134 @@
 from __future__ import annotations
 
 
+def render_pty_screen(
+    raw: bytes, cols: int = 80, rows: int = 24, scrollback_limit: int = 1000
+) -> tuple[str, int, int]:
+    """Render raw PTY bytes into display text with scrollback.
+
+    Returns ``(content, cursor_x, cursor_y)`` where *content* contains
+    scrollback lines followed by visible screen lines (``\\n``-joined),
+    and cursor coordinates are 0-based within the visible screen.
+    """
+    screen: list[list[str]] = [[" "] * cols for _ in range(rows)]
+    scrollback: list[str] = []
+    cr, cc = 0, 0  # cursor row, col
+
+    def _scroll_up() -> None:
+        line = "".join(screen.pop(0)).rstrip()
+        if len(scrollback) < scrollback_limit:
+            scrollback.append(line)
+        else:
+            scrollback.pop(0)
+            scrollback.append(line)
+        screen.append([" "] * cols)
+
+    data = raw.decode("utf-8", errors="replace")
+    i = 0
+    n = len(data)
+    while i < n:
+        c = data[i]
+        if c == "\x1b" and i + 1 < n:
+            nc = data[i + 1]
+            if nc == "[":
+                j = i + 2
+                while j < n and data[j] in "0123456789;?>=":
+                    j += 1
+                if j >= n:
+                    break
+                params = data[i + 2 : j]
+                cmd = data[j]
+                i = j + 1
+                parts = params.replace("?", "").split(";") if params else []
+                p1 = int(parts[0]) if parts and parts[0].isdigit() else 0
+                p2 = int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else 0
+                if cmd in ("H", "f"):
+                    cr = max(0, min(rows - 1, (p1 or 1) - 1))
+                    cc = max(0, min(cols - 1, (p2 or 1) - 1))
+                elif cmd == "A":
+                    cr = max(0, cr - max(1, p1))
+                elif cmd == "B":
+                    cr = min(rows - 1, cr + max(1, p1))
+                elif cmd == "C":
+                    cc = min(cols - 1, cc + max(1, p1))
+                elif cmd == "D":
+                    cc = max(0, cc - max(1, p1))
+                elif cmd == "G":
+                    cc = max(0, min(cols - 1, (p1 or 1) - 1))
+                elif cmd == "J":
+                    if p1 == 2 or p1 == 3:
+                        screen[:] = [[" "] * cols for _ in range(rows)]
+                        cr = cc = 0
+                    elif p1 == 0:
+                        screen[cr][cc:] = [" "] * (cols - cc)
+                        for r in range(cr + 1, rows):
+                            screen[r] = [" "] * cols
+                    elif p1 == 1:
+                        for r in range(cr):
+                            screen[r] = [" "] * cols
+                        screen[cr][: cc + 1] = [" "] * (cc + 1)
+                elif cmd == "K":
+                    if p1 == 0:
+                        screen[cr][cc:] = [" "] * (cols - cc)
+                    elif p1 == 1:
+                        screen[cr][: cc + 1] = [" "] * (cc + 1)
+                    elif p1 == 2:
+                        screen[cr] = [" "] * cols
+                continue
+            elif nc == "]":
+                j = i + 2
+                while j < n:
+                    if data[j] == "\x07":
+                        j += 1
+                        break
+                    if data[j] == "\x1b" and j + 1 < n and data[j + 1] == "\\":
+                        j += 2
+                        break
+                    j += 1
+                i = j
+                continue
+            else:
+                i += 2
+                continue
+        elif c == "\n":
+            cr += 1
+            if cr >= rows:
+                _scroll_up()
+                cr = rows - 1
+            i += 1
+        elif c == "\r":
+            cc = 0
+            i += 1
+        elif c == "\t":
+            cc = min(cols - 1, (cc // 8 + 1) * 8)
+            i += 1
+        elif c == "\x08":
+            cc = max(0, cc - 1)
+            i += 1
+        elif c >= " " and c != "\x7f":
+            if cr < rows and cc < cols:
+                screen[cr][cc] = c
+                cc += 1
+                if cc >= cols:
+                    cc = cols - 1
+            i += 1
+        else:
+            i += 1
+
+    # Build output: scrollback + visible screen
+    screen_lines = ["".join(r).rstrip() for r in screen]
+    # Trim trailing blank lines from screen
+    while screen_lines and not screen_lines[-1]:
+        screen_lines.pop()
+    # Trim trailing blank scrollback lines
+    while scrollback and not scrollback[-1]:
+        scrollback.pop()
+
+    all_lines = scrollback + screen_lines
+    content = "\n".join(all_lines)
+    return content, cc, cr
+
+
 def _render_pty_to_text(raw: bytes, cols: int = 200, rows: int = 50, last_n: int = 30) -> str:
     """Render raw PTY bytes into display text using a minimal VT emulator.
 

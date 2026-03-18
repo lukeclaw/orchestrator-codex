@@ -1067,10 +1067,16 @@ def handle_pending_data(fileno):
             remove_pty_stream(fileno)
             return
 
-        # Send ringbuffer (history replay)
-        if session.ringbuffer:
+        # Send ringbuffer (history replay) unless client opted out
+        skip_rb = handshake.get("skip_ringbuffer", False)
+        if session.ringbuffer and not skip_rb:
             try:
+                # Temporarily set blocking with timeout to prevent busy-loop
+                # on large ringbuffers (sendall on non-blocking socket can spin)
+                conn.setblocking(True)
+                conn.settimeout(30.0)
                 conn.sendall(bytes(session.ringbuffer))
+                conn.setblocking(False)
             except OSError:
                 remove_pty_stream(fileno)
     else:
