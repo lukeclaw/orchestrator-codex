@@ -24,6 +24,8 @@ When a Python module is refactored to load a file via filesystem read (`open()`,
 
 **When extracting code into a file that is read at runtime (not imported), always add it to `datas` in `orchestrator.spec` in the same commit.** Treat the spec file as part of any refactor that changes how files are loaded.
 
+**Automated guard**: `tests/unit/test_pyinstaller_spec.py` scans the codebase for `Path(__file__).parent / "..."` + `.read_text()` patterns and asserts each referenced file has a matching `datas` entry. This test will fail if a future refactor introduces a new runtime-read file without updating the spec.
+
 Candidate patterns to watch for:
 - `Path(...).read_text()` or `open(...)` loading `.py`, `.sql`, `.yaml`, `.json` files
 - `subprocess.run([sys.executable, script_path, ...])` launching a script by path
