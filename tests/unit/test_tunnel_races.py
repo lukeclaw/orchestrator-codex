@@ -129,9 +129,12 @@ class TestRace1ConcurrentRestartFromMonitorAndReconnect:
         # Final PID must be one of the PIDs that was created
         assert final_pid in (results["monitor"], results["reconnect"])
 
+    @patch.object(ReverseTunnelManager, "_kill_orphan_tunnels")
     @patch("subprocess.Popen")
     @patch("orchestrator.session.tunnel.time.sleep")
-    def test_concurrent_restart_last_writer_wins_in_dict(self, mock_sleep, mock_popen):
+    def test_concurrent_restart_last_writer_wins_in_dict(
+        self, mock_sleep, mock_popen, mock_kill_orphans
+    ):
         """Demonstrate that the _tunnels dict ends up with the last writer's entry.
 
         This is the expected behavior with the current lock-per-operation design:
@@ -472,9 +475,12 @@ class TestRace4IsAliveBeforeConnectivityCheck:
 class TestRace5TwoConcurrentRestartsSameSession:
     """Two concurrent restart_tunnel calls for the same session."""
 
+    @patch.object(ReverseTunnelManager, "_kill_orphan_tunnels")
     @patch("subprocess.Popen")
     @patch("orchestrator.session.tunnel.time.sleep")
-    def test_second_restart_kills_first_restart_process(self, mock_sleep, mock_popen):
+    def test_second_restart_kills_first_restart_process(
+        self, mock_sleep, mock_popen, mock_kill_orphans
+    ):
         """Demonstrate that start_tunnel's internal stop_tunnel kills the other thread's process."""
         mgr = _make_manager()
 

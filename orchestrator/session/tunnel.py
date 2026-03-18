@@ -552,6 +552,13 @@ class ReverseTunnelManager:
         # failure tracking — that only resets on success or explicit stop).
         self._stop_tunnel_internal(session_id)
 
+        # Kill untracked orphan SSH tunnels for this host.  Orphans can
+        # survive server restarts (start_new_session=True) and hold the
+        # remote port, blocking new tunnels.  Only on the first attempt
+        # (not retry) to avoid redundant ps scans.
+        if not _is_retry:
+            self._kill_orphan_tunnels(host)
+
         log_path = os.path.join(self.log_dir, f"{session_name}.log")
         try:
             log_file = open(log_path, "a")

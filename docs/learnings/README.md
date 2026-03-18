@@ -19,6 +19,7 @@ Lessons learned during development -- mistakes made (often by Claude Code), root
 | 11 | [011-daemon-path-non-interactive-ssh.md](011-daemon-path-non-interactive-ssh.md) | Daemon PATH in non-interactive SSH | Never assume binaries are on PATH in daemon launched via SSH |
 | 12 | [012-pyinstaller-text-read-files.md](012-pyinstaller-text-read-files.md) | PyInstaller misses text-read files | Files loaded via `read_text()`/`open()` must be added to `datas` in the spec |
 | 13 | [013-nonblocking-sendall-and-rendering-strips-colors.md](013-nonblocking-sendall-and-rendering-strips-colors.md) | Non-blocking sendall & rendering strips colors | Never `sendall()` on non-blocking sockets; VT renderers strip colors — send raw bytes for display |
+| 14 | [014-recover-tunnels-must-include-disconnected.md](014-recover-tunnels-must-include-disconnected.md) | recover_tunnels must include disconnected workers | Never skip tunnel recovery based on DB status; orphaned SSH processes block port 8093 permanently |
 
 ## Origin
 
