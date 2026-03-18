@@ -1092,13 +1092,158 @@ class TestTunnelSSHOpts:
             mock_proc.poll.return_value = None
             mock_popen.return_value = mock_proc
 
-            with patch("orchestrator.terminal._rws_client.time.sleep"):
-                with patch("orchestrator.terminal._rws_client.socket.socket"):
-                    rws._start_tunnel()
+            with (
+                patch(
+                    "orchestrator.terminal._rws_client.socket.socket",
+                ),
+                patch.object(rws, "_is_tunnel_port_open", return_value=True),
+            ):
+                rws._start_tunnel()
 
             cmd = mock_popen.call_args[0][0]
             # The command should contain ControlMaster=no (from _TUNNEL_SSH_OPTS)
             assert "ControlMaster=no" in cmd
+
+    def test_start_retries_tunnel_on_failure(self):
+        """start() retries tunnel+socket when first attempt fails."""
+        rws = RemoteWorkerServer("test-host")
+        attempt_count = 0
+
+        def mock_start_tunnel():
+            nonlocal attempt_count
+            attempt_count += 1
+            if attempt_count == 1:
+                raise RuntimeError("tunnel failed")
+
+        with (
+            patch.object(rws, "_deploy_daemon"),
+            patch.object(rws, "_start_tunnel", side_effect=mock_start_tunnel),
+            patch.object(rws, "_connect_command_socket"),
+            patch.object(rws, "_cleanup_tunnel"),
+            patch("orchestrator.terminal._rws_client.time.sleep"),
+        ):
+            rws.start()
+
+        assert attempt_count == 2
+
+    def test_start_cleans_up_tunnel_between_retries(self):
+        """start() calls _cleanup_tunnel between retry attempts."""
+        rws = RemoteWorkerServer("test-host")
+        cleanup_calls = 0
+
+        def mock_cleanup():
+            nonlocal cleanup_calls
+            cleanup_calls += 1
+
+        attempt = 0
+
+        def mock_start_tunnel():
+            nonlocal attempt
+            attempt += 1
+            if attempt <= 2:
+                raise RuntimeError("tunnel failed")
+
+        with (
+            patch.object(rws, "_deploy_daemon"),
+            patch.object(rws, "_start_tunnel", side_effect=mock_start_tunnel),
+            patch.object(rws, "_connect_command_socket"),
+            patch.object(rws, "_cleanup_tunnel", side_effect=mock_cleanup),
+            patch("orchestrator.terminal._rws_client.time.sleep"),
+        ):
+            rws.start()
+
+        assert cleanup_calls == 2  # cleaned up after attempt 1 and 2
+
+    def test_start_raises_after_all_tunnel_attempts(self):
+        """start() raises after all 3 tunnel attempts fail."""
+        rws = RemoteWorkerServer("test-host")
+
+        with (
+            patch.object(rws, "_deploy_daemon"),
+            patch.object(rws, "_start_tunnel", side_effect=RuntimeError("tunnel failed")),
+            patch.object(rws, "_cleanup_tunnel"),
+            patch("orchestrator.terminal._rws_client.time.sleep"),
+        ):
+            with pytest.raises(RuntimeError, match="All 3 tunnel attempts"):
+                rws.start()
+
+    def test_start_deploys_daemon_only_once(self):
+        """_deploy_daemon is called once even when tunnel retries happen."""
+        rws = RemoteWorkerServer("test-host")
+        deploy_count = 0
+
+        def mock_deploy(timeout):
+            nonlocal deploy_count
+            deploy_count += 1
+
+        attempt = 0
+
+        def mock_start_tunnel():
+            nonlocal attempt
+            attempt += 1
+            if attempt == 1:
+                raise RuntimeError("tunnel failed")
+
+        with (
+            patch.object(rws, "_deploy_daemon", side_effect=mock_deploy),
+            patch.object(rws, "_start_tunnel", side_effect=mock_start_tunnel),
+            patch.object(rws, "_connect_command_socket"),
+            patch.object(rws, "_cleanup_tunnel"),
+            patch("orchestrator.terminal._rws_client.time.sleep"),
+        ):
+            rws.start()
+
+        assert deploy_count == 1
+
+    def test_tunnel_waits_for_port_open(self):
+        """_start_tunnel polls until port becomes open."""
+        rws = RemoteWorkerServer("test-host")
+        rws._local_port = 12345
+
+        call_count = 0
+
+        def port_open_after_3_calls(timeout=2.0):
+            nonlocal call_count
+            call_count += 1
+            return call_count >= 3
+
+        with (
+            patch("orchestrator.terminal._rws_client.subprocess.Popen") as mock_popen,
+            patch("orchestrator.terminal._rws_client.socket.socket"),
+            patch.object(rws, "_is_tunnel_port_open", side_effect=port_open_after_3_calls),
+            patch("orchestrator.terminal._rws_client.time.sleep"),
+            patch("orchestrator.terminal._rws_client.time.monotonic") as mock_time,
+        ):
+            mock_proc = MagicMock()
+            mock_proc.poll.return_value = None
+            mock_popen.return_value = mock_proc
+            # Simulate time passing but staying within deadline
+            mock_time.side_effect = [0.0, 1.0, 2.0, 3.0, 4.0]
+
+            rws._start_tunnel()
+
+        assert call_count == 3  # polled 3 times before succeeding
+
+    def test_tunnel_times_out_when_never_ready(self):
+        """_start_tunnel raises when port never opens within deadline."""
+        rws = RemoteWorkerServer("test-host")
+        rws._local_port = 12345
+
+        with (
+            patch("orchestrator.terminal._rws_client.subprocess.Popen") as mock_popen,
+            patch("orchestrator.terminal._rws_client.socket.socket"),
+            patch.object(rws, "_is_tunnel_port_open", return_value=False),
+            patch("orchestrator.terminal._rws_client.time.sleep"),
+            patch("orchestrator.terminal._rws_client.time.monotonic") as mock_time,
+        ):
+            mock_proc = MagicMock()
+            mock_proc.poll.return_value = None
+            mock_popen.return_value = mock_proc
+            # Simulate time jumping past deadline immediately
+            mock_time.side_effect = [0.0, 16.0]
+
+            with pytest.raises(RuntimeError, match="timed out"):
+                rws._start_tunnel()
 
 
 class TestTunnelPortProbe:

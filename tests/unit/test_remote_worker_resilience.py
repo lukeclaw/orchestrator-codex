@@ -826,3 +826,99 @@ class TestAutoReconnectFromDb:
         # Auto-reconnect should still have fired using DB query
         mock_trigger.assert_called_once()
         assert "w1" in result["auto_reconnected"]
+
+
+# ===========================================================================
+# Tunnel Retry Escalation Diagnostics
+# ===========================================================================
+
+
+@pytest.mark.allow_threading
+class TestEscalationDiagnostics:
+    """Verify _start_in_background runs daemon diagnostics after both attempts fail."""
+
+    @pytest.fixture(autouse=True)
+    def _reset_pool(self):
+        """Reset the global pool state for escalation tests."""
+        from orchestrator.terminal._rws_pool import (
+            _last_start_fail,
+            _server_pool,
+            _starting,
+        )
+
+        _server_pool.clear()
+        _starting.clear()
+        _last_start_fail.clear()
+        yield
+        _server_pool.clear()
+        _starting.clear()
+        _last_start_fail.clear()
+
+    def test_escalation_diagnoses_daemon_alive(self):
+        """When both starts fail but daemon is alive, log mentions 'daemon alive'."""
+        from orchestrator.terminal._rws_pool import (
+            _starting,
+            get_remote_worker_server,
+        )
+
+        with (
+            patch("orchestrator.terminal._rws_pool.RemoteWorkerServer") as mock_cls,
+            patch("orchestrator.terminal._rws_pool.logger") as mock_logger,
+        ):
+            # Both start() calls fail
+            instance = MagicMock()
+            instance.start.side_effect = RuntimeError("tunnel failed")
+            instance.stop.return_value = None
+            # Diagnostic: daemon is alive
+            instance._test_daemon_via_ssh.return_value = True
+            mock_cls.return_value = instance
+
+            with pytest.raises(RuntimeError, match="Connecting"):
+                get_remote_worker_server("diag-host")
+
+            # Wait for background thread to finish
+            thread = _starting.get("diag-host")
+            if thread:
+                thread.join(timeout=10)
+
+            # Check that the daemon-alive warning was logged
+            warning_calls = [
+                call for call in mock_logger.warning.call_args_list if "daemon alive" in str(call)
+            ]
+            assert len(warning_calls) >= 1, (
+                f"Expected 'daemon alive' warning, got: "
+                f"{[str(c) for c in mock_logger.warning.call_args_list]}"
+            )
+
+    def test_escalation_diagnoses_daemon_dead(self):
+        """When both starts fail and daemon is also unreachable, log mentions 'unreachable'."""
+        from orchestrator.terminal._rws_pool import (
+            _starting,
+            get_remote_worker_server,
+        )
+
+        with (
+            patch("orchestrator.terminal._rws_pool.RemoteWorkerServer") as mock_cls,
+            patch("orchestrator.terminal._rws_pool.logger") as mock_logger,
+        ):
+            instance = MagicMock()
+            instance.start.side_effect = RuntimeError("tunnel failed")
+            instance.stop.return_value = None
+            # Diagnostic: daemon is also dead
+            instance._test_daemon_via_ssh.return_value = False
+            mock_cls.return_value = instance
+
+            with pytest.raises(RuntimeError, match="Connecting"):
+                get_remote_worker_server("diag-host2")
+
+            thread = _starting.get("diag-host2")
+            if thread:
+                thread.join(timeout=10)
+
+            warning_calls = [
+                call for call in mock_logger.warning.call_args_list if "unreachable" in str(call)
+            ]
+            assert len(warning_calls) >= 1, (
+                f"Expected 'unreachable' warning, got: "
+                f"{[str(c) for c in mock_logger.warning.call_args_list]}"
+            )

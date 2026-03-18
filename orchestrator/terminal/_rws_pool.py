@@ -161,6 +161,24 @@ def get_remote_worker_server(host: str) -> RemoteWorkerServer:
                         host,
                         exc_info=True,
                     )
+                    # Escalation: diagnose daemon vs tunnel failure
+                    try:
+                        diag_rws = RemoteWorkerServer(host)
+                        daemon_ok = diag_rws._test_daemon_via_ssh(timeout=5.0)
+                    except Exception:
+                        daemon_ok = False
+                    if daemon_ok:
+                        logger.warning(
+                            "RWS %s: daemon alive (direct SSH test) but tunnel "
+                            "repeatedly fails. Check sshd MaxSessions/MaxStartups "
+                            "on remote host.",
+                            host,
+                        )
+                    else:
+                        logger.warning(
+                            "RWS %s: daemon also unreachable via direct SSH test",
+                            host,
+                        )
             finally:
                 with _pool_lock:
                     _starting.pop(host, None)

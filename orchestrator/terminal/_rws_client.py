@@ -83,11 +83,30 @@ class RemoteWorkerServer:
         # Step 1: Deploy daemon on remote host
         self._deploy_daemon(timeout)
 
-        # Step 2: Establish SSH forward tunnel
-        self._start_tunnel()
-
-        # Step 3: Connect command socket and verify
-        self._connect_command_socket(timeout)
+        # Step 2+3: Tunnel + socket with retry (daemon deploy is NOT repeated)
+        max_tunnel_attempts = 3
+        last_err: Exception | None = None
+        for attempt in range(max_tunnel_attempts):
+            try:
+                self._start_tunnel()
+                self._connect_command_socket(timeout)
+                break
+            except RuntimeError as e:
+                last_err = e
+                self._cleanup_tunnel()
+                if attempt < max_tunnel_attempts - 1:
+                    logger.warning(
+                        "Tunnel attempt %d/%d for %s failed: %s",
+                        attempt + 1,
+                        max_tunnel_attempts,
+                        self.host,
+                        e,
+                    )
+                    time.sleep(1.0)
+                else:
+                    raise RuntimeError(
+                        f"All {max_tunnel_attempts} tunnel attempts to {self.host} failed"
+                    ) from last_err
 
         logger.info(
             "Remote worker server started on %s (pid=%s, local_port=%s)",
@@ -169,21 +188,33 @@ class RemoteWorkerServer:
             start_new_session=True,
         )
 
-        # Wait briefly for tunnel to establish
-        time.sleep(0.5)
-
-        if self._tunnel_proc.poll() is not None:
-            # Process exited — check if port is still forwarded (e.g. via ControlMaster)
-            if not self._is_tunnel_port_open(timeout=2.0):
+        # Wait for tunnel to actually forward traffic (replaces naive sleep).
+        # On slow-auth hosts the SSH handshake can take 5-10s even though
+        # the process is alive — polling the local port confirms end-to-end.
+        deadline = time.monotonic() + 15.0
+        ready = False
+        while time.monotonic() < deadline:
+            if self._tunnel_proc.poll() is not None:
+                # Process exited — port may still work via ControlMaster
+                if self._is_tunnel_port_open(timeout=1.0):
+                    logger.warning(
+                        "Tunnel process exited but port %d open (ControlMaster), continuing",
+                        self._local_port,
+                    )
+                    ready = True
+                    break
                 stderr = (
                     self._tunnel_proc.stderr.read().decode() if self._tunnel_proc.stderr else ""
                 )
-                raise RuntimeError(
-                    f"SSH forward tunnel to {self.host} failed immediately: {stderr}"
-                )
-            logger.warning(
-                "Tunnel process exited but port %d is open (ControlMaster), continuing",
-                self._local_port,
+                raise RuntimeError(f"SSH forward tunnel to {self.host} failed: {stderr}")
+            if self._is_tunnel_port_open(timeout=1.0):
+                ready = True
+                break
+            time.sleep(0.3)
+
+        if not ready:
+            raise RuntimeError(
+                f"SSH tunnel to {self.host} timed out waiting for local port {self._local_port}"
             )
 
         logger.info(
@@ -516,6 +547,48 @@ class RemoteWorkerServer:
         commands.  Returns a dict with ``path_updated``, ``ran_update``, etc.
         """
         return self.execute({"action": "setup_env"}, timeout=90.0)
+
+    def _cleanup_tunnel(self) -> None:
+        """Kill tunnel process and close command socket (used between retries)."""
+        if self._cmd_sock is not None:
+            try:
+                self._cmd_sock.close()
+            except OSError:
+                pass
+            self._cmd_sock = None
+            self._cmd_buffer = bytearray()
+
+        if self._tunnel_proc is not None:
+            try:
+                self._tunnel_proc.kill()
+                self._tunnel_proc.wait(timeout=5)
+            except Exception:
+                pass
+            self._tunnel_proc = None
+
+        self._local_port = None
+
+    def _test_daemon_via_ssh(self, timeout: float = 5.0) -> bool:
+        """Test daemon reachability via SSH (bypasses tunnel).
+
+        SSHes to the host and pings the daemon on localhost:9741 directly.
+        Uses _SSH_OPTS (ControlMaster) so it's fast (~0.5s).
+        """
+        test_script = (
+            f'python3 -c "'
+            f"import socket,json; "
+            f"s=socket.create_connection(('127.0.0.1',{RWS_REMOTE_PORT}),timeout=3); "
+            f"s.sendall(json.dumps({{'type':'command'}}).encode()+b'\\n'); "
+            f"s.recv(4096); "
+            f"s.sendall(json.dumps({{'action':'ping'}}).encode()+b'\\n'); "
+            f'r=s.recv(4096); print(r.decode().strip()); s.close()"'
+        )
+        cmd = ["ssh", *_SSH_OPTS, self.host, test_script]
+        try:
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+            return result.returncode == 0 and "pong" in result.stdout
+        except Exception:
+            return False
 
     def _is_tunnel_port_open(self, timeout: float = 2.0) -> bool:
         """Check if the tunnel's local forwarded port accepts TCP connections.
