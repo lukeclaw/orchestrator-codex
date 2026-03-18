@@ -464,7 +464,7 @@ async def stream_pane(
             elif msg.get("type") == "request_sync":
                 sync_requested = True
             elif msg.get("type") == "request_history":
-                scrollback = msg.get("lines", 1000)
+                scrollback = msg.get("lines", 2000)
                 try:
                     result = await capture_pane_with_history_async(tmux_sess, tmux_win, scrollback)
                     content, cursor_x, cursor_y, total_lines = result
@@ -492,7 +492,7 @@ async def stream_pane(
                     alternate_on = await check_alternate_screen_async(tmux_sess, tmux_win)
 
                     result = await capture_pane_with_history_async(
-                        tmux_sess, tmux_win, scrollback_lines=1000
+                        tmux_sess, tmux_win, scrollback_lines=2000
                     )
                     content, cursor_x, cursor_y, total_lines = result
                     if content.endswith("\n"):

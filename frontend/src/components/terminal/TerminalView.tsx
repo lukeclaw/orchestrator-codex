@@ -12,7 +12,7 @@ interface Props {
   sendPath?: string  // Custom REST send path (default: /api/sessions/{sessionId}/send)
   sessionStatus?: string  // Session status from parent (e.g., 'connecting', 'working')
   reconnectStep?: string | null  // Current reconnect step from session state
-  disableScrollback?: boolean  // Disable scrollback history (for rdev sessions with screen)
+
   onInputRef?: (fn: (text: string) => void) => void  // Expose function to inject text into terminal
   onFocusRef?: (fn: () => void) => void  // Expose function to focus the terminal
   onImagePaste?: (file: File) => void  // Handle image paste from Cmd+V
@@ -39,7 +39,7 @@ type ConnectionState = 'connecting' | 'connected' | 'disconnected' | 'reconnecti
 const RECONNECT_DELAYS = [1000, 2000, 5000, 10000, 10000]
 const MAX_RECONNECT_ATTEMPTS = 5
 
-export default function TerminalView({ sessionId, wsPath, sendPath, sessionStatus, reconnectStep, disableScrollback, onInputRef, onFocusRef, onImagePaste, onTextPaste, onFileDrop, onPastingChange, onExit }: Props) {
+export default function TerminalView({ sessionId, wsPath, sendPath, sessionStatus, reconnectStep, onInputRef, onFocusRef, onImagePaste, onTextPaste, onFileDrop, onPastingChange, onExit }: Props) {
   const termRef = useRef<HTMLDivElement>(null)
   const terminalRef = useRef<Terminal | null>(null)
   const wsRef = useRef<WebSocket | null>(null)
@@ -401,7 +401,7 @@ export default function TerminalView({ sessionId, wsPath, sendPath, sessionStatu
       },
       cursorBlink: true,
       allowProposedApi: true,
-      scrollback: disableScrollback ? 0 : 1000,
+      scrollback: 2000,
     })
 
     const fitAddon = new FitAddon()
@@ -532,15 +532,6 @@ export default function TerminalView({ sessionId, wsPath, sendPath, sessionStatu
       }, { capture: true, signal: pasteAbort.signal })
     }
 
-    // Block mouse wheel scroll when scrollback is disabled (rdev + screen)
-    const wheelAbort = new AbortController()
-    if (disableScrollback && termRef.current) {
-      termRef.current.addEventListener('wheel', (e: WheelEvent) => {
-        e.preventDefault()
-        e.stopPropagation()
-      }, { passive: false, capture: true, signal: wheelAbort.signal })
-    }
-
     // Drag-and-drop file support
     const dropAbort = new AbortController()
     const dropTarget = termRef.current?.closest('.terminal-container') as HTMLElement | null
@@ -620,7 +611,6 @@ export default function TerminalView({ sessionId, wsPath, sendPath, sessionStatu
         textarea.removeEventListener('blur', handleBlur)
       }
       pasteAbort.abort()   // guaranteed to remove the paste listener
-      wheelAbort.abort()   // guaranteed to remove the wheel listener
       dropAbort.abort()    // guaranteed to remove drag/drop listeners
       wsRef.current?.close()
       terminal.dispose()
@@ -802,7 +792,7 @@ export default function TerminalView({ sessionId, wsPath, sendPath, sessionStatu
   return (
     <div className={containerClasses}>
       <div
-        className={`terminal-view${disableScrollback ? ' no-scrollbar' : ''}`}
+        className="terminal-view"
         ref={termRef}
         data-testid="terminal-view"
         onContextMenu={handleContextMenu}

@@ -535,7 +535,7 @@ async def capture_pane_with_cursor_atomic_async(session: str, window: str) -> tu
 
 
 async def capture_pane_with_history_async(
-    session: str, window: str, scrollback_lines: int = 1000
+    session: str, window: str, scrollback_lines: int = 2000
 ) -> tuple[str, int, int, int]:
     """Capture pane content with scrollback history and cursor position atomically.
 
@@ -544,7 +544,7 @@ async def capture_pane_with_history_async(
     Args:
         session: tmux session name
         window: tmux window name
-        scrollback_lines: Number of scrollback lines to capture (default 1000)
+        scrollback_lines: Number of scrollback lines to capture (default 2000)
     """
     target = f"{session}:{window}"
     try:
