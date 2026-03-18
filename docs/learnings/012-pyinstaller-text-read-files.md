@@ -1,4 +1,4 @@
-# 012 — PyInstaller misses files loaded via text read
+# PyInstaller Misses Files Loaded via Text Read
 
 **Date**: 2026-03-18
 **Bug introduced**: Commit `2e66579` (refactor: split remote_worker_server.py into focused modules)

@@ -1,4 +1,4 @@
-# Learning 014: recover_tunnels must include disconnected workers
+# recover_tunnels Must Include Disconnected Workers
 
 **Date:** 2026-03-18
 **Root cause:** `recover_tunnels()` skipped workers with `status="disconnected"`, leaving their SSH tunnel processes orphaned after server restart.

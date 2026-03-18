@@ -1,4 +1,7 @@
-# 011: Daemon PATH in Non-Interactive SSH
+# Daemon PATH in Non-Interactive SSH
+
+**Date**: 2026-03-17
+**Area**: `terminal/_rws_client.py`, `terminal/_rws_daemon.py`
 
 ## Problem
 
