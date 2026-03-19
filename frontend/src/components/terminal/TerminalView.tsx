@@ -20,6 +20,7 @@ interface Props {
   onFileDrop?: (file: File) => void  // Handle non-image file drop from Finder
   onPastingChange?: (pasting: boolean) => void  // Notify parent when context-menu paste is in progress
   onExit?: () => void  // Called when the underlying process exits (PTY closed)
+  onReconnect?: () => void  // Trigger session-level reconnect (e.g. POST /api/sessions/{id}/reconnect)
 }
 
 const RECONNECT_STEPS_ALL = [
@@ -39,7 +40,7 @@ type ConnectionState = 'connecting' | 'connected' | 'disconnected' | 'reconnecti
 const RECONNECT_DELAYS = [1000, 2000, 5000, 10000, 10000]
 const MAX_RECONNECT_ATTEMPTS = 5
 
-export default function TerminalView({ sessionId, wsPath, sendPath, sessionStatus, reconnectStep, onInputRef, onFocusRef, onImagePaste, onTextPaste, onFileDrop, onPastingChange, onExit }: Props) {
+export default function TerminalView({ sessionId, wsPath, sendPath, sessionStatus, reconnectStep, onInputRef, onFocusRef, onImagePaste, onTextPaste, onFileDrop, onPastingChange, onExit, onReconnect }: Props) {
   const termRef = useRef<HTMLDivElement>(null)
   const terminalRef = useRef<Terminal | null>(null)
   const wsRef = useRef<WebSocket | null>(null)
@@ -846,7 +847,7 @@ export default function TerminalView({ sessionId, wsPath, sendPath, sessionStatu
                 })}
               </div>
               {showFailedOverlay && (
-                <button className="terminal-retry-btn" onClick={handleRetry}>Retry</button>
+                <button className="terminal-retry-btn" onClick={onReconnect || handleRetry}>Retry</button>
               )}
             </div>
           ) : (
