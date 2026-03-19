@@ -8,8 +8,20 @@ import subprocess
 
 logger = logging.getLogger(__name__)
 
-# SSH options matching session.py conventions
+# Base SSH options for all orchestrator SSH connections.
+# StrictHostKeyChecking=no is required because rdev VMs get recycled and
+# their host keys change — without this, SSH silently disables port
+# forwarding ("REMOTE HOST IDENTIFICATION HAS CHANGED"), which breaks
+# forward tunnels to the RWS daemon.
+_SSH_HOST_KEY_OPTS = [
+    "-o",
+    "StrictHostKeyChecking=no",
+    "-o",
+    "UserKnownHostsFile=/dev/null",
+]
+
 _SSH_OPTS = [
+    *_SSH_HOST_KEY_OPTS,
     "-o",
     "ConnectTimeout=10",
     "-o",
@@ -23,6 +35,20 @@ _SSH_OPTS = [
     "-o",
     "ServerAliveInterval=30",
 ]
+
+
+def _ssh_cmd(host: str, remote_cmd: str, timeout: int = 10) -> list[str]:
+    """Build an ad-hoc SSH command with standard host-key + batch opts."""
+    return [
+        "ssh",
+        *_SSH_HOST_KEY_OPTS,
+        "-o",
+        f"ConnectTimeout={timeout}",
+        "-o",
+        "BatchMode=yes",
+        host,
+        remote_cmd,
+    ]
 
 
 def get_worker_tmp_dir(worker_name: str) -> str:

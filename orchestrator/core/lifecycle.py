@@ -104,16 +104,10 @@ def migrate_legacy_screen_sessions(conn: sqlite3.Connection):
                 f"screen -ls | grep -w '{screen_name}' | awk '{{print $1}}' | "
                 f'while read sid; do screen -X -S "$sid" quit; done'
             )
+            from orchestrator.terminal.file_sync import _ssh_cmd
+
             subprocess.run(
-                [
-                    "ssh",
-                    "-o",
-                    "ConnectTimeout=5",
-                    "-o",
-                    "BatchMode=yes",
-                    s.host,
-                    kill_cmd,
-                ],
+                _ssh_cmd(s.host, kill_cmd, timeout=5),
                 capture_output=True,
                 timeout=10,
             )

@@ -17,6 +17,7 @@ from datetime import UTC
 
 from orchestrator.api.ws_terminal import is_user_active
 from orchestrator.state.repositories import sessions as repo
+from orchestrator.terminal.file_sync import _ssh_cmd
 from orchestrator.terminal.manager import ensure_window, kill_window, tmux_target, window_exists
 from orchestrator.terminal.ssh import is_remote_host
 
@@ -391,7 +392,7 @@ def probe_tunnel_connectivity(
             f"--connect-timeout 3 http://localhost:{remote_port}/api/health"
         )
         result = subprocess.run(
-            ["ssh", "-o", "ConnectTimeout=5", "-o", "BatchMode=yes", host, curl_cmd],
+            _ssh_cmd(host, curl_cmd, timeout=5),
             capture_output=True,
             text=True,
             timeout=timeout,
@@ -851,7 +852,7 @@ def _check_rws_pty_health(db, session, tunnel_manager=None) -> dict:
             f" | grep -q {shlex.quote(session.id)} && echo ALIVE || echo DEAD"
         )
         result = subprocess.run(
-            ["ssh", "-o", "ConnectTimeout=3", "-o", "BatchMode=yes", session.host, check_cmd],
+            _ssh_cmd(session.host, check_cmd, timeout=3),
             capture_output=True,
             text=True,
             timeout=5,

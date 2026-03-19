@@ -20,6 +20,7 @@ from orchestrator.state.models import Session
 from orchestrator.state.repositories import sessions as sessions_repo
 from orchestrator.terminal import manager as tmux
 from orchestrator.terminal import ssh
+from orchestrator.terminal.file_sync import _ssh_cmd
 from orchestrator.terminal.ssh import is_rdev_host
 
 logger = logging.getLogger(__name__)
@@ -259,15 +260,7 @@ def _copy_dir_to_remote_ssh(local_dir: str, host: str, remote_dir: str) -> bool:
     try:
         # First create remote directory via SSH
         mkdir_result = subprocess.run(
-            [
-                "ssh",
-                "-o",
-                "ConnectTimeout=10",
-                "-o",
-                "BatchMode=yes",
-                host,
-                f"mkdir -p {shlex.quote(remote_dir)}",
-            ],
+            _ssh_cmd(host, f"mkdir -p {shlex.quote(remote_dir)}"),
             capture_output=True,
             text=True,
             timeout=30,
@@ -284,15 +277,7 @@ def _copy_dir_to_remote_ssh(local_dir: str, host: str, remote_dir: str) -> bool:
         )
 
         ssh_proc = subprocess.Popen(
-            [
-                "ssh",
-                "-o",
-                "ConnectTimeout=10",
-                "-o",
-                "BatchMode=yes",
-                host,
-                f"tar xzf - -C {shlex.quote(remote_dir)}",
-            ],
+            _ssh_cmd(host, f"tar xzf - -C {shlex.quote(remote_dir)}"),
             stdin=tar_proc.stdout,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
@@ -569,7 +554,7 @@ def setup_remote_worker(
             " ~/.claude/commands/ 2>/dev/null || true"
         )
         subprocess.run(
-            ["ssh", "-o", "ConnectTimeout=10", "-o", "BatchMode=yes", host, skills_copy_cmd],
+            _ssh_cmd(host, skills_copy_cmd),
             capture_output=True,
             timeout=30,
         )
@@ -588,7 +573,7 @@ def setup_remote_worker(
         else:
             node_cmd = "volta install node@24 2>/dev/null || true"
         subprocess.run(
-            ["ssh", "-o", "ConnectTimeout=10", "-o", "BatchMode=yes", host, node_cmd],
+            _ssh_cmd(host, node_cmd),
             capture_output=True,
             timeout=60,
         )

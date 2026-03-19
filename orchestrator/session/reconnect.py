@@ -25,6 +25,7 @@ from orchestrator.agents import get_path_export_command, get_worker_prompt
 from orchestrator.session.health import (
     check_tui_running_in_pane,
 )
+from orchestrator.terminal.file_sync import _ssh_cmd
 from orchestrator.terminal.manager import (
     capture_output,
     dismiss_trust_prompt,
@@ -375,7 +376,7 @@ def _cleanup_stale_claude_session_remote(host: str, session_id: str):
             f"| xargs -r kill 2>/dev/null || true"
         )
         subprocess.run(
-            ["ssh", "-o", "ConnectTimeout=10", "-o", "BatchMode=yes", host, cleanup_cmd],
+            _ssh_cmd(host, cleanup_cmd),
             capture_output=True,
             text=True,
             timeout=15,
@@ -407,7 +408,7 @@ def _kill_orphan_claude_processes_remote(
     )
     try:
         subprocess.run(
-            ["ssh", "-o", "ConnectTimeout=10", "-o", "BatchMode=yes", host, kill_cmd],
+            _ssh_cmd(host, kill_cmd),
             capture_output=True,
             text=True,
             timeout=15,
@@ -432,7 +433,7 @@ def _check_claude_session_exists_remote(host: str, session_id: str) -> bool:
             " && echo SESSION_EXISTS || echo SESSION_MISSING"
         )
         result = subprocess.run(
-            ["ssh", "-o", "ConnectTimeout=10", "-o", "BatchMode=yes", host, check_cmd],
+            _ssh_cmd(host, check_cmd),
             capture_output=True,
             text=True,
             timeout=15,
@@ -602,7 +603,7 @@ def _copy_configs_to_remote(host: str, tmp_dir: str, remote_tmp_dir: str, sessio
         f" chmod +x {remote_tmp_dir}/configs/hooks/*.sh 2>/dev/null"
     )
     subprocess.run(
-        ["ssh", "-o", "ConnectTimeout=10", "-o", "BatchMode=yes", host, chmod_cmd],
+        _ssh_cmd(host, chmod_cmd),
         capture_output=True,
         timeout=30,
     )
@@ -619,7 +620,7 @@ def _copy_configs_to_remote(host: str, tmp_dir: str, remote_tmp_dir: str, sessio
         " ~/.claude/commands/ 2>/dev/null || true"
     )
     subprocess.run(
-        ["ssh", "-o", "ConnectTimeout=10", "-o", "BatchMode=yes", host, skills_copy_cmd],
+        _ssh_cmd(host, skills_copy_cmd),
         capture_output=True,
         timeout=30,
     )

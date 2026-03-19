@@ -20,6 +20,7 @@ import time
 from dataclasses import dataclass, field
 
 from orchestrator.session.health import probe_tunnel_connectivity
+from orchestrator.terminal.file_sync import _SSH_HOST_KEY_OPTS  # noqa: F401 (used below)
 
 logger = logging.getLogger(__name__)
 
@@ -274,7 +275,7 @@ def create_tunnel(host: str, remote_port: int, local_port: int | None = None) ->
     # Spawn SSH tunnel in background
     try:
         proc = subprocess.Popen(
-            ["ssh", "-N", "-L", f"{local_port}:localhost:{remote_port}", host],
+            ["ssh", *_SSH_HOST_KEY_OPTS, "-N", "-L", f"{local_port}:localhost:{remote_port}", host],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )
