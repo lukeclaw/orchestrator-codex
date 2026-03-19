@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect, useRef } from 'react'
-import { Link, useLocation } from 'react-router-dom'
+import { Link, useLocation, useSearchParams } from 'react-router-dom'
 import { useApp } from '../context/AppContext'
 import { api } from '../api/client'
 import type { Rdev } from '../api/types'
@@ -32,10 +32,19 @@ export default function WorkersPage() {
       .filter(t => t.assigned_session_id)
       .map(t => [t.assigned_session_id!, t])
   )
+  const [searchParams, setSearchParams] = useSearchParams()
+  const statusFilter = searchParams.get('status') || ''
+  const typeFilter = (searchParams.get('type') as '' | 'local' | 'ssh' | 'rdev') || ''
+  const searchQuery = searchParams.get('q') || ''
+
+  const updateFilter = (key: string, value: string, opts?: { replace?: boolean }) => {
+    const newParams = new URLSearchParams(searchParams)
+    if (!value) newParams.delete(key)
+    else newParams.set(key, value)
+    setSearchParams(newParams, opts)
+  }
+
   const [showAddModal, setShowAddModal] = useState(false)
-  const [statusFilter, setStatusFilter] = useState('')
-  const [typeFilter, setTypeFilter] = useState<'' | 'local' | 'ssh' | 'rdev'>('')
-  const [searchQuery, setSearchQuery] = useState('')
   const [sortBy, setSortBy] = useState<SortOption>(() => {
     const stored = localStorage.getItem(SORT_KEY)
     return (stored as SortOption) || 'last_viewed'
@@ -106,7 +115,7 @@ export default function WorkersPage() {
   // Rdevs tab state (data comes from AppContext, only UI state is local)
   const [rdevsRefreshing, setRdevsRefreshing] = useState(false)
   const [showCreateRdevModal, setShowCreateRdevModal] = useState(false)
-  const [rdevStateFilter, setRdevStateFilter] = useState<'' | 'RUNNING' | 'STOPPED'>('')
+  const rdevStateFilter = (searchParams.get('state') as '' | 'RUNNING' | 'STOPPED') || ''
   const [rdevActionLoading, setRdevActionLoading] = useState<string | null>(null)
   const [rdevSortKey, setRdevSortKey] = useState<RdevSortKey>('name')
   const [rdevSortDir, setRdevSortDir] = useState<SortDir>('asc')
@@ -314,7 +323,7 @@ export default function WorkersPage() {
             <div className="status-summary-bar">
               <button
                 className={`status-summary-item${!statusFilter ? ' active' : ''}`}
-                onClick={() => setStatusFilter('')}
+                onClick={() => updateFilter('status', '')}
                 type="button"
               >
                 <span className="status-summary-dot" style={{ background: 'var(--text-muted)' }} />
@@ -325,7 +334,7 @@ export default function WorkersPage() {
                 <button
                   key={status}
                   className={`status-summary-item${statusFilter === status ? ' active' : ''}`}
-                  onClick={() => setStatusFilter(statusFilter === status ? '' : status)}
+                  onClick={() => updateFilter('status', statusFilter === status ? '' : status)}
                   type="button"
                 >
                   <span className="status-summary-dot" style={{ background: WORKER_STATUS_COLORS[status] }} />
@@ -341,7 +350,7 @@ export default function WorkersPage() {
                     <button
                       key={type}
                       className={`status-summary-item type-filter-item${typeFilter === type ? ' active' : ''}`}
-                      onClick={() => setTypeFilter(typeFilter === type ? '' : type)}
+                      onClick={() => updateFilter('type', typeFilter === type ? '' : type)}
                       type="button"
                     >
                       <span className={`type-filter-icon type-filter-icon--${type}`}>
@@ -361,12 +370,12 @@ export default function WorkersPage() {
                   type="text"
                   placeholder="Filter by name..."
                   value={searchQuery}
-                  onChange={e => setSearchQuery(e.target.value)}
+                  onChange={e => updateFilter('q', e.target.value, { replace: true })}
                 />
                 {searchQuery && (
                   <button
                     className="wp-search-inline-clear"
-                    onMouseDown={e => { e.preventDefault(); setSearchQuery('') }}
+                    onMouseDown={e => { e.preventDefault(); updateFilter('q', '') }}
                     type="button"
                   >&times;</button>
                 )}
@@ -392,7 +401,7 @@ export default function WorkersPage() {
                 <>
                   <IconFilter size={32} />
                   <p>No workers matching current filters</p>
-                  <button className="btn btn-secondary" onClick={() => { setStatusFilter(''); setTypeFilter('') }}>
+                  <button className="btn btn-secondary" onClick={() => setSearchParams(new URLSearchParams())}>
                     Clear filters
                   </button>
                 </>
@@ -419,7 +428,7 @@ export default function WorkersPage() {
             <div className="status-summary-bar">
               <button
                 className={`status-summary-item${!rdevStateFilter ? ' active' : ''}`}
-                onClick={() => setRdevStateFilter('')}
+                onClick={() => updateFilter('state', '')}
                 type="button"
               >
                 <span className="status-summary-dot" style={{ background: 'var(--text-muted)' }} />
@@ -429,7 +438,7 @@ export default function WorkersPage() {
               {runningCount > 0 && (
                 <button
                   className={`status-summary-item${rdevStateFilter === 'RUNNING' ? ' active' : ''}`}
-                  onClick={() => setRdevStateFilter(rdevStateFilter === 'RUNNING' ? '' : 'RUNNING')}
+                  onClick={() => updateFilter('state', rdevStateFilter === 'RUNNING' ? '' : 'RUNNING')}
                   type="button"
                 >
                   <span className="status-summary-dot rdev-dot-running" />
@@ -440,7 +449,7 @@ export default function WorkersPage() {
               {stoppedCount > 0 && (
                 <button
                   className={`status-summary-item${rdevStateFilter === 'STOPPED' ? ' active' : ''}`}
-                  onClick={() => setRdevStateFilter(rdevStateFilter === 'STOPPED' ? '' : 'STOPPED')}
+                  onClick={() => updateFilter('state', rdevStateFilter === 'STOPPED' ? '' : 'STOPPED')}
                   type="button"
                 >
                   <span className="status-summary-dot rdev-dot-stopped" />

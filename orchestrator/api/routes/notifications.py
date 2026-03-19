@@ -72,13 +72,20 @@ def list_notifications(
 @router.get("/notifications/count")
 def count_notifications(
     task_id: str | None = None,
+    days: int | None = 7,
     db=Depends(get_db),
 ):
-    """Get count of active (non-dismissed) notifications."""
+    """Get count of active (non-dismissed) notifications.
+
+    Args:
+        days: Only count notifications from the past N days. Default 7.
+              Pass days=0 to count all.
+    """
     if task_id:
         count = repo.count_notifications_for_task(db, task_id)
     else:
-        count = repo.count_active_notifications(db)
+        since_days = days if days and days > 0 else None
+        count = repo.count_active_notifications(db, since_days=since_days)
     return {"count": count}
 
 

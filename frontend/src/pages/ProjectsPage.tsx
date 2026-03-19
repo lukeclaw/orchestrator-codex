@@ -1,4 +1,5 @@
 import { useState, useMemo, useRef, useEffect } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { useProjects } from '../hooks/useProjects'
 import { useApp } from '../context/AppContext'
 import { api } from '../api/client'
@@ -17,11 +18,20 @@ const STATUS_LABELS: Record<string, string> = { active: 'Active', completed: 'Co
 export default function ProjectsPage() {
   const { projects, loading, create, fetch: refreshProjects } = useProjects()
   const { refresh: refreshApp } = useApp()
+  const [searchParams, setSearchParams] = useSearchParams()
+  const statusFilter = searchParams.get('status') || 'active'
+  const searchQuery = searchParams.get('q') || ''
+  const viewMode = (searchParams.get('view') as 'table' | 'cards') || 'cards'
+
+  const updateFilter = (key: string, value: string, opts?: { replace?: boolean }) => {
+    const newParams = new URLSearchParams(searchParams)
+    if (!value) newParams.delete(key)
+    else newParams.set(key, value)
+    setSearchParams(newParams, opts)
+  }
+
   const [showForm, setShowForm] = useState(false)
-  const [statusFilter, setStatusFilter] = useState('active')
-  const [searchQuery, setSearchQuery] = useState('')
   const [editingProject, setEditingProject] = useState<Project | null>(null)
-  const [viewMode, setViewMode] = useState<'table' | 'cards'>('cards')
   const [layoutOpen, setLayoutOpen] = useState(false)
   const layoutRef = useRef<HTMLDivElement>(null)
 
@@ -44,7 +54,7 @@ export default function ProjectsPage() {
 
   const filtered = useMemo(() => {
     let result = projects
-    if (statusFilter) result = result.filter(p => p.status === statusFilter)
+    if (statusFilter && statusFilter !== 'all') result = result.filter(p => p.status === statusFilter)
     if (searchQuery) {
       const q = searchQuery.toLowerCase()
       result = result.filter(p =>
@@ -103,7 +113,7 @@ export default function ProjectsPage() {
                   <button
                     type="button"
                     className={`pp-layout-card${viewMode === 'cards' ? ' active' : ''}`}
-                    onClick={() => { setViewMode('cards'); setLayoutOpen(false) }}
+                    onClick={() => { updateFilter('view', ''); setLayoutOpen(false) }}
                   >
                     {/* Cards skeleton: 2x2 grid of card shapes */}
                     <div className="pp-skel pp-skel-cards">
@@ -117,7 +127,7 @@ export default function ProjectsPage() {
                   <button
                     type="button"
                     className={`pp-layout-card${viewMode === 'table' ? ' active' : ''}`}
-                    onClick={() => { setViewMode('table'); setLayoutOpen(false) }}
+                    onClick={() => { updateFilter('view', 'table'); setLayoutOpen(false) }}
                   >
                     {/* Table skeleton: header + rows */}
                     <div className="pp-skel pp-skel-table">
@@ -142,8 +152,8 @@ export default function ProjectsPage() {
       {projects.length > 0 && (
         <div className="pp-filter-bar">
           <button
-            className={`pp-filter-pill${!statusFilter ? ' active' : ''}`}
-            onClick={() => setStatusFilter('')}
+            className={`pp-filter-pill${statusFilter === 'all' ? ' active' : ''}`}
+            onClick={() => updateFilter('status', 'all')}
             type="button"
           >
             <span className="pp-filter-dot" style={{ background: 'var(--text-muted)' }} />
@@ -154,7 +164,7 @@ export default function ProjectsPage() {
             <button
               key={status}
               className={`pp-filter-pill${statusFilter === status ? ' active' : ''}`}
-              onClick={() => setStatusFilter(statusFilter === status ? '' : status)}
+              onClick={() => updateFilter('status', statusFilter === status ? 'all' : status)}
               type="button"
             >
               <span className="pp-filter-dot" style={{ background: STATUS_COLORS[status] }} />
@@ -169,12 +179,12 @@ export default function ProjectsPage() {
               type="text"
               placeholder="Filter..."
               value={searchQuery}
-              onChange={e => setSearchQuery(e.target.value)}
+              onChange={e => updateFilter('q', e.target.value, { replace: true })}
             />
             {searchQuery && (
               <button
                 className="pp-search-inline-clear"
-                onMouseDown={e => { e.preventDefault(); setSearchQuery('') }}
+                onMouseDown={e => { e.preventDefault(); updateFilter('q', '') }}
                 type="button"
               >&times;</button>
             )}

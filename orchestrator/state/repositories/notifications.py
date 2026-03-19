@@ -42,9 +42,18 @@ def list_notifications(
     return [Notification(**dict(r)) for r in rows]
 
 
-def count_active_notifications(conn: sqlite3.Connection) -> int:
-    """Count non-dismissed notifications."""
-    row = conn.execute("SELECT COUNT(*) as cnt FROM notifications WHERE dismissed = 0").fetchone()
+def count_active_notifications(conn: sqlite3.Connection, since_days: int | None = None) -> int:
+    """Count non-dismissed notifications, optionally limited to recent days."""
+    if since_days is not None:
+        row = conn.execute(
+            "SELECT COUNT(*) as cnt FROM notifications WHERE dismissed = 0"
+            " AND created_at >= datetime('now', ?)",
+            (f"-{since_days} days",),
+        ).fetchone()
+    else:
+        row = conn.execute(
+            "SELECT COUNT(*) as cnt FROM notifications WHERE dismissed = 0"
+        ).fetchone()
     return row["cnt"] if row else 0
 
 

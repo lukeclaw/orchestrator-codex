@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { api, openUrl } from '../api/client'
 import { useApp } from '../context/AppContext'
 import { useNotify } from '../context/NotificationContext'
@@ -66,8 +66,16 @@ export default function NotificationsPage() {
   const [notifications, setNotifications] = useState<Notification[]>([])
   const [activeCount, setActiveCount] = useState(0)
   const [loading, setLoading] = useState(true)
-  const [filter, setFilter] = useState<'active' | 'archived'>('active')
-  const [typeFilter, setTypeFilter] = useState<TypeFilter>('all')
+  const [searchParams, setSearchParams] = useSearchParams()
+  const filter = (searchParams.get('tab') as 'active' | 'archived') || 'active'
+  const typeFilter = (searchParams.get('type') as TypeFilter) || 'all'
+
+  const updateFilter = (key: string, value: string, opts?: { replace?: boolean }) => {
+    const newParams = new URLSearchParams(searchParams)
+    if (!value) newParams.delete(key)
+    else newParams.set(key, value)
+    setSearchParams(newParams, opts)
+  }
   const [dismissing, setDismissing] = useState<Set<string>>(new Set())
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const [overflowIds, setOverflowIds] = useState<Set<string>>(new Set())
@@ -86,7 +94,7 @@ export default function NotificationsPage() {
 
   useEffect(() => {
     fetchNotifications()
-    setTypeFilter('all')
+    // typeFilter is cleared via URL params in the tab change handler
   }, [filter])
 
   // Overflow detection: measure which messages are clamped
@@ -465,7 +473,11 @@ export default function NotificationsPage() {
             { value: 'archived', label: 'Archived' },
           ]}
           value={filter}
-          onChange={setFilter}
+          onChange={(newTab) => {
+            const newParams = new URLSearchParams()
+            if (newTab !== 'active') newParams.set('tab', newTab)
+            setSearchParams(newParams)
+          }}
         />
       </div>
 
@@ -473,7 +485,7 @@ export default function NotificationsPage() {
       <div className="np-type-filters">
         <button
           className={`np-type-chip ${typeFilter === 'all' ? 'active' : ''}`}
-          onClick={() => setTypeFilter('all')}
+          onClick={() => updateFilter('type', '')}
         >
           <span className="np-type-chip-dot" style={{ background: 'var(--text-muted)' }} />
           <span className="np-type-chip-count">{notifications.length}</span>
@@ -483,7 +495,7 @@ export default function NotificationsPage() {
           <button
             key={chip.value}
             className={`np-type-chip ${typeFilter === chip.value ? 'active' : ''}`}
-            onClick={() => setTypeFilter(typeFilter === chip.value ? 'all' : chip.value)}
+            onClick={() => updateFilter('type', typeFilter === chip.value ? '' : chip.value)}
           >
             <span className={`np-type-chip-dot ${chip.dotColor}`} />
             <span className="np-type-chip-count">{typeCounts[chip.value]}</span>

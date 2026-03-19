@@ -38,14 +38,14 @@ export default function TasksPage() {
   const projectFilter = searchParams.get('project') || ''
   const searchQuery = searchParams.get('q') || ''
 
-  const updateFilter = (key: string, value: string) => {
+  const updateFilter = (key: string, value: string, opts?: { replace?: boolean }) => {
     const newParams = new URLSearchParams(searchParams)
     if (!value) {
       newParams.delete(key)
     } else {
       newParams.set(key, value)
     }
-    setSearchParams(newParams)
+    setSearchParams(newParams, opts)
   }
 
   // Click-outside for project dropdown
@@ -257,7 +257,7 @@ export default function TasksPage() {
               type="text"
               placeholder="Filter..."
               value={searchQuery}
-              onChange={e => updateFilter('q', e.target.value)}
+              onChange={e => updateFilter('q', e.target.value, { replace: true })}
             />
             {searchQuery && (
               <button

@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useCallback, Fragment } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { openUrl } from '../api/client'
 import type { PrSearchItem } from '../api/types'
 import { useApp } from '../context/AppContext'
@@ -94,14 +94,24 @@ function renderAutoMergeIcon(pr: PrSearchItem) {
 
 export default function PRsPage() {
   const { prCache, prRefreshing, prErrors, fetchPrs } = useApp()
-  const [tab, setTab] = useState<Tab>('active')
-  const [days, setDays] = useState(7)
+  const [searchParams, setSearchParams] = useSearchParams()
+  const tab = (searchParams.get('tab') as Tab) || 'active'
+  const days = Number(searchParams.get('days')) || 7
+  const attentionParam = searchParams.get('attention')
+  const attentionFilter: AttentionFilter = attentionParam ? (Number(attentionParam) as 1 | 2 | 3 | 4) : null
+  const subFilter = (searchParams.get('sub') as SubFilter) || 'all'
+  const filterText = searchParams.get('q') || ''
+
+  const updateFilter = (key: string, value: string, opts?: { replace?: boolean }) => {
+    const newParams = new URLSearchParams(searchParams)
+    if (!value) newParams.delete(key)
+    else newParams.set(key, value)
+    setSearchParams(newParams, opts)
+  }
+
   const [expandedUrl, setExpandedUrl] = useState<string | null>(null)
   const [sortField, setSortField] = useState<SortField>('attention')
   const [sortDir, setSortDir] = useState<SortDir>('asc')
-  const [filterText, setFilterText] = useState('')
-  const [attentionFilter, setAttentionFilter] = useState<AttentionFilter>(null)
-  const [subFilter, setSubFilter] = useState<SubFilter>('all')
   const [, setTick] = useState(0)
 
   const cacheKey = tab === 'active' ? 'active' : `recent:${days}`
@@ -124,13 +134,14 @@ export default function PRsPage() {
   }, [fetchedAt])
 
   const handleTabChange = useCallback((newTab: Tab) => {
-    setTab(newTab)
-    setAttentionFilter(null)
-    setSubFilter('all')
-    setFilterText('')
+    // Clear all tab-specific filter params; only keep tab if not default
+    const newParams = new URLSearchParams()
+    if (newTab !== 'active') newParams.set('tab', newTab)
+    setSearchParams(newParams)
+    // Sort stays local
     setSortField(newTab === 'active' ? 'attention' : 'updated')
     setSortDir(newTab === 'active' ? 'asc' : 'desc')
-  }, [])
+  }, [setSearchParams])
 
   const handleSort = (field: SortField) => {
     if (sortField === field) {
@@ -225,7 +236,7 @@ export default function PRsPage() {
         <div className="prs-filter-bar">
           <button
             className={`prs-filter-pill${attentionFilter === null ? ' active' : ''}`}
-            onClick={() => setAttentionFilter(null)}
+            onClick={() => updateFilter('attention', '')}
             type="button"
           >
             <span className="prs-filter-dot prs-dot-gray" />
@@ -236,7 +247,7 @@ export default function PRsPage() {
             <button
               key={p.level}
               className={`prs-filter-pill${attentionFilter === p.level ? ' active' : ''}`}
-              onClick={() => setAttentionFilter(prev => prev === p.level ? null : p.level)}
+              onClick={() => updateFilter('attention', attentionFilter === p.level ? '' : String(p.level))}
               type="button"
             >
               <span className={`prs-filter-dot ${p.dotClass}`} />
@@ -262,7 +273,7 @@ export default function PRsPage() {
           <button
             key={p.key}
             className={`prs-filter-pill${subFilter === p.key ? ' active' : ''}`}
-            onClick={() => setSubFilter(p.key)}
+            onClick={() => updateFilter('sub', p.key === 'all' ? '' : p.key)}
             type="button"
           >
             <span className="prs-filter-dot" style={{ background: SUB_FILTER_COLORS[p.key] }} />
@@ -282,10 +293,10 @@ export default function PRsPage() {
         className="prs-search-inline-input"
         placeholder="Filter..."
         value={filterText}
-        onChange={e => setFilterText(e.target.value)}
+        onChange={e => updateFilter('q', e.target.value, { replace: true })}
       />
       {filterText && (
-        <button className="prs-search-inline-clear" onClick={() => setFilterText('')}>
+        <button className="prs-search-inline-clear" onClick={() => updateFilter('q', '')}>
           <IconX size={10} />
         </button>
       )}
@@ -392,7 +403,7 @@ export default function PRsPage() {
           <div className="form-group" style={{ margin: 0 }}>
             <select
               value={days}
-              onChange={e => setDays(Number(e.target.value))}
+              onChange={e => updateFilter('days', e.target.value === '7' ? '' : e.target.value)}
             >
               <option value={7}>7 days</option>
               <option value={14}>14 days</option>

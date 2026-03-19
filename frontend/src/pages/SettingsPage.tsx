@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { useSettings } from '../hooks/useSettings'
 import { useBackup } from '../hooks/useBackup'
 import { useUpdate } from '../hooks/useUpdate'
@@ -42,7 +43,8 @@ export default function SettingsPage() {
   const { loading, getValue, save } = useSettings()
   const notify = useNotify()
   const { setUpdateAvailable } = useApp()
-  const [activeTab, setActiveTab] = useState<SettingsTab>('updates')
+  const [searchParams, setSearchParams] = useSearchParams()
+  const activeTab = (searchParams.get('tab') as SettingsTab) || 'updates'
   const {
     info: updateInfo,
     checking: updateChecking,
@@ -183,7 +185,12 @@ export default function SettingsPage() {
           },
         ]}
         value={activeTab}
-        onChange={setActiveTab}
+        onChange={(tab) => {
+          const newParams = new URLSearchParams(searchParams)
+          if (tab === 'updates') newParams.delete('tab')
+          else newParams.set('tab', tab)
+          setSearchParams(newParams)
+        }}
       />
 
       <div className="page-content">
