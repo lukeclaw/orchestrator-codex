@@ -122,7 +122,9 @@ class TestCaptureInteractiveCLI:
 
         output = capture_interactive_cli("sess-1", "orchestrator", lines=20)
 
-        mock_capture.assert_called_once_with("orchestrator", "worker1-icli", lines=20)
+        mock_capture.assert_called_once_with(
+            "orchestrator", "worker1-icli", lines=20, join_wrapped=True
+        )
         assert output == "$ hello\n"
 
     def test_returns_none_for_nonexistent(self):

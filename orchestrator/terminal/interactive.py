@@ -257,7 +257,7 @@ def capture_interactive_cli(
             logger.warning("Failed to capture remote PTY output", exc_info=True)
             return None
 
-    return tmux.capture_output(tmux_session, cli.window_name, lines=lines)
+    return tmux.capture_output(tmux_session, cli.window_name, lines=lines, join_wrapped=True)
 
 
 def send_to_interactive_cli(

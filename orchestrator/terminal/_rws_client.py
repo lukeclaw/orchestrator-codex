@@ -486,8 +486,11 @@ class RemoteWorkerServer:
         raw_b64 = resp.get("raw")
         if raw_b64:
             raw_bytes = base64.b64decode(raw_b64)
-            cols = resp.get("cols", 200)
-            rows = resp.get("rows", 50)
+            # Render at a wide virtual screen (min 200 cols) so that lines
+            # soft-wrapped at the PTY's actual (possibly narrow) width are
+            # unwrapped for the caller (e.g. orch-interactive --capture).
+            cols = max(resp.get("cols", 200), 200)
+            rows = max(resp.get("rows", 50), 50)
             return _render_pty_to_text(raw_bytes, cols=cols, rows=rows, last_n=lines)
         # Fallback for old daemon versions that return pre-stripped text
         return resp.get("output", "")

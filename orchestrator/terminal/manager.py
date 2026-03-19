@@ -218,18 +218,28 @@ def kill_window(session_name: str, window_name: str) -> bool:
     return False
 
 
-def capture_output(session_name: str, window_name: str, lines: int = 50) -> str:
-    """Capture visible pane content from a window."""
+def capture_output(
+    session_name: str, window_name: str, lines: int = 50, join_wrapped: bool = False
+) -> str:
+    """Capture visible pane content from a window.
+
+    Args:
+        join_wrapped: If True, pass ``-J`` to ``capture-pane`` so that lines
+            soft-wrapped at the pane edge are joined back together.  Useful
+            when the pane is narrow but the consumer needs unwrapped output.
+    """
     target = f"{session_name}:{window_name}"
-    result = _run_tmux(
+    args = [
         "capture-pane",
         "-p",
         "-t",
         target,
         "-S",
         f"-{lines}",
-        check=False,
-    )
+    ]
+    if join_wrapped:
+        args.append("-J")
+    result = _run_tmux(*args, check=False)
     if result.returncode != 0:
         logger.warning("Failed to capture output from %s: %s", target, result.stderr)
         return ""
