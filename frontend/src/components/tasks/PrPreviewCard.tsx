@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { api, openUrl } from '../../api/client'
+import { api, openUrl, ghAuth } from '../../api/client'
 import type { PrPreviewData } from '../../api/types'
 import ConfirmPopover from '../common/ConfirmPopover'
 import { tokenize, renderTokens } from '../common/Markdown'
@@ -67,6 +67,7 @@ export default function PrPreviewCard({ url, initialData, onDataFetched }: PrPre
   const [markingReady, setMarkingReady] = useState(false)
   const [copied, setCopied] = useState(false)
   const [openReviewPopup, setOpenReviewPopup] = useState<string | null>(null)
+  const [authStarted, setAuthStarted] = useState(false)
   const reviewsRef = useRef<HTMLDivElement | null>(null)
   const abortRef = useRef<AbortController | null>(null)
 
@@ -178,11 +179,13 @@ export default function PrPreviewCard({ url, initialData, onDataFetched }: PrPre
     return (
       <div className="pr-preview-card pr-preview-error">
         {isAuthError ? (
-          <span>GitHub CLI not authenticated. Run <code>gh auth login</code> in a terminal to fix this.</span>
+          authStarted
+            ? <span>Complete sign-in in the terminal, then retry.</span>
+            : <span>GitHub CLI not authenticated. <a href="#" className="pr-preview-signin" onClick={e => { e.preventDefault(); ghAuth(); setAuthStarted(true) }}>Sign in</a></span>
         ) : (
           <span>{error}</span>
         )}
-        <button className="pr-preview-retry" onClick={() => fetchData(true)}>Retry</button>
+        <button className="pr-preview-retry" onClick={() => { setAuthStarted(false); fetchData(true) }}>Retry</button>
       </div>
     )
   }

@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import re
 import time
 from collections import Counter, OrderedDict
@@ -30,6 +31,14 @@ _PR_URL_RE = re.compile(r"github\.com/([^/]+)/([^/]+)/pull/(\d+)")
 _GH_TIMEOUT = 15  # seconds per subprocess call
 _GH_HTTP_CACHE = "1s"  # short TTL forces ETag revalidation (304s are free)
 
+# Prevent `gh` CLI from opening a browser for SSO re-authorization.
+# When a SAML SSO session expires, gh may try to launch the default browser
+# (triggering an Okta login page).  Setting GH_BROWSER to `true` (a no-op
+# command that exits 0) prevents this — gh invokes `true <url>` which silently
+# discards the URL.  Empty strings do NOT work: gh treats them as unset and
+# falls back to the system default (`open` on macOS).
+_GH_ENV = {**os.environ, "GH_BROWSER": "true", "BROWSER": "true"}
+
 
 async def _run_gh(*args: str, cache: str | None = None) -> dict | list:
     """Run `gh api <args>` and return parsed JSON."""
@@ -41,6 +50,7 @@ async def _run_gh(*args: str, cache: str | None = None) -> dict | list:
         *cmd,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
+        env=_GH_ENV,
     )
     stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=_GH_TIMEOUT)
     if proc.returncode != 0:
@@ -51,6 +61,8 @@ async def _run_gh(*args: str, cache: str | None = None) -> dict | list:
             or "login" in err_lower
             or "token" in err_lower
             or "not logged" in err_lower
+            or "saml" in err_lower
+            or "sso" in err_lower
         ):
             raise HTTPException(
                 401, "GitHub CLI not authenticated. Run `gh auth login` in a terminal to fix this."
@@ -525,6 +537,7 @@ async def toggle_auto_merge(
         *cmd,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
+        env=_GH_ENV,
     )
     stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=_GH_TIMEOUT)
     if proc.returncode != 0:
@@ -551,6 +564,7 @@ async def mark_ready_for_review(
         *cmd,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
+        env=_GH_ENV,
     )
     stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=_GH_TIMEOUT)
     if proc.returncode != 0:

@@ -378,6 +378,32 @@ def create_app(
             logger.error("Failed to open URL %s: %s", url, e)
             return {"status": "error", "message": str(e)}
 
+    # Open Terminal with `gh auth login` for GitHub re-authentication
+    @app.post("/api/gh-auth", tags=["util"])
+    async def gh_auth():
+        import platform
+        import subprocess
+
+        try:
+            if platform.system() == "Darwin":
+                subprocess.Popen(
+                    [
+                        "osascript",
+                        "-e",
+                        'tell application "Terminal" to do script "gh auth login"',
+                    ]
+                )
+            else:
+                # Linux: try common terminal emulators
+                try:
+                    subprocess.Popen(["x-terminal-emulator", "-e", "gh", "auth", "login"])
+                except FileNotFoundError:
+                    subprocess.Popen(["xterm", "-e", "gh", "auth", "login"])
+            return {"ok": True}
+        except Exception as e:
+            logger.error("Failed to open terminal for gh auth: %s", e)
+            return {"status": "error", "message": str(e)}
+
     # WebSocket
     from orchestrator.api.websocket import websocket_endpoint
 

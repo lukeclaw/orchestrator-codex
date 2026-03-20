@@ -60,21 +60,30 @@ class TestSanitizeWorkerName:
 # ---------------------------------------------------------------------------
 
 
+def _create_test_app():
+    from orchestrator.api.app import create_app
+    from orchestrator.state.db import get_connection
+
+    conn = get_connection(":memory:")
+    return create_app(db=conn, test_mode=True)
+
+
+@pytest.fixture
+def client():
+    from fastapi.testclient import TestClient
+
+    app = _create_test_app()
+    return TestClient(app)
+
+
 class TestOpenUrlValidation:
     """Test the /api/open-url endpoint rejects non-http(s) URLs."""
-
-    def _create_app(self):
-        from orchestrator.api.app import create_app
-        from orchestrator.state.db import get_connection
-
-        conn = get_connection(":memory:")
-        return create_app(db=conn, test_mode=True)
 
     @pytest.fixture
     def client(self):
         from fastapi.testclient import TestClient
 
-        app = self._create_app()
+        app = _create_test_app()
         return TestClient(app)
 
     def test_valid_https_url(self, client):
@@ -254,3 +263,50 @@ class TestPasswordAccessors:
         with patch("orchestrator.api.routes.backup.config_repo"):
             _clear_password(mock_conn)
             mock_kc_del.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# GitHub auth endpoint
+# ---------------------------------------------------------------------------
+
+
+class TestGhAuth:
+    """Test the /api/gh-auth endpoint opens Terminal with gh auth login."""
+
+    @patch("platform.system", return_value="Darwin")
+    @patch("subprocess.Popen")
+    def test_gh_auth_calls_osascript_on_darwin(self, mock_popen, mock_system, client):
+        resp = client.post("/api/gh-auth")
+        assert resp.json() == {"ok": True}
+        mock_popen.assert_called_once_with(
+            [
+                "osascript",
+                "-e",
+                'tell application "Terminal" to do script "gh auth login"',
+            ]
+        )
+
+    @patch("platform.system", return_value="Linux")
+    @patch("subprocess.Popen")
+    def test_gh_auth_calls_terminal_on_linux(self, mock_popen, mock_system, client):
+        resp = client.post("/api/gh-auth")
+        assert resp.json() == {"ok": True}
+        mock_popen.assert_called_once_with(["x-terminal-emulator", "-e", "gh", "auth", "login"])
+
+    @patch("platform.system", return_value="Linux")
+    @patch("subprocess.Popen")
+    def test_gh_auth_falls_back_to_xterm(self, mock_popen, mock_system, client):
+        mock_popen.side_effect = [FileNotFoundError, MagicMock()]
+        resp = client.post("/api/gh-auth")
+        assert resp.json() == {"ok": True}
+        assert mock_popen.call_count == 2
+        # Second call should be xterm
+        assert mock_popen.call_args_list[1][0][0] == ["xterm", "-e", "gh", "auth", "login"]
+
+    @patch("platform.system", return_value="Darwin")
+    @patch("subprocess.Popen", side_effect=OSError("not found"))
+    def test_gh_auth_returns_error_on_failure(self, mock_popen, mock_system, client):
+        resp = client.post("/api/gh-auth")
+        data = resp.json()
+        assert data["status"] == "error"
+        assert "not found" in data["message"]

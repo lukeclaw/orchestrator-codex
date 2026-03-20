@@ -880,6 +880,16 @@
   border-color: var(--accent);
 }
 
+.pr-preview-signin {
+  color: var(--accent);
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.pr-preview-signin:hover {
+  text-decoration: underline;
+}
+
 /* Loading skeleton */
 
 .pr-preview-skeleton {

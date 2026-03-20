@@ -688,3 +688,87 @@ class TestHelperFunctions:
         assert result[0]["filename"] == "src/auth/token.ts"
         assert result[1]["status"] == "added"
         assert result[2]["deletions"] == 22
+
+
+class TestGhBrowserSuppression:
+    """Verify that gh CLI subprocesses cannot open a browser (SSO re-auth)."""
+
+    @pytest.mark.asyncio
+    async def test_run_gh_passes_env_with_browser_suppressed(self):
+        """_run_gh must pass _GH_ENV (GH_BROWSER='', BROWSER='') to subprocess."""
+        mock_proc = AsyncMock()
+        mock_proc.communicate.return_value = (b'{"ok": true}', b"")
+        mock_proc.returncode = 0
+
+        with patch("asyncio.create_subprocess_exec", return_value=mock_proc) as mock_exec:
+            await pr_preview._run_gh("repos/org/repo/pulls/1")
+
+        _, kwargs = mock_exec.call_args
+        env = kwargs.get("env", {})
+        assert env.get("GH_BROWSER") == "true", "GH_BROWSER must be 'true' to suppress browser"
+        assert env.get("BROWSER") == "true", "BROWSER must be 'true' to suppress browser"
+
+    @pytest.mark.asyncio
+    async def test_run_gh_detects_saml_sso_error(self):
+        """_run_gh must catch SAML/SSO errors and return 401."""
+        mock_proc = AsyncMock()
+        mock_proc.communicate.return_value = (
+            b"",
+            b"Resource protected by organization SAML enforcement. "
+            b"You must grant your OAuth token access to this organization.",
+        )
+        mock_proc.returncode = 1
+
+        with patch("asyncio.create_subprocess_exec", return_value=mock_proc):
+            with pytest.raises(pr_preview.HTTPException) as exc_info:
+                await pr_preview._run_gh("repos/org/repo/pulls/1")
+        # "saml" keyword should trigger 401, not 502
+        assert exc_info.value.status_code == 401
+
+    @pytest.mark.asyncio
+    async def test_run_gh_detects_sso_keyword_error(self):
+        """_run_gh must catch errors mentioning SSO and return 401."""
+        mock_proc = AsyncMock()
+        mock_proc.communicate.return_value = (
+            b"",
+            b"SSO authorization required for organization linkedin",
+        )
+        mock_proc.returncode = 1
+
+        with patch("asyncio.create_subprocess_exec", return_value=mock_proc):
+            with pytest.raises(pr_preview.HTTPException) as exc_info:
+                await pr_preview._run_gh("repos/org/repo/pulls/1")
+        assert exc_info.value.status_code == 401
+
+    def test_gh_env_has_browser_vars_set(self):
+        """The module-level _GH_ENV dict must suppress browser opening."""
+        assert pr_preview._GH_ENV["GH_BROWSER"] == "true"
+        assert pr_preview._GH_ENV["BROWSER"] == "true"
+
+    def test_auto_merge_passes_env(self, client):
+        """gh pr merge subprocess must use _GH_ENV."""
+        mock_proc = AsyncMock()
+        mock_proc.communicate.return_value = (b"", b"")
+        mock_proc.returncode = 0
+
+        with patch("asyncio.create_subprocess_exec", return_value=mock_proc) as mock_exec:
+            client.post("/api/pr-auto-merge?url=https://github.com/org/repo/pull/42&enable=true")
+
+        _, kwargs = mock_exec.call_args
+        env = kwargs.get("env", {})
+        assert env.get("GH_BROWSER") == "true"
+        assert env.get("BROWSER") == "true"
+
+    def test_pr_ready_passes_env(self, client):
+        """gh pr ready subprocess must use _GH_ENV."""
+        mock_proc = AsyncMock()
+        mock_proc.communicate.return_value = (b"", b"")
+        mock_proc.returncode = 0
+
+        with patch("asyncio.create_subprocess_exec", return_value=mock_proc) as mock_exec:
+            client.post("/api/pr-ready?url=https://github.com/org/repo/pull/42")
+
+        _, kwargs = mock_exec.call_args
+        env = kwargs.get("env", {})
+        assert env.get("GH_BROWSER") == "true"
+        assert env.get("BROWSER") == "true"

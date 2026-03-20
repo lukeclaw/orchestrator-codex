@@ -19,6 +19,13 @@ export function openUrl(url: string): void {
   })
 }
 
+/**
+ * Open a terminal with `gh auth login` for GitHub re-authentication.
+ */
+export async function ghAuth(): Promise<void> {
+  await fetch('/api/gh-auth', { method: 'POST' })
+}
+
 export async function api<T>(path: string, opts: RequestInit = {}): Promise<T> {
   const res = await fetch(path, {
     headers: { 'Content-Type': 'application/json' },

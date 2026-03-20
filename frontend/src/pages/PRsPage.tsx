@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useCallback, Fragment } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
-import { openUrl } from '../api/client'
+import { openUrl, ghAuth } from '../api/client'
 import type { PrSearchItem } from '../api/types'
 import { useApp } from '../context/AppContext'
 import SlidingTabs from '../components/common/SlidingTabs'
@@ -110,6 +110,7 @@ export default function PRsPage() {
   }
 
   const [expandedUrl, setExpandedUrl] = useState<string | null>(null)
+  const [authStarted, setAuthStarted] = useState(false)
   const [sortField, setSortField] = useState<SortField>('attention')
   const [sortDir, setSortDir] = useState<SortDir>('asc')
   const [, setTick] = useState(0)
@@ -326,10 +327,29 @@ export default function PRsPage() {
       return (
         <div className="prs-empty">
           <IconPullRequest size={32} className="prs-empty-icon" />
-          <div className="prs-empty-text">GitHub CLI not authenticated</div>
-          <div className="prs-empty-hint">
-            Run <code>gh auth login</code> in a terminal to connect your GitHub account.
-          </div>
+          {authStarted ? (
+            <>
+              <div className="prs-empty-text">Complete the sign-in in the terminal window, then retry.</div>
+              <button
+                className="btn btn-secondary"
+                style={{ marginTop: 12 }}
+                onClick={() => { setAuthStarted(false); fetchPrs(tab, days, true) }}
+              >
+                Retry
+              </button>
+            </>
+          ) : (
+            <>
+              <div className="prs-empty-text">GitHub CLI not authenticated</div>
+              <button
+                className="btn btn-primary"
+                style={{ marginTop: 12 }}
+                onClick={() => { ghAuth(); setAuthStarted(true) }}
+              >
+                Sign in to GitHub
+              </button>
+            </>
+          )}
         </div>
       )
     }
