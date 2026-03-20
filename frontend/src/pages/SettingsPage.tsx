@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { useSettings } from '../hooks/useSettings'
+import { useSettings } from '../context/SettingsContext'
 import { useBackup } from '../hooks/useBackup'
 import { useUpdate } from '../hooks/useUpdate'
 import { useNotify } from '../context/NotificationContext'
@@ -37,7 +37,7 @@ const SCHEDULE_OPTIONS = [
 
 const BACKUPS_PER_PAGE = 10
 
-type SettingsTab = 'updates' | 'backup'
+type SettingsTab = 'updates' | 'preferences' | 'backup'
 
 export default function SettingsPage() {
   const { loading, getValue, save } = useSettings()
@@ -69,13 +69,13 @@ export default function SettingsPage() {
   } = useBackup()
 
   const [claudeUpdateBeforeStart, setClaudeUpdateBeforeStart] = useState(false)
+  const [preserveFilters, setPreserveFilters] = useState(false)
 
-  // Sync claude update setting from DB
+  // Sync settings from DB
   useEffect(() => {
     if (!loading) {
-      const val = getValue('claude.update_before_start')
-      // Default to false if not set
-      setClaudeUpdateBeforeStart(val === null ? false : Boolean(val))
+      setClaudeUpdateBeforeStart(Boolean(getValue('claude.update_before_start')))
+      setPreserveFilters(Boolean(getValue('ui.preserve_filters')))
     }
   }, [loading, getValue])
 
@@ -83,6 +83,12 @@ export default function SettingsPage() {
     const newValue = !claudeUpdateBeforeStart
     setClaudeUpdateBeforeStart(newValue)
     await save({ 'claude.update_before_start': newValue })
+  }
+
+  const handlePreserveFiltersToggle = async () => {
+    const newValue = !preserveFilters
+    setPreserveFilters(newValue)
+    await save({ 'ui.preserve_filters': newValue })
   }
 
   const [backupDir, setBackupDir] = useState('')
@@ -170,6 +176,16 @@ export default function SettingsPage() {
               </svg>
               Updates
               {updateInfo?.update_available && <span className="settings-tab-dot" />}
+            </>,
+          },
+          {
+            value: 'preferences' as const,
+            label: <>
+              <svg className="settings-tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="12" cy="12" r="3" />
+                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+              </svg>
+              Preferences
             </>,
           },
           {
@@ -311,7 +327,10 @@ export default function SettingsPage() {
           </div>
         </div>
 
-        {/* Claude Code update-before-start toggle */}
+      </>)}
+
+      {/* ── Preferences Tab ── */}
+      {activeTab === 'preferences' && (<>
         <div className="settings-content panel">
           <div className="panel-header">
             <h2>Claude Code</h2>
@@ -329,6 +348,30 @@ export default function SettingsPage() {
                 onClick={handleClaudeUpdateToggle}
                 role="switch"
                 aria-checked={claudeUpdateBeforeStart}
+              >
+                <div className="sd-toggle-knob" />
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="settings-content panel">
+          <div className="panel-header">
+            <h2>Navigation</h2>
+          </div>
+          <div className="panel-body">
+            <div className="settings-toggle-row">
+              <div>
+                <div className="settings-toggle-label">Preserve filters on navigation</div>
+                <div className="settings-toggle-desc">
+                  Restore last-used filters when clicking sidebar links
+                </div>
+              </div>
+              <div
+                className={`sd-toggle-switch ${preserveFilters ? 'on' : ''}`}
+                onClick={handlePreserveFiltersToggle}
+                role="switch"
+                aria-checked={preserveFilters}
               >
                 <div className="sd-toggle-knob" />
               </div>

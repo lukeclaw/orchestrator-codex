@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from 'react'
+import { createContext, useContext, useState, useCallback, useEffect, type ReactNode } from 'react'
 import { api } from '../api/client'
 
 export interface SettingEntry {
@@ -9,12 +9,23 @@ export interface SettingEntry {
   updated_at: string
 }
 
-export function useSettings() {
+interface SettingsState {
+  settings: SettingEntry[]
+  loading: boolean
+  saving: boolean
+  fetch: (category?: string) => Promise<void>
+  save: (updates: Record<string, unknown>) => Promise<void>
+  getValue: (key: string) => unknown
+}
+
+const SettingsContext = createContext<SettingsState | null>(null)
+
+export function SettingsProvider({ children }: { children: ReactNode }) {
   const [settings, setSettings] = useState<SettingEntry[]>([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
 
-  const fetch = useCallback(async (category?: string) => {
+  const fetchSettings = useCallback(async (category?: string) => {
     setLoading(true)
     try {
       const qs = category ? `?category=${category}` : ''
@@ -27,7 +38,7 @@ export function useSettings() {
     }
   }, [])
 
-  useEffect(() => { fetch() }, [fetch])
+  useEffect(() => { fetchSettings() }, [fetchSettings])
 
   const save = useCallback(async (updates: Record<string, unknown>) => {
     setSaving(true)
@@ -36,17 +47,26 @@ export function useSettings() {
         method: 'PUT',
         body: JSON.stringify({ settings: updates }),
       })
-      // Refresh after save
-      await fetch()
+      await fetchSettings()
     } finally {
       setSaving(false)
     }
-  }, [fetch])
+  }, [fetchSettings])
 
   const getValue = useCallback((key: string): unknown => {
     const entry = settings.find(s => s.key === key)
     return entry?.value ?? null
   }, [settings])
 
-  return { settings, loading, saving, fetch, save, getValue }
+  return (
+    <SettingsContext.Provider value={{ settings, loading, saving, fetch: fetchSettings, save, getValue }}>
+      {children}
+    </SettingsContext.Provider>
+  )
+}
+
+export function useSettings(): SettingsState {
+  const ctx = useContext(SettingsContext)
+  if (!ctx) throw new Error('useSettings must be used within SettingsProvider')
+  return ctx
 }

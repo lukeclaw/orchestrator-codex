@@ -1,6 +1,7 @@
 import { Routes, Route } from 'react-router-dom'
 import { AppProvider } from './context/AppContext'
 import { NotificationProvider } from './context/NotificationContext'
+import { SettingsProvider } from './context/SettingsContext'
 import ErrorBoundary from './components/common/ErrorBoundary'
 import AppLayout from './layouts/AppLayout'
 import DashboardPage from './pages/DashboardPage'
@@ -20,6 +21,7 @@ export default function App() {
   return (
     <ErrorBoundary>
       <NotificationProvider>
+        <SettingsProvider>
         <AppProvider>
           <Routes>
             <Route element={<AppLayout />}>
@@ -39,6 +41,7 @@ export default function App() {
             </Route>
           </Routes>
         </AppProvider>
+        </SettingsProvider>
       </NotificationProvider>
     </ErrorBoundary>
   )

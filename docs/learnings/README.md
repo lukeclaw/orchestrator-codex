@@ -23,6 +23,7 @@ Scan this list first. Follow the link for full context only when working in that
 | Files loaded via `read_text()`/`open()` must be added to `datas` in the PyInstaller spec. | [012](012-pyinstaller-text-read-files.md) |
 | Never `sendall()` on a non-blocking socket with large data. VT renderers strip colors — send raw bytes. | [013](013-nonblocking-sendall-and-rendering-strips-colors.md) |
 | Never skip tunnel recovery for any worker status. Orphaned SSH processes block ports permanently. | [014](014-recover-tunnels-must-include-disconnected.md) |
+| `useMemo` reading sessionStorage needs a React-tracked dep (e.g. location) to invalidate. Plain hooks don't share state — use Context. Toggle state needs optimistic local state, not derived-from-loading. | [015](015-react-sessionstorage-and-shared-state.md) |
 
 ---
 
@@ -69,3 +70,9 @@ The largest cluster of learnings. Most originated from the March 2026 reconnect 
 | # | File | Summary |
 |---|------|---------|
 | 12 | [012-pyinstaller-text-read-files.md](012-pyinstaller-text-read-files.md) | Extracting code to a runtime-read file (not imported) silently drops it from PyInstaller bundle. Automated guard in `test_pyinstaller_spec.py`. |
+
+### Frontend / React Patterns
+
+| # | File | Summary |
+|---|------|---------|
+| 15 | [015-react-sessionstorage-and-shared-state.md](015-react-sessionstorage-and-shared-state.md) | `useMemo` reading sessionStorage needs a React-tracked dependency to invalidate. Plain hooks create independent state per component — use Context for shared state. Toggle UI needs optimistic local state, not values derived from async loading flags. |
