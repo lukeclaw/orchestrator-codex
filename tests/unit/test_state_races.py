@@ -622,6 +622,7 @@ class TestReconnectExceptionHandling:
             ),
             patch("orchestrator.session.reconnect.subprocess"),
             patch("orchestrator.session.reconnect.time.sleep"),
+            patch("orchestrator.state.repositories.config.get_config_value", return_value=False),
         ):
             mock_repo = MagicMock()
             mock_repo.update_session = tracker.update_session
@@ -655,6 +656,7 @@ class TestReconnectExceptionHandling:
             ),
             patch("orchestrator.session.reconnect.subprocess"),
             patch("orchestrator.session.reconnect.time.sleep"),
+            patch("orchestrator.state.repositories.config.get_config_value", return_value=False),
         ):
             mock_repo2 = MagicMock()
             mock_repo2.update_session = tracker2.update_session
@@ -691,6 +693,7 @@ class TestReconnectExceptionHandling:
             ),
             patch("orchestrator.session.reconnect.subprocess"),
             patch("orchestrator.session.reconnect.time.sleep"),
+            patch("orchestrator.state.repositories.config.get_config_value", return_value=False),
         ):
             mock_repo = MagicMock()
             mock_repo.update_session = tracker.update_session
@@ -726,6 +729,7 @@ class TestReconnectExceptionHandling:
             ),
             patch("orchestrator.session.reconnect.subprocess"),
             patch("orchestrator.session.reconnect.time.sleep"),
+            patch("orchestrator.state.repositories.config.get_config_value", return_value=False),
         ):
             mock_repo = MagicMock()
             mock_repo.update_session = tracker.update_session

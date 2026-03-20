@@ -86,6 +86,7 @@ class TestReconnectStep3Retry:
                 return_value="claude --session-id sess-stuck",
             ),
             patch("orchestrator.session.reconnect.time.sleep"),
+            patch("orchestrator.state.repositories.config.get_config_value", return_value=False),
         ):
             reconnect_remote_worker(
                 conn,
@@ -124,6 +125,7 @@ class TestReconnectStep3Retry:
                 side_effect=RuntimeError("RWS not available"),
             ),
             patch("orchestrator.session.reconnect.time.sleep"),
+            patch("orchestrator.state.repositories.config.get_config_value", return_value=False),
             pytest.raises(RuntimeError, match="RWS not available"),
         ):
             reconnect_remote_worker(

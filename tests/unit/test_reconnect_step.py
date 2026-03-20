@@ -204,6 +204,7 @@ def test_reconnect_rws_pty_worker_sets_steps_in_order():
             return_value=False,
         ),
         patch("orchestrator.terminal.session._build_claude_command", return_value="claude cmd"),
+        patch("orchestrator.state.repositories.config.get_config_value", return_value=False),
     ):
         _reconnect_rws_pty_worker(MagicMock(), session, mock_repo, mock_tunnel)
 

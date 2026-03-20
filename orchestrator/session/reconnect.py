@@ -839,6 +839,10 @@ def _reconnect_rws_pty_worker(conn, session, repo, tunnel_manager):
     tmp_dir = f"/tmp/orchestrator/workers/{session.name}"
     api_base = "http://127.0.0.1:8093"
 
+    from orchestrator.state.repositories.config import get_config_value
+
+    skip_permissions = bool(get_config_value(conn, "claude.skip_permissions", default=False))
+
     # 1. Ensure reverse tunnel alive
     _set_reconnect_step(session.id, "tunnel")
     if tunnel_manager and not tunnel_manager.is_alive(session.id):
@@ -919,6 +923,7 @@ def _reconnect_rws_pty_worker(conn, session, repo, tunnel_manager):
         session.work_dir,
         claude_session_id=session.claude_session_id,
         is_resume=session_exists,
+        skip_permissions=skip_permissions,
     )
     pty_id = rws.create_pty(
         cmd=claude_cmd,
@@ -959,6 +964,7 @@ def _reconnect_rws_pty_worker(conn, session, repo, tunnel_manager):
             session.work_dir,
             claude_session_id=session.claude_session_id,
             is_resume=False,
+            skip_permissions=skip_permissions,
         )
         pty_id = rws.create_pty(
             cmd=claude_cmd,
@@ -1025,6 +1031,10 @@ def reconnect_remote_worker(
     )
 
     remote_tmp_dir = f"/tmp/orchestrator/workers/{session.name}"
+
+    from orchestrator.state.repositories.config import get_config_value
+
+    skip_permissions = bool(get_config_value(conn, "claude.skip_permissions", default=False))
 
     # ── Step 0: Acquire per-session lock ──────────────────────────────────
     lock = get_reconnect_lock(session.id)
@@ -1118,6 +1128,7 @@ def reconnect_remote_worker(
             session.work_dir,
             claude_session_id=session.claude_session_id,
             is_resume=sess_exists,
+            skip_permissions=skip_permissions,
         )
 
         # Create PTY
@@ -1161,6 +1172,7 @@ def reconnect_remote_worker(
                 session.work_dir,
                 claude_session_id=session.claude_session_id,
                 is_resume=False,
+                skip_permissions=skip_permissions,
             )
             pty_id = rws.create_pty(
                 cmd=claude_cmd,
@@ -1314,6 +1326,14 @@ def reconnect_local_worker(
             if should_update_before_start(conn):
                 run_claude_update(safe_send_keys, capture_output, tmux_sess, tmux_win)
 
+        from orchestrator.state.repositories.config import get_config_value
+
+        skip_permissions = (
+            bool(get_config_value(conn, "claude.skip_permissions", default=False))
+            if conn
+            else False
+        )
+
         if session.work_dir:
             safe_send_keys(tmux_sess, tmux_win, f"cd {shlex.quote(session.work_dir)}", enter=True)
             time.sleep(0.3)
@@ -1334,9 +1354,10 @@ def reconnect_local_worker(
         settings_file = os.path.join(tmp_dir, "configs", "settings.json")
         claude_args = [
             session_arg,
-            "--dangerously-skip-permissions",
             f"--settings {shlex.quote(settings_file)}",
         ]
+        if skip_permissions:
+            claude_args.insert(1, "--dangerously-skip-permissions")
 
         # Read prompt from SOT-deployed file (includes custom skills)
         prompt_file = os.path.join(tmp_dir, "prompt.md")
@@ -1374,9 +1395,10 @@ def reconnect_local_worker(
             fallback_arg = f"--session-id {target_id}"
             claude_args_retry = [
                 fallback_arg,
-                "--dangerously-skip-permissions",
                 f"--settings {shlex.quote(settings_file)}",
             ]
+            if skip_permissions:
+                claude_args_retry.insert(1, "--dangerously-skip-permissions")
             if os.path.exists(prompt_file):
                 claude_args_retry.append(
                     f'--append-system-prompt "$(cat {shlex.quote(prompt_file)})"'

@@ -406,6 +406,7 @@ def _build_claude_command(
     work_dir: str | None,
     claude_session_id: str | None = None,
     is_resume: bool = False,
+    skip_permissions: bool = False,
 ) -> str:
     """Build full bash command chain for Claude in RWS PTY.
 
@@ -448,8 +449,9 @@ def _build_claude_command(
     claude_args = [
         session_arg,
         f"--settings {settings_file}",
-        "--dangerously-skip-permissions",
     ]
+    if skip_permissions:
+        claude_args.append("--dangerously-skip-permissions")
 
     # Load prompt from file if it exists
     remote_prompt_path = f"{remote_tmp_dir}/prompt.md"
@@ -473,6 +475,7 @@ def setup_remote_worker(
     custom_skills: list[dict] | None = None,
     disabled_builtin_names: set[str] | None = None,
     update_before_start: bool = False,
+    skip_permissions: bool = False,
 ) -> dict:
     """Set up a full remote worker via RWS PTY (new architecture).
 
@@ -607,6 +610,7 @@ def setup_remote_worker(
             work_dir,
             claude_session_id=None,
             is_resume=False,
+            skip_permissions=skip_permissions,
         )
 
         pty_id = rws.create_pty(
@@ -671,6 +675,7 @@ def setup_local_worker(
     custom_skills: list[dict] | None = None,
     disabled_builtin_names: set[str] | None = None,
     update_before_start: bool = False,
+    skip_permissions: bool = False,
 ) -> dict:
     """Set up a local worker: deploy scripts, hooks, skills, prompt, launch Claude.
 
@@ -749,10 +754,11 @@ def setup_local_worker(
 
         settings_file = os.path.join(local_tmp_dir, "configs", "settings.json")
         claude_args = [
-            "--dangerously-skip-permissions",
             f"--settings {shlex.quote(settings_file)}",
             f"--session-id {session_id}",
         ]
+        if skip_permissions:
+            claude_args.insert(0, "--dangerously-skip-permissions")
         if os.path.exists(prompt_file):
             claude_args.append(f'--append-system-prompt "$(cat {shlex.quote(prompt_file)})"')
 

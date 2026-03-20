@@ -308,6 +308,7 @@ class TestReconnectWithAutoStart:
                 return_value="claude --session-id sess-rdev",
             ),
             patch("orchestrator.session.reconnect.time.sleep"),
+            patch("orchestrator.state.repositories.config.get_config_value", return_value=False),
         ):
             reconnect_remote_worker(
                 conn,
@@ -341,6 +342,7 @@ class TestReconnectWithAutoStart:
                 return_value=False,
             ),
             patch("orchestrator.session.reconnect.time.sleep"),
+            patch("orchestrator.state.repositories.config.get_config_value", return_value=False),
         ):
             reconnect_remote_worker(
                 conn,

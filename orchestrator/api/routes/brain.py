@@ -156,11 +156,12 @@ def start_brain(db=Depends(get_db)):
             )
 
         time.sleep(0.5)
-        tmux.send_keys(
-            tmux.TMUX_SESSION,
-            BRAIN_SESSION_NAME,
-            f"claude --dangerously-skip-permissions --settings {settings_path}",
-        )
+        from orchestrator.state.repositories.config import get_config_value
+
+        cmd = f"claude --settings {settings_path}"
+        if get_config_value(db, "claude.skip_permissions", default=False):
+            cmd = f"claude --dangerously-skip-permissions --settings {settings_path}"
+        tmux.send_keys(tmux.TMUX_SESSION, BRAIN_SESSION_NAME, cmd)
 
         # Dismiss any "trust this folder" prompt that may appear after launch
         tmux.dismiss_trust_prompt(tmux.TMUX_SESSION, BRAIN_SESSION_NAME, session_id=session_id)

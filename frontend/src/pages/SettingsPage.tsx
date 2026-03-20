@@ -70,12 +70,14 @@ export default function SettingsPage() {
 
   const [claudeUpdateBeforeStart, setClaudeUpdateBeforeStart] = useState(false)
   const [preserveFilters, setPreserveFilters] = useState(false)
+  const [skipPermissions, setSkipPermissions] = useState(false)
 
   // Sync settings from DB
   useEffect(() => {
     if (!loading) {
       setClaudeUpdateBeforeStart(Boolean(getValue('claude.update_before_start')))
       setPreserveFilters(Boolean(getValue('ui.preserve_filters')))
+      setSkipPermissions(Boolean(getValue('claude.skip_permissions')))
     }
   }, [loading, getValue])
 
@@ -89,6 +91,12 @@ export default function SettingsPage() {
     const newValue = !preserveFilters
     setPreserveFilters(newValue)
     await save({ 'ui.preserve_filters': newValue })
+  }
+
+  const handleSkipPermissionsToggle = async () => {
+    const newValue = !skipPermissions
+    setSkipPermissions(newValue)
+    await save({ 'claude.skip_permissions': newValue })
   }
 
   const [backupDir, setBackupDir] = useState('')
@@ -352,6 +360,38 @@ export default function SettingsPage() {
                 <div className="sd-toggle-knob" />
               </div>
             </div>
+
+            <div className="settings-toggle-row">
+              <div>
+                <div className="settings-toggle-label">Skip permission prompts</div>
+                <div className="settings-toggle-desc">
+                  Launch with <code>--dangerously-skip-permissions</code>, bypassing
+                  confirmation prompts for file edits and command execution
+                </div>
+              </div>
+              <div
+                className={`sd-toggle-switch ${skipPermissions ? 'on' : ''}`}
+                onClick={handleSkipPermissionsToggle}
+                role="switch"
+                aria-checked={skipPermissions}
+              >
+                <div className="sd-toggle-knob" />
+              </div>
+            </div>
+            {skipPermissions && (
+              <div className="settings-warning-note">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
+                  <line x1="12" y1="9" x2="12" y2="13" />
+                  <line x1="12" y1="17" x2="12.01" y2="17" />
+                </svg>
+                <span>
+                  Claude will execute commands and modify files without asking for
+                  confirmation. Only enable this if you trust the environment and
+                  understand the risks. Takes effect on next brain/worker launch.
+                </span>
+              </div>
+            )}
           </div>
         </div>
 
