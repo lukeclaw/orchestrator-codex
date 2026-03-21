@@ -88,10 +88,6 @@ export default function NotificationsPage() {
     expandedRef.current = expanded
   }, [expanded])
 
-  // 7 days ago for default time filter
-  const sevenDaysAgo = new Date()
-  sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7)
-
   useEffect(() => {
     fetchNotifications()
     // typeFilter is cleared via URL params in the tab change handler
@@ -133,8 +129,7 @@ export default function NotificationsPage() {
   async function fetchNotifications() {
     setLoading(true)
     try {
-      // Active: non-dismissed from past 7 days
-      // Archived: dismissed only
+      // Active: non-dismissed; Archived: dismissed
       const [data, countData] = await Promise.all([
         api<Notification[]>(
           filter === 'archived'
@@ -144,12 +139,7 @@ export default function NotificationsPage() {
         api<{ count: number }>('/api/notifications/count'),
       ])
 
-      // For active tab, filter to past 7 days only
-      const filtered = filter === 'active'
-        ? data.filter(n => parseDate(n.created_at) >= sevenDaysAgo)
-        : data
-
-      setNotifications(filtered)
+      setNotifications(data)
       setActiveCount(countData.count)
     } catch (err) {
       console.error('Failed to fetch notifications:', err)
@@ -524,7 +514,7 @@ export default function NotificationsPage() {
                 ? 'No notifications match this filter'
                 : filter === 'archived'
                   ? 'Dismissed notifications will appear here'
-                  : 'No pending notifications from the past 7 days'}
+                  : 'No pending notifications'}
             </p>
           </div>
         ) : (
