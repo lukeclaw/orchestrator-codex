@@ -16,12 +16,6 @@ interface Props {
   onRemove?: (id: string) => void
 }
 
-interface TunnelInfo {
-  remote_port: number
-  pid: number
-  host: string
-}
-
 export default function WorkerCard({
   session, assignedTask, onRemove,
 }: Props) {
@@ -30,54 +24,18 @@ export default function WorkerCard({
   const [removing, setRemoving] = useState(false)
   const [actionPending, setActionPending] = useState(false)
   const [showOverflow, setShowOverflow] = useState(false)
-  const [tunnels, setTunnels] = useState<Record<string, TunnelInfo>>({})
   const [showAssignTask, setShowAssignTask] = useState(false)
-  const tunnelIntervalRef = useRef<ReturnType<typeof setInterval> | undefined>(undefined)
-  const sessionIdRef = useRef(session.id)
   const overflowRef = useRef<HTMLDivElement>(null)
 
   // Check if this is an rdev worker, SSH worker, or any remote worker
   const isRdev = session.host.includes('/')
   const isSsh = !isRdev && session.host !== 'localhost'
-  const isRemote = session.host !== 'localhost'
 
   // Whether to always show action buttons (error states)
   const alwaysShowActions = session.status === 'disconnected'
 
-  // Update ref when session changes (for interval callbacks to read current value)
-  sessionIdRef.current = session.id
-
-  // Fetch tunnels for remote workers (rdev and SSH)
-  useEffect(() => {
-    if (!isRemote) {
-      setTunnels({})
-      return
-    }
-
-    const targetSessionId = session.id
-
-    async function fetchTunnels() {
-      if (sessionIdRef.current !== targetSessionId) return
-
-      try {
-        const data = await api<{ tunnels: Record<string, TunnelInfo> }>(
-          `/api/sessions/${targetSessionId}/tunnels`
-        )
-        if (sessionIdRef.current === targetSessionId) {
-          setTunnels(data.tunnels || {})
-        }
-      } catch {
-        // Silently ignore tunnel fetch errors
-      }
-    }
-
-    fetchTunnels()
-    tunnelIntervalRef.current = setInterval(fetchTunnels, 10000)
-
-    return () => {
-      clearInterval(tunnelIntervalRef.current)
-    }
-  }, [session.id, isRemote])
+  // Tunnels come from the bulk sessions fetch (AppContext) — no per-card polling needed
+  const tunnels = session.tunnels || {}
 
   // Close overflow menu on click outside
   useEffect(() => {

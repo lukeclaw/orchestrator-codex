@@ -236,6 +236,7 @@ def list_sessions(
     status: str | None = None,
     session_type: str | None = None,
     include_preview: bool = False,
+    include_tunnels: bool = False,
     db=Depends(get_db),
 ):
     """List sessions.
@@ -244,6 +245,7 @@ def list_sessions(
         status: Filter by session status (idle, working, etc.)
         session_type: Filter by session type (worker, brain, system)
         include_preview: Include terminal preview content for each session
+        include_tunnels: Include active SSH tunnel info for remote sessions
     """
     sessions = repo.list_sessions(db, status=status, session_type=session_type)
     result = [_serialize_session(s) for s in sessions]
@@ -260,6 +262,22 @@ def list_sessions(
                 preview = _capture_preview(s)
                 _preview_cache[s.name] = (preview, now)
                 data["preview"] = preview
+    if include_tunnels:
+        from orchestrator.session.tunnel import discover_active_tunnels
+
+        all_tunnels = discover_active_tunnels()
+        for s, data in zip(sessions, result):
+            if is_remote_host(s.host):
+                host_tunnels = {
+                    str(port): {
+                        "remote_port": info["remote_port"],
+                        "pid": info["pid"],
+                        "host": info["host"],
+                    }
+                    for port, info in all_tunnels.items()
+                    if info["host"] == s.host
+                }
+                data["tunnels"] = host_tunnels
     return result
 
 

@@ -98,21 +98,34 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const location = useLocation()
 
   const fetchAll = useCallback(async () => {
+    // Cancel any in-flight fetchAll to free browser connections
+    fetchAllAbortRef.current?.abort()
+    const ctrl = new AbortController()
+    fetchAllAbortRef.current = ctrl
+
+    // Fetch tunnel info only when viewing the workers page (avoids ps aux subprocess)
+    const onWorkersPage = locationRef.current === '/' || locationRef.current === '/workers'
+    const sessionsUrl = onWorkersPage
+      ? '/api/sessions?session_type=worker&include_preview=true&include_tunnels=true'
+      : '/api/sessions?session_type=worker&include_preview=true'
+
     try {
       const [s, p, t, r] = await Promise.all([
-        api<Session[]>('/api/sessions?session_type=worker&include_preview=true'),
-        api<Project[]>('/api/projects').catch(() => []),
-        api<Task[]>('/api/tasks').catch(() => []),
-        api<Rdev[]>('/api/rdevs').catch(() => []),
+        api<Session[]>(sessionsUrl, { signal: ctrl.signal }),
+        api<Project[]>('/api/projects', { signal: ctrl.signal }).catch(() => []),
+        api<Task[]>('/api/tasks', { signal: ctrl.signal }).catch(() => []),
+        api<Rdev[]>('/api/rdevs', { signal: ctrl.signal }).catch(() => []),
       ])
+      if (ctrl.signal.aborted) return
       setSessions(s)
       setProjects(p)
       setTasks(t)
       setRdevs(r)
     } catch (e) {
+      if (e instanceof Error && e.name === 'AbortError') return
       console.error('Failed to fetch data:', e)
     } finally {
-      setLoading(false)
+      if (!ctrl.signal.aborted) setLoading(false)
     }
   }, [])
 
@@ -137,6 +150,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const wsRef = useRef<WebSocket | null>(null)
   const locationRef = useRef(location.pathname)
+  const fetchAllAbortRef = useRef<AbortController | null>(null)
   const prAbortRef = useRef<Record<string, AbortController>>({})
 
 
