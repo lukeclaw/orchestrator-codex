@@ -63,6 +63,8 @@ async def _run_gh(*args: str, cache: str | None = None) -> dict | list:
             or "not logged" in err_lower
             or "saml" in err_lower
             or "sso" in err_lower
+            or "bad credentials" in err_lower
+            or "401" in err
         ):
             raise HTTPException(
                 401, "GitHub CLI not authenticated. Run `gh auth login` in a terminal to fix this."

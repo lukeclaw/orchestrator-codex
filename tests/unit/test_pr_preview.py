@@ -740,6 +740,21 @@ class TestGhBrowserSuppression:
                 await pr_preview._run_gh("repos/org/repo/pulls/1")
         assert exc_info.value.status_code == 401
 
+    @pytest.mark.asyncio
+    async def test_run_gh_detects_bad_credentials(self):
+        """_run_gh must catch 'Bad credentials' errors and return 401."""
+        mock_proc = AsyncMock()
+        mock_proc.communicate.return_value = (
+            b"",
+            b"gh: Bad credentials (HTTP 401)",
+        )
+        mock_proc.returncode = 1
+
+        with patch("asyncio.create_subprocess_exec", return_value=mock_proc):
+            with pytest.raises(pr_preview.HTTPException) as exc_info:
+                await pr_preview._run_gh("repos/org/repo/pulls/1")
+        assert exc_info.value.status_code == 401
+
     def test_gh_env_has_browser_vars_set(self):
         """The module-level _GH_ENV dict must suppress browser opening."""
         assert pr_preview._GH_ENV["GH_BROWSER"] == "true"
