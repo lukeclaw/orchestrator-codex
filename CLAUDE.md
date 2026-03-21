@@ -59,6 +59,13 @@ Never use `window.confirm()`, `window.alert()`, `window.prompt()`, or any other 
 
 Use Playwright MCP tools to verify frontend changes visually. The dev server runs at `http://localhost:5173` (do not start a new one). Always snapshot first to get `ref=` handles before clicking or screenshotting elements. Save screenshots to `tmp/`. Prefer read-only interaction — avoid typing or mutating app state when just exploring.
 
+**Performance**: The Playwright MCP plugin is configured to connect to a pre-launched Chrome for Testing instance via `PLAYWRIGHT_MCP_CDP_ENDPOINT=http://localhost:9222` (set in `.claude/settings.local.json`). This avoids the 20-30s cold-start penalty of launching a fresh Chrome each time. Chrome for Testing must be running before using Playwright tools — the orchestrator's daemon launches it automatically for workers, or start it manually:
+```bash
+"/Users/yuqiu/Library/Caches/ms-playwright/chromium-1208/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing" \
+  --remote-debugging-port=9222 --no-first-run --no-default-browser-check \
+  --user-data-dir="/tmp/chrome-for-testing-dev" about:blank
+```
+
 ## Frontend — Design Conventions
 
 - **Dropdowns/selects**: Always use the global `.form-group select` styling from `styles/global.css` (custom chevron via `appearance: none` + background SVG, consistent padding, border, and focus ring). Never use bare `<select>` without the `.form-group` wrapper.
