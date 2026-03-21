@@ -11,6 +11,14 @@
   animation: pr-preview-enter 250ms var(--ease-decelerate);
 }
 
+[data-theme="light"] .pr-preview-card {
+  background: var(--surface-inset);
+}
+
+[data-theme="light"] .pr-thread-card:has(.pr-thread-file-label) {
+  background: var(--surface-hover);
+}
+
 @keyframes pr-preview-enter {
   from {
     opacity: 0;
@@ -57,7 +65,7 @@
 
 .pr-copy-link:hover {
   color: var(--accent);
-  background: rgba(88, 166, 255, 0.1);
+  background: rgba(var(--accent-rgb), 0.1);
 }
 
 .pr-copy-link.copied {
@@ -100,22 +108,22 @@
 }
 
 .pr-state-badge.state-open {
-  background: rgba(63, 185, 80, 0.15);
+  background: rgba(var(--green-rgb), 0.15);
   color: var(--green);
 }
 
 .pr-state-badge.state-merged {
-  background: rgba(163, 113, 247, 0.15);
+  background: rgba(var(--purple-rgb), 0.15);
   color: var(--purple);
 }
 
 .pr-state-badge.state-closed {
-  background: rgba(248, 81, 73, 0.15);
+  background: rgba(var(--red-rgb), 0.15);
   color: var(--red);
 }
 
 .pr-state-badge.state-draft {
-  background: rgba(110, 118, 129, 0.15);
+  background: rgba(var(--text-muted-rgb), 0.15);
   color: var(--text-muted);
 }
 
@@ -142,7 +150,7 @@
 
 .pr-preview-refresh:hover {
   color: var(--accent);
-  background: rgba(88, 166, 255, 0.1);
+  background: rgba(var(--accent-rgb), 0.1);
 }
 
 .pr-preview-refresh:disabled {
@@ -357,17 +365,17 @@
 }
 
 .pr-file-added {
-  background: rgba(63, 185, 80, 0.15);
+  background: rgba(var(--green-rgb), 0.15);
   color: var(--green);
 }
 
 .pr-file-removed {
-  background: rgba(248, 81, 73, 0.15);
+  background: rgba(var(--red-rgb), 0.15);
   color: var(--red);
 }
 
 .pr-file-renamed {
-  background: rgba(210, 153, 34, 0.15);
+  background: rgba(var(--yellow-rgb), 0.15);
   color: var(--yellow);
 }
 
@@ -491,7 +499,7 @@
 }
 
 .pr-review-threads-btn.active {
-  background: var(--accent-muted, rgba(88, 166, 255, 0.12));
+  background: var(--accent-muted, rgba(var(--accent-rgb), 0.12));
   border-color: var(--accent, #58a6ff);
   color: var(--accent, #58a6ff);
 }

@@ -4,9 +4,10 @@ The visual design language for Orchestrator. This document is the source of trut
 
 ## Identity
 
-Orchestrator is a dark-themed control center for engineers managing parallel AI workers. It should feel like a professional instrument panel — calm, information-dense, and precise. Think Linear meets a flight deck: everything has a purpose, nothing is decorative for its own sake.
+Orchestrator is a control center for engineers managing parallel AI workers. It should feel like a professional instrument panel — calm, information-dense, and precise. Think Linear meets a flight deck: everything has a purpose, nothing is decorative for its own sake. It supports dark, light, and system-follow themes.
 
-**One-line summary:** Calm, dark, borderless. Depth through shade, clarity through spacing, meaning through color.
+**One-line summary (dark):** Calm, borderless. Depth through shade, clarity through spacing, meaning through color.
+**One-line summary (light):** Gray canvas, white cards, shadow-driven depth. Same information hierarchy, different physics.
 
 ## Core Values
 
@@ -565,15 +566,203 @@ Global navigation: `D` (Dashboard), `P` (Projects), `T` (Tasks), `W` (Workers), 
 
 ---
 
+## Light Mode
+
+### Philosophy
+
+Light mode is not an inversion of dark mode — it is a parallel design system that shares the same values (information density, calm under complexity, instant legibility) but uses fundamentally different depth and elevation techniques. Where dark mode builds depth by making surfaces *lighter*, light mode builds depth through *shadows and surface contrast against a tinted page background*.
+
+**One-line summary:** Gray canvas, white cards, shadow-driven depth. Same information hierarchy, different physics.
+
+### The Fundamental Shift
+
+In dark mode, the eye perceives depth as "lighter = closer." A `--surface` card (#161b22) pops against `--bg` (#0d1117) purely through luminance contrast. Shadows are nearly invisible because the background is already near-black.
+
+In light mode, the relationship inverts:
+
+- **Shadows become the primary depth mechanism.** A white card on a light gray page is only distinguishable through shadow — without it, the card looks stamped onto the page like printed paper.
+- **Surface contrast reverses.** The page background is *darker* than cards: `--bg: #f0f2f5` (gray canvas) with `--surface: #ffffff` (white cards). This gray-canvas-white-card pattern is the industry standard (GitHub, Linear, Notion, Apple) because it provides just enough contrast for cards to register as floating layers.
+- **Borders become useful again.** Dark mode suppresses decorative borders because surface contrast is sufficient. Light mode benefits from a subtle `1px solid var(--border-subtle)` on cards — it defines the card edge crisply where shadow alone might feel soft or ambiguous.
+
+### Surface Hierarchy (Light Mode)
+
+```
+Level 0  --bg              #f0f2f5   Page canvas — neutral gray, never pure white
+Level 1  --surface         #ffffff   Cards, panels, modals — true white, max contrast with canvas
+Level 2  --surface-inset   #f6f8fa   Recessed areas inside cards (code blocks, sidebar sections)
+Level 3  --surface-hover   #f3f5f7   Hovered interactive surfaces
+Level 4  --surface-raised  #eaeef2   Raised controls (tab bar background, button surfaces)
+Level 5  --surface-overlay #ffffff   Floating: dropdowns, tooltips — white with strong shadow
+```
+
+**Key difference from dark mode:** In dark mode, floating elements are *lighter* than cards. In light mode, floating elements are the same white as cards but differentiated by stronger shadow (`--shadow-float`). The overlay surface doesn't need to be a different shade — shadow does all the work.
+
+**Why not pure white for the page?** A `#ffffff` page with `#ffffff` cards creates zero surface contrast. The only way to separate them would be heavy borders or aggressive shadows, both of which feel noisy. The gray canvas (`#f0f2f5`) provides ~3% luminance contrast with white cards — subtle but sufficient when combined with shadow.
+
+### Depth Model (Light Mode)
+
+Light mode uses three primary depth techniques, all of which were ineffective or unnecessary in dark mode:
+
+**1. Box shadows (primary technique)**
+
+Light backgrounds give shadows maximum dynamic range. A `rgba(0,0,0,0.08)` shadow on white is clearly visible, whereas the same shadow on `#0d1117` is imperceptible. Every elevated element — cards, stats, popovers — must have a shadow.
+
+```
+Cards/panels:     var(--shadow-sm)    Subtle lift off canvas
+Hovering cards:   var(--shadow-md)    Increased elevation on hover (optional)
+Dropdowns:        var(--shadow-float) Shadow + border ring
+Modals:           var(--shadow-lg)    Maximum elevation
+```
+
+**2. Borders — sparingly**
+
+Borders are a supporting technique in light mode, not a primary one. Shadow provides edge definition for most cards. Adding borders to every card makes the UI feel heavy and "wireframed" — the opposite of the clean, shadow-driven look we want (Linear-style).
+
+**Rule:** Only large structural containers (`.panel`, `.tb-column`) get `border: 1px solid var(--border-subtle)` in light mode. Individual cards (project cards, worker cards, task cards, notification cards, skill cards, stat bars) rely on shadow alone — the shadow blur naturally defines the card edge against the gray canvas. Floating elements (modals, dropdowns) get `--shadow-float` which includes a ring via `border-muted`.
+
+**3. Surface color contrast**
+
+Still useful but no longer sufficient alone. A white card on a gray canvas has visible contrast, but without shadow it looks *flat* — like a window into a lighter space, not a floating element. Surface contrast is the foundation; shadow is the finish.
+
+### Color Adjustments
+
+Status colors shift to deeper, richer variants to maintain contrast against light backgrounds. Material Design recommends *desaturating* colors on dark backgrounds because bright saturated colors vibrate on near-black surfaces. We intentionally keep dark mode colors saturated (#3fb950, #58a6ff) because status indicators in a dense information UI need to pop — this is a conscious departure from Material guidance. For light mode, colors shift to deeper/darker values (following GitHub's Primer system) because bright colors wash out on white:
+
+```
+                Dark Mode        Light Mode       Reason
+Green           #3fb950          #1a7f37          Bright green washes out on white
+Yellow          #d29922          #9a6700          Deep amber reads better on light
+Red             #f85149          #d1242f          Vivid red → rich crimson
+Orange          #db6d28          #bc4c00          Deeper for contrast
+Purple          #a371f7          #8250df          More saturated
+Accent (blue)   #58a6ff          #0969da          Bright sky → deep ocean
+```
+
+**Text contrast targets remain identical** — the light palette is chosen so that `--text-primary` (#1f2328) on `--surface` (#ffffff) yields ~16:1, and `--text-secondary` (#656d76) yields ~5.7:1.
+
+### Status Tints in Light Mode
+
+The `rgba(color, 0.15)` badge pattern works differently on white backgrounds. On dark backgrounds, the tint is applied over near-black — the color appears muted and dark. On white backgrounds, the same opacity produces a lighter, more pastel appearance.
+
+**This is desirable.** Light mode badges should look like soft watercolor washes, not bold fills. The 0.10-0.15 opacity range produces the right effect: visible, semantic, but not aggressive.
+
+### Two-Tier Color System (Light Mode)
+
+Light mode uses **two tiers of color values** for different purposes:
+
+**Tier 1 — Base colors** (`--green`, `--red`, `--yellow`, `--accent`, etc.): Deep, dark values optimized for **text contrast** on white. These follow GitHub Primer and must maintain ≥4.5:1 WCAG AA contrast against `#ffffff`. They're used for status text, link text, and badge foreground color.
+
+**Tier 2 — Variant RGB values** (`*-bright-rgb`, `*-alt-rgb`, `*-vivid-rgb`, `*-emphasis-rgb`): Vivid, saturated values optimized for **background tints** at low opacity. These are used exclusively in `rgba()` calls at 0.08-0.30 opacity for badge backgrounds, status highlights, and accent fills.
+
+```
+                    Tier 1 (text)       Tier 2 (tint backgrounds)
+Green               #1a7f37 (dark)      rgb(34, 197, 94) (vivid)
+Yellow              #9a6700 (deep)      rgb(234, 179, 8) (golden)
+Red                 #d1242f (crimson)   rgb(239, 68, 68) (bright)
+Purple              #8250df (deep)      rgb(168, 85, 247) (vivid)
+Accent (blue)       #0969da (dark)      rgb(56, 139, 253) (bright)
+```
+
+**Why two tiers?** Using the dark Tier 1 values for background tints produces muddy, grayish washes — `rgba(154, 103, 0, 0.15)` on white reads as dirty beige, not yellow. The vivid Tier 2 values produce clear, correctly-colored watercolor tints — `rgba(234, 179, 8, 0.15)` on white reads as golden yellow. The low opacity naturally mutes the brightness, so vivid source colors are necessary to get visible results.
+
+### Button Treatment
+
+Primary buttons require different treatment because the text-on-background contrast flips:
+
+```
+Dark mode:   background: var(--green-muted) #238636   text: var(--text-primary) #e6edf3   (light on dark)
+Light mode:  background: var(--green-muted) #2da44e   text: #ffffff                       (white on green)
+```
+
+Light mode primary buttons use white text on vibrant colored backgrounds. This is achieved through `--btn-primary-text: #ffffff` in the light theme block. The button background color itself shifts to a slightly brighter variant so the white text maintains >7:1 contrast.
+
+### Hover Behavior
+
+In dark mode, hover *lightens* surfaces (closer to user = brighter). In light mode, hover *slightly darkens* or *grays* surfaces:
+
+```
+Dark mode hover:  --surface → --surface-hover (lighter)
+Light mode hover: --surface (#fff) → --surface-hover (#f3f5f7) (slightly gray)
+```
+
+For stat cards and gradient-background elements, avoid `filter: brightness(1.15)` in light mode — it washes out already-light surfaces. Use `filter: brightness(0.97)` instead, which subtly deepens the color.
+
+### Sidebar and Header
+
+The sidebar uses `--bg` (gray canvas) in both themes. In dark mode, this makes the sidebar the darkest element. In light mode, the sidebar becomes a gray stripe that frames the white content area — a common pattern in macOS apps (Finder, Mail, Notes).
+
+The header also uses `--bg`, creating a unified gray chrome around the white workspace.
+
+### Font Rendering
+
+Light mode reverses the font rendering challenge. In dark mode, light text on dark backgrounds appears thinner (hence minimum 300 weight and antialiased rendering). In light mode, dark text on light backgrounds appears slightly heavier.
+
+Keep `-webkit-font-smoothing: antialiased` in light mode — it produces crisper, more accurate weight rendering regardless of theme.
+
+### Scrollbars
+
+Light mode scrollbar thumbs use the same `rgba(var(--text-muted-rgb), 0.4)` pattern. Because `--text-muted-rgb` shifts to a darker gray in light mode (139, 148, 158 → same value), the scrollbar naturally adapts and remains visible against light surfaces.
+
+### Terminal and Code
+
+xterm.js and Monaco editor require separate theme objects because they don't read CSS variables. The `useTheme` hook and MutationObserver pattern syncs the CSS `data-theme` attribute to terminal/editor theme objects.
+
+Terminal light theme: white background, dark text, GitHub Light color palette. This is the one place where we use near-white as a *surface* — terminals are traditionally self-contained viewports with their own background.
+
+### Flash Prevention
+
+Because theme preference is stored in the database (SQLite via settings API) and takes time to load, the page would briefly flash in the wrong theme. A synchronous `<script>` in `<head>` reads `localStorage` (which caches the last-known theme) and applies `data-theme="light"` before any CSS renders. The React `useTheme` hook later confirms or corrects this from the authoritative database value.
+
+### Theme Transition
+
+When switching themes, a brief 250ms transition on `background-color`, `color`, `border-color`, and `box-shadow` prevents a jarring instant flip. This is applied via `.theme-transitioning` class on `<html>`, added during the switch and removed after 300ms. The class is *not* permanent — it would cause unwanted transitions during normal interaction.
+
+### What Not to Do in Light Mode
+
+1. **Never use a pure white page background.** `#ffffff` for `--bg` creates zero contrast with `#ffffff` cards. Always use a tinted gray canvas.
+
+2. **Never drop shadows on light cards.** Every card and panel must have at least `var(--shadow-sm)` in light mode. Without shadow, white-on-gray cards look printed, not floating.
+
+3. **Never reuse dark mode shadow opacities.** Dark mode uses 0.12-0.4 because dark backgrounds absorb shadow. Light mode uses 0.06-0.14 — lower opacity but higher visibility.
+
+4. **Never keep `rgba(255, 255, 255, 0.03)` subtle overlays.** These are dark-mode micro-elevation tricks (barely-perceptible white wash). On white surfaces they're literally invisible. Replace with `var(--surface-inset)` or `var(--surface-hover)` in light mode.
+
+5. **Never use `filter: brightness(>1.0)` on light elements.** It washes them out toward white. Use `brightness(0.97)` to subtly deepen, or switch to background-color change.
+
+6. **Never add borders to every card.** Borders on every card make the light UI feel heavy and wireframed. Shadow alone defines card edges (Linear-style). Reserve borders for large structural panels and adjacent containers that need crisp separation.
+
+### Why Gray Canvas + White Cards
+
+The `--bg: #f0f2f5` (gray) + `--surface: #ffffff` (white) pattern is the industry standard for information-dense tools (GitHub, Linear, Notion, Apple). Alternatives considered:
+- **All-white page**: Zero contrast between page and cards — requires heavy borders or shadows to create any hierarchy. Feels like a blank document, not a structured tool.
+- **All-gray surfaces**: Flatter, harder to parse groups at a glance. Works for minimal content apps but not for a dense control panel with 10+ cards per page.
+- **Tinted backgrounds** (warm gray, blue-gray): Adds personality but competes with semantic status colors. Our UI uses color only for meaning — a tinted canvas would undermine that principle.
+
+The gray canvas provides just enough contrast (~3% luminance) for white cards to register as floating layers when combined with shadow. It also creates a natural visual frame — the gray sidebar/header chrome wraps the white workspace, mimicking macOS's native window hierarchy.
+
+### Depth Assignment Table (Light Mode)
+
+| Need | Primary technique | Supporting technique |
+|---|---|---|
+| Card on page | Shadow (`--shadow-sm`) | White surface on gray canvas |
+| Card hover | Shadow increase or surface darken (`--surface-hover`) | — |
+| Floating element | Strong shadow (`--shadow-float`) + border | White surface, same as cards |
+| Modal | Backdrop dim + blur + `--shadow-lg` | White surface with crisp border |
+| Focus indication | Colored ring (same as dark mode) | — |
+| Status emphasis | Same colored glow, slightly reduced opacity | Works well on both themes |
+| Recessed content | `--surface-inset` (#f6f8fa) inside white card | Reverse of dark mode (lighter → gray) |
+
+---
+
 ## Anti-Patterns
 
 Things we explicitly don't do:
 
-1. **No decorative borders on cards.** Surface contrast is sufficient. Adding `border: 1px solid` makes the UI noisy.
+1. **No decorative borders on cards in dark mode.** Surface contrast is sufficient. Adding `border: 1px solid` makes the dark UI noisy. (Light mode *does* use subtle borders — see Light Mode section.)
 
-2. **No invisible shadows.** Any `box-shadow` with `rgba(0,0,0, < 0.2)` on dark backgrounds is wasted CSS. Either remove it or use a technique that actually works (surface color, ring, glow).
+2. **No invisible shadows.** In dark mode: `rgba(0,0,0, < 0.2)` is wasted CSS — use surface color, ring, or glow instead. In light mode: shadows are highly visible, so use the token values (`--shadow-sm` through `--shadow-lg`).
 
-3. **No pure black or white.** `#000000` background causes halation. `#ffffff` text causes eye strain. Use the token values.
+3. **No pure black or white for backgrounds.** `#000000` background causes halation in dark mode. `#ffffff` page background in light mode creates zero contrast with white cards. Use the token values (`--bg` in each theme).
 
 4. **No `transition: all`.** It's slow (transitions every property including layout) and unpredictable (catches properties you didn't intend to animate).
 
@@ -590,3 +779,7 @@ Things we explicitly don't do:
 10. **No font weight below 300.** Thin text on dark backgrounds becomes unreadable as it bleeds into the background.
 
 11. **No missing `text-decoration: none` on hover for styled links.** Any `<a>` or `<Link>` with custom styling (background, padding, border-radius) must override the global `a:hover { text-decoration: underline }` in its `:hover` rule. The global rule has higher specificity than a base class selector, so the override must be on `:hover` specifically.
+
+12. **No dark-mode-only CSS.** Every component must work in both themes. Use CSS variables from `variables.css` — never hardcode hex values. When a component needs different treatment in light mode (shadow, border, background), add a `[data-theme="light"]` override block. When writing new components, test both themes before shipping.
+
+13. **No `rgba(255, 255, 255, 0.0x)` without a light-mode fallback.** These subtle white washes create micro-elevation in dark mode but are invisible on white surfaces. Always pair them with a `[data-theme="light"]` rule using `var(--surface-inset)` or `var(--surface-hover)`.

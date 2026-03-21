@@ -196,10 +196,10 @@
 
 /* Attention left border */
 .prs-page .pt-row { border-left: 3px solid transparent; }
-.prs-page .pt-row.attention-1 { border-left-color: rgba(248, 81, 73, 0.5); }
-.prs-page .pt-row.attention-2 { border-left-color: rgba(63, 185, 80, 0.5); }
-.prs-page .pt-row.attention-3 { border-left-color: rgba(88, 166, 255, 0.5); }
-.prs-page .pt-row.attention-4 { border-left-color: rgba(110, 118, 129, 0.4); }
+.prs-page .pt-row.attention-1 { border-left-color: rgba(var(--red-rgb), 0.5); }
+.prs-page .pt-row.attention-2 { border-left-color: rgba(var(--green-rgb), 0.5); }
+.prs-page .pt-row.attention-3 { border-left-color: rgba(var(--accent-rgb), 0.5); }
+.prs-page .pt-row.attention-4 { border-left-color: rgba(var(--text-muted-rgb), 0.4); }
 
 /* PR column — two-line cell */
 .prs-pr-cell {
@@ -315,15 +315,15 @@
 }
 
 /* Task pill status colors */
-.prs-task-pill.status-in_progress { background: rgba(88, 166, 255, 0.12); color: var(--accent); }
-.prs-task-pill.status-done { background: rgba(63, 185, 80, 0.12); color: var(--green); }
-.prs-task-pill.status-blocked { background: rgba(248, 81, 73, 0.12); color: var(--red); }
+.prs-task-pill.status-in_progress { background: rgba(var(--accent-rgb), 0.12); color: var(--accent); }
+.prs-task-pill.status-done { background: rgba(var(--green-rgb), 0.12); color: var(--green); }
+.prs-task-pill.status-blocked { background: rgba(var(--red-rgb), 0.12); color: var(--red); }
 .prs-task-pill.status-todo { background: var(--surface-hover); color: var(--text-muted); }
 
 /* Task pill hover — deeper background */
-.prs-task-pill.status-in_progress:hover { background: rgba(88, 166, 255, 0.22); }
-.prs-task-pill.status-done:hover { background: rgba(63, 185, 80, 0.22); }
-.prs-task-pill.status-blocked:hover { background: rgba(248, 81, 73, 0.22); }
+.prs-task-pill.status-in_progress:hover { background: rgba(var(--accent-rgb), 0.22); }
+.prs-task-pill.status-done:hover { background: rgba(var(--green-rgb), 0.22); }
+.prs-task-pill.status-blocked:hover { background: rgba(var(--red-rgb), 0.22); }
 .prs-task-pill.status-todo:hover { background: var(--surface-raised); }
 
 .prs-no-task {

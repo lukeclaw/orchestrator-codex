@@ -178,7 +178,7 @@
   padding: 6px;
   border-radius: 6px;
   overflow-x: auto;
-  background: rgb(23, 27, 33);
+  background: var(--surface-inset);
   border: none;
 }
 
@@ -293,7 +293,7 @@
 .markdown-content .suggestion-diff {
   margin: 0;
   padding: 0;
-  background: rgba(63, 185, 80, 0.06);
+  background: rgba(var(--green-rgb), 0.06);
   border: none;
   border-radius: 0;
   overflow-x: auto;
@@ -315,11 +315,11 @@
 }
 
 .markdown-content .suggestion-del {
-  background: rgba(248, 81, 73, 0.1);
+  background: rgba(var(--red-rgb), 0.1);
 }
 
 .markdown-content .suggestion-add {
-  background: rgba(63, 185, 80, 0.1);
+  background: rgba(var(--green-rgb), 0.1);
 }
 
 .markdown-content .suggestion-prefix {
@@ -336,9 +336,9 @@
 }
 
 /* Syntax highlighting (VS Code Dark+ inspired) */
-.markdown-content .hl-keyword { color: #569cd6; }
-.markdown-content .hl-comment { color: #6a9955; font-style: italic; }
-.markdown-content .hl-string { color: #ce9178; }
-.markdown-content .hl-number { color: #b5cea8; }
-.markdown-content .hl-builtin { color: #4ec9b0; }
-.markdown-content .hl-decorator { color: #dcdcaa; }
+.markdown-content .hl-keyword { color: var(--hl-keyword); }
+.markdown-content .hl-comment { color: var(--hl-comment); font-style: italic; }
+.markdown-content .hl-string { color: var(--hl-string); }
+.markdown-content .hl-number { color: var(--hl-number); }
+.markdown-content .hl-builtin { color: var(--hl-builtin); }
+.markdown-content .hl-decorator { color: var(--hl-decorator); }

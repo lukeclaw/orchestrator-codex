@@ -65,12 +65,12 @@
 }
 
 .wcc-type-tag.rdev {
-  background: rgba(139, 92, 246, 0.15);
+  background: rgba(var(--purple-alt-rgb), 0.15);
   color: var(--purple);
 }
 
 .wcc-type-tag.ssh {
-  background: rgba(139, 92, 246, 0.15);
+  background: rgba(var(--purple-alt-rgb), 0.15);
   color: var(--purple);
 }
 
@@ -123,7 +123,7 @@
 }
 
 .wcc-task-badge:hover {
-  background: rgba(88, 166, 255, 0.22);
+  background: rgba(var(--accent-rgb), 0.22);
   text-decoration: none;
 }
 
@@ -154,4 +154,8 @@
 .wcc-activity {
   white-space: nowrap;
   flex-shrink: 0;
+}
+
+[data-theme="light"] .wcc-card {
+  box-shadow: var(--shadow-sm);
 }

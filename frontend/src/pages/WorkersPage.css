@@ -165,15 +165,15 @@
 }
 
 .type-filter-icon--local {
-  color: #3fb950;
+  color: var(--green);
 }
 
 .type-filter-icon--ssh {
-  color: #d29922;
+  color: var(--yellow);
 }
 
 .type-filter-icon--rdev {
-  color: #bc8cff;
+  color: var(--purple);
 }
 
 /* ─── Inline search in status bar ─── */
@@ -231,8 +231,8 @@
 }
 
 /* Rdev state chip dot colors */
-.rdev-dot-running { background: #3fb950; }
-.rdev-dot-stopped { background: #d29922; }
+.rdev-dot-running { background: var(--green); }
+.rdev-dot-stopped { background: var(--yellow); }
 
 /* Worker grid */
 .worker-grid {

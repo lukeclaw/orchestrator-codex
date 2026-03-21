@@ -64,6 +64,10 @@
   filter: brightness(1.2);
 }
 
+[data-theme="light"] .tag-dropdown-option:hover .tag-dropdown-tag {
+  filter: brightness(0.92);
+}
+
 .tag-dropdown-option.has-children {
   cursor: default;
 }

@@ -56,17 +56,17 @@
 }
 
 .badge-task {
-  background: rgba(88, 166, 255, 0.15);
+  background: rgba(var(--accent-rgb), 0.15);
   color: var(--accent);
 }
 
 .badge-subtask {
-  background: rgba(168, 130, 255, 0.15);
+  background: rgba(var(--purple-vivid-rgb), 0.15);
   color: var(--purple);
 }
 
 .badge-pr {
-  background: rgba(63, 185, 80, 0.15);
+  background: rgba(var(--green-rgb), 0.15);
   color: var(--green);
 }
 
@@ -369,4 +369,25 @@
   background: rgba(255, 255, 255, 0.05);
   padding: 1px 8px;
   border-radius: 4px;
+}
+
+/* ── Light mode overrides ── */
+[data-theme="light"] .worker-hours-row {
+  border-bottom-color: var(--border-subtle);
+}
+
+[data-theme="light"] .timeline-track {
+  background: var(--surface-raised);
+}
+
+[data-theme="light"] .timeline-gridline {
+  background: var(--border-subtle);
+}
+
+[data-theme="light"] .heatmap-worker-group {
+  border-bottom-color: var(--border-subtle);
+}
+
+[data-theme="light"] .heatmap-time-chip {
+  background: var(--surface-raised);
 }

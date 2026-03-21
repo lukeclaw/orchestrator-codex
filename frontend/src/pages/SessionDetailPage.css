@@ -41,12 +41,12 @@
 }
 
 .sd-type-tag.rdev {
-  background: rgba(139, 92, 246, 0.15);
+  background: rgba(var(--purple-alt-rgb), 0.15);
   color: var(--purple);
 }
 
 .sd-type-tag.ssh {
-  background: rgba(139, 92, 246, 0.15);
+  background: rgba(var(--purple-alt-rgb), 0.15);
   color: var(--purple);
 }
 
@@ -116,36 +116,36 @@
 
 .sd-control-btn.pause:hover:not(:disabled) {
   color: var(--orange);
-  background: rgba(219, 109, 40, 0.1);
+  background: rgba(var(--orange-rgb), 0.1);
 }
 
 .sd-control-btn.continue:hover:not(:disabled) {
   color: var(--green);
-  background: rgba(63, 185, 80, 0.1);
+  background: rgba(var(--green-rgb), 0.1);
 }
 
 .sd-control-btn.stop:hover:not(:disabled) {
   color: var(--red);
-  background: rgba(248, 81, 73, 0.1);
+  background: rgba(var(--red-rgb), 0.1);
 }
 
 .sd-control-btn.reconnect {
   color: var(--accent);
-  background: rgba(56, 139, 253, 0.1);
+  background: rgba(var(--accent-emphasis-rgb), 0.1);
 }
 
 .sd-control-btn.reconnect:hover:not(:disabled) {
-  background: rgba(56, 139, 253, 0.2);
+  background: rgba(var(--accent-emphasis-rgb), 0.2);
 }
 
 .sd-control-btn.remove:hover:not(:disabled) {
   color: var(--red);
-  background: rgba(248, 81, 73, 0.1);
+  background: rgba(var(--red-rgb), 0.1);
 }
 
 .sd-control-btn.check-progress:hover:not(:disabled) {
   color: var(--yellow);
-  background: rgba(210, 153, 34, 0.1);
+  background: rgba(var(--yellow-rgb), 0.1);
 }
 
 /* File Explorer Content Area */
@@ -259,7 +259,7 @@
   align-items: center;
   gap: 8px;
   padding: 4px 10px;
-  background: rgba(88, 166, 255, 0.12);
+  background: rgba(var(--accent-rgb), 0.12);
   border-radius: 6px;
   text-decoration: none;
   max-width: 60%;
@@ -268,7 +268,7 @@
 }
 
 .sd-task-badge:hover {
-  background: rgba(88, 166, 255, 0.22);
+  background: rgba(var(--accent-rgb), 0.22);
   text-decoration: none;
 }
 
@@ -303,7 +303,7 @@
   font-size: 12px;
   font-weight: 500;
   color: var(--green);
-  background: rgba(63, 185, 80, 0.08);
+  background: rgba(var(--green-rgb), 0.08);
   border: none;
   border-radius: 6px;
   padding: 4px 10px;
@@ -312,7 +312,7 @@
 }
 
 .sd-assign-task-btn:hover {
-  background: rgba(63, 185, 80, 0.18);
+  background: rgba(var(--green-rgb), 0.18);
 }
 
 /* Tunnel badges — pill */
@@ -326,7 +326,7 @@
   display: inline-flex;
   align-items: center;
   padding: 2px 6px;
-  background: rgba(139, 92, 246, 0.15);
+  background: rgba(var(--purple-alt-rgb), 0.15);
   color: var(--purple);
   border-radius: 999px;
   font-family: var(--font-mono);
@@ -337,7 +337,7 @@
 }
 
 .sd-tunnel-badge:hover {
-  background: rgba(139, 92, 246, 0.3);
+  background: rgba(var(--purple-alt-rgb), 0.3);
   text-decoration: none;
 }
 
@@ -434,7 +434,7 @@
   background: conic-gradient(
     from var(--sd-border-angle, 0deg),
     transparent 30%,
-    rgba(88, 166, 255, 0.3) 70%,
+    rgba(var(--accent-rgb), 0.3) 70%,
     var(--accent) 100%
   );
   -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
@@ -468,7 +468,7 @@
 .sd-panel-btn.active {
   color: var(--text-primary);
   background: var(--surface-raised);
-  box-shadow: inset 0 -1.5px 0 0 rgba(88, 166, 255, 0.4);
+  box-shadow: inset 0 -1.5px 0 0 rgba(var(--accent-rgb), 0.4);
 }
 
 .sd-panel-btn.active.open {
@@ -521,7 +521,7 @@
   background: conic-gradient(
     from var(--sd-border-angle, 0deg),
     transparent 30%,
-    rgba(88, 166, 255, 0.3) 70%,
+    rgba(var(--accent-rgb), 0.3) 70%,
     var(--accent) 100%
   );
   -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);

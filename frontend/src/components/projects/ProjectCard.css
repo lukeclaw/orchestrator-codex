@@ -10,6 +10,10 @@
   transition: border-color 0.15s, background 0.15s;
 }
 
+[data-theme="light"] .project-card {
+  box-shadow: var(--shadow-sm);
+}
+
 .project-card:hover {
   border-color: var(--accent);
   background: var(--surface-hover);
@@ -50,9 +54,9 @@
   flex-shrink: 0;
 }
 
-.pc-status-pill.active    { background: rgba(63, 185, 80, 0.15); color: var(--green); }
-.pc-status-pill.completed { background: rgba(88, 166, 255, 0.12); color: var(--accent); }
-.pc-status-pill.paused    { background: rgba(210, 153, 34, 0.15); color: var(--yellow); }
+.pc-status-pill.active    { background: rgba(var(--green-rgb), 0.15); color: var(--green); }
+.pc-status-pill.completed { background: rgba(var(--accent-rgb), 0.12); color: var(--accent); }
+.pc-status-pill.paused    { background: rgba(var(--yellow-rgb), 0.15); color: var(--yellow); }
 
 .pc-target-date {
   display: inline-flex;

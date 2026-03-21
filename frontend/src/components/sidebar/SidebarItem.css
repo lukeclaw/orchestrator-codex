@@ -88,19 +88,19 @@
 }
 
 .sidebar-badge.warning {
-  background: rgba(245, 158, 11, 0.15);
-  color: #f59e0b;
+  background: rgba(var(--yellow-alt-rgb), 0.15);
+  color: var(--yellow);
 }
 
 .sidebar-badge-dot.warning {
-  background: #f59e0b;
+  background: var(--yellow);
 }
 
 .sidebar-badge.danger {
-  background: rgba(248, 81, 73, 0.15);
-  color: #f85149;
+  background: rgba(var(--red-rgb), 0.15);
+  color: var(--red);
 }
 
 .sidebar-badge-dot.danger {
-  background: #f85149;
+  background: var(--red);
 }

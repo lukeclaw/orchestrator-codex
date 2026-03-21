@@ -23,7 +23,7 @@
 .form-group input:focus {
   outline: none;
   border-color: var(--blue, #3b82f6);
-  box-shadow: 0 0 0 2px var(--blue-bg, rgba(59, 130, 246, 0.15));
+  box-shadow: 0 0 0 2px var(--blue-bg, rgba(var(--blue-alt-rgb), 0.15));
 }
 
 .field-required {
@@ -46,7 +46,7 @@
 
 .create-warning {
   padding: 10px 12px;
-  background: var(--yellow-bg, rgba(234, 179, 8, 0.1));
+  background: var(--yellow-bg, rgba(var(--yellow-bright-rgb), 0.1));
   border: 1px solid var(--yellow, #eab308);
   border-radius: 6px;
   color: var(--yellow, #eab308);

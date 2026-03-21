@@ -71,8 +71,8 @@
 }
 
 .atm-task-option.atm-assigning {
-  background: rgba(88, 166, 255, 0.1);
-  border-color: rgba(88, 166, 255, 0.3);
+  background: rgba(var(--accent-rgb), 0.1);
+  border-color: rgba(var(--accent-rgb), 0.3);
   opacity: 1;
 }
 
@@ -102,17 +102,17 @@
 }
 
 .atm-priority.priority-H {
-  background: rgba(248, 81, 73, 0.15);
+  background: rgba(var(--red-rgb), 0.15);
   color: var(--red);
 }
 
 .atm-priority.priority-M {
-  background: rgba(210, 153, 34, 0.15);
+  background: rgba(var(--yellow-rgb), 0.15);
   color: var(--yellow);
 }
 
 .atm-priority.priority-L {
-  background: rgba(139, 148, 158, 0.12);
+  background: rgba(var(--text-secondary-rgb), 0.12);
   color: var(--text-secondary);
 }
 
@@ -151,11 +151,20 @@
 }
 
 .atm-status.status-todo {
-  background: rgba(139, 148, 158, 0.12);
+  background: rgba(var(--text-secondary-rgb), 0.12);
   color: var(--text-secondary);
 }
 
 .atm-status.status-in_progress {
-  background: rgba(88, 166, 255, 0.15);
+  background: rgba(var(--accent-rgb), 0.15);
   color: var(--accent);
+}
+
+/* ── Light mode overrides ── */
+[data-theme="light"] .atm-hint {
+  background: var(--surface-inset);
+}
+
+[data-theme="light"] .atm-task-option {
+  background: var(--surface-inset);
 }

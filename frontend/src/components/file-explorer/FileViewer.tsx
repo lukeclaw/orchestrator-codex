@@ -1,7 +1,7 @@
 import { useState, useCallback, useRef, useEffect } from 'react'
 import Editor, { loader } from '@monaco-editor/react'
 
-// Define a custom dark theme with a cooler background
+// Define custom themes for Monaco editor
 loader.init().then(monaco => {
   monaco.editor.defineTheme('cool-dark', {
     base: 'vs-dark',
@@ -13,7 +13,23 @@ loader.init().then(monaco => {
       'minimap.background': '#181a20',
     },
   })
+  monaco.editor.defineTheme('cool-light', {
+    base: 'vs',
+    inherit: true,
+    rules: [],
+    colors: {
+      'editor.background': '#f6f8fa',
+      'editorGutter.background': '#f6f8fa',
+      'minimap.background': '#f6f8fa',
+    },
+  })
 })
+
+function getMonacoTheme(): string {
+  return document.documentElement.getAttribute('data-theme') === 'light'
+    ? 'cool-light'
+    : 'cool-dark'
+}
 import { IconX, IconSave, IconPencil, IconEye } from '../common/Icons'
 import Markdown from '../common/Markdown'
 import type { Tab } from '../../hooks/useEditorTabs'
@@ -94,6 +110,14 @@ export default function FileViewer({
   onDismissExternalChange,
   isDirty,
 }: FileViewerProps) {
+  // Track current theme for Monaco editor
+  const [monacoTheme, setMonacoTheme] = useState(getMonacoTheme)
+  useEffect(() => {
+    const observer = new MutationObserver(() => setMonacoTheme(getMonacoTheme()))
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] })
+    return () => observer.disconnect()
+  }, [])
+
   // For markdown files: whether showing preview (true) or editor (false)
   const [mdPreviewMode, setMdPreviewMode] = useState<Record<string, boolean>>({})
   const tabBarRef = useRef<HTMLDivElement>(null)
@@ -253,7 +277,7 @@ export default function FileViewer({
                   language={monacoLanguage(activeTab.language)}
                   value={activeTab.currentContent ?? ''}
                   onChange={(value) => onContentChange(activeTab.path, value ?? '')}
-                  theme="cool-dark"
+                  theme={monacoTheme}
                   options={{
                     minimap: { enabled: true, scale: 1, showSlider: 'mouseover' },
                     fontSize: 12,

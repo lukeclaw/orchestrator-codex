@@ -65,11 +65,11 @@
 }
 
 .cm-action-btn.save {
-  color: #3fb950;
+  color: var(--green);
 }
 
 .cm-action-btn.save:hover:not(:disabled) {
-  background: rgba(63, 185, 80, 0.15);
+  background: rgba(var(--green-rgb), 0.15);
 }
 
 .cm-action-btn.save:disabled {
@@ -79,11 +79,11 @@
 }
 
 .cm-action-btn.cancel {
-  color: #f85149;
+  color: var(--red);
 }
 
 .cm-action-btn.cancel:hover {
-  background: rgba(248, 81, 73, 0.15);
+  background: rgba(var(--red-rgb), 0.15);
 }
 
 /* ─── Title ─── */
@@ -147,23 +147,23 @@
 
 /* Scope badge colors */
 .cm-scope-global {
-  background: rgba(56, 139, 253, 0.15);
-  color: #58a6ff;
+  background: rgba(var(--accent-emphasis-rgb), 0.15);
+  color: var(--accent);
 }
 
 .cm-scope-brain {
-  background: rgba(187, 128, 255, 0.15);
-  color: #bc8cff;
+  background: rgba(var(--purple-bright-rgb), 0.15);
+  color: var(--purple);
 }
 
 .cm-scope-project {
-  background: rgba(63, 185, 80, 0.15);
-  color: #3fb950;
+  background: rgba(var(--green-rgb), 0.15);
+  color: var(--green);
 }
 
 .cm-scope-project-item {
-  background: rgba(63, 185, 80, 0.1);
-  color: #3fb950;
+  background: rgba(var(--green-rgb), 0.1);
+  color: var(--green);
 }
 
 /* ─── Description ─── */

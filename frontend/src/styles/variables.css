@@ -11,7 +11,7 @@
   /* Borders — use sparingly; prefer background contrast */
   --border: #30363d;
   --border-subtle: #21262d;
-  --border-muted: rgba(48, 54, 61, 0.4);
+  --border-muted: rgba(var(--border-rgb), 0.4);
 
   /* Text */
   --text-primary: #e6edf3;
@@ -89,4 +89,135 @@
   --shadow-md: 0 3px 8px rgba(0,0,0,0.24);
   --shadow-lg: 0 8px 24px rgba(0,0,0,0.4);
   --shadow-float: 0 4px 16px rgba(0,0,0,0.3), 0 0 0 1px var(--border-muted);
+
+  /* RGB companions for theme-aware rgba() usage */
+  --accent-rgb: 88, 166, 255;
+  --accent-emphasis-rgb: 56, 139, 253;
+  --green-rgb: 63, 185, 80;
+  --green-bright-rgb: 34, 197, 94;
+  --red-rgb: 248, 81, 73;
+  --red-bright-rgb: 255, 123, 114;
+  --red-alt-rgb: 239, 68, 68;
+  --yellow-rgb: 210, 153, 34;
+  --yellow-bright-rgb: 234, 179, 8;
+  --yellow-alt-rgb: 245, 158, 11;
+  --orange-rgb: 219, 109, 40;
+  --orange-alt-rgb: 249, 115, 22;
+  --purple-rgb: 163, 113, 247;
+  --purple-alt-rgb: 139, 92, 246;
+  --purple-bright-rgb: 187, 128, 255;
+  --purple-vivid-rgb: 168, 130, 255;
+  --blue-alt-rgb: 59, 130, 246;
+  --text-secondary-rgb: 139, 148, 158;
+  --text-muted-rgb: 110, 118, 129;
+  --gray-rgb: 107, 114, 128;
+  --border-rgb: 48, 54, 61;
+  --surface-rgb: 22, 27, 34;
+  --bg-rgb: 13, 17, 23;
+
+  /* Button colors */
+  --btn-primary-bg: var(--green-muted);
+  --btn-primary-bg-hover: var(--green);
+  --btn-primary-text: var(--text-primary);
+  --btn-primary-border: rgba(var(--green-rgb), 0.4);
+
+  /* Syntax highlighting */
+  --hl-keyword: #569cd6;
+  --hl-comment: #6a9955;
+  --hl-string: #ce9178;
+  --hl-number: #b5cea8;
+  --hl-builtin: #4ec9b0;
+  --hl-decorator: #dcdcaa;
+}
+
+/* ── Light theme ── */
+[data-theme="light"] {
+  --bg: #f0f2f5;
+  --bg-alt: #e8ebef;
+  --surface: #ffffff;
+  --surface-inset: #f6f8fa;
+  --surface-hover: #f3f5f7;
+  --surface-raised: #eaeef2;
+  --surface-overlay: #ffffff;
+
+  --border: #c9d1d9;
+  --border-subtle: #d0d7de;
+  --border-muted: rgba(201, 209, 217, 0.5);
+
+  --text-primary: #1f2328;
+  --text-secondary: #656d76;
+  --text-muted: #8b949e;
+
+  --accent: #0969da;
+  --accent-muted: rgba(9, 105, 218, 0.1);
+  --accent-hover: #0550ae;
+
+  --green: #1a7f37;
+  --green-muted: #2da44e;
+  --yellow: #9a6700;
+  --yellow-muted: #bf8700;
+  --red: #d1242f;
+  --red-muted: #cf222e;
+  --orange: #bc4c00;
+  --purple: #8250df;
+
+  --danger: #d1242f;
+  --success: #1a7f37;
+  --warning: #9a6700;
+
+  --status-paused: #bc4c00;
+
+  /* Button overrides — white text on vibrant green */
+  --btn-primary-bg: #2da44e;
+  --btn-primary-bg-hover: #218838;
+  --btn-primary-text: #ffffff;
+  --btn-primary-border: rgba(27, 31, 36, 0.15);
+
+  --git-modified: #9a6700;
+  --git-added: #1a7f37;
+  --git-untracked: #2da44e;
+  --git-deleted: #d1242f;
+  --git-renamed: #2da44e;
+  --git-conflicting: #cf222e;
+  --git-ignored: #8b949e;
+  --git-submodule: #0969da;
+
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.1), 0 1px 2px rgba(0, 0, 0, 0.06);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.12), 0 1px 3px rgba(0, 0, 0, 0.08);
+  --shadow-lg: 0 10px 30px rgba(0, 0, 0, 0.15), 0 2px 8px rgba(0, 0, 0, 0.08);
+  --shadow-float: 0 8px 24px rgba(0, 0, 0, 0.16), 0 0 0 1px var(--border-muted);
+
+  /* RGB companions — light values */
+  --accent-rgb: 9, 105, 218;
+  /* Base RGB — dark values for text contrast on white */
+  --accent-emphasis-rgb: 56, 139, 253;
+  --green-rgb: 26, 127, 55;
+  --green-bright-rgb: 34, 197, 94;
+  --red-rgb: 209, 36, 47;
+  --red-bright-rgb: 239, 68, 68;
+  --red-alt-rgb: 239, 68, 68;
+  --yellow-rgb: 154, 103, 0;
+  --yellow-bright-rgb: 234, 179, 8;
+  --yellow-alt-rgb: 245, 158, 11;
+  --orange-rgb: 188, 76, 0;
+  --orange-alt-rgb: 249, 115, 22;
+  --purple-rgb: 130, 80, 223;
+  --purple-alt-rgb: 139, 92, 246;
+  --purple-bright-rgb: 168, 85, 247;
+  --purple-vivid-rgb: 168, 130, 255;
+  --blue-alt-rgb: 59, 130, 246;
+  --text-secondary-rgb: 101, 109, 118;
+  --text-muted-rgb: 139, 148, 158;
+  --gray-rgb: 107, 114, 128;
+  --border-rgb: 201, 209, 217;
+  --surface-rgb: 255, 255, 255;
+  --bg-rgb: 240, 242, 245;
+
+  /* Syntax highlighting — GitHub Light */
+  --hl-keyword: #cf222e;
+  --hl-comment: #6e7781;
+  --hl-string: #0a3069;
+  --hl-number: #0550ae;
+  --hl-builtin: #8250df;
+  --hl-decorator: #953800;
 }

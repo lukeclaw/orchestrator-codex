@@ -87,8 +87,8 @@
 
 /* Heatmap current-hour pulse */
 @keyframes heatmap-pulse {
-  0%, 100% { fill: rgba(88, 166, 255, 0.06); }
-  50% { fill: rgba(88, 166, 255, 0.18); }
+  0%, 100% { fill: rgba(var(--accent-rgb), 0.06); }
+  50% { fill: rgba(var(--accent-rgb), 0.18); }
 }
 
 .heatmap-now {
@@ -99,6 +99,11 @@
 .trends-chart .recharts-bar-rectangle:hover,
 .trends-chart .recharts-area-curve:hover {
   filter: brightness(1.2);
+}
+
+[data-theme="light"] .trends-chart .recharts-bar-rectangle:hover,
+[data-theme="light"] .trends-chart .recharts-area-curve:hover {
+  filter: brightness(0.92);
 }
 
 @media (max-width: 900px) {

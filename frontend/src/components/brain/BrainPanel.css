@@ -126,7 +126,7 @@
 
 .brain-indicator.active {
   background: var(--green);
-  box-shadow: 0 0 6px rgba(63, 185, 80, 0.5);
+  box-shadow: 0 0 6px rgba(var(--green-rgb), 0.5);
   animation: pulse-green 2s infinite;
 }
 
@@ -156,7 +156,7 @@
 }
 
 .bp-stop-btn:hover {
-  background: rgba(248, 81, 73, 0.1);
+  background: rgba(var(--red-rgb), 0.1);
   color: var(--red);
 }
 
@@ -219,7 +219,7 @@
 
 .bp-footer-action-create:hover {
   color: var(--green);
-  background: rgba(63, 185, 80, 0.08);
+  background: rgba(var(--green-rgb), 0.08);
 }
 
 .bp-footer-paste-btn {
@@ -248,7 +248,7 @@
   background: conic-gradient(
     from var(--bp-border-angle, 0deg),
     transparent 30%,
-    rgba(88, 166, 255, 0.3) 70%,
+    rgba(var(--accent-rgb), 0.3) 70%,
     var(--accent) 100%
   );
   -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);

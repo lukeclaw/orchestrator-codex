@@ -8,6 +8,7 @@ import { useApp } from '../context/AppContext'
 import { pickFolder } from '../api/pickFolder'
 import ConfirmPopover from '../components/common/ConfirmPopover'
 import SlidingTabs from '../components/common/SlidingTabs'
+import type { ThemeMode } from '../hooks/useTheme'
 import './SettingsPage.css'
 
 function formatBytes(bytes: number): string {
@@ -71,6 +72,7 @@ export default function SettingsPage() {
   const [claudeUpdateBeforeStart, setClaudeUpdateBeforeStart] = useState(false)
   const [preserveFilters, setPreserveFilters] = useState(false)
   const [skipPermissions, setSkipPermissions] = useState(false)
+  const [theme, setTheme] = useState<ThemeMode>('dark')
 
   // Sync settings from DB
   useEffect(() => {
@@ -78,6 +80,7 @@ export default function SettingsPage() {
       setClaudeUpdateBeforeStart(Boolean(getValue('claude.update_before_start')))
       setPreserveFilters(Boolean(getValue('ui.preserve_filters')))
       setSkipPermissions(Boolean(getValue('claude.skip_permissions')))
+      setTheme((getValue('ui.theme') as ThemeMode) || 'dark')
     }
   }, [loading, getValue])
 
@@ -97,6 +100,12 @@ export default function SettingsPage() {
     const newValue = !skipPermissions
     setSkipPermissions(newValue)
     await save({ 'claude.skip_permissions': newValue })
+  }
+
+  const handleThemeChange = async (value: string) => {
+    const v = value as ThemeMode
+    setTheme(v)
+    await save({ 'ui.theme': v })
   }
 
   const [backupDir, setBackupDir] = useState('')
@@ -339,6 +348,31 @@ export default function SettingsPage() {
 
       {/* ── Preferences Tab ── */}
       {activeTab === 'preferences' && (<>
+        <div className="settings-content panel">
+          <div className="panel-header">
+            <h2>Appearance</h2>
+          </div>
+          <div className="panel-body">
+            <div className="settings-toggle-row">
+              <div>
+                <div className="settings-toggle-label">Theme</div>
+                <div className="settings-toggle-desc">
+                  Choose your preferred color scheme
+                </div>
+              </div>
+              <SlidingTabs
+                tabs={[
+                  { value: 'dark' as const, label: 'Dark' },
+                  { value: 'light' as const, label: 'Light' },
+                  { value: 'system' as const, label: 'System' },
+                ]}
+                value={theme}
+                onChange={handleThemeChange}
+              />
+            </div>
+          </div>
+        </div>
+
         <div className="settings-content panel">
           <div className="panel-header">
             <h2>Claude Code</h2>

@@ -51,12 +51,12 @@
 }
 
 .skill-card-badge.built-in {
-  background: rgba(163, 113, 247, 0.15);
+  background: rgba(var(--purple-rgb), 0.15);
   color: var(--purple);
 }
 
 .skill-card-badge.custom {
-  background: rgba(63, 185, 80, 0.15);
+  background: rgba(var(--green-rgb), 0.15);
   color: var(--green);
 }
 
@@ -76,7 +76,7 @@
 }
 
 .skill-card-toggle.on {
-  background: #3fb950;
+  background: var(--green);
 }
 
 .skill-card-toggle-knob {
@@ -119,7 +119,7 @@
 /* Warning for disabled built-in */
 .skill-card-warning {
   font-size: 11px;
-  color: #d29922;
+  color: var(--yellow);
   margin-top: 6px;
   line-height: 1.3;
 }
@@ -140,4 +140,8 @@
 
 .skill-card-time {
   margin-left: auto;
+}
+
+[data-theme="light"] .skill-card {
+  box-shadow: var(--shadow-sm);
 }

@@ -83,7 +83,7 @@
   color: var(--danger);
   font-size: 12px;
   padding: 8px;
-  background: rgba(239, 68, 68, 0.1);
+  background: rgba(var(--red-alt-rgb), 0.1);
   border-radius: 4px;
   margin-bottom: 8px;
 }
@@ -169,7 +169,7 @@
 
 .rdev-item.selected {
   border-color: var(--primary);
-  background: rgba(59, 130, 246, 0.1);
+  background: rgba(var(--blue-alt-rgb), 0.1);
 }
 
 .rdev-item.in-use {
@@ -207,13 +207,13 @@
 }
 
 .rdev-state.running {
-  background: rgba(63, 185, 80, 0.15);
+  background: rgba(var(--green-rgb), 0.15);
   color: var(--green);
 }
 
 .rdev-state.stopped,
 .rdev-state.stopping {
-  background: rgba(210, 153, 34, 0.15);
+  background: rgba(var(--yellow-rgb), 0.15);
   color: var(--yellow);
 }
 
@@ -263,7 +263,7 @@
 }
 
 .input-error:focus {
-  box-shadow: 0 0 0 2px rgba(248, 81, 73, 0.2);
+  box-shadow: 0 0 0 2px rgba(var(--red-rgb), 0.2);
 }
 
 .field-hint {

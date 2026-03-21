@@ -249,10 +249,10 @@
   border-left-color: var(--border);
 }
 
-.tk-row.tk-status-todo:hover        { border-left-color: #6e7681; }
-.tk-row.tk-status-in_progress:hover  { border-left-color: #58a6ff; }
-.tk-row.tk-status-done:hover         { border-left-color: #3fb950; }
-.tk-row.tk-status-blocked:hover      { border-left-color: #f85149; }
+.tk-row.tk-status-todo:hover        { border-left-color: var(--text-muted); }
+.tk-row.tk-status-in_progress:hover  { border-left-color: var(--accent); }
+.tk-row.tk-status-done:hover         { border-left-color: var(--green); }
+.tk-row.tk-status-blocked:hover      { border-left-color: var(--red); }
 
 /* Task-specific column styles */
 .tasks-page .task-key {

@@ -53,23 +53,23 @@
 
 /* Colored gradient backgrounds + stat values per type */
 .stat-workers {
-  background: linear-gradient(135deg, rgba(88,166,255,0.10) 0%, rgba(88,166,255,0.03) 100%);
+  background: linear-gradient(135deg, rgba(var(--accent-rgb),0.10) 0%, rgba(var(--accent-rgb),0.03) 100%);
 }
 .stat-workers .stat-value { color: var(--accent); }
 
 .stat-projects {
-  background: linear-gradient(135deg, rgba(63,185,80,0.10) 0%, rgba(63,185,80,0.03) 100%);
+  background: linear-gradient(135deg, rgba(var(--green-rgb),0.10) 0%, rgba(var(--green-rgb),0.03) 100%);
 }
 .stat-projects .stat-value { color: var(--green); }
 
 .stat-tasks {
-  background: linear-gradient(135deg, rgba(163,113,247,0.10) 0%, rgba(163,113,247,0.03) 100%);
+  background: linear-gradient(135deg, rgba(var(--purple-rgb),0.10) 0%, rgba(var(--purple-rgb),0.03) 100%);
 }
 .stat-tasks .stat-value { color: var(--purple); }
 
 /* Warning state — overrides workers gradient */
 .stat-warning {
-  background: linear-gradient(135deg, rgba(210,153,34,0.12) 0%, rgba(210,153,34,0.04) 100%);
+  background: linear-gradient(135deg, rgba(var(--yellow-rgb),0.12) 0%, rgba(var(--yellow-rgb),0.04) 100%);
 }
 
 .stat-warning .stat-value {
@@ -84,6 +84,14 @@
     flex: 1 1 calc(33% - 8px);
     min-width: 0;
   }
+}
+
+[data-theme="light"] .stat {
+  box-shadow: var(--shadow-sm);
+}
+
+[data-theme="light"] .stat:hover {
+  filter: brightness(0.97);
 }
 
 @media (max-width: 600px) {

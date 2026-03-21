@@ -318,7 +318,7 @@
 
 /* Drag and drop */
 .fe-node--drop-target {
-  background: rgba(88, 166, 255, 0.15);
+  background: rgba(var(--accent-rgb), 0.15);
   outline: 1px dashed var(--blue, #58a6ff);
   outline-offset: -1px;
 }

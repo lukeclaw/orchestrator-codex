@@ -84,3 +84,6 @@ orchestrator/_version.py
 
 # Windsurf tmp files
 .windsurf/
+
+# Claude tmp schedule file
+scheduled_tasks.lock

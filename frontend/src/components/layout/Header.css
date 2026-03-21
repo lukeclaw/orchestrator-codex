@@ -61,18 +61,18 @@
 
 .connection-dot.connected {
   background: var(--green);
-  box-shadow: 0 0 6px rgba(63,185,80,0.5);
+  box-shadow: 0 0 6px rgba(var(--green-rgb),0.5);
   animation: pulse 2s ease-in-out infinite;
 }
 
 @keyframes pulse {
-  0%, 100% { box-shadow: 0 0 4px rgba(63,185,80,0.4); }
-  50% { box-shadow: 0 0 8px rgba(63,185,80,0.7); }
+  0%, 100% { box-shadow: 0 0 4px rgba(var(--green-rgb),0.4); }
+  50% { box-shadow: 0 0 8px rgba(var(--green-rgb),0.7); }
 }
 
 .connection-dot.disconnected {
   background: var(--red);
-  box-shadow: 0 0 6px rgba(248,81,73,0.5);
+  box-shadow: 0 0 6px rgba(var(--red-rgb),0.5);
 }
 
 .connection-label {

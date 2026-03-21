@@ -3,8 +3,63 @@ import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import { WebLinksAddon } from '@xterm/addon-web-links'
 import { openUrl } from '../../api/client'
+import type { ITheme } from '@xterm/xterm'
 import '@xterm/xterm/css/xterm.css'
 import './TerminalView.css'
+
+const DARK_THEME: ITheme = {
+  background: '#0d1117',
+  foreground: '#e6edf3',
+  cursor: '#58a6ff',
+  cursorAccent: '#0d1117',
+  selectionBackground: '#388bfd44',
+  black: '#484f58',
+  red: '#ff7b72',
+  green: '#3fb950',
+  yellow: '#d29922',
+  blue: '#58a6ff',
+  magenta: '#bc8cff',
+  cyan: '#39d353',
+  white: '#b1bac4',
+  brightBlack: '#6e7681',
+  brightRed: '#ffa198',
+  brightGreen: '#56d364',
+  brightYellow: '#e3b341',
+  brightBlue: '#79c0ff',
+  brightMagenta: '#d2a8ff',
+  brightCyan: '#56d364',
+  brightWhite: '#f0f6fc',
+}
+
+const LIGHT_THEME: ITheme = {
+  background: '#f0f2f5',
+  foreground: '#1f2328',
+  cursor: '#0969da',
+  cursorAccent: '#f0f2f5',
+  selectionBackground: '#0969da33',
+  black: '#24292f',
+  red: '#cf222e',
+  green: '#1a7f37',
+  yellow: '#9a6700',
+  blue: '#0969da',
+  magenta: '#8250df',
+  cyan: '#1b7c83',
+  white: '#6e7781',
+  brightBlack: '#57606a',
+  brightRed: '#a40e26',
+  brightGreen: '#2da44e',
+  brightYellow: '#bf8700',
+  brightBlue: '#218bff',
+  brightMagenta: '#a475f9',
+  brightCyan: '#3192aa',
+  brightWhite: '#8c959f',
+}
+
+function getTerminalTheme(): ITheme {
+  return document.documentElement.getAttribute('data-theme') === 'light'
+    ? LIGHT_THEME
+    : DARK_THEME
+}
 
 interface Props {
   sessionId: string
@@ -377,29 +432,7 @@ export default function TerminalView({ sessionId, wsPath, sendPath, sessionStatu
       fontFamily: "'SF Mono', 'Menlo', 'Monaco', 'Consolas', monospace",
       fontSize: 12,
       lineHeight: 1.2,
-      theme: {
-        background: '#0d1117',
-        foreground: '#e6edf3',
-        cursor: '#58a6ff',
-        cursorAccent: '#0d1117',
-        selectionBackground: '#388bfd44',
-        black: '#484f58',
-        red: '#ff7b72',
-        green: '#3fb950',
-        yellow: '#d29922',
-        blue: '#58a6ff',
-        magenta: '#bc8cff',
-        cyan: '#39d353',
-        white: '#b1bac4',
-        brightBlack: '#6e7681',
-        brightRed: '#ffa198',
-        brightGreen: '#56d364',
-        brightYellow: '#e3b341',
-        brightBlue: '#79c0ff',
-        brightMagenta: '#d2a8ff',
-        brightCyan: '#56d364',
-        brightWhite: '#f0f6fc',
-      },
+      theme: getTerminalTheme(),
       cursorBlink: true,
       allowProposedApi: true,
       scrollback: 2000,
@@ -415,6 +448,15 @@ export default function TerminalView({ sessionId, wsPath, sendPath, sessionStatu
 
     requestAnimationFrame(() => {
       fitAddon.fit()
+    })
+
+    // Watch for theme changes and update xterm colors
+    const themeObserver = new MutationObserver(() => {
+      terminal.options.theme = getTerminalTheme()
+    })
+    themeObserver.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ['data-theme'],
     })
 
     terminalRef.current = terminal
@@ -606,6 +648,7 @@ export default function TerminalView({ sessionId, wsPath, sendPath, sessionStatu
       
       clearTimeout(resizeTimeout)
       observer.disconnect()
+      themeObserver.disconnect()
       inputDisposable.dispose()
       if (textarea) {
         textarea.removeEventListener('focus', handleFocus)

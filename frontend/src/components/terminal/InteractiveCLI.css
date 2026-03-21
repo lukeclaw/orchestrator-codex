@@ -97,7 +97,7 @@
 
 .icli-close-btn:hover {
   color: var(--red, #ff7b72);
-  background: rgba(255, 123, 114, 0.15);
+  background: rgba(var(--red-bright-rgb), 0.15);
 }
 
 .icli-terminal {

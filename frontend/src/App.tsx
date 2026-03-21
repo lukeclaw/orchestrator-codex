@@ -1,7 +1,9 @@
+import { type ReactNode } from 'react'
 import { Routes, Route } from 'react-router-dom'
 import { AppProvider } from './context/AppContext'
 import { NotificationProvider } from './context/NotificationContext'
 import { SettingsProvider } from './context/SettingsContext'
+import { useTheme } from './hooks/useTheme'
 import ErrorBoundary from './components/common/ErrorBoundary'
 import AppLayout from './layouts/AppLayout'
 import DashboardPage from './pages/DashboardPage'
@@ -17,11 +19,17 @@ import NotificationsPage from './pages/NotificationsPage'
 import PRsPage from './pages/PRsPage'
 import SettingsPage from './pages/SettingsPage'
 
+function ThemeApplicator({ children }: { children: ReactNode }) {
+  useTheme()
+  return <>{children}</>
+}
+
 export default function App() {
   return (
     <ErrorBoundary>
       <NotificationProvider>
         <SettingsProvider>
+        <ThemeApplicator>
         <AppProvider>
           <Routes>
             <Route element={<AppLayout />}>
@@ -41,6 +49,7 @@ export default function App() {
             </Route>
           </Routes>
         </AppProvider>
+        </ThemeApplicator>
         </SettingsProvider>
       </NotificationProvider>
     </ErrorBoundary>

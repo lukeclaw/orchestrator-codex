@@ -72,3 +72,7 @@
 .tc-links {
   color: var(--text-muted);
 }
+
+[data-theme="light"] .task-card {
+  box-shadow: var(--shadow-sm);
+}

@@ -6,6 +6,15 @@
   padding: 0;
 }
 
+/* Smooth theme transitions — only active during theme switch */
+html.theme-transitioning,
+html.theme-transitioning *,
+html.theme-transitioning *::before,
+html.theme-transitioning *::after {
+  transition: background-color 250ms ease, color 250ms ease,
+              border-color 250ms ease, box-shadow 250ms ease !important;
+}
+
 /* Disable drag-to-select everywhere, then re-enable for readable content */
 * {
   user-select: none;
@@ -90,12 +99,12 @@ select:focus {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: rgba(110, 118, 129, 0.4);
+  background: rgba(var(--text-muted-rgb), 0.4);
   border-radius: 3px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(110, 118, 129, 0.7);
+  background: rgba(var(--text-muted-rgb), 0.7);
 }
 
 ::-webkit-scrollbar-corner {
@@ -180,6 +189,19 @@ select:focus {
   overflow: hidden;
 }
 
+[data-theme="light"] .panel {
+  box-shadow: var(--shadow-sm);
+  border: 1px solid var(--border-subtle);
+}
+
+[data-theme="light"] .modal-content {
+  box-shadow: var(--shadow-lg);
+}
+
+[data-theme="light"] .sliding-tabs {
+  background: var(--surface-raised);
+}
+
 .panel-header {
   display: flex;
   align-items: center;
@@ -236,13 +258,13 @@ select:focus {
 }
 
 .btn-primary {
-  background: var(--green-muted);
-  color: var(--text-primary);
-  border-color: rgba(63,185,80,0.4);
+  background: var(--btn-primary-bg);
+  color: var(--btn-primary-text);
+  border-color: var(--btn-primary-border);
 }
 
 .btn-primary:hover:not(:disabled) {
-  background: var(--green);
+  background: var(--btn-primary-bg-hover);
 }
 
 .btn-primary:disabled {
@@ -262,13 +284,13 @@ select:focus {
 }
 
 .btn-danger {
-  background: rgba(248, 81, 73, 0.08);
+  background: rgba(var(--red-rgb), 0.08);
   color: var(--red);
   border-color: transparent;
 }
 
 .btn-danger:hover {
-  background: rgba(248, 81, 73, 0.2);
+  background: rgba(var(--red-rgb), 0.2);
   color: var(--text-primary);
   border-color: transparent;
 }
@@ -326,34 +348,34 @@ select:focus {
 /* Worker statuses */
 .status-badge.working,
 .status-badge.in_progress {
-  background: rgba(88,166,255,0.15);
+  background: rgba(var(--accent-rgb),0.15);
   color: var(--status-working);
 }
 
 .status-badge.idle,
 .status-badge.todo {
-  background: rgba(63,185,80,0.15);
+  background: rgba(var(--green-rgb),0.15);
   color: var(--status-idle);
 }
 
 .status-badge.disconnected {
-  background: rgba(248,81,73,0.15);
+  background: rgba(var(--red-rgb),0.15);
   color: var(--status-disconnected);
 }
 
 .status-badge.waiting,
 .status-badge.blocked {
-  background: rgba(210,153,34,0.15);
+  background: rgba(var(--yellow-rgb),0.15);
   color: var(--status-waiting);
 }
 
 .status-badge.paused {
-  background: rgba(249,115,22,0.15);
+  background: rgba(var(--orange-alt-rgb),0.15);
   color: var(--status-paused);
 }
 
 .status-badge.connecting {
-  background: rgba(219, 109, 40, 0.15);
+  background: rgba(var(--orange-rgb), 0.15);
   color: var(--status-connecting);
   animation: badge-connecting-pulse 1.5s ease-in-out infinite;
 }
@@ -366,20 +388,20 @@ select:focus {
 .status-badge.done,
 .status-badge.merged,
 .status-badge.completed {
-  background: rgba(163,113,247,0.15);
+  background: rgba(var(--purple-rgb),0.15);
   color: var(--purple);
 }
 
 .status-badge.active {
-  background: rgba(34,197,94,0.15);
-  color: #22c55e;
+  background: rgba(var(--green-bright-rgb),0.15);
+  color: var(--green);
 }
 
 /* Task statuses (status- prefixed) */
-.status-badge.status-todo       { background: rgba(139, 148, 158, 0.12); color: var(--text-secondary); }
-.status-badge.status-in_progress { background: rgba(88, 166, 255, 0.15); color: var(--accent); }
-.status-badge.status-done        { background: rgba(63, 185, 80, 0.15); color: var(--green); }
-.status-badge.status-blocked     { background: rgba(248, 81, 73, 0.15); color: var(--red); }
+.status-badge.status-todo       { background: rgba(var(--text-secondary-rgb), 0.12); color: var(--text-secondary); }
+.status-badge.status-in_progress { background: rgba(var(--accent-rgb), 0.15); color: var(--accent); }
+.status-badge.status-done        { background: rgba(var(--green-rgb), 0.15); color: var(--green); }
+.status-badge.status-blocked     { background: rgba(var(--red-rgb), 0.15); color: var(--red); }
 
 /* Priority badges */
 .priority-badge {
@@ -391,9 +413,9 @@ select:focus {
   white-space: nowrap;
 }
 
-.priority-badge.priority-H { background: rgba(248, 81, 73, 0.15); color: var(--red); }
-.priority-badge.priority-M { background: rgba(210, 153, 34, 0.15); color: var(--yellow); }
-.priority-badge.priority-L { background: rgba(139, 148, 158, 0.12); color: var(--text-secondary); }
+.priority-badge.priority-H { background: rgba(var(--red-rgb), 0.15); color: var(--red); }
+.priority-badge.priority-M { background: rgba(var(--yellow-rgb), 0.15); color: var(--yellow); }
+.priority-badge.priority-L { background: rgba(var(--text-secondary-rgb), 0.12); color: var(--text-secondary); }
 
 /* Toggle group */
 .toggle-group {
@@ -565,7 +587,7 @@ select:focus {
 .form-error {
   padding: 10px 12px;
   margin-top: 8px;
-  background: rgba(248, 81, 73, 0.12);
+  background: rgba(var(--red-rgb), 0.12);
   border: 1px solid var(--red);
   border-radius: var(--radius);
   color: var(--red);
@@ -613,22 +635,22 @@ select:focus {
 }
 
 .urgency-tag.critical {
-  background: rgba(248,81,73,0.15);
+  background: rgba(var(--red-rgb),0.15);
   color: var(--red);
 }
 
 .urgency-tag.high {
-  background: rgba(219,109,40,0.15);
+  background: rgba(var(--orange-rgb),0.15);
   color: var(--orange);
 }
 
 .urgency-tag.normal {
-  background: rgba(88,166,255,0.12);
+  background: rgba(var(--accent-rgb),0.12);
   color: var(--accent);
 }
 
 .urgency-tag.low {
-  background: rgba(139,148,158,0.12);
+  background: rgba(var(--text-secondary-rgb),0.12);
   color: var(--text-secondary);
 }
 
@@ -660,8 +682,8 @@ select:focus {
   white-space: nowrap;
 }
 
-.cm-cat-instruction { background: rgba(56, 139, 253, 0.15); color: #58a6ff; }
-.cm-cat-requirement { background: rgba(248, 81, 73, 0.15); color: #f85149; }
-.cm-cat-convention  { background: rgba(187, 128, 255, 0.15); color: #bc8cff; }
-.cm-cat-reference   { background: rgba(63, 185, 80, 0.15); color: #3fb950; }
-.cm-cat-note        { background: rgba(210, 153, 34, 0.15); color: #d29922; }
+.cm-cat-instruction { background: rgba(var(--accent-emphasis-rgb), 0.15); color: var(--accent); }
+.cm-cat-requirement { background: rgba(var(--red-rgb), 0.15); color: var(--red); }
+.cm-cat-convention  { background: rgba(var(--purple-bright-rgb), 0.15); color: var(--purple); }
+.cm-cat-reference   { background: rgba(var(--green-rgb), 0.15); color: var(--green); }
+.cm-cat-note        { background: rgba(var(--yellow-rgb), 0.15); color: var(--yellow); }

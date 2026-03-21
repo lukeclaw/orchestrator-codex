@@ -90,30 +90,30 @@
 }
 
 .state-badge.state-running {
-  background: rgba(63, 185, 80, 0.15);
+  background: rgba(var(--green-rgb), 0.15);
   color: var(--green);
 }
 
 .state-badge.state-stopped {
-  background: rgba(210, 153, 34, 0.15);
+  background: rgba(var(--yellow-rgb), 0.15);
   color: var(--yellow);
 }
 
 /* Row tinting by state */
 .rt-row.rt-state-running {
-  background: rgba(63, 185, 80, 0.04);
+  background: rgba(var(--green-rgb), 0.04);
 }
 
 .rt-row.rt-state-running:hover {
-  background: rgba(63, 185, 80, 0.08);
+  background: rgba(var(--green-rgb), 0.08);
 }
 
 .rt-row.rt-state-stopped {
-  background: rgba(210, 153, 34, 0.04);
+  background: rgba(var(--yellow-rgb), 0.04);
 }
 
 .rt-row.rt-state-stopped:hover {
-  background: rgba(210, 153, 34, 0.08);
+  background: rgba(var(--yellow-rgb), 0.08);
 }
 
 /* Worker status dot — uses global .status-dot with size override */
@@ -138,6 +138,10 @@
 .worker-tag-link .status-badge {
   cursor: pointer;
   transition: filter 0.15s, box-shadow 0.15s;
+}
+
+[data-theme="light"] .worker-tag-link:hover .status-badge {
+  filter: brightness(0.95);
 }
 
 /* Action buttons */

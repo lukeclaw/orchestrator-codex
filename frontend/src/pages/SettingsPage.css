@@ -90,7 +90,7 @@
   width: 48px;
   height: 48px;
   border-radius: 12px;
-  background: rgba(56, 139, 253, 0.1);
+  background: rgba(var(--accent-emphasis-rgb), 0.1);
   color: var(--accent);
   flex-shrink: 0;
 }
@@ -147,7 +147,7 @@
   width: 48px;
   height: 48px;
   border-radius: 50%;
-  background: rgba(63,185,80,0.12);
+  background: rgba(var(--green-rgb),0.12);
   color: var(--green);
   margin-bottom: 12px;
 }
@@ -159,7 +159,7 @@
   width: 48px;
   height: 48px;
   border-radius: 50%;
-  background: rgba(210,153,34,0.12);
+  background: rgba(var(--yellow-rgb),0.12);
   color: var(--yellow);
   margin-bottom: 12px;
 }
@@ -204,6 +204,16 @@
   margin-top: 2px;
 }
 
+/* Compact theme selector tabs within settings row */
+.settings-toggle-row .sliding-tabs {
+  flex-shrink: 0;
+}
+
+.settings-toggle-row .sliding-tabs__tab {
+  padding: 5px 14px;
+  font-size: 13px;
+}
+
 .settings-toggle-desc code {
   font-size: 11px;
   padding: 1px 5px;
@@ -218,8 +228,8 @@
   gap: 8px;
   padding: 8px 12px;
   margin-top: 4px;
-  background: rgba(210, 153, 34, 0.08);
-  border: 1px solid rgba(210, 153, 34, 0.2);
+  background: rgba(var(--yellow-rgb), 0.08);
+  border: 1px solid rgba(var(--yellow-rgb), 0.2);
   border-radius: var(--radius);
   font-size: 12px;
   color: var(--text-muted);
@@ -340,7 +350,7 @@
   font-size: 11px;
   font-weight: 500;
   color: var(--text-secondary);
-  background: rgba(63,185,80,0.1);
+  background: rgba(var(--green-rgb),0.1);
   padding: 1px 6px;
   border-radius: 10px;
   margin-left: 6px;
@@ -358,15 +368,15 @@
 }
 
 .backup-result.success {
-  background: rgba(63,185,80,0.1);
+  background: rgba(var(--green-rgb),0.1);
   color: var(--green);
-  border: 1px solid rgba(63,185,80,0.3);
+  border: 1px solid rgba(var(--green-rgb),0.3);
 }
 
 .backup-result.error {
-  background: rgba(248,81,73,0.1);
+  background: rgba(var(--red-rgb),0.1);
   color: var(--red);
-  border: 1px solid rgba(248,81,73,0.3);
+  border: 1px solid rgba(var(--red-rgb),0.3);
 }
 
 .backup-status-row {
@@ -387,12 +397,12 @@
 }
 
 .backup-status.success {
-  background: rgba(63,185,80,0.12);
+  background: rgba(var(--green-rgb),0.12);
   color: var(--green);
 }
 
 .backup-status.error {
-  background: rgba(248,81,73,0.12);
+  background: rgba(var(--red-rgb),0.12);
   color: var(--red);
 }
 
@@ -403,7 +413,7 @@
   font-size: 11px;
   padding: 2px 8px;
   border-radius: 999px;
-  background: rgba(88,166,255,0.12);
+  background: rgba(var(--accent-rgb),0.12);
   color: var(--accent);
   font-weight: 500;
 }
@@ -443,11 +453,11 @@
 }
 
 .backup-entry-latest {
-  background: rgba(56, 139, 253, 0.04);
+  background: rgba(var(--accent-emphasis-rgb), 0.04);
 }
 
 .backup-entry-latest:hover {
-  background: rgba(56, 139, 253, 0.08);
+  background: rgba(var(--accent-emphasis-rgb), 0.08);
 }
 
 .backup-entry-date {
@@ -475,7 +485,7 @@
   letter-spacing: 0.5px;
   padding: 2px 6px;
   border-radius: 999px;
-  background: rgba(56, 139, 253, 0.12);
+  background: rgba(var(--accent-emphasis-rgb), 0.12);
   color: var(--accent);
 }
 
@@ -501,7 +511,7 @@
 .backup-restore-btn:hover:not(:disabled) {
   border-color: var(--orange, #d29922);
   color: var(--orange, #d29922);
-  background: rgba(210, 153, 34, 0.08);
+  background: rgba(var(--yellow-rgb), 0.08);
 }
 
 .backup-restore-btn:disabled {
@@ -548,7 +558,7 @@
 
 .backup-page-btn.active {
   background: var(--accent-muted);
-  border-color: rgba(88,166,255,0.3);
+  border-color: rgba(var(--accent-rgb),0.3);
   color: var(--accent);
   font-weight: 600;
 }
@@ -594,9 +604,9 @@
 }
 
 .toggle.on {
-  background: rgba(63,185,80,0.12);
+  background: rgba(var(--green-rgb),0.12);
   color: var(--green);
-  border-color: rgba(63,185,80,0.3);
+  border-color: rgba(var(--green-rgb),0.3);
 }
 
 .toggle.off {
