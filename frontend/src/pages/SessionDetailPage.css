@@ -3,7 +3,7 @@
   flex-direction: column;
   min-height: 0;
   /* Expand to fill parent by counteracting app-main padding */
-  margin: -20px -24px;
+  margin: -20px -18px -20px -24px;
   height: calc(100% + 40px);  /* Add back the 20px top + 20px bottom padding */
 }
 

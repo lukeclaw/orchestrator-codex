@@ -133,7 +133,6 @@
 
 /* Table wrapper */
 .prs-table-wrapper {
-  overflow-x: auto;
   background: var(--surface-inset);
   border: 1px solid transparent;
   border-radius: var(--radius);

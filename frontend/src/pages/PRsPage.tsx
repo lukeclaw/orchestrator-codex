@@ -459,8 +459,8 @@ export default function PRsPage() {
             <tr>
               <th className="pt-th">PR</th>
               <th className="pt-th" style={{ width: 130 }}>Status</th>
-              {isActive && <th className="pt-th prs-col-icon">CI</th>}
-              {isActive && <th className="pt-th prs-col-icon">AM</th>}
+              {isActive && <th className="pt-th prs-col-icon" title="CI check status">CI</th>}
+              {isActive && <th className="pt-th prs-col-icon" title="Auto-merge enabled">AM</th>}
               <th className="pt-th" style={{ width: 220 }}>Task / Worker</th>
               <th className="pt-th" style={{ width: 80 }}>Updated</th>
             </tr>
@@ -479,8 +479,8 @@ export default function PRsPage() {
                 PR {sortIndicator(isActive ? 'attention' : 'pr')}
               </th>
               <th className="pt-th sortable" style={{ width: 130 }} onClick={() => handleSort('status')}>Status {sortIndicator('status')}</th>
-              {isActive && <th className="pt-th prs-col-icon">CI</th>}
-              {isActive && <th className="pt-th prs-col-icon">AM</th>}
+              {isActive && <th className="pt-th prs-col-icon" title="CI check status">CI</th>}
+              {isActive && <th className="pt-th prs-col-icon" title="Auto-merge enabled">AM</th>}
               <th className="pt-th sortable" style={{ width: 220 }} onClick={() => handleSort('task')}>Task / Worker {sortIndicator('task')}</th>
               <th className="pt-th sortable" style={{ width: 80 }} onClick={() => handleSort('updated')}>Updated {sortIndicator('updated')}</th>
             </tr>
