@@ -79,6 +79,14 @@ DRIFT_EARLY_SYNC_DELAY = 0.15  # seconds before first sync after history
 # Stream idle timeout: if no data (including heartbeats) for this long, assume dead
 STREAM_IDLE_TIMEOUT = 45.0  # 3x daemon heartbeat interval (15s)
 
+# Pipe-pane refresh: after this many seconds without stream data, re-issue
+# pipe-pane to restart the cat writer (may have died silently due to O_RDWR).
+PIPE_PANE_REFRESH_THRESHOLD = 15.0
+
+# Drift interval for confirmed-idle panes (pipe-pane alive, no output).
+# Longer than DRIFT_UNHEALTHY_INTERVAL to reduce tmux subprocess contention.
+DRIFT_IDLE_CONFIRMED_INTERVAL = 10.0
+
 
 def record_user_input(session_id: str) -> None:
     """Record that user sent input to a session."""
@@ -302,17 +310,31 @@ async def stream_pane(
         await asyncio.sleep(stagger)
 
         was_stream_healthy = False
+        # Pipe-pane refresh state: detect and recover dead cat writers.
+        pipe_refreshed_at = 0.0  # monotonic time of last pipe-pane re-issue
+        confirmed_idle = False  # True when refresh produced no new data
 
         while True:
             # Longer interval when streaming is healthy; shorter when
             # stream is unhealthy and we need ground-truth syncs.
+            # Confirmed-idle panes use a moderate interval to reduce
+            # tmux subprocess contention that causes typing lag.
             now = asyncio.get_running_loop().time()
             stream_healthy = (
                 stream_active
                 and last_flush_time > 0
                 and (now - last_flush_time) < DRIFT_STREAM_HEALTH_TIMEOUT
             )
-            interval = DRIFT_HEALTHY_INTERVAL if stream_healthy else DRIFT_UNHEALTHY_INTERVAL
+            if stream_healthy:
+                interval = DRIFT_HEALTHY_INTERVAL
+                # Data is flowing — reset idle state
+                if confirmed_idle:
+                    confirmed_idle = False
+                    pipe_refreshed_at = 0.0
+            elif confirmed_idle:
+                interval = DRIFT_IDLE_CONFIRMED_INTERVAL
+            else:
+                interval = DRIFT_UNHEALTHY_INTERVAL
             await asyncio.sleep(interval)
 
             if not initial_sent:
@@ -350,15 +372,54 @@ async def stream_pane(
                     pass
                 continue
 
-            # --- Try to restart pipe-pane if the reader died --------
-            # The pool's subscribe() is idempotent: no-op if the reader
-            # is alive (just idle), creates a fresh reader if it died.
+            # --- Recover dead pipe-pane or confirm idle ----------------
+            # When the pipe-pane cat process dies (e.g., server hot-reload
+            # orphan cleanup), the O_RDWR reader never receives EOF.
+            # Re-issue pipe-pane to restart the cat writer.  If data flows
+            # after the refresh, the cat was dead and is now recovered.
+            # If still no data, the pane is genuinely idle — back off.
             if pane_id and stream_active:
-                try:
-                    pty_pool = PtyStreamPool.get_instance()
-                    await pty_pool.subscribe(pane_id, tmux_sess, tmux_win, on_stream_data)
-                except Exception:
-                    pass
+                pty_pool = PtyStreamPool.get_instance()
+                reader = pty_pool.get_reader(pane_id)
+                if (
+                    reader
+                    and reader.is_alive
+                    and reader.is_stale(timeout=PIPE_PANE_REFRESH_THRESHOLD)
+                ):
+                    now_mono = asyncio.get_running_loop().time()
+                    if confirmed_idle:
+                        # Already confirmed idle.  Periodically re-refresh
+                        # as a safety net (every 60s) in case a transient
+                        # failure caused a false idle classification.
+                        if (now_mono - pipe_refreshed_at) > 60.0:
+                            await reader.refresh_pipe_pane()
+                            pipe_refreshed_at = now_mono
+                        continue  # Skip capture-pane — nothing changed
+                    elif pipe_refreshed_at > 0:
+                        # We refreshed pipe-pane previously but still no
+                        # data → pane is genuinely idle.
+                        confirmed_idle = True
+                        logger.info(
+                            "Pane %s confirmed idle (no data after pipe-pane refresh)",
+                            pane_id,
+                        )
+                        continue  # Skip capture-pane
+                    else:
+                        # First time stale → re-issue pipe-pane
+                        logger.info(
+                            "Re-issuing pipe-pane for stale pane %s",
+                            pane_id,
+                        )
+                        await reader.refresh_pipe_pane()
+                        pipe_refreshed_at = now_mono
+                        # Fall through to capture-pane sync for this cycle
+                else:
+                    # Reader not stale yet, or dead (EOF received).
+                    # Try idempotent re-subscribe (handles the EOF case).
+                    try:
+                        await pty_pool.subscribe(pane_id, tmux_sess, tmux_win, on_stream_data)
+                    except Exception:
+                        pass
 
             # --- Detect pane ID change (window destroyed & recreated) ---
             # Only check when stream is NOT healthy (EOF, no recent data, etc.)

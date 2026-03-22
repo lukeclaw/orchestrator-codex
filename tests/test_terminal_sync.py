@@ -96,6 +96,9 @@ def _setup_ws_test(
         mock_pool = pool_override
     else:
         mock_pool = AsyncMock(spec=PtyStreamPool)
+        # get_reader returns None by default so drift correction uses the
+        # subscribe() path (not the refresh_pipe_pane stale-reader path).
+        mock_pool.get_reader = MagicMock(return_value=None)
         if captured_callback is not None:
 
             async def fake_subscribe(pane_id, session, window, callback):
@@ -129,6 +132,8 @@ def _setup_ws_test(
     stack.enter_context(patch(f"{_ws}.DRIFT_STREAM_HEALTH_TIMEOUT", 0.15))
     stack.enter_context(patch(f"{_ws}.DRIFT_STAGGER_MAX", 0.0))
     stack.enter_context(patch(f"{_ws}.DRIFT_EARLY_SYNC_DELAY", 0.01))
+    stack.enter_context(patch(f"{_ws}.PIPE_PANE_REFRESH_THRESHOLD", 0.3))
+    stack.enter_context(patch(f"{_ws}.DRIFT_IDLE_CONFIRMED_INTERVAL", 0.05))
     mock_get_conn = stack.enter_context(patch(f"{_ws}._get_conn"))
     stack.enter_context(patch(f"{_ws}.ensure_window", return_value="o:t"))
     stack.enter_context(patch(f"{_ws}.get_pane_id_async", **pane_id_kwargs))
@@ -745,6 +750,7 @@ class TestPipePaneResubscribe:
 
         mock_pool.subscribe = tracking_subscribe
         mock_pool.unsubscribe = AsyncMock()
+        mock_pool.get_reader = MagicMock(return_value=None)
 
         stack, _ = _setup_ws_test(
             ws,

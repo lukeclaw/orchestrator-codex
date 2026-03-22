@@ -385,6 +385,52 @@ class PtyStreamReader:
                 self.pane_id,
             )
 
+    async def refresh_pipe_pane(self) -> bool:
+        """Re-issue ``pipe-pane -O`` to restart the cat writer process.
+
+        When the pipe-pane ``cat`` process dies (e.g., server hot-reload
+        orphan cleanup), the ``O_RDWR`` reader never receives EOF.  This
+        method re-issues the ``pipe-pane`` command so tmux starts a fresh
+        ``cat`` writing to the same FIFO.  The existing reader and FIFO
+        stay intact — only the writer process is replaced.
+
+        Does **not** reset ``_last_data_time`` so the caller can detect
+        whether data actually flows after the refresh (to distinguish
+        a dead pipe-pane from a genuinely idle pane).
+
+        Returns True on success, False if the reader is not running or
+        the pipe-pane command failed.
+        """
+        if not self._running or not self._fifo_path:
+            return False
+        target = f"{self.session}:{self.window}"
+        cmd_str = f"exec cat > {self._fifo_path}"
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                "tmux",
+                "pipe-pane",
+                "-O",
+                "-t",
+                target,
+                cmd_str,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            _, stderr = await proc.communicate()
+            if proc.returncode != 0:
+                logger.warning(
+                    "refresh_pipe_pane failed for %s (rc=%d): %s",
+                    target,
+                    proc.returncode,
+                    stderr.decode("utf-8", errors="replace").strip(),
+                )
+                return False
+            logger.info("Refreshed pipe-pane for pane %s", self.pane_id)
+            return True
+        except Exception as e:
+            logger.debug("refresh_pipe_pane error for %s: %s", target, e)
+            return False
+
     async def _stop_pipe_pane(self) -> None:
         """Tell tmux to stop piping for this pane."""
         target = f"{self.session}:{self.window}"
@@ -445,6 +491,15 @@ class PtyStreamPool:
     def reset_instance(cls) -> None:
         """Reset singleton (for testing)."""
         cls._instance = None
+
+    def get_reader(self, pane_id: str) -> PtyStreamReader | None:
+        """Return the current reader for *pane_id*, or None.
+
+        Read-only accessor for status checks (e.g., ``is_stale()``,
+        ``refresh_pipe_pane()``).  Not protected by the lock — safe for
+        single-reader checks where atomicity is not required.
+        """
+        return self._readers.get(pane_id)
 
     async def subscribe(
         self,

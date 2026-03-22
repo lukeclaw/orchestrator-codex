@@ -26,6 +26,7 @@ Scan this list first. Follow the link for full context only when working in that
 | `useMemo` reading sessionStorage needs a React-tracked dep (e.g. location) to invalidate. Plain hooks don't share state — use Context. Toggle state needs optimistic local state, not derived-from-loading. | [015](015-react-sessionstorage-and-shared-state.md) |
 | Never use text-contrast colors for full-opacity fills. RGB vars must diverge from hex vars in light mode. Audit by comparing computed styles of related elements, not screenshots. | [016](016-light-mode-color-consistency.md) |
 | Never assume orphaned processes have ppid=1. Use app-level identifiers (FIFO PID). Never override uvicorn's signal handlers with sys.exit(). | [017](017-orphan-cleanup-must-match-all-parents.md) |
+| O_RDWR on FIFO masks writer death. Re-issue pipe-pane to recover; skip capture-pane for idle panes (causes lag). | [018](018-o-rdwr-fifo-masks-writer-death.md) |
 
 ---
 
@@ -65,6 +66,7 @@ The largest cluster of learnings. Most originated from the March 2026 reconnect 
 | # | File | Summary |
 |---|------|---------|
 | 17 | [017-orphan-cleanup-must-match-all-parents.md](017-orphan-cleanup-must-match-all-parents.md) | `cleanup_orphaned_pipe_pane_processes()` only killed ppid=1 processes, missing tmux-parented orphans (5,271 zombies). Fix: match by FIFO-encoded PID. Also: `sys.exit(0)` in SIGTERM handler bypasses uvicorn lifespan teardown — remove it. |
+| 18 | [018-o-rdwr-fifo-masks-writer-death.md](018-o-rdwr-fifo-masks-writer-death.md) | O_RDWR FIFO reader never gets EOF when pipe-pane `cat` dies. Stream degrades to 2s capture-pane polling, causing lag. Fix: drift correction re-issues pipe-pane when stale, then confirms idle if still no data. Skip capture-pane for confirmed-idle panes. |
 
 ### Python & Code Patterns
 

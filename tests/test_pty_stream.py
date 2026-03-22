@@ -679,6 +679,7 @@ class TestWsTerminalPipePanePath:
 
         mock_pool.subscribe = fake_subscribe
         mock_pool.unsubscribe = AsyncMock()
+        mock_pool.get_reader = MagicMock(return_value=None)
 
         sync_count = 0
 
@@ -702,6 +703,8 @@ class TestWsTerminalPipePanePath:
             patch(f"{_ws}.DRIFT_STREAM_HEALTH_TIMEOUT", 0.15),
             patch(f"{_ws}.DRIFT_STAGGER_MAX", 0.0),
             patch(f"{_ws}.DRIFT_EARLY_SYNC_DELAY", 0.01),
+            patch(f"{_ws}.PIPE_PANE_REFRESH_THRESHOLD", 0.3),
+            patch(f"{_ws}.DRIFT_IDLE_CONFIRMED_INTERVAL", 0.05),
         ):
             db_conn = MagicMock()
             db_conn.execute.return_value.fetchone.return_value = _make_db_row()
@@ -1051,6 +1054,109 @@ class TestPtyStreamPoolIdleReader:
         reader.stop.assert_not_awaited()
         assert pool._readers["%5"] is reader
         assert callback in pool._consumers["%5"]
+
+
+# ---------------------------------------------------------------------------
+# PtyStreamReader.refresh_pipe_pane()
+# ---------------------------------------------------------------------------
+
+
+class TestRefreshPipePane:
+    """Tests for re-issuing pipe-pane to restart a dead cat writer."""
+
+    async def test_refresh_reissues_pipe_pane_command(self):
+        """refresh_pipe_pane() should run tmux pipe-pane -O with the correct args."""
+        reader = PtyStreamReader("sess", "win", "%5")
+        reader._running = True
+        reader._fifo_path = "/tmp/orchestrator_pty/5_1234.fifo"
+
+        mock_proc = AsyncMock()
+        mock_proc.communicate = AsyncMock(return_value=(b"", b""))
+        mock_proc.returncode = 0
+
+        with patch("asyncio.create_subprocess_exec", return_value=mock_proc) as mock_exec:
+            result = await reader.refresh_pipe_pane()
+
+        assert result is True
+        mock_exec.assert_called_once_with(
+            "tmux",
+            "pipe-pane",
+            "-O",
+            "-t",
+            "sess:win",
+            "exec cat > /tmp/orchestrator_pty/5_1234.fifo",
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+
+    async def test_refresh_does_not_reset_last_data_time(self):
+        """refresh_pipe_pane() must NOT reset _last_data_time so caller can detect idle."""
+        reader = PtyStreamReader("sess", "win", "%5")
+        reader._running = True
+        reader._fifo_path = "/tmp/orchestrator_pty/5_1234.fifo"
+        reader._last_data_time = 42.0
+
+        mock_proc = AsyncMock()
+        mock_proc.communicate = AsyncMock(return_value=(b"", b""))
+        mock_proc.returncode = 0
+
+        with patch("asyncio.create_subprocess_exec", return_value=mock_proc):
+            await reader.refresh_pipe_pane()
+
+        assert reader._last_data_time == 42.0
+
+    async def test_refresh_returns_false_when_not_running(self):
+        """refresh_pipe_pane() should no-op when reader is stopped."""
+        reader = PtyStreamReader("sess", "win", "%5")
+        reader._running = False
+
+        result = await reader.refresh_pipe_pane()
+        assert result is False
+
+    async def test_refresh_returns_false_when_no_fifo(self):
+        """refresh_pipe_pane() should no-op when no FIFO path set."""
+        reader = PtyStreamReader("sess", "win", "%5")
+        reader._running = True
+        reader._fifo_path = None
+
+        result = await reader.refresh_pipe_pane()
+        assert result is False
+
+    async def test_refresh_returns_false_on_tmux_error(self):
+        """refresh_pipe_pane() should return False when tmux fails."""
+        reader = PtyStreamReader("sess", "win", "%5")
+        reader._running = True
+        reader._fifo_path = "/tmp/orchestrator_pty/5_1234.fifo"
+
+        mock_proc = AsyncMock()
+        mock_proc.communicate = AsyncMock(return_value=(b"", b"no such pane"))
+        mock_proc.returncode = 1
+
+        with patch("asyncio.create_subprocess_exec", return_value=mock_proc):
+            result = await reader.refresh_pipe_pane()
+
+        assert result is False
+
+
+# ---------------------------------------------------------------------------
+# PtyStreamPool.get_reader()
+# ---------------------------------------------------------------------------
+
+
+class TestGetReader:
+    """Tests for the get_reader() public accessor."""
+
+    def test_get_reader_returns_reader(self, tmp_fifo_dir):
+        pool = PtyStreamPool()
+        reader = PtyStreamReader("sess", "win", "%5")
+        pool._readers["%5"] = reader
+
+        assert pool.get_reader("%5") is reader
+
+    def test_get_reader_returns_none(self, tmp_fifo_dir):
+        pool = PtyStreamPool()
+
+        assert pool.get_reader("%99") is None
 
 
 # ---------------------------------------------------------------------------
