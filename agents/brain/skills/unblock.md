@@ -80,6 +80,8 @@ If the root cause is a pattern worth remembering for future encounters:
 orch-memory log "<root cause and what fixed it>" --title "<repo>: <short description>"
 ```
 
+Also record verification-related lessons (e.g., "worker forgot QEI tests", "CI check X is flaky in repo Y", "this repo has no local test suite").
+
 ---
 
 ## Key Rules

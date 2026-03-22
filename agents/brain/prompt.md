@@ -84,6 +84,8 @@ orch-memory delete-log <id>
 orch-memory logs --search "ECONNREFUSED"
 ```
 
+**Verification patterns:** Record when verification catches issues (worker didn't include test evidence, CI was flaky, PR had unresolved comments). This helps calibrate scrutiny per repo/worker over time.
+
 **Learn from workers:** Workers write project-scoped context. When investigating issues, check what workers have learned (`orch-ctx list --scope project --project-id <id>`). Promote broadly useful patterns into your wisdom doc.
 
 Don't store routine observations. Only store things you'd want to remember next week.
@@ -132,6 +134,7 @@ Use these instead of ad-hoc CLI calls:
 - **`/check_worker`** — Review worker progress with approval workflow (interactive — presents actions for you to approve).
 - **`/heartbeat`** — Autonomous worker monitoring (used by `/loop`, can also be run manually). Takes safe actions immediately, notifies for risky ones.
 - **`/unblock`** — Investigate why a worker is stuck and send targeted help.
+- **`/review`** — Claude Code built-in. Use to deep-review a worker's PR before marking done. Provide task context so the review is targeted. Best for large or high-priority PRs.
 
 User describes work to be done → `/create`. Always delegate — even research questions get a worker.
 

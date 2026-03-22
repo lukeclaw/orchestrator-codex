@@ -79,15 +79,35 @@ orch-prs --repo <owner/repo> <pr-numbers>    # extract org/repo from PR URL, nev
 
 | PR action | Suggested Action |
 |-----------|-----------------|
-| merged | Mark done + stop |
-| ready_to_merge | Tell worker: "Use /pr-workflow to merge" |
+| merged | Verify then mark done (see verification checklist below) |
+| ready_to_merge | Check evidence, then tell worker: "Use /pr-workflow to merge" |
 | ci_failing / changes_requested / merge_conflicts | Tell worker: "Use /pr-workflow to fix" |
-| review_pending, <2h | — (wait for review) |
+| review_pending, <2h | Check PR evidence while waiting (see evidence nudge below) |
 | review_pending, >2h | Nudge: "Use /pr-workflow to check PR status, address comments if any, merge if approved" |
 | draft | — (still working) |
 | closed | Investigate |
 
-**For tasks without PRs** (config, docs, investigation) — verify the deliverable exists (file committed, doc written, answer posted in task notes). If unverifiable, suggest "Needs human" instead of "Mark done + stop."
+**Verification checklist** (before marking done on merged PRs):
+
+1. **CI checks**: `gh pr checks <number> --repo <owner/repo>` — all required checks should pass. Flag any failures.
+2. **Review resolution**: `gh pr view <number> --repo <owner/repo> --json reviewDecision` — should be APPROVED.
+3. **Changed files vs task scope**: `gh pr view <number> --repo <owner/repo> --json files --jq '.files[].path'` — do the changes match what the task asked for? Flag if suspiciously narrow or wide.
+4. **Worker evidence**: `orch-tasks show <task-id>` — look for a "## Verification" section in notes. Did the worker record test results, lint status, and what evidence they included in the PR?
+5. If all checks pass → suggest "Mark done + stop" with a verification summary.
+6. If any concern → suggest "Needs human" with specifics.
+
+For deep reviews on large/critical PRs, the brain can use Claude Code's built-in `/review` with task context.
+
+**Evidence nudge** (for open PRs — catch missing evidence early):
+
+When a PR is `review_pending` or `ready_to_merge`, check the PR body: `gh pr view <number> --repo <owner/repo> --json body --jq '.body'`
+
+Detect change type from file paths and nudge if evidence is missing:
+- **API changes** (files in `api/`, `routes/`, `models/`, `*-api/`, proto files) and PR body doesn't mention test results → Nudge: "Add QEI/qprod test results to the PR description"
+- **Frontend/UI changes** (files in `frontend/`, `src/components/`, `*.css`, `*.tsx`, `*.jsx`) and PR body has no images/screenshots → Nudge: "Add screenshots or recordings showing the UI change to the PR description"
+- Use judgment — not every PR needs both. The goal is to remind, not block.
+
+**For tasks without PRs** (config, docs, investigation) — verify the deliverable exists (file committed, doc written, answer posted in task notes). Check task notes for a "## Verification" section. If unverifiable, suggest "Needs human" instead of "Mark done + stop."
 
 ### 5. Present summary
 

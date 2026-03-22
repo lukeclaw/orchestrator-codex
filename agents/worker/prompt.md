@@ -112,8 +112,23 @@ Invoke with `/skill-name` for step-by-step workflows.
 4. **Update status** — `orch-task update --status in_progress`
 5. **Plan subtasks** — One per deliverable/PR. No subtasks for internal steps.
 6. **Do the work** — Implement, mark done, attach links.
-7. **Signal completion** — State "Task complete". The brain reviews and confirms.
-8. **Propose context updates** — Use a **sub-agent** (Task tool) to check if any new critical knowledge should be persisted. The sub-agent reads all existing context (`orch-context list` + `read` for both project and global scopes), compares against what was learned during this task, and returns proposals: **add** new items or **update** existing ones with new findings. If nothing new, skip silently. Otherwise print briefly:
+7. **Verify before signaling** — Before claiming done:
+   - Run the project's test suite and linter
+   - **Add evidence to your PR description:**
+     - **API changes** (routes, models, gRPC): Include QEI/qprod test results showing endpoints work
+     - **Frontend/UI changes** (components, pages, CSS): Include screenshots or screen recordings showing the change
+     - **All PRs**: Briefly describe what was changed and how it was tested
+   - Record in task notes: `orch-task update --notes-stdin <<'EOF'`
+     ```
+     ## Verification
+     - Tests: <suite> — <N> passed, <N> failed
+     - Lint: clean
+     - PR: <url>
+     - Evidence: <what's in the PR description>
+     ```
+   - If tests can't be run, note why in task notes
+8. **Signal completion** — State "Task complete". The brain reviews and confirms.
+9. **Propose context updates** — Use a **sub-agent** (Task tool) to check if any new critical knowledge should be persisted. The sub-agent reads all existing context (`orch-context list` + `read` for both project and global scopes), compares against what was learned during this task, and returns proposals: **add** new items or **update** existing ones with new findings. If nothing new, skip silently. Otherwise print briefly:
    ```
    💡 Proposed context:
    - add [scope] <title> — <one-line description>

@@ -45,15 +45,34 @@ orch-tasks show <task-id>   # Check notes for "Waiting: ..." messages
 | PR review wait >3h | `orch-send <id> "Use /pr-workflow to check PR status, address comments if any, merge if approved"` |
 | Stuck with visible error (idle 10m+) | Investigate inline (see below) |
 | At interactive prompt (y/n, menu) | Attempt to answer if obvious, otherwise notify |
-| Worker claims task complete | Verify externally via `orch-prs`. If PR merged: mark done + stop (see procedure below). If unverifiable: notify user. |
+| Worker claims task complete | Run verification checklist (see below). If all pass: mark done + stop. If concern: notify user. |
+| PR open, missing evidence | Nudge worker to add evidence to PR description (see evidence nudge below) |
 | Worker idle >2h, no visible progress | Notify: "Worker X may be stuck, needs human review" |
 | Blocked on auth/access/human decision | Notify with details of what's needed |
 
-**Marking done + stopping** (when completion is verified):
+**Verification checklist** (before marking done):
+
+1. `orch-prs --repo <owner/repo> <numbers>` — PR must be merged
+2. `gh pr checks <number> --repo <owner/repo>` — all required CI checks passed
+3. `gh pr view <number> --repo <owner/repo> --json reviewDecision` — APPROVED
+4. `gh pr view <number> --repo <owner/repo> --json files --jq '.files[].path'` — changes match task scope
+5. `orch-tasks show <task-id>` — look for "## Verification" section in notes
+6. If all pass → mark done + stop + notify. If any concern → notify user with specifics, don't auto-mark done.
+
+For large/critical PRs, use `/review` (Claude Code built-in) with task context for a deeper review.
+
+**Marking done + stopping**:
 ```bash
 orch-tasks update <task-id> --status done
 orch-workers stop <worker-id>
 ```
+
+**Evidence nudge** (catch missing evidence on open PRs):
+
+When scanning workers with open PRs (`review_pending` or `ready_to_merge`), check: `gh pr view <number> --repo <owner/repo> --json body,files`
+- **API changes** (files in `api/`, `routes/`, `models/`, proto) + no test results in PR body → nudge: "Add QEI/qprod test results to your PR description"
+- **Frontend/UI changes** (files in `frontend/`, `components/`, `*.css`, `*.tsx`) + no screenshots in PR body → nudge: "Add screenshots or recordings showing the UI change"
+- Only nudge once per PR — check if the worker was already nudged about this (look at recent messages in terminal)
 
 ### Notifications
 

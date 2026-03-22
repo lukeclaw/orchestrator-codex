@@ -18,7 +18,8 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 # Cache for rdev list (1 hour TTL, refreshed every 30 min in background)
-_rdev_cache: dict[str, Any] = {"data": [], "timestamp": 0}
+# Uses None sentinel so an empty list is still a valid cache hit.
+_rdev_cache: dict[str, Any] = {"data": None, "timestamp": 0}
 RDEV_CACHE_TTL = 3600  # 1 hour in seconds
 RDEV_BACKGROUND_REFRESH_INTERVAL = 1800  # 30 minutes in seconds
 
@@ -158,8 +159,8 @@ def list_rdevs(refresh: bool = False, db=Depends(get_db)):
     now = time.time()
     cache_age = now - _rdev_cache["timestamp"]
 
-    # Use cache if valid and not forcing refresh
-    if not refresh and cache_age < RDEV_CACHE_TTL and _rdev_cache["data"]:
+    # Use cache if valid and not forcing refresh (None = never fetched)
+    if not refresh and cache_age < RDEV_CACHE_TTL and _rdev_cache["data"] is not None:
         rdevs = _rdev_cache["data"]
         logger.debug("Using cached rdev list (age: %.0fs)", cache_age)
     else:
