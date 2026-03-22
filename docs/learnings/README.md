@@ -25,6 +25,7 @@ Scan this list first. Follow the link for full context only when working in that
 | Never skip tunnel recovery for any worker status. Orphaned SSH processes block ports permanently. | [014](014-recover-tunnels-must-include-disconnected.md) |
 | `useMemo` reading sessionStorage needs a React-tracked dep (e.g. location) to invalidate. Plain hooks don't share state — use Context. Toggle state needs optimistic local state, not derived-from-loading. | [015](015-react-sessionstorage-and-shared-state.md) |
 | Never use text-contrast colors for full-opacity fills. RGB vars must diverge from hex vars in light mode. Audit by comparing computed styles of related elements, not screenshots. | [016](016-light-mode-color-consistency.md) |
+| Never assume orphaned processes have ppid=1. Use app-level identifiers (FIFO PID). Never override uvicorn's signal handlers with sys.exit(). | [017](017-orphan-cleanup-must-match-all-parents.md) |
 
 ---
 
@@ -58,6 +59,12 @@ The largest cluster of learnings. Most originated from the March 2026 reconnect 
 |---|------|---------|
 | 11 | [011-daemon-path-non-interactive-ssh.md](011-daemon-path-non-interactive-ssh.md) | Daemon launched via SSH has no `.bashrc` PATH. Also: don't block the daemon event loop with long-running ops; wrap blocking I/O in `asyncio.to_thread()`. |
 | 13 | [013-nonblocking-sendall-and-rendering-strips-colors.md](013-nonblocking-sendall-and-rendering-strips-colors.md) | Non-blocking `sendall()` busy-loops on large data. VT renderers discard ANSI colors — send raw bytes as binary WebSocket frames for display. |
+
+### Process Lifecycle & Cleanup
+
+| # | File | Summary |
+|---|------|---------|
+| 17 | [017-orphan-cleanup-must-match-all-parents.md](017-orphan-cleanup-must-match-all-parents.md) | `cleanup_orphaned_pipe_pane_processes()` only killed ppid=1 processes, missing tmux-parented orphans (5,271 zombies). Fix: match by FIFO-encoded PID. Also: `sys.exit(0)` in SIGTERM handler bypasses uvicorn lifespan teardown — remove it. |
 
 ### Python & Code Patterns
 

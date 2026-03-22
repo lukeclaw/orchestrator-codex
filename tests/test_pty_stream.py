@@ -1169,3 +1169,48 @@ class TestCleanupOrphanedPipePaneProcesses:
         assert killed == 1
         # Only pid=300 (stale FIFO PID 9999) should be killed
         mock_kill.assert_called_once_with(300, 15)
+
+    def test_kills_malformed_fifo_path(self):
+        """Cat processes with unrecognizable FIFO paths should still be killed."""
+        ps_output = (
+            "  PID  PPID COMMAND\n  400   500 sh -c exec cat > /tmp/orchestrator_pty/weird.fifo\n"
+        )
+        mock_result = MagicMock()
+        mock_result.stdout = ps_output
+
+        with (
+            patch("subprocess.run", return_value=mock_result),
+            patch("os.kill") as mock_kill,
+        ):
+            killed = cleanup_orphaned_pipe_pane_processes()
+
+        assert killed == 1
+        mock_kill.assert_called_once_with(400, 15)
+
+    def test_handles_process_already_dead(self):
+        """ProcessLookupError during kill should be silently ignored."""
+        ps_output = (
+            "  PID  PPID COMMAND\n  500     1 sh -c exec cat > /tmp/orchestrator_pty/5_9999.fifo\n"
+        )
+        mock_result = MagicMock()
+        mock_result.stdout = ps_output
+
+        with (
+            patch("subprocess.run", return_value=mock_result),
+            patch("os.kill", side_effect=ProcessLookupError) as mock_kill,
+        ):
+            killed = cleanup_orphaned_pipe_pane_processes()
+
+        assert killed == 0
+        mock_kill.assert_called_once_with(500, 15)
+
+    def test_ps_command_failure(self):
+        """Should return 0 and not raise if ps command fails."""
+        with (
+            patch("subprocess.run", side_effect=OSError("ps not found")),
+            patch("os.kill") as mock_kill,
+        ):
+            killed = cleanup_orphaned_pipe_pane_processes()
+
+        assert killed == 0
+        mock_kill.assert_not_called()
