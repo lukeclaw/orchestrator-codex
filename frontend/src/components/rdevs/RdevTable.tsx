@@ -1,7 +1,6 @@
 import { Link } from 'react-router-dom'
 import { IconStop, IconTrash, IconPlay } from '../common/Icons'
 import ConfirmPopover from '../common/ConfirmPopover'
-import StatusDot from '../common/StatusDot'
 import './RdevTable.css'
 
 interface Rdev {
@@ -76,8 +75,7 @@ export default function RdevTable({ rdevs, onDelete, onRestart, onStop, actionLo
                 <td>
                   {rdev.in_use && rdev.worker_name && rdev.worker_id ? (
                     <Link to={`/workers/${rdev.worker_id}`} className="worker-tag-link">
-                      <StatusDot status={rdev.worker_status || 'idle'} size="sm" />
-                      <span className={`status-badge ${rdev.worker_status || 'idle'}`}>
+                      <span className={`pt-worker-tag ${rdev.worker_status || 'idle'}`} title={`${rdev.worker_name} (${rdev.worker_status || 'idle'})`}>
                         {rdev.worker_name}
                       </span>
                     </Link>

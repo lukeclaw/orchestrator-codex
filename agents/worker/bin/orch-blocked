@@ -1,0 +1,41 @@
+#!/bin/bash
+# orch-blocked: Report that you're stuck and need help.
+# Sets worker session status to blocked and records the reason in task notes.
+#
+# Usage: orch-blocked "reason you're stuck"
+#
+# This is different from `orch-task update --status blocked` which means
+# the TASK is blocked by an external dependency (PM decision, another team).
+# orch-blocked means YOU are stuck but the task is still doable.
+
+source "$(dirname "$0")/lib.sh"
+
+reason="$*"
+if [[ -z "$reason" ]]; then
+    echo "Usage: orch-blocked \"reason you're stuck\""
+    echo ""
+    echo "Examples:"
+    echo "  orch-blocked \"need auth credentials for staging DB\""
+    echo "  orch-blocked \"ECONNREFUSED - can't connect to test database\""
+    echo "  orch-blocked \"not sure how to approach the migration\""
+    echo ""
+    echo "This sets your worker status to blocked and records the reason."
+    echo "The brain will prioritize investigating and helping you."
+    exit 1
+fi
+
+# Set worker session status to blocked
+curl -s -X PATCH "$API_BASE/api/sessions/$SESSION_ID" \
+    -H 'Content-Type: application/json' \
+    -d '{"status": "blocked"}' > /dev/null 2>&1
+
+# Record reason in task notes (if a task is assigned)
+if load_task_info 2>/dev/null; then
+    local_reason=$(json_encode "$reason")
+    curl -s -X PATCH "$API_BASE/api/tasks/$TASK_ID" \
+        -H 'Content-Type: application/json' \
+        -d "{\"notes\": \"BLOCKED: $local_reason\"}" > /dev/null 2>&1
+fi
+
+echo "Status set to blocked. Reason: $reason"
+echo "The brain will prioritize helping you."

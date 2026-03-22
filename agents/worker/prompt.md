@@ -153,19 +153,20 @@ After `/compact` or when context feels incomplete, **re-fetch context items** �
 
 **When in doubt, look it up or ask. Never guess.**
 
-### State Why You're Waiting — and Report Blocked Status
+### When You're Stuck
 
-When you stop working, your status automatically becomes `waiting`. This is correct if you're parked for an expected reason (PR under review, CI running, scheduled for later).
-
-**If you're blocked** — stuck on an error, need auth/credentials, can't find a solution, need a human decision — report it explicitly:
+If you cannot proceed — error you can't fix, need auth/credentials, missing access, can't find a solution — use `orch-blocked`:
 ```bash
-orch-worker update --status blocked
-orch-task update --notes "Waiting: need auth credentials for staging DB"
+orch-blocked "need auth credentials for staging DB"
 ```
 
-This tells the brain you need help. The brain prioritizes blocked workers over waiting ones.
+This sets your worker status to blocked and records the reason. The brain will prioritize investigating and helping you.
 
-**Always** update your task notes with the reason, whether waiting or blocked:
+**Do NOT use `orch-task update --status blocked`** for this — task `blocked` means the task itself is blocked by an external dependency (PM decision, another team alignment), which is different from you being stuck on a solvable problem.
+
+### State Why You're Waiting
+
+When you're parked for an expected reason (PR under review, CI running, scheduled for later), your status is automatically `waiting`. Always record the reason:
 ```bash
 orch-task update --notes "Waiting: PR #123 under review, expecting feedback by EOD."
 ```

@@ -27,6 +27,7 @@ WORKER_SCRIPT_NAMES = [
     "orch-task",
     "orch-subtask",
     "orch-worker",
+    "orch-blocked",
     "orch-context",
     "orch-notify",
     "orch-tunnel",
