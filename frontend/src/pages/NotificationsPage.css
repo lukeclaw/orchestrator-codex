@@ -306,6 +306,25 @@
   color: var(--yellow);
 }
 
+.np-meta-sep {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.np-sender-link {
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+}
+
+.np-sender-link:hover .pt-worker-tag {
+  filter: brightness(1.15);
+}
+
+[data-theme="light"] .np-sender-link:hover .pt-worker-tag {
+  filter: brightness(0.95);
+}
+
 .np-time {
   font-size: 11px;
   color: var(--text-muted);

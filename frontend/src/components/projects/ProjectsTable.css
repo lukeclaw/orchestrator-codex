@@ -199,6 +199,7 @@
 .pt-worker-tag.paused        { background: rgba(var(--orange-alt-rgb), 0.08); color: var(--status-paused); }
 .pt-worker-tag.disconnected  { background: rgba(var(--red-rgb), 0.08);  color: var(--red); }
 .pt-worker-tag.connecting    { background: rgba(var(--orange-rgb), 0.08); color: var(--status-connecting); }
+.pt-worker-tag.brain         { background: rgba(var(--purple-alt-rgb), 0.08); color: var(--purple); }
 
 /* Status column */
 .pt-td.status {

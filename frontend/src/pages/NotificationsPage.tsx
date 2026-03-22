@@ -1,5 +1,5 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
-import { useNavigate, useSearchParams } from 'react-router-dom'
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
+import { useNavigate, useSearchParams, Link } from 'react-router-dom'
 import { api, openUrl } from '../api/client'
 import { useApp } from '../context/AppContext'
 import { useNotify } from '../context/NotificationContext'
@@ -62,7 +62,16 @@ function groupByDate(notifications: Notification[]): DateGroup[] {
 export default function NotificationsPage() {
   const navigate = useNavigate()
   const notify = useNotify()
-  const { refreshNotificationCount } = useApp()
+  const { refreshNotificationCount, workers } = useApp()
+
+  // Build session lookup for sender badges
+  const sessionMap = useMemo(() => {
+    const map = new Map<string, { name: string; status: string }>()
+    for (const w of workers) {
+      map.set(w.id, { name: w.name, status: w.status })
+    }
+    return map
+  }, [workers])
   const [notifications, setNotifications] = useState<Notification[]>([])
   const [activeCount, setActiveCount] = useState(0)
   const [loading, setLoading] = useState(true)
@@ -341,6 +350,34 @@ export default function NotificationsPage() {
                 {typeConfig.label}
               </span>
               <time className="np-time">{formatTime(n.created_at)}</time>
+              {(() => {
+                const sender = n.session_id ? sessionMap.get(n.session_id) : null
+                if (sender) {
+                  return (
+                    <>
+                      <span className="np-meta-sep">·</span>
+                      <Link
+                        to={`/workers/${n.session_id}`}
+                        className="np-sender-link"
+                        onClick={e => e.stopPropagation()}
+                      >
+                        <span className={`pt-worker-tag ${sender.status}`}>
+                          {sender.name}
+                        </span>
+                      </Link>
+                    </>
+                  )
+                }
+                if (n.session_id || n.notification_type.startsWith('brain')) {
+                  return (
+                    <>
+                      <span className="np-meta-sep">·</span>
+                      <span className="pt-worker-tag brain">Brain</span>
+                    </>
+                  )
+                }
+                return null
+              })()}
               {n.metadata?.pr_title && (
                 <span className="np-pr-title">{n.metadata.pr_title}</span>
               )}

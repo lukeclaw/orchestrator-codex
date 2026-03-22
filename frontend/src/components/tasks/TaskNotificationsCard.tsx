@@ -1,4 +1,5 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
+import { Link } from 'react-router-dom'
 import { api, openUrl } from '../../api/client'
 import { parseDate } from '../common/TimeAgo'
 import type { Notification } from '../../api/types'
@@ -11,6 +12,7 @@ import {
   IconExternalLink,
 } from '../common/Icons'
 import { useNotify } from '../../context/NotificationContext'
+import { useApp } from '../../context/AppContext'
 
 function formatNotificationTime(dateStr: string): string {
   const d = parseDate(dateStr)
@@ -43,6 +45,15 @@ interface TaskNotificationsCardProps {
 
 export default function TaskNotificationsCard({ taskId }: TaskNotificationsCardProps) {
   const notify = useNotify()
+  const { workers } = useApp()
+
+  const sessionMap = useMemo(() => {
+    const map = new Map<string, { name: string; status: string }>()
+    for (const w of workers) {
+      map.set(w.id, { name: w.name, status: w.status })
+    }
+    return map
+  }, [workers])
   const [notifications, setNotifications] = useState<Notification[]>([])
   const [notificationsExpanded, setNotificationsExpanded] = useState(true)
   const [expandedNotifications, setExpandedNotifications] = useState<Set<string>>(new Set())
@@ -116,6 +127,34 @@ export default function TaskNotificationsCard({ taskId }: TaskNotificationsCardP
                     <div className="np-card-header">
                       <span className={`np-badge ${typeConfig.color}`}>{typeConfig.label}</span>
                       <time className="np-time">{formatNotificationTime(n.created_at)}</time>
+                      {(() => {
+                        const sender = n.session_id ? sessionMap.get(n.session_id) : null
+                        if (sender) {
+                          return (
+                            <>
+                              <span className="np-meta-sep">·</span>
+                              <Link
+                                to={`/workers/${n.session_id}`}
+                                className="np-sender-link"
+                                onClick={e => e.stopPropagation()}
+                              >
+                                <span className={`pt-worker-tag ${sender.status}`}>
+                                  {sender.name}
+                                </span>
+                              </Link>
+                            </>
+                          )
+                        }
+                        if (n.session_id || n.notification_type.startsWith('brain')) {
+                          return (
+                            <>
+                              <span className="np-meta-sep">·</span>
+                              <span className="pt-worker-tag brain">Brain</span>
+                            </>
+                          )
+                        }
+                        return null
+                      })()}
                       {n.metadata?.pr_title && (
                         <span className="np-pr-title">{n.metadata.pr_title}</span>
                       )}
