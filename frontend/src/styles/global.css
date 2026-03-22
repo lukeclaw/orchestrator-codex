@@ -199,7 +199,7 @@ select:focus {
 }
 
 [data-theme="light"] .sliding-tabs {
-  background: var(--surface-raised);
+  background: #dfe3e8;
 }
 
 .panel-header {

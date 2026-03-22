@@ -91,7 +91,8 @@
 }
 
 [data-theme="light"] .stat:hover {
-  filter: brightness(0.97);
+  filter: brightness(0.94);
+  box-shadow: var(--shadow-md);
 }
 
 @media (max-width: 600px) {

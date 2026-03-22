@@ -41,6 +41,10 @@
   color: var(--text-primary);
 }
 
+[data-theme="light"] .header-nav-buttons button:hover:not(:disabled) {
+  background: var(--surface-raised);
+}
+
 .header-nav-buttons button:disabled {
   color: var(--text-muted);
   opacity: 0.4;
