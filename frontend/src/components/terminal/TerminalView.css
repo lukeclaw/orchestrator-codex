@@ -151,11 +151,17 @@
   background: var(--bg);
 }
 
-/* Match viewport background to terminal theme so padding and canvas
-   have identical color — eliminates the visible seam at the edges. */
+/* Keep viewport scrollable (required for xterm.js scroll to work) but
+   hide the native scrollbar — the xterm.js 6.0 custom scrollbar provides
+   the visual indicator instead.  Also match background to terminal theme
+   so padding and canvas have identical color. */
 .terminal-view .xterm-viewport {
-  overflow-y: hidden !important;
+  overflow-y: scroll !important;
+  scrollbar-width: none;
   background: var(--bg) !important;
+}
+.terminal-view .xterm-viewport::-webkit-scrollbar {
+  display: none;
 }
 
 /* xterm.js 6.0 custom scrollbar (xterm-scrollable-element) —
