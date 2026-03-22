@@ -19,6 +19,7 @@ show_help() {
     echo "  --status STATUS               Filter by status (comma-separated: todo,in_progress)"
     echo "  --exclude-status STATUS       Exclude status (comma-separated: done,blocked)"
     echo "  --assigned ID                 Filter by assigned worker ID"
+    echo "  --worker-id ID                Alias for --assigned"
     echo "  --format FORMAT               Output format: json (default) or table"
     echo "  --stats                       Show status counts only"
     echo ""
@@ -54,7 +55,7 @@ cmd_list() {
             --project-id) project_id="$2"; shift 2 ;;
             --status) status="$2"; shift 2 ;;
             --exclude-status) exclude_status="$2"; shift 2 ;;
-            --assigned) assigned="$2"; shift 2 ;;
+            --assigned|--worker-id) assigned="$2"; shift 2 ;;
             --format) format="$2"; shift 2 ;;
             --stats) stats="1"; shift ;;
             *) echo "Unknown option: $1" >&2; exit 1 ;;

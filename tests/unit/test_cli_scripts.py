@@ -66,6 +66,13 @@ class TestBrainCliScripts:
             assert "delete <id>" in content
             assert "cmd_delete()" in content
 
+    def test_brain_tasks_list_accepts_worker_id(self):
+        """Verify orch-tasks list accepts --worker-id as alias for --assigned."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            bin_dir = deploy_brain_scripts(tmpdir)
+            content = _read_script(bin_dir, "orch-tasks")
+            assert "--worker-id" in content
+
     def test_brain_workers_script_has_stop_command(self):
         """Verify orch-workers has stop command."""
         with tempfile.TemporaryDirectory() as tmpdir:
