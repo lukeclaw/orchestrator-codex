@@ -12,7 +12,7 @@ import ProjectEditModal from '../components/projects/ProjectEditModal'
 import './ProjectsPage.css'
 
 const STATUSES = ['active', 'completed', 'paused'] as const
-const STATUS_COLORS: Record<string, string> = { active: 'var(--status-idle)', completed: 'var(--status-working)', paused: 'var(--status-waiting)' }
+const STATUS_COLORS: Record<string, string> = { active: 'var(--status-idle)', completed: 'var(--status-working)', paused: 'var(--status-paused)' }
 const STATUS_LABELS: Record<string, string> = { active: 'Active', completed: 'Completed', paused: 'Paused' }
 
 export default function ProjectsPage() {

@@ -349,11 +349,12 @@
 }
 
 /* Worker link hover colors by status */
-.prs-worker-link.working:hover { color: var(--accent); }
-.prs-worker-link.idle:hover { color: var(--green); }
-.prs-worker-link.waiting:hover { color: var(--yellow); }
+.prs-worker-link.working:hover { color: var(--status-working); }
+.prs-worker-link.idle:hover { color: var(--status-idle); }
+.prs-worker-link.waiting:hover { color: var(--status-waiting); }
+.prs-worker-link.blocked:hover { color: var(--status-blocked); }
 .prs-worker-link.paused:hover { color: var(--status-paused); }
-.prs-worker-link.disconnected:hover { color: var(--red); }
+.prs-worker-link.disconnected:hover { color: var(--status-disconnected); }
 .prs-worker-link.connecting:hover { color: var(--status-connecting); }
 
 /* Updated column */

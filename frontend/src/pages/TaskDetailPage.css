@@ -1228,11 +1228,12 @@
   color: var(--green);
 }
 
-.tdp-worker-link.status-working      { background: rgba(var(--accent-rgb), 0.08);  color: var(--accent); }
-.tdp-worker-link.status-idle          { background: rgba(var(--green-rgb), 0.08);  color: var(--green); }
-.tdp-worker-link.status-waiting       { background: rgba(var(--yellow-rgb), 0.08); color: var(--yellow); }
+.tdp-worker-link.status-working      { background: rgba(var(--accent-rgb), 0.08);  color: var(--status-working); }
+.tdp-worker-link.status-idle          { background: rgba(var(--green-rgb), 0.08);  color: var(--status-idle); }
+.tdp-worker-link.status-waiting       { background: rgba(45, 204, 184, 0.08); color: var(--status-waiting); }
+.tdp-worker-link.status-blocked       { background: rgba(var(--yellow-rgb), 0.08); color: var(--status-blocked); }
 .tdp-worker-link.status-paused        { background: rgba(var(--orange-alt-rgb), 0.08); color: var(--status-paused); }
-.tdp-worker-link.status-disconnected  { background: rgba(var(--red-rgb), 0.08);  color: var(--red); }
+.tdp-worker-link.status-disconnected  { background: rgba(var(--red-rgb), 0.08);  color: var(--status-disconnected); }
 .tdp-worker-link.status-connecting    { background: rgba(var(--orange-rgb), 0.08); color: var(--status-connecting); }
 
 .tdp-assign-icon-btn {
@@ -1386,11 +1387,12 @@
   text-transform: capitalize;
 }
 
-.worker-status-label.status-idle          { background: rgba(var(--green-rgb), 0.15);  color: var(--green); }
-.worker-status-label.status-working      { background: rgba(var(--accent-rgb), 0.15);  color: var(--accent); }
-.worker-status-label.status-waiting       { background: rgba(var(--yellow-rgb), 0.15); color: var(--yellow); }
+.worker-status-label.status-idle          { background: rgba(var(--green-rgb), 0.15);  color: var(--status-idle); }
+.worker-status-label.status-working      { background: rgba(var(--accent-rgb), 0.15);  color: var(--status-working); }
+.worker-status-label.status-waiting       { background: rgba(45, 204, 184, 0.15); color: var(--status-waiting); }
+.worker-status-label.status-blocked       { background: rgba(var(--yellow-rgb), 0.15); color: var(--status-blocked); }
 .worker-status-label.status-paused        { background: rgba(var(--orange-alt-rgb), 0.15); color: var(--status-paused); }
-.worker-status-label.status-disconnected  { background: rgba(var(--red-rgb), 0.15);  color: var(--red); }
+.worker-status-label.status-disconnected  { background: rgba(var(--red-rgb), 0.15);  color: var(--status-disconnected); }
 .worker-status-label.status-connecting    { background: rgba(var(--orange-rgb), 0.15); color: var(--status-connecting); }
 
 .worker-current {
@@ -1559,6 +1561,7 @@
 .tdp-worker-preview-card.status-working      { border-left-color: var(--status-working); }
 .tdp-worker-preview-card.status-idle          { border-left-color: var(--status-idle); }
 .tdp-worker-preview-card.status-waiting       { border-left-color: var(--status-waiting); }
+.tdp-worker-preview-card.status-blocked       { border-left-color: var(--status-blocked); }
 .tdp-worker-preview-card.status-paused        { border-left-color: var(--status-paused); }
 .tdp-worker-preview-card.status-disconnected  { border-left-color: var(--status-disconnected); }
 .tdp-worker-preview-card.status-connecting    { border-left-color: var(--status-connecting); }

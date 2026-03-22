@@ -100,44 +100,90 @@ class RdevCreate(BaseModel):
     flavor: str | None = None
 
 
+def _parse_rdev_table(text: str) -> list[dict]:
+    """Parse rdev table output into a list of dicts."""
+    rdevs = []
+    lines = text.strip().split("\n")
+    for line in lines:
+        # Skip header, separator lines, and info messages
+        if "|" not in line or line.startswith("-") or "Name" in line and "State" in line:
+            continue
+
+        parts = [p.strip() for p in line.split("|")]
+        if len(parts) >= 2:
+            name = parts[0].strip()
+            state = parts[1].strip() if len(parts) > 1 else ""
+
+            # Skip empty or invalid entries
+            if not name or "/" not in name:
+                continue
+
+            rdevs.append(
+                {
+                    "name": name,
+                    "state": state,
+                    "cluster": parts[2].strip() if len(parts) > 2 else "",
+                    "created": parts[3].strip() if len(parts) > 3 else "",
+                    "last_accessed": parts[4].strip() if len(parts) > 4 else "",
+                }
+            )
+    return rdevs
+
+
+def _clean_env_for_subprocess() -> dict[str, str]:
+    """Return a copy of the current env without venv/Python vars.
+
+    External CLI tools like ``rdev`` bundle their own Python and can break
+    when the server's venv leaks ``VIRTUAL_ENV``, ``__PYVENV_LAUNCHER__``,
+    or other ``PYTHON*`` variables into their process.
+    """
+    import os
+
+    env = os.environ.copy()
+    for key in list(env):
+        if key.startswith(("PYTHON", "VIRTUAL_ENV", "__PYVENV", "UV_")):
+            del env[key]
+    return env
+
+
 def _fetch_rdev_list() -> list[dict]:
     """Fetch rdev list from CLI command."""
-    rdevs = []
     try:
         result = subprocess.run(
             ["rdev", "list"],
             capture_output=True,
             text=True,
             timeout=30,
+            env=_clean_env_for_subprocess(),
         )
-        output = result.stdout
+        logger.debug(
+            "rdev list: rc=%d stdout=%d bytes stderr=%d bytes",
+            result.returncode,
+            len(result.stdout),
+            len(result.stderr),
+        )
 
-        # Parse the table output
-        # Format: Name | State | Cluster Name | Created | Last Accessed | Server URL
-        lines = output.strip().split("\n")
-        for line in lines:
-            # Skip header, separator lines, and info messages
-            if "|" not in line or line.startswith("-") or "Name" in line and "State" in line:
-                continue
+        if result.returncode != 0:
+            logger.warning("rdev list exited %d: %s", result.returncode, result.stderr[:500])
 
-            parts = [p.strip() for p in line.split("|")]
-            if len(parts) >= 2:
-                name = parts[0].strip()
-                state = parts[1].strip() if len(parts) > 1 else ""
+        if result.stderr.strip():
+            logger.debug("rdev list stderr: %s", result.stderr[:500])
 
-                # Skip empty or invalid entries
-                if not name or "/" not in name:
-                    continue
+        rdevs = _parse_rdev_table(result.stdout)
 
-                rdevs.append(
-                    {
-                        "name": name,
-                        "state": state,
-                        "cluster": parts[2].strip() if len(parts) > 2 else "",
-                        "created": parts[3].strip() if len(parts) > 3 else "",
-                        "last_accessed": parts[4].strip() if len(parts) > 4 else "",
-                    }
-                )
+        if not rdevs and result.stdout.strip():
+            logger.warning(
+                "rdev list returned output but parsed 0 rdevs. stdout: %s",
+                result.stdout[:500],
+            )
+        elif not rdevs and not result.stdout.strip():
+            logger.warning(
+                "rdev list returned empty stdout (rc=%d, stderr=%s)",
+                result.returncode,
+                result.stderr[:500] if result.stderr else "empty",
+            )
+
+        return rdevs
     except subprocess.TimeoutExpired:
         logger.warning("rdev list command timed out")
     except FileNotFoundError:
@@ -145,7 +191,7 @@ def _fetch_rdev_list() -> list[dict]:
     except Exception:
         logger.warning("Failed to run rdev list", exc_info=True)
 
-    return rdevs
+    return []
 
 
 @router.get("/rdevs")
