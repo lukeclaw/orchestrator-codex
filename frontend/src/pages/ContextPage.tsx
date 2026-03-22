@@ -1,11 +1,11 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
+import { Link, useLocation } from 'react-router-dom'
 import { useApp } from '../context/AppContext'
 import { useContextItems } from '../hooks/useContextItems'
 import { useBrainMemory } from '../hooks/useBrainMemory'
 import type { ContextItem } from '../api/types'
 import { timeAgo, parseDate } from '../components/common/TimeAgo'
 import { IconContext, IconFilter, IconSearch } from '../components/common/Icons'
-import SlidingTabs from '../components/common/SlidingTabs'
 import ContextModal from '../components/context/ContextModal'
 import './ContextPage.css'
 
@@ -19,7 +19,8 @@ const SCOPES = ['global', 'brain', 'project'] as const
 
 export default function ContextPage() {
   const { projects } = useApp()
-  const [activeTab, setActiveTab] = useState<'context' | 'brain-memory'>('context')
+  const location = useLocation()
+  const isBrainMemoryPage = location.pathname === '/context/brain-memory'
   const [scopeFilter, setScopeFilter] = useState<string>('')
   const [projectFilter, setProjectFilter] = useState<string>('')
   const [searchText, setSearchText] = useState('')
@@ -220,19 +221,25 @@ export default function ContextPage() {
 
   return (
     <div className="context-page page-scroll-layout">
-      {/* Header: title + tabs + actions */}
+      {/* Header */}
       <div className="page-header">
-        <h1>Context</h1>
-        <SlidingTabs
-          tabs={[
-            { value: 'context' as const, label: 'Context' },
-            { value: 'brain-memory' as const, label: 'Brain Memory' },
-          ]}
-          value={activeTab}
-          onChange={setActiveTab}
-        />
+        <div className="page-header-left">
+          {isBrainMemoryPage ? (
+            <>
+              <Link to="/context" className="page-back-link">← Context</Link>
+              <h1>Brain Memory</h1>
+            </>
+          ) : (
+            <>
+              <h1>Context</h1>
+              <Link to="/context/brain-memory" className="page-sub-link">
+                Brain Memory →
+              </Link>
+            </>
+          )}
+        </div>
         <div className="page-header-actions">
-          {activeTab === 'context' && (
+          {!isBrainMemoryPage && (
             <button className="btn btn-primary btn-sm" onClick={() => setShowNewContext(true)}>
               + Add Context
             </button>
@@ -241,7 +248,7 @@ export default function ContextPage() {
       </div>
 
       {/* === Brain Memory Tab === */}
-      {activeTab === 'brain-memory' && (
+      {isBrainMemoryPage && (
         <>
           <div className="bm-notice">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -324,7 +331,7 @@ export default function ContextPage() {
       )}
 
       {/* === Context Tab === */}
-      {activeTab === 'context' && items.length > 0 && (
+      {!isBrainMemoryPage && items.length > 0 && (
         <div className="ctx-scope-bar">
           <button
             className={`ctx-scope-pill${!scopeFilter ? ' active' : ''}`}
@@ -368,7 +375,7 @@ export default function ContextPage() {
         </div>
       )}
 
-      {activeTab === 'context' && (
+      {!isBrainMemoryPage && (
       <div className="page-content">
       {loading ? (
         <p className="empty-state">Loading...</p>
