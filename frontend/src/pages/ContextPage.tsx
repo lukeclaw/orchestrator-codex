@@ -257,8 +257,7 @@ export default function ContextPage() {
       {isBrainMemoryPage && (
         <>
           <p className="bm-desc">
-            The brain captures learnings during work and curates them into a wisdom document
-            injected into its prompt on every start. These entries are managed by the brain.
+            The brain's private knowledge, managed automatically. Read-only.
           </p>
           <div className="page-content">
             {memoryLoading ? (
@@ -268,6 +267,9 @@ export default function ContextPage() {
                 {/* Wisdom section */}
                 <div className="bm-section">
                   <div className="bm-section-title">Wisdom</div>
+                  <p className="bm-section-desc">
+                    Curated insights distilled from learning logs. Injected into the brain's prompt on every start.
+                  </p>
                   {wisdom ? (
                     <div className="bm-wisdom-panel clickable" onClick={() => handleMemoryItemClick(wisdom)}>
                       <div className="bm-wisdom-content">{wisdom.content}</div>
@@ -285,7 +287,12 @@ export default function ContextPage() {
                 {/* Learning logs section */}
                 <div className="bm-section">
                   <div className="bm-section-header">
-                    <div className="bm-section-title">Learning Logs</div>
+                    <div>
+                      <div className="bm-section-title">Learning Logs</div>
+                      <p className="bm-section-desc">
+                        Raw notes captured during work — error fixes, repo quirks, process learnings. Periodically curated into wisdom.
+                      </p>
+                    </div>
                     <div className="bm-search">
                       <IconSearch size={13} className="bm-search-icon" />
                       <input
