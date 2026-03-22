@@ -405,6 +405,9 @@ async def stream_pane(
         while True:
             ws_msg = await websocket.receive()
 
+            if ws_msg.get("type") == "websocket.disconnect":
+                break
+
             # Binary frames from client are not expected but handle gracefully
             if ws_msg.get("bytes"):
                 continue

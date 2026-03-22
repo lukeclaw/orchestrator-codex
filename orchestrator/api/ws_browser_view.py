@@ -301,6 +301,9 @@ async def _relay_client_input(websocket: WebSocket, view) -> None:
         while True:
             ws_msg = await websocket.receive()
 
+            if ws_msg.get("type") == "websocket.disconnect":
+                break
+
             # Binary frames from client are not expected
             if ws_msg.get("bytes"):
                 continue
