@@ -1127,7 +1127,7 @@ class TestCleanupOrphanedPipePaneProcesses:
     """Test cleanup_orphaned_pipe_pane_processes()."""
 
     def test_kills_orphaned_cat_processes(self):
-        """Should SIGTERM orphaned cat processes with orchestrator_pty in command."""
+        """Should SIGTERM all stale cat processes regardless of ppid."""
         ps_output = (
             "  PID  PPID COMMAND\n"
             "  100     1 sh -c exec cat > /tmp/orchestrator_pty/5_9999.fifo\n"
@@ -1143,14 +1143,19 @@ class TestCleanupOrphanedPipePaneProcesses:
         ):
             killed = cleanup_orphaned_pipe_pane_processes()
 
-        assert killed == 1
-        # Only pid=100 should be killed (ppid=1 + matches orchestrator_pty + cat)
-        mock_kill.assert_called_once_with(100, 15)
+        assert killed == 2
+        # Both pid=100 (ppid=1) and pid=200 (ppid=500/tmux) should be killed
+        # since neither FIFO PID (9999) matches our PID
+        mock_kill.assert_any_call(100, 15)
+        mock_kill.assert_any_call(200, 15)
 
-    def test_does_not_kill_parented_processes(self):
-        """Processes with a real parent (ppid != 1) should not be killed."""
+    def test_does_not_kill_own_processes(self):
+        """Processes whose FIFO PID matches our PID should be spared."""
+        our_pid = os.getpid()
         ps_output = (
-            "  PID  PPID COMMAND\n  200   500 sh -c exec cat > /tmp/orchestrator_pty/6_9999.fifo\n"
+            "  PID  PPID COMMAND\n"
+            f"  200   500 sh -c exec cat > /tmp/orchestrator_pty/6_{our_pid}.fifo\n"
+            "  300   500 sh -c exec cat > /tmp/orchestrator_pty/7_9999.fifo\n"
         )
         mock_result = MagicMock()
         mock_result.stdout = ps_output
@@ -1161,5 +1166,6 @@ class TestCleanupOrphanedPipePaneProcesses:
         ):
             killed = cleanup_orphaned_pipe_pane_processes()
 
-        assert killed == 0
-        mock_kill.assert_not_called()
+        assert killed == 1
+        # Only pid=300 (stale FIFO PID 9999) should be killed
+        mock_kill.assert_called_once_with(300, 15)

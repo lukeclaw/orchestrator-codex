@@ -9,7 +9,6 @@ from __future__ import annotations
 import logging
 import os
 import shutil
-import signal
 import sys
 
 import uvicorn
@@ -76,14 +75,11 @@ def main():
     logger.info("Data directory: %s", paths.data_dir())
     logger.info("tmux: %s", shutil.which("tmux"))
 
-    # 5. Handle SIGTERM for clean shutdown (Tauri sends this on app close)
-    def handle_sigterm(signum, frame):
-        logger.info("Received SIGTERM, shutting down")
-        sys.exit(0)
-
-    signal.signal(signal.SIGTERM, handle_sigterm)
-
-    # 6. Start uvicorn
+    # 5. Start uvicorn
+    # Note: uvicorn installs its own SIGTERM handler that triggers graceful
+    # shutdown, running the full ASGI lifespan teardown (PTY stream cleanup,
+    # state manager stop, DB close, etc.).  Do NOT override it with sys.exit()
+    # — that skips lifespan shutdown and causes orphaned processes.
     host = config.get("server", {}).get("host", "127.0.0.1")
     port = config.get("server", {}).get("port", 8093)
 

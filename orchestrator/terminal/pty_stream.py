@@ -647,9 +647,14 @@ def cleanup_orphaned_pipe_pane_processes() -> int:
     """Kill orphaned ``cat`` processes from previous pipe-pane sessions.
 
     When the orchestrator server restarts without cleanly stopping its
-    pipe-pane ``cat > FIFO`` processes, the child process gets reparented
-    to PID 1 (launchd/init).  These zombies accumulate and can prevent
-    FIFOs from receiving EOF.
+    pipe-pane ``cat > FIFO`` processes, these ``sh -c exec cat > FIFO``
+    children linger — parented to tmux (not PID 1) since tmux spawned
+    them via ``pipe-pane``.  They accumulate across restarts and can
+    number in the thousands.
+
+    Strategy: kill any ``cat > orchestrator_pty/*.fifo`` process whose
+    FIFO PID suffix doesn't match *our* PID.  This covers both
+    reparented (ppid=1) and tmux-parented orphans from previous servers.
 
     Returns the number of orphaned processes killed.
     """
@@ -670,20 +675,26 @@ def cleanup_orphaned_pipe_pane_processes() -> int:
             parts = line.split(None, 2)
             if len(parts) < 3:
                 continue
-            pid, ppid = int(parts[0]), int(parts[1])
+            pid = int(parts[0])
             if pid == our_pid:
                 continue
-            # Only kill processes whose parent is init (ppid=1) — orphaned
-            if ppid == 1:
-                try:
-                    os.kill(pid, 15)  # SIGTERM
-                    killed += 1
-                    logger.info(
-                        "Killed orphaned pipe-pane cat process pid=%d (ppid=1)",
-                        pid,
-                    )
-                except ProcessLookupError:
-                    pass
+            # Extract the PID encoded in the FIFO filename (<pane>_<pid>.fifo)
+            # to distinguish our own cat processes from stale ones.
+            cmd = parts[2]
+            fifo_match = re.search(r"orchestrator_pty/\d+_(\d+)\.fifo", cmd)
+            if fifo_match:
+                fifo_pid = int(fifo_match.group(1))
+                if fifo_pid == our_pid:
+                    continue  # Belongs to this server instance
+            try:
+                os.kill(pid, 15)  # SIGTERM
+                killed += 1
+                logger.info(
+                    "Killed orphaned pipe-pane cat process pid=%d",
+                    pid,
+                )
+            except ProcessLookupError:
+                pass
     except Exception:
         logger.exception("Failed to clean up orphaned pipe-pane processes")
     if killed:
