@@ -1,5 +1,5 @@
 version = 1
-revision = 2
+revision = 3
 requires-python = ">=3.11"
 resolution-markers = [
     "python_full_version >= '3.13'",
@@ -299,14 +299,18 @@ dependencies = [
     { name = "anthropic" },
     { name = "click" },
     { name = "fastapi" },
+    { name = "httptools" },
     { name = "httpx" },
     { name = "jinja2" },
     { name = "playwright" },
     { name = "python-dateutil" },
+    { name = "python-dotenv" },
     { name = "pyyaml" },
     { name = "pyzipper" },
     { name = "rich" },
-    { name = "uvicorn", extra = ["standard"] },
+    { name = "uvicorn" },
+    { name = "watchfiles" },
+    { name = "websockets" },
 ]
 
 [package.optional-dependencies]
@@ -335,6 +339,7 @@ requires-dist = [
     { name = "chromadb", marker = "extra == 'knowledge'", specifier = ">=0.6.0" },
     { name = "click", specifier = ">=8.0" },
     { name = "fastapi", specifier = ">=0.115.0" },
+    { name = "httptools", specifier = ">=0.6.3" },
     { name = "httpx", specifier = ">=0.27.0" },
     { name = "httpx", marker = "extra == 'dev'", specifier = ">=0.27.0" },
     { name = "jinja2", specifier = ">=3.1.0" },
@@ -347,11 +352,14 @@ requires-dist = [
     { name = "pytest-timeout", marker = "extra == 'dev'", specifier = ">=2.3.0" },
     { name = "pytest-xdist", marker = "extra == 'dev'", specifier = ">=3.5.0" },
     { name = "python-dateutil" },
+    { name = "python-dotenv", specifier = ">=0.13" },
     { name = "pyyaml", specifier = ">=6.0" },
     { name = "pyzipper", specifier = ">=0.3.6" },
     { name = "rich", specifier = ">=13.0" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.8.0" },
-    { name = "uvicorn", extras = ["standard"], specifier = ">=0.34.0" },
+    { name = "uvicorn", specifier = ">=0.34.0" },
+    { name = "watchfiles", specifier = ">=0.13" },
+    { name = "websockets", specifier = ">=10.4" },
 ]
 provides-extras = ["dev", "e2e", "build", "knowledge"]
 

@@ -97,14 +97,6 @@ def main():
         port=port,
         log_level="info",
         log_config=log_config,
-        # Force the standard asyncio event loop instead of uvloop (the default).
-        # uvloop registers a pthread_atfork handler that calls PyOS_AfterFork_Child
-        # in every forked child (subprocess.run, create_subprocess_exec, etc.).
-        # On Python 3.13 under Rosetta, this triggers a PyMutex_Unlock fatal error
-        # in the child, and the subsequent abort() hangs in the kernel translation
-        # layer — leaving an unkillable process (UE+ state) that holds the listen
-        # socket and blocks the parent on waitpid(), requiring a reboot to recover.
-        loop="asyncio",
     )
 
 

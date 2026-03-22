@@ -10,7 +10,13 @@ dependencies = [
     "rich>=13.0",
     # Web Server & API
     "fastapi>=0.115.0",
-    "uvicorn[standard]>=0.34.0",
+    # uvicorn[standard] minus uvloop — uvloop's pthread_atfork handler crashes
+    # forked children on Python 3.13 + Rosetta (see docs/learnings/ for details).
+    "uvicorn>=0.34.0",
+    "httptools>=0.6.3",
+    "python-dotenv>=0.13",
+    "watchfiles>=0.13",
+    "websockets>=10.4",
     "jinja2>=3.1.0",
     # LLM & HTTP
     "anthropic>=0.42.0",
