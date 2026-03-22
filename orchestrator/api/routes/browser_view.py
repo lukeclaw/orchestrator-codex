@@ -203,7 +203,7 @@ async def _auto_start_browser_and_retry(
             except RuntimeError as e:
                 if "Unknown action" in str(e):
                     logger.warning("Stale RWS daemon on %s, redeploying", host)
-                    rws = force_restart_server(host)
+                    rws = await asyncio.to_thread(force_restart_server, host)
                     await asyncio.to_thread(rws.start_browser, session_id, port=cdp_port)
                 else:
                     raise
@@ -232,7 +232,13 @@ async def _auto_start_browser_and_retry(
             e,
             original_error,
         )
-        raise HTTPException(502, original_error)
+        # Include both the original and retry errors so the user can debug
+        retry_detail = str(e)
+        if retry_detail and retry_detail != original_error:
+            detail = f"{original_error} | Auto-start retry failed: {retry_detail}"
+        else:
+            detail = original_error
+        raise HTTPException(502, detail)
 
 
 router = APIRouter()

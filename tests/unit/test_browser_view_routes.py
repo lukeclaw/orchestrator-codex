@@ -131,7 +131,7 @@ class TestStartEndpoint:
     @patch("orchestrator.api.routes.browser_view._wait_for_rws")
     @patch("orchestrator.api.routes.browser_view.start_browser_view")
     def test_502_no_browser_auto_start_fails(self, mock_start, mock_wait_rws, client, rdev_session):
-        """When no browser found and auto-start also fails, return 502."""
+        """When no browser found and auto-start also fails, return 502 with both errors."""
         mock_start.side_effect = RuntimeError("No browser found on CDP port 9222")
         mock_wait_rws.side_effect = RuntimeError("Remote worker server not ready")
 
@@ -140,6 +140,9 @@ class TestStartEndpoint:
             json={"cdp_port": 9222},
         )
         assert response.status_code == 502
+        detail = response.json()["detail"]
+        assert "No browser found on CDP port 9222" in detail
+        assert "Remote worker server not ready" in detail
 
     @patch("orchestrator.api.routes.browser_view._wait_for_rws")
     @patch("orchestrator.api.routes.browser_view.start_browser_view")
