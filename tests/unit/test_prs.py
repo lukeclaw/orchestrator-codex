@@ -2,6 +2,7 @@
 
 import json
 import time as time_mod
+from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -56,6 +57,11 @@ def client(conn):
         yield c
 
 
+def _days_ago(n: int) -> str:
+    """Return an ISO 8601 UTC timestamp for n days ago."""
+    return (datetime.now(UTC) - timedelta(days=n)).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
 def _make_graphql_node(
     number=42,
     repo="org/repo",
@@ -93,9 +99,9 @@ def _make_graphql_node(
         "state": state,
         "isDraft": draft,
         "author": {"login": "alice"},
-        "createdAt": "2026-03-10T10:00:00Z",
-        "updatedAt": "2026-03-13T14:00:00Z",
-        "closedAt": ("2026-03-12T12:00:00Z" if state in ("CLOSED", "MERGED") else None),
+        "createdAt": _days_ago(5),
+        "updatedAt": _days_ago(2),
+        "closedAt": (_days_ago(3) if state in ("CLOSED", "MERGED") else None),
         "mergedAt": merged_at,
         "mergedBy": {"login": "bob"} if merged_at else None,
         "additions": 10,
@@ -103,7 +109,7 @@ def _make_graphql_node(
         "changedFiles": 2,
         "repository": {"nameWithOwner": repo},
         "mergeable": mergeable,
-        "autoMergeRequest": {"enabledAt": "2026-03-10T10:00:00Z"} if auto_merge else None,
+        "autoMergeRequest": {"enabledAt": _days_ago(5)} if auto_merge else None,
         "reviewDecision": review_decision,
         "reviewRequests": {"nodes": rr_nodes},
         "commits": {"nodes": [{"commit": {"statusCheckRollup": rollup}}]},
@@ -150,7 +156,7 @@ def test_recent_tab_search(mock_gh, client):
         _make_graphql_node(
             number=40,
             state="MERGED",
-            merged_at="2026-03-11T12:00:00Z",
+            merged_at=_days_ago(4),
         ),
     )
 
@@ -158,7 +164,7 @@ def test_recent_tab_search(mock_gh, client):
     assert resp.status_code == 200
     data = resp.json()
     assert len(data["prs"]) == 1
-    assert data["prs"][0]["merged_at"] == "2026-03-11T12:00:00Z"
+    assert data["prs"][0]["merged_at"] == _days_ago(4)
 
     call_args = mock_gh.call_args[0]
     q_arg = [a for a in call_args if a.startswith("q=")][0]
@@ -385,14 +391,14 @@ def test_merged_pr_state(mock_gh, client):
     mock_gh.return_value = _wrap_graphql(
         _make_graphql_node(
             state="MERGED",
-            merged_at="2026-03-11T12:00:00Z",
+            merged_at=_days_ago(4),
         )
     )
 
     resp = client.get("/api/prs?tab=recent")
     data = resp.json()
     assert data["prs"][0]["state"] == "closed"
-    assert data["prs"][0]["merged_at"] == "2026-03-11T12:00:00Z"
+    assert data["prs"][0]["merged_at"] == _days_ago(4)
     assert data["prs"][0]["merged_by"] == "bob"
 
 
@@ -771,7 +777,7 @@ def test_conflict_blocks_ready_to_ship(mock_gh, client):
 def test_recent_uses_simplified_query(mock_gh, client):
     """Recent tab sends a lightweight GQL query without CI/review fields."""
     mock_gh.return_value = _wrap_graphql(
-        _make_graphql_node(number=40, state="MERGED", merged_at="2026-03-11T12:00:00Z"),
+        _make_graphql_node(number=40, state="MERGED", merged_at=_days_ago(4)),
     )
 
     client.get("/api/prs?tab=recent&days=7")
@@ -802,7 +808,7 @@ def test_recent_incremental_refresh(mock_gh, client):
     """Incremental refresh merges new PRs with cached ones."""
     # First call: full fetch
     mock_gh.return_value = _wrap_graphql(
-        _make_graphql_node(number=40, state="MERGED", merged_at="2026-03-11T12:00:00Z"),
+        _make_graphql_node(number=40, state="MERGED", merged_at=_days_ago(4)),
     )
     client.get("/api/prs?tab=recent&days=7")
     assert mock_gh.call_count == 1
@@ -813,7 +819,7 @@ def test_recent_incremental_refresh(mock_gh, client):
 
     # Second call: incremental fetch returns a new PR
     mock_gh.return_value = _wrap_graphql(
-        _make_graphql_node(number=41, state="MERGED", merged_at="2026-03-14T10:00:00Z"),
+        _make_graphql_node(number=41, state="MERGED", merged_at=_days_ago(1)),
     )
     resp = client.get("/api/prs?tab=recent&days=7")
     assert mock_gh.call_count == 2
@@ -832,9 +838,7 @@ def test_recent_incremental_refresh(mock_gh, client):
 def test_recent_incremental_deduplicates(mock_gh, client):
     """Incremental refresh updates existing PRs with fresh data."""
     mock_gh.return_value = _wrap_graphql(
-        _make_graphql_node(
-            number=40, state="MERGED", title="Old title", merged_at="2026-03-11T12:00:00Z"
-        ),
+        _make_graphql_node(number=40, state="MERGED", title="Old title", merged_at=_days_ago(4)),
     )
     client.get("/api/prs?tab=recent&days=7")
 
@@ -845,7 +849,7 @@ def test_recent_incremental_deduplicates(mock_gh, client):
     # Same PR number returned with updated title
     mock_gh.return_value = _wrap_graphql(
         _make_graphql_node(
-            number=40, state="MERGED", title="Updated title", merged_at="2026-03-11T12:00:00Z"
+            number=40, state="MERGED", title="Updated title", merged_at=_days_ago(4)
         ),
     )
     resp = client.get("/api/prs?tab=recent&days=7")
@@ -897,7 +901,7 @@ def test_recent_incremental_prunes_expired(mock_gh, client):
 def test_recent_manual_refresh_bypasses_incremental(mock_gh, client):
     """Manual refresh=true does a full fetch, not incremental."""
     mock_gh.return_value = _wrap_graphql(
-        _make_graphql_node(number=40, state="MERGED", merged_at="2026-03-11T12:00:00Z"),
+        _make_graphql_node(number=40, state="MERGED", merged_at=_days_ago(4)),
     )
     client.get("/api/prs?tab=recent&days=7")
 
@@ -907,7 +911,7 @@ def test_recent_manual_refresh_bypasses_incremental(mock_gh, client):
 
     # Manual refresh returns only a new PR
     mock_gh.return_value = _wrap_graphql(
-        _make_graphql_node(number=41, state="MERGED", merged_at="2026-03-14T10:00:00Z"),
+        _make_graphql_node(number=41, state="MERGED", merged_at=_days_ago(1)),
     )
     resp = client.get("/api/prs?tab=recent&days=7&refresh=true")
 
@@ -927,7 +931,7 @@ def test_recent_manual_refresh_bypasses_incremental(mock_gh, client):
 def test_recent_incremental_refreshes_task_links(mock_gh, client, conn):
     """Incremental refresh re-runs task cross-referencing for all PRs."""
     mock_gh.return_value = _wrap_graphql(
-        _make_graphql_node(number=40, state="MERGED", merged_at="2026-03-11T12:00:00Z"),
+        _make_graphql_node(number=40, state="MERGED", merged_at=_days_ago(4)),
     )
     # First fetch — no task linked
     resp = client.get("/api/prs?tab=recent&days=7")
