@@ -204,6 +204,12 @@
   margin-top: 2px;
 }
 
+.settings-toggle-hint {
+  font-size: 11px;
+  color: var(--text-secondary);
+  margin-top: 6px;
+}
+
 /* Compact theme selector tabs within settings row */
 .settings-toggle-row .sliding-tabs {
   flex-shrink: 0;

@@ -357,7 +357,10 @@ export default function SettingsPage() {
               <div>
                 <div className="settings-toggle-label">Theme</div>
                 <div className="settings-toggle-desc">
-                  Choose your preferred color scheme. Claude Code also has its own terminal theme — run <code>/theme</code> inside a worker session to switch it independently.
+                  Choose your preferred color scheme
+                </div>
+                <div className="settings-toggle-hint">
+                  Tip: run <code>/theme</code> in a worker session to switch Claude Code's terminal theme
                 </div>
               </div>
               <SlidingTabs

@@ -198,8 +198,24 @@ select:focus {
   box-shadow: var(--shadow-lg);
 }
 
+/* Light mode tabs — Apple segmented control pattern:
+   Gray container → white active tab pops out via shadow */
 [data-theme="light"] .sliding-tabs {
-  background: #dfe3e8;
+  background: #e5e7eb;
+}
+
+[data-theme="light"] .sliding-tabs__indicator {
+  background: #ffffff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1), 0 1px 2px rgba(0, 0, 0, 0.06);
+}
+
+[data-theme="light"] .sliding-tabs__tab:hover:not(.active) {
+  background: rgba(255, 255, 255, 0.45);
+}
+
+[data-theme="light"] .sliding-tabs__tab.active {
+  color: var(--text-primary);
+  font-weight: 600;
 }
 
 .panel-header {
