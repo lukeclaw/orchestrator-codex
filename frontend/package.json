@@ -30,6 +30,10 @@
     "vite": "^6.0.0",
     "vitest": "^4.0.18"
   },
+  "_overrides_note": "Remove dompurify override once monaco-editor ships with dompurify >= 3.3.2 (fixes XSS GHSA-v2wj-7wpq-c8vv)",
+  "overrides": {
+    "dompurify": "3.3.3"
+  },
   "volta": {
     "node": "20.20.0"
   }
