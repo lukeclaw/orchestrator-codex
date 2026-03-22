@@ -41,7 +41,8 @@
   /* Worker status colors — single source of truth */
   --status-working: var(--accent);
   --status-idle: var(--green);
-  --status-waiting: var(--yellow);
+  --status-waiting: #2dccb8;
+  --status-blocked: var(--yellow);
   --status-paused: #f97316;
   --status-connecting: var(--orange);
   --status-disconnected: var(--red);
@@ -172,7 +173,8 @@
 
   --status-idle: #2da44e;
   --status-working: #218bff;
-  --status-waiting: #d97706;
+  --status-waiting: #0d9488;
+  --status-blocked: #d97706;
   --status-disconnected: #e5534b;
   --status-error: #e5534b;
   --status-paused: #bc4c00;

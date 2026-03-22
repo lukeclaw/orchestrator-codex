@@ -48,13 +48,15 @@ case "$EVENT" in
         ;;
 esac
 
-# Guard: don't overwrite "idle" with "waiting".
+# Guard: don't overwrite "idle" or "blocked" with "waiting".
 # After a user-initiated stop, /clear causes Claude to cycle through hooks
 # (SessionEnd → SessionStart → Stop/Notification) which would incorrectly
 # change the status back to "waiting". Check current status and bail out.
+# Also protects "blocked" — the worker explicitly set this status to signal
+# it needs help; the hook must not silently revert it.
 if [ "$STATUS" = "waiting" ]; then
     CURRENT=$(curl -s "$API_BASE/api/sessions/$SESSION_ID" | jq -r '.status // empty')
-    if [ "$CURRENT" = "idle" ]; then
+    if [ "$CURRENT" = "idle" ] || [ "$CURRENT" = "blocked" ]; then
         exit 0
     fi
 fi

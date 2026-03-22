@@ -12,10 +12,12 @@ export default function StatsBar() {
   // Worker status breakdown
   const workingCount = workers.filter(w => w.status === 'working').length
   const waitingCount = workers.filter(w => w.status === 'waiting').length
+  const blockedCount = workers.filter(w => w.status === 'blocked').length
   const errorCount = workers.filter(w => w.status === 'disconnected').length
 
   const workerParts: string[] = []
   if (workingCount > 0) workerParts.push(`${workingCount} working`)
+  if (blockedCount > 0) workerParts.push(`${blockedCount} blocked`)
   if (waitingCount > 0) workerParts.push(`${waitingCount} waiting`)
   if (errorCount > 0) workerParts.push(`${errorCount} offline`)
   const workerSub = workerParts.join(' · ') || 'none'
@@ -30,7 +32,7 @@ export default function StatsBar() {
   const taskSub = `${doneTasks} done · ${todoTasks} todo`
 
   // Highlight workers stat if any need attention
-  const needsAttention = waitingCount > 0 || errorCount > 0
+  const needsAttention = blockedCount > 0 || errorCount > 0
 
   return (
     <section className="stats-bar" data-testid="stats-bar">

@@ -4,6 +4,7 @@ export const WORKER_STATUS_COLORS: Record<string, string> = {
   working: 'var(--status-working)',
   idle: 'var(--status-idle)',
   waiting: 'var(--status-waiting)',
+  blocked: 'var(--status-blocked)',
   paused: 'var(--status-paused)',
   connecting: 'var(--status-connecting)',
   disconnected: 'var(--status-disconnected)',

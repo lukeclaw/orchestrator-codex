@@ -76,6 +76,7 @@ export default function RecentActivity({ workers, tasks }: Props) {
 
     let groupKey = ''
     if (w.status === 'disconnected') groupKey = 'disconnected'
+    else if (w.status === 'blocked') groupKey = 'blocked'
     else if (w.status === 'waiting') groupKey = 'waiting'
     else if (w.status === 'working') groupKey = 'working'
     else continue
@@ -83,7 +84,8 @@ export default function RecentActivity({ workers, tasks }: Props) {
     if (!workerGroups[groupKey]) {
       const cfg: Record<string, { icon: ReactNode; iconClass: string; label: string }> = {
         disconnected: { icon: <IconX size={ICON_SIZE} />, iconClass: 'error', label: 'disconnected' },
-        waiting: { icon: <IconPause size={ICON_SIZE} />, iconClass: 'warn', label: 'waiting for input' },
+        blocked: { icon: <IconPause size={ICON_SIZE} />, iconClass: 'warn', label: 'blocked — needs help' },
+        waiting: { icon: <IconPause size={ICON_SIZE} />, iconClass: 'info', label: 'waiting' },
         working: { icon: <IconPlay size={ICON_SIZE} />, iconClass: 'info', label: 'started working' },
       }
       workerGroups[groupKey] = { ...cfg[groupKey], workers: [] }

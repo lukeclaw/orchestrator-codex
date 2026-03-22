@@ -47,14 +47,23 @@ def _recovery_status(conn, session_id: str) -> str:
     """Return the appropriate status after reconnect/recovery.
 
     Returns "waiting" if the worker has any assigned task, "idle" otherwise.
-    The idle case is rare — it means the worker finished its task before
-    being assigned a new one.
+    If the worker was "blocked" before disconnecting, preserves "blocked"
+    (the blocker likely still exists).
     """
     try:
+        from orchestrator.state.repositories import sessions as sessions_repo
         from orchestrator.state.repositories import tasks as tasks_repo
 
         assigned = tasks_repo.list_tasks(conn, assigned_session_id=session_id, parent_task_id=...)
         if assigned:
+            # Preserve "blocked" if that was the pre-disconnect status
+            session = sessions_repo.get_session(conn, session_id)
+            if session and session.status == "blocked":
+                logger.info(
+                    "_recovery_status(%s): preserving blocked status",
+                    session_id,
+                )
+                return "blocked"
             logger.info(
                 "_recovery_status(%s): found %d assigned tasks -> waiting",
                 session_id,

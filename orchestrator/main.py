@@ -206,7 +206,8 @@ def _show_status(conn):
             status_color = {
                 "idle": "blue",
                 "working": "green",
-                "waiting": "yellow",
+                "waiting": "bright_cyan",
+                "blocked": "yellow",
                 "error": "red",
                 "disconnected": "dim",
             }.get(s.status, "white")

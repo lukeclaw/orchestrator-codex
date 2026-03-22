@@ -356,6 +356,7 @@ select:focus {
 .status-dot.working,      .status-indicator.working      { background: var(--status-working); }
 .status-dot.idle,          .status-indicator.idle          { background: var(--status-idle); }
 .status-dot.waiting,       .status-indicator.waiting       { background: var(--status-waiting); }
+.status-dot.blocked,       .status-indicator.blocked       { background: var(--status-blocked); }
 .status-dot.paused,        .status-indicator.paused        { background: var(--status-paused); }
 .status-dot.connecting,    .status-indicator.connecting    { background: var(--status-connecting); }
 .status-dot.disconnected,  .status-indicator.disconnected  { background: var(--status-disconnected); }
@@ -379,15 +380,16 @@ select:focus {
   color: var(--red);
 }
 
-.status-badge.waiting,
-.status-badge.blocked {
-  background: rgba(var(--yellow-rgb),0.15);
+.status-badge.waiting {
+  background: rgba(45, 204, 184, 0.15);
   color: var(--status-waiting);
 }
 
-/* In light mode, --status-waiting is bright (#d97706) for dots/borders.
-   Text elements need the darker --yellow (#b45309) for ≥4.5:1 contrast. */
-[data-theme="light"] .status-badge.waiting,
+.status-badge.blocked {
+  background: rgba(var(--yellow-rgb),0.15);
+  color: var(--status-blocked);
+}
+
 [data-theme="light"] .status-badge.blocked {
   color: var(--yellow);
 }

@@ -25,6 +25,7 @@ class TestSessionStatus:
             "working",
             "paused",
             "waiting",
+            "blocked",
             "disconnected",
         }
         actual = {s.value for s in SessionStatus}

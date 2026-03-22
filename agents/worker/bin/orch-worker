@@ -12,12 +12,13 @@ show_help() {
     echo "Usage: orch-worker <command> [options]"
     echo ""
     echo "Commands:"
-    echo "  update --status STATUS    Update worker status (working|idle|waiting)"
+    echo "  update --status STATUS    Update worker status (working|idle|waiting|blocked)"
     echo ""
     echo "Examples:"
     echo "  orch-worker update --status working"
     echo "  orch-worker update --status idle"
-    echo "  orch-worker update --status waiting"
+    echo "  orch-worker update --status waiting    # parked (PR review, CI running)"
+    echo "  orch-worker update --status blocked    # stuck, needs help"
 }
 
 cmd_update() {

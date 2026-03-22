@@ -153,11 +153,21 @@ After `/compact` or when context feels incomplete, **re-fetch context items** �
 
 **When in doubt, look it up or ask. Never guess.**
 
-### State Why You're Waiting
+### State Why You're Waiting — and Report Blocked Status
 
-When you decide to wait (for any reason — working hours, PR review, dependency, missing access, etc.), **always** update your task or subtask notes with the reason:
+When you stop working, your status automatically becomes `waiting`. This is correct if you're parked for an expected reason (PR under review, CI running, scheduled for later).
+
+**If you're blocked** — stuck on an error, need auth/credentials, can't find a solution, need a human decision — report it explicitly:
 ```bash
-orch-task update --notes "Waiting: PR #123 clean but outside working hours (9AM-6PM Mon-Fri). Will mark ready next business day."
+orch-worker update --status blocked
+orch-task update --notes "Waiting: need auth credentials for staging DB"
+```
+
+This tells the brain you need help. The brain prioritizes blocked workers over waiting ones.
+
+**Always** update your task notes with the reason, whether waiting or blocked:
+```bash
+orch-task update --notes "Waiting: PR #123 under review, expecting feedback by EOD."
 ```
 This lets the brain understand your situation and avoid nudging you to do something you can't or shouldn't do yet.
 

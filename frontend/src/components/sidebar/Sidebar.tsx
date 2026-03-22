@@ -27,8 +27,8 @@ export default function Sidebar({ collapsed, onToggle }: Props) {
   const { getValue, loading: settingsLoading } = useSettings()
   const preserveFilters = !settingsLoading && Boolean(getValue('ui.preserve_filters'))
 
-  const waitingWorkers = workers.filter(
-    s => s.status === 'waiting'
+  const blockedWorkers = workers.filter(
+    s => s.status === 'blocked'
   ).length
 
   return (
@@ -56,7 +56,7 @@ export default function Sidebar({ collapsed, onToggle }: Props) {
         <SidebarItem to="/projects" icon={<IconProjects size={18} />} label="Projects" collapsed={collapsed} shortcut="P" preserveFilters={preserveFilters} />
         <SidebarItem to="/tasks" icon={<IconTasks size={18} />} label="Tasks" collapsed={collapsed} shortcut="T" preserveFilters={preserveFilters} />
         <SidebarItem to="/prs" icon={<IconPullRequest size={18} />} label="PRs" badge={prBadgeCount} badgeVariant="warning" collapsed={collapsed} shortcut="R" preserveFilters={preserveFilters} />
-        <SidebarItem to="/workers" icon={<IconSessions size={18} />} label="Workers" badge={waitingWorkers} badgeVariant="warning" collapsed={collapsed} shortcut="W" preserveFilters={preserveFilters} />
+        <SidebarItem to="/workers" icon={<IconSessions size={18} />} label="Workers" badge={blockedWorkers} badgeVariant="warning" collapsed={collapsed} shortcut="W" preserveFilters={preserveFilters} />
         <SidebarItem to="/context" icon={<IconContext size={18} />} label="Context" collapsed={collapsed} shortcut="K" preserveFilters={preserveFilters} />
         <SidebarItem to="/skills" icon={<IconSkills size={18} />} label="Skills" collapsed={collapsed} shortcut="S" preserveFilters={preserveFilters} />
         <SidebarItem to="/notifications" icon={<IconBell size={18} />} label="Notifications" badge={notificationCount} badgeVariant="warning" collapsed={collapsed} shortcut="N" preserveFilters={preserveFilters} />

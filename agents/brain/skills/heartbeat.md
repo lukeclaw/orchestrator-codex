@@ -22,15 +22,16 @@ orch-tasks list --exclude-status done
 
 If zero non-idle workers with tasks, output "All clear." and stop.
 
-### 2. For each non-idle worker with a task
+### 2. Prioritize by status
 
-Read terminal output:
+Process workers in this order:
+1. **`blocked` workers first** — these need immediate help
+2. **`waiting` workers** — check if PR merged, nudge if idle too long
+3. **`working` workers** — skip unless error visible in terminal
+
+For each worker, read terminal and task:
 ```bash
 orch-workers preview <worker-name>
-```
-
-Check for stated wait reasons:
-```bash
 orch-tasks show <task-id>   # Check notes for "Waiting: ..." messages
 ```
 
@@ -40,10 +41,11 @@ orch-tasks show <task-id>   # Check notes for "Waiting: ..." messages
 
 | Condition | Action |
 |-----------|--------|
+| **Status: `blocked`** | **Priority** — investigate immediately (see "Investigating stuck workers" below). The worker explicitly asked for help. |
 | At Claude `>` prompt, idle 5m+ | `orch-send <id> "continue"` -- but FIRST check if the last user message in the terminal is already "continue". If so, **skip** (don't spam). |
 | Context exhaustion (0%) | `orch-send <id> "continue"` (triggers auto-compact) |
 | PR review wait >3h | `orch-send <id> "Use /pr-workflow to check PR status, address comments if any, merge if approved"` |
-| Stuck with visible error (idle 10m+) | Investigate inline (see below) |
+| Stuck with visible error (idle 10m+) | Investigate, and also set status to blocked: `orch-workers update <id> --status blocked` |
 | At interactive prompt (y/n, menu) | Attempt to answer if obvious, otherwise notify |
 | Worker claims task complete | Run verification checklist (see below). If all pass: mark done + stop. If concern: notify user. |
 | PR open, missing evidence | Nudge worker to add evidence to PR description (see evidence nudge below) |

@@ -29,6 +29,7 @@
 .worker-card.working { border-left-color: var(--status-working); }
 .worker-card.idle { border-left-color: var(--status-idle); }
 .worker-card.waiting { border-left-color: var(--status-waiting); }
+.worker-card.blocked { border-left-color: var(--status-blocked); }
 .worker-card.paused { border-left-color: var(--status-paused); }
 .worker-card.disconnected { border-left-color: var(--status-disconnected); }
 .worker-card.connecting { border-left-color: var(--status-connecting); }

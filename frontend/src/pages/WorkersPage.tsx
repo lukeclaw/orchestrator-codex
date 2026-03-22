@@ -17,7 +17,7 @@ type SortOption = 'last_viewed' | 'last_status_changed' | 'name' | 'status'
 
 const SORT_KEY = 'orchestrator-worker-sort'
 
-const STATUS_ORDER = ['working', 'idle', 'waiting', 'paused', 'disconnected', 'connecting'] as const
+const STATUS_ORDER = ['working', 'idle', 'waiting', 'blocked', 'paused', 'disconnected', 'connecting'] as const
 
 export default function WorkersPage() {
   const { workers, tasks, rdevs, refreshRdevs } = useApp()

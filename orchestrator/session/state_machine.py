@@ -15,6 +15,7 @@ class SessionStatus(StrEnum):
     WORKING = "working"
     PAUSED = "paused"
     WAITING = "waiting"
+    BLOCKED = "blocked"
     DISCONNECTED = "disconnected"
 
 
@@ -34,6 +35,7 @@ VALID_TRANSITIONS: dict[SessionStatus, set[SessionStatus]] = {
         SessionStatus.IDLE,  # Task completed
         SessionStatus.PAUSED,  # Stop called
         SessionStatus.WAITING,  # Claude waiting for input
+        SessionStatus.BLOCKED,  # Worker detected it's stuck
         SessionStatus.DISCONNECTED,  # Health check failed
     },
     SessionStatus.PAUSED: {
@@ -45,12 +47,20 @@ VALID_TRANSITIONS: dict[SessionStatus, set[SessionStatus]] = {
         SessionStatus.WORKING,  # Resumed work
         SessionStatus.IDLE,  # Reset
         SessionStatus.PAUSED,  # Stop called
+        SessionStatus.BLOCKED,  # Brain detected worker is stuck
         SessionStatus.DISCONNECTED,  # Health check failed
+    },
+    SessionStatus.BLOCKED: {
+        SessionStatus.WORKING,  # Brain sent help, worker resumed
+        SessionStatus.IDLE,  # User/brain gave up, stopped worker
+        SessionStatus.PAUSED,  # User paused
+        SessionStatus.DISCONNECTED,  # Connection lost
     },
     SessionStatus.DISCONNECTED: {
         SessionStatus.CONNECTING,  # Reconnect attempt
         SessionStatus.WORKING,  # Reconnect succeeded
         SessionStatus.WAITING,  # Reconnect succeeded
+        SessionStatus.BLOCKED,  # Reconnect succeeded, was blocked before
     },
 }
 
