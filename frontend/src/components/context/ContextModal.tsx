@@ -29,6 +29,8 @@ const CATEGORY_OPTIONS = [
   { value: '', label: 'No category', className: 'cm-cat-none' },
   { value: 'instruction', label: 'Instruction', className: 'cm-cat-instruction' },
   { value: 'reference', label: 'Reference', className: 'cm-cat-reference' },
+  { value: 'memory', label: 'Memory', className: 'cm-cat-memory' },
+  { value: 'wisdom', label: 'Wisdom', className: 'cm-cat-wisdom' },
 ]
 
 export default function ContextModal({ context, projectId, projects = [], isNew, readOnly, initialContent, onClose, onSave, onDelete }: Props) {
@@ -255,7 +257,7 @@ export default function ContextModal({ context, projectId, projects = [], isNew,
         {/* Header */}
         <div className="cm-header">
           <div className="cm-header-top">
-            <span className="cm-label">Context</span>
+            <span className="cm-label">{readOnly ? 'Brain Memory' : 'Context'}</span>
             {editingField === 'title' ? (
               <div className="cm-inline-edit">
                 <input

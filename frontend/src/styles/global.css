@@ -710,3 +710,5 @@ select:focus {
 .cm-cat-convention  { background: rgba(var(--purple-bright-rgb), 0.15); color: var(--purple); }
 .cm-cat-reference   { background: rgba(var(--green-rgb), 0.15); color: var(--green); }
 .cm-cat-note        { background: rgba(var(--yellow-rgb), 0.15); color: var(--yellow); }
+.cm-cat-memory      { background: rgba(var(--purple-bright-rgb), 0.15); color: var(--purple); }
+.cm-cat-wisdom      { background: rgba(var(--orange-rgb, 210, 153, 34), 0.15); color: var(--orange, #d29922); }
