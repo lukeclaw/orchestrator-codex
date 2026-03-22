@@ -24,6 +24,7 @@ Scan this list first. Follow the link for full context only when working in that
 | Never `sendall()` on a non-blocking socket with large data. VT renderers strip colors — send raw bytes. | [013](013-nonblocking-sendall-and-rendering-strips-colors.md) |
 | Never skip tunnel recovery for any worker status. Orphaned SSH processes block ports permanently. | [014](014-recover-tunnels-must-include-disconnected.md) |
 | `useMemo` reading sessionStorage needs a React-tracked dep (e.g. location) to invalidate. Plain hooks don't share state — use Context. Toggle state needs optimistic local state, not derived-from-loading. | [015](015-react-sessionstorage-and-shared-state.md) |
+| Never use text-contrast colors for full-opacity fills. RGB vars must diverge from hex vars in light mode. Audit by comparing computed styles of related elements, not screenshots. | [016](016-light-mode-color-consistency.md) |
 
 ---
 
@@ -76,3 +77,9 @@ The largest cluster of learnings. Most originated from the March 2026 reconnect 
 | # | File | Summary |
 |---|------|---------|
 | 15 | [015-react-sessionstorage-and-shared-state.md](015-react-sessionstorage-and-shared-state.md) | `useMemo` reading sessionStorage needs a React-tracked dependency to invalidate. Plain hooks create independent state per component — use Context for shared state. Toggle UI needs optimistic local state, not values derived from async loading flags. |
+
+### Frontend / Theming
+
+| # | File | Summary |
+|---|------|---------|
+| 16 | [016-light-mode-color-consistency.md](016-light-mode-color-consistency.md) | Light mode needs a two-tier color system: dark hex for text contrast, vivid RGB for background tints. Never use text colors as full-opacity fills. Yellow hue 40deg reads as brown — use 25deg (amber) for waiting/warning. Audit by comparing computed styles of related elements, not eyeballing screenshots. |

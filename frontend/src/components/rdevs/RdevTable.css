@@ -2,6 +2,12 @@
   overflow-x: auto;
 }
 
+[data-theme="light"] .rdev-table-wrapper {
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
+  border-radius: var(--radius);
+}
+
 .rdev-table {
   width: 100%;
   border-collapse: collapse;

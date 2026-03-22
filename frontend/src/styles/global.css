@@ -349,24 +349,31 @@ select:focus {
 .status-badge.working,
 .status-badge.in_progress {
   background: rgba(var(--accent-rgb),0.15);
-  color: var(--status-working);
+  color: var(--accent);
 }
 
 .status-badge.idle,
 .status-badge.todo {
   background: rgba(var(--green-rgb),0.15);
-  color: var(--status-idle);
+  color: var(--green);
 }
 
 .status-badge.disconnected {
   background: rgba(var(--red-rgb),0.15);
-  color: var(--status-disconnected);
+  color: var(--red);
 }
 
 .status-badge.waiting,
 .status-badge.blocked {
   background: rgba(var(--yellow-rgb),0.15);
   color: var(--status-waiting);
+}
+
+/* In light mode, --status-waiting is bright (#d97706) for dots/borders.
+   Text elements need the darker --yellow (#b45309) for ≥4.5:1 contrast. */
+[data-theme="light"] .status-badge.waiting,
+[data-theme="light"] .status-badge.blocked {
+  color: var(--yellow);
 }
 
 .status-badge.paused {

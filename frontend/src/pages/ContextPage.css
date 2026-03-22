@@ -137,6 +137,11 @@
   margin-top: 6px;
 }
 
+[data-theme="light"] .ctx-table-wrapper {
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
+}
+
 /* Fixed column widths */
 .context-page .pt-table {
   table-layout: fixed;

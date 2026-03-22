@@ -136,6 +136,11 @@
   margin-top: 6px;
 }
 
+[data-theme="light"] .tasks-table-wrapper {
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
+}
+
 /* ─── Column header filter buttons ─── */
 .tk-th-filterable {
   position: relative;

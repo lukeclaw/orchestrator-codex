@@ -141,11 +141,19 @@
 .pt-seg.active { background: var(--accent); }
 .pt-seg.blocked { background: var(--red); }
 
+[data-theme="light"] .pt-seg.done { background: var(--green-muted); }
+[data-theme="light"] .pt-seg.active { background: #218bff; }
+[data-theme="light"] .pt-seg.blocked { background: #e5534b; }
+
 .pt-progress-fill {
   height: 100%;
   background: var(--green);
   border-radius: 2px;
   transition: width 0.3s ease;
+}
+
+[data-theme="light"] .pt-progress-fill {
+  background: var(--green-muted);
 }
 
 .pt-progress-count {
@@ -185,11 +193,11 @@
 }
 
 /* Worker tag status colors */
-.pt-worker-tag.working      { background: rgba(var(--accent-rgb), 0.08);  color: var(--status-working); }
-.pt-worker-tag.idle          { background: rgba(var(--green-rgb), 0.08);  color: var(--status-idle); }
-.pt-worker-tag.waiting       { background: rgba(var(--yellow-rgb), 0.08); color: var(--status-waiting); }
+.pt-worker-tag.working      { background: rgba(var(--accent-rgb), 0.08);  color: var(--accent); }
+.pt-worker-tag.idle          { background: rgba(var(--green-rgb), 0.08);  color: var(--green); }
+.pt-worker-tag.waiting       { background: rgba(var(--yellow-rgb), 0.08); color: var(--yellow); }
 .pt-worker-tag.paused        { background: rgba(var(--orange-alt-rgb), 0.08); color: var(--status-paused); }
-.pt-worker-tag.disconnected  { background: rgba(var(--red-rgb), 0.08);  color: var(--status-disconnected); }
+.pt-worker-tag.disconnected  { background: rgba(var(--red-rgb), 0.08);  color: var(--red); }
 .pt-worker-tag.connecting    { background: rgba(var(--orange-rgb), 0.08); color: var(--status-connecting); }
 
 /* Status column */

@@ -138,6 +138,10 @@
 .pc-seg.active  { background: var(--accent); }
 .pc-seg.blocked { background: var(--red); }
 
+[data-theme="light"] .pc-seg.done    { background: var(--green-muted); }
+[data-theme="light"] .pc-seg.active  { background: #218bff; }
+[data-theme="light"] .pc-seg.blocked { background: #e5534b; }
+
 /* ── Footer: workers + timestamp ── */
 .pc-footer {
   display: flex;

@@ -11,7 +11,7 @@ type SortKey = 'title' | 'scope' | 'category' | 'project' | 'updated'
 type SortDir = 'asc' | 'desc'
 
 const SCOPE_ORDER: Record<string, number> = { global: 2, brain: 1, project: 0 }
-const SCOPE_COLORS: Record<string, string> = { global: '#58a6ff', brain: '#bc8cff', project: '#3fb950' }
+const SCOPE_COLORS: Record<string, string> = { global: 'var(--status-working)', brain: 'var(--purple)', project: 'var(--status-idle)' }
 const SCOPE_LABELS: Record<string, string> = { global: 'Global', brain: 'Brain', project: 'Project' }
 const SCOPES = ['global', 'brain', 'project'] as const
 

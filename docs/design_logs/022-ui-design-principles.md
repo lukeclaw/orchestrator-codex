@@ -652,18 +652,19 @@ Light mode uses **two tiers of color values** for different purposes:
 
 **Tier 1 — Base colors** (`--green`, `--red`, `--yellow`, `--accent`, etc.): Deep, dark values optimized for **text contrast** on white. These follow GitHub Primer and must maintain ≥4.5:1 WCAG AA contrast against `#ffffff`. They're used for status text, link text, and badge foreground color.
 
-**Tier 2 — Variant RGB values** (`*-bright-rgb`, `*-alt-rgb`, `*-vivid-rgb`, `*-emphasis-rgb`): Vivid, saturated values optimized for **background tints** at low opacity. These are used exclusively in `rgba()` calls at 0.08-0.30 opacity for badge backgrounds, status highlights, and accent fills.
+**Tier 2 — ALL RGB values** (`--*-rgb`, `*-bright-rgb`, `*-alt-rgb`, `*-vivid-rgb`, `*-emphasis-rgb`): Vivid, saturated values optimized for **background tints** at low opacity. These are used in `rgba()` calls at 0.08-0.30 opacity for badge backgrounds, status highlights, gradients, glows, and accent fills. The base `--*-rgb` values intentionally diverge from their hex counterparts (e.g., `--green-rgb` is vivid green `34, 197, 94` while `--green` is dark `#1a7f37`).
 
 ```
-                    Tier 1 (text)       Tier 2 (tint backgrounds)
-Green               #1a7f37 (dark)      rgb(34, 197, 94) (vivid)
-Yellow              #9a6700 (deep)      rgb(234, 179, 8) (golden)
-Red                 #d1242f (crimson)   rgb(239, 68, 68) (bright)
-Purple              #8250df (deep)      rgb(168, 85, 247) (vivid)
-Accent (blue)       #0969da (dark)      rgb(56, 139, 253) (bright)
+                    Tier 1 (text hex)    Tier 2 (base RGB)           Tier 2+ (bright RGB)
+Green               #1a7f37 (dark)       rgb(34, 197, 94) (vivid)   rgb(46, 213, 115) (brighter)
+Yellow              #9a6700 (deep)       rgb(234, 179, 8) (golden)  rgb(250, 204, 21) (brighter)
+Red                 #d1242f (crimson)    rgb(239, 68, 68) (bright)  rgb(248, 113, 113) (softer)
+Purple              #8250df (deep)       rgb(139, 92, 246) (vivid)  rgb(192, 132, 252) (lighter)
+Accent (blue)       #0969da (dark)       rgb(56, 139, 253) (bright) rgb(59, 130, 246) (similar)
+Orange              #bc4c00 (deep)       rgb(249, 115, 22) (vivid)  rgb(251, 146, 60) (softer)
 ```
 
-**Why two tiers?** Using the dark Tier 1 values for background tints produces muddy, grayish washes — `rgba(154, 103, 0, 0.15)` on white reads as dirty beige, not yellow. The vivid Tier 2 values produce clear, correctly-colored watercolor tints — `rgba(234, 179, 8, 0.15)` on white reads as golden yellow. The low opacity naturally mutes the brightness, so vivid source colors are necessary to get visible results.
+**Why diverge RGB from hex?** The hex values (`--green`, `--accent`, etc.) are used as `color:` for text — they must be dark enough for ≥4.5:1 contrast on white. The RGB values are used exclusively in `rgba()` at fractional opacities — nobody writes `rgba(var(--green-rgb), 1.0)`. Using dark source colors at low opacity produces muddy, grayish washes: `rgba(154, 103, 0, 0.15)` on white reads as dirty beige, not yellow. Vivid source colors produce clear, correctly-colored watercolor tints: `rgba(234, 179, 8, 0.15)` reads as golden yellow.
 
 ### Button Treatment
 

@@ -15,7 +15,7 @@ const STATUS_ORDER: Record<string, number> = { blocked: 3, in_progress: 2, todo:
 const PRIORITY_ORDER: Record<string, number> = { H: 3, M: 2, L: 1 }
 
 const STATUSES = ['todo', 'in_progress', 'done', 'blocked'] as const
-const STATUS_COLORS: Record<string, string> = { todo: '#6e7681', in_progress: '#58a6ff', done: '#3fb950', blocked: '#f85149' }
+const STATUS_COLORS: Record<string, string> = { todo: 'var(--text-muted)', in_progress: 'var(--status-working)', done: 'var(--status-idle)', blocked: 'var(--status-disconnected)' }
 const STATUS_LABELS: Record<string, string> = { todo: 'To Do', in_progress: 'In Progress', done: 'Done', blocked: 'Blocked' }
 
 function formatStatus(status: string) {

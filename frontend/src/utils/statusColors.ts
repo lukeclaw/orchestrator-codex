@@ -1,10 +1,11 @@
-/** Worker status → hex color mapping for inline styles (charts, filter pills). */
+/** Worker status → CSS variable mapping for inline styles (charts, filter pills).
+ *  Uses CSS variables so colors automatically adapt to dark/light theme. */
 export const WORKER_STATUS_COLORS: Record<string, string> = {
-  working: '#58a6ff',
-  idle: '#3fb950',
-  waiting: '#d29922',
-  paused: '#f97316',
-  connecting: '#db6d28',
-  disconnected: '#f85149',
-  error: '#f85149',
+  working: 'var(--status-working)',
+  idle: 'var(--status-idle)',
+  waiting: 'var(--status-waiting)',
+  paused: 'var(--status-paused)',
+  connecting: 'var(--status-connecting)',
+  disconnected: 'var(--status-disconnected)',
+  error: 'var(--status-error)',
 }

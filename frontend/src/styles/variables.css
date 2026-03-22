@@ -154,8 +154,8 @@
 
   --green: #1a7f37;
   --green-muted: #2da44e;
-  --yellow: #9a6700;
-  --yellow-muted: #bf8700;
+  --yellow: #b45309;
+  --yellow-muted: #d97706;
   --red: #d1242f;
   --red-muted: #cf222e;
   --orange: #bc4c00;
@@ -163,8 +163,13 @@
 
   --danger: #d1242f;
   --success: #1a7f37;
-  --warning: #9a6700;
+  --warning: #b45309;
 
+  --status-idle: #2da44e;
+  --status-working: #218bff;
+  --status-waiting: #d97706;
+  --status-disconnected: #e5534b;
+  --status-error: #e5534b;
   --status-paused: #bc4c00;
 
   /* Button overrides — white text on vibrant green */
@@ -173,7 +178,7 @@
   --btn-primary-text: #ffffff;
   --btn-primary-border: rgba(27, 31, 36, 0.15);
 
-  --git-modified: #9a6700;
+  --git-modified: #b45309;
   --git-added: #1a7f37;
   --git-untracked: #2da44e;
   --git-deleted: #d1242f;
@@ -187,24 +192,26 @@
   --shadow-lg: 0 10px 30px rgba(0, 0, 0, 0.15), 0 2px 8px rgba(0, 0, 0, 0.08);
   --shadow-float: 0 8px 24px rgba(0, 0, 0, 0.16), 0 0 0 1px var(--border-muted);
 
-  /* RGB companions — light values */
-  --accent-rgb: 9, 105, 218;
-  /* Base RGB — dark values for text contrast on white */
+  /* RGB companions — vivid values for background tints on white.
+     These intentionally diverge from the dark hex text colors (--green, --accent, etc.)
+     because rgba(dark_color, 0.15) on white produces muddy/invisible tints.
+     Vivid source colors are needed so low-opacity tints read as the correct hue. */
+  --accent-rgb: 56, 139, 253;
   --accent-emphasis-rgb: 56, 139, 253;
-  --green-rgb: 26, 127, 55;
-  --green-bright-rgb: 34, 197, 94;
-  --red-rgb: 209, 36, 47;
-  --red-bright-rgb: 239, 68, 68;
-  --red-alt-rgb: 239, 68, 68;
-  --yellow-rgb: 154, 103, 0;
-  --yellow-bright-rgb: 234, 179, 8;
-  --yellow-alt-rgb: 245, 158, 11;
-  --orange-rgb: 188, 76, 0;
-  --orange-alt-rgb: 249, 115, 22;
-  --purple-rgb: 130, 80, 223;
-  --purple-alt-rgb: 139, 92, 246;
-  --purple-bright-rgb: 168, 85, 247;
-  --purple-vivid-rgb: 168, 130, 255;
+  --green-rgb: 34, 197, 94;
+  --green-bright-rgb: 46, 213, 115;
+  --red-rgb: 239, 68, 68;
+  --red-bright-rgb: 248, 113, 113;
+  --red-alt-rgb: 248, 113, 113;
+  --yellow-rgb: 245, 158, 11;
+  --yellow-bright-rgb: 251, 191, 36;
+  --yellow-alt-rgb: 253, 186, 116;
+  --orange-rgb: 249, 115, 22;
+  --orange-alt-rgb: 251, 146, 60;
+  --purple-rgb: 139, 92, 246;
+  --purple-alt-rgb: 168, 85, 247;
+  --purple-bright-rgb: 192, 132, 252;
+  --purple-vivid-rgb: 192, 132, 252;
   --blue-alt-rgb: 59, 130, 246;
   --text-secondary-rgb: 101, 109, 118;
   --text-muted-rgb: 139, 148, 158;

@@ -33,7 +33,7 @@ const ATTENTION_SORT_ORDER: Record<number, number> = { 2: 0, 1: 1, 3: 2, 4: 3 }
 const SUB_FILTER_COLORS: Record<SubFilter, string> = {
   all: 'var(--text-muted)',
   merged: 'var(--purple)',
-  closed: 'var(--red)',
+  closed: 'var(--status-disconnected)',
 }
 
 function renderReviewChip(pr: PrSearchItem) {
