@@ -73,6 +73,9 @@ export default function SettingsPage() {
   const [preserveFilters, setPreserveFilters] = useState(false)
   const [skipPermissions, setSkipPermissions] = useState(false)
   const [theme, setTheme] = useState<ThemeMode>('dark')
+  const [brainHeartbeat, setBrainHeartbeat] = useState('off')
+  const [heartbeatInput, setHeartbeatInput] = useState('')
+  const [heartbeatFocused, setHeartbeatFocused] = useState(false)
 
   // Sync settings from DB
   useEffect(() => {
@@ -81,6 +84,9 @@ export default function SettingsPage() {
       setPreserveFilters(Boolean(getValue('ui.preserve_filters')))
       setSkipPermissions(Boolean(getValue('claude.skip_permissions')))
       setTheme((getValue('ui.theme') as ThemeMode) || 'dark')
+      const hb = String(getValue('brain.heartbeat') || 'off')
+      setBrainHeartbeat(hb)
+      setHeartbeatInput(hb === 'off' ? '' : hb)
     }
   }, [loading, getValue])
 
@@ -106,6 +112,38 @@ export default function SettingsPage() {
     const v = value as ThemeMode
     setTheme(v)
     await save({ 'ui.theme': v })
+  }
+
+  const HEARTBEAT_PRESETS = [
+    'Every 30 minutes',
+    'Every 2 hours',
+    'Every 8 hours',
+    'Weekdays at 9 AM',
+  ]
+
+  const handleBrainHeartbeatToggle = async () => {
+    const newValue = brainHeartbeat === 'off' ? 'Every 30 minutes' : 'off'
+    setBrainHeartbeat(newValue)
+    setHeartbeatInput(newValue === 'off' ? '' : newValue)
+    await save({ 'brain.heartbeat': newValue })
+  }
+
+  const selectHeartbeatPreset = async (preset: string) => {
+    setBrainHeartbeat(preset)
+    setHeartbeatInput(preset)
+    setHeartbeatFocused(false)
+    await save({ 'brain.heartbeat': preset })
+  }
+
+  const commitHeartbeatInput = async () => {
+    const trimmed = heartbeatInput.trim()
+    if (!trimmed) {
+      setHeartbeatInput(brainHeartbeat)
+      return
+    }
+    setBrainHeartbeat(trimmed)
+    setHeartbeatInput(trimmed)
+    await save({ 'brain.heartbeat': trimmed })
   }
 
   const [backupDir, setBackupDir] = useState('')
@@ -428,6 +466,85 @@ export default function SettingsPage() {
                   understand the risks. Takes effect on next brain/worker launch.
                 </span>
               </div>
+            )}
+          </div>
+        </div>
+
+        <div className="settings-content panel">
+          <div className="panel-header">
+            <h2>Brain</h2>
+          </div>
+          <div className="panel-body">
+            <div className="settings-toggle-row">
+              <div>
+                <div className="settings-toggle-label">
+                  Auto-monitoring <span className="settings-beta-badge">Beta</span>
+                </div>
+                <div className="settings-toggle-desc">
+                  Brain periodically checks workers, sends "continue" to idle ones,
+                  nudges PR reviews, and investigates stuck workers
+                </div>
+              </div>
+              <div
+                className={`sd-toggle-switch ${brainHeartbeat !== 'off' ? 'on' : ''}`}
+                onClick={handleBrainHeartbeatToggle}
+                role="switch"
+                aria-checked={brainHeartbeat !== 'off'}
+              >
+                <div className="sd-toggle-knob" />
+              </div>
+            </div>
+            {brainHeartbeat !== 'off' && (
+              <>
+                <div className="settings-warning-note">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
+                    <line x1="12" y1="9" x2="12" y2="13" />
+                    <line x1="12" y1="17" x2="12.01" y2="17" />
+                  </svg>
+                  <span>
+                    The brain will autonomously check workers, send "continue" to idle
+                    ones, investigate stuck workers, and mark completed tasks done.
+                    Takes effect on next brain start.
+                  </span>
+                </div>
+                <div className="settings-toggle-row" style={{ marginTop: 8 }}>
+                  <div>
+                    <div className="settings-toggle-label">Check interval</div>
+                    <div className="settings-toggle-desc">
+                      How often the brain reviews workers. Pick a preset or type any schedule.
+                    </div>
+                  </div>
+                  <div className="brain-heartbeat-combo">
+                    <input
+                      type="text"
+                      value={heartbeatInput}
+                      onChange={e => setHeartbeatInput(e.target.value)}
+                      onFocus={() => setHeartbeatFocused(true)}
+                      onBlur={() => { setHeartbeatFocused(false); commitHeartbeatInput() }}
+                      onKeyDown={e => { if (e.key === 'Enter') { commitHeartbeatInput(); (e.target as HTMLInputElement).blur() } }}
+                      placeholder="Every 30 minutes"
+                      spellCheck={false}
+                    />
+                    {heartbeatFocused && (
+                      <div className="brain-heartbeat-suggestions">
+                        {HEARTBEAT_PRESETS.map(preset => (
+                          <button
+                            key={preset}
+                            className={`brain-heartbeat-suggestion ${preset === brainHeartbeat ? 'active' : ''}`}
+                            onMouseDown={e => {
+                              e.preventDefault()
+                              selectHeartbeatPreset(preset)
+                            }}
+                          >
+                            {preset}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </>
             )}
           </div>
         </div>

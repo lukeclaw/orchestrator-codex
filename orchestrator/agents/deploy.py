@@ -40,6 +40,7 @@ BRAIN_SCRIPT_NAMES = [
     "orch-projects",
     "orch-tasks",
     "orch-ctx",
+    "orch-memory",
     "orch-skills",
     "orch-send",
     "orch-notifications",
@@ -297,6 +298,27 @@ def format_custom_skills_for_prompt(skills: list[dict]) -> str:
     return "\n".join(lines)
 
 
+def _get_brain_memory_from_db(conn: sqlite3.Connection) -> str:
+    """Load the curated brain wisdom item for system prompt injection.
+
+    Looks for a single context item with scope=brain, category=wisdom.
+    Returns formatted markdown section, or empty string if not found.
+    """
+    from orchestrator.state.repositories.context import list_context
+
+    items = list_context(conn, scope="brain", category="wisdom")
+    if not items:
+        return ""
+
+    # Use the first (most recently updated) wisdom item
+    item = items[0]
+    content = item.content.strip()
+    if not content:
+        return ""
+
+    return f"\n## Long-Term Memory\n\n{content}\n"
+
+
 def get_worker_prompt(session_id: str, custom_skills_section: str = "") -> str | None:
     """Load and render worker prompt template.
 
@@ -319,11 +341,12 @@ def get_worker_prompt(session_id: str, custom_skills_section: str = "") -> str |
     return result
 
 
-def get_brain_prompt(custom_skills_section: str = "") -> str | None:
+def get_brain_prompt(custom_skills_section: str = "", brain_memory_section: str = "") -> str | None:
     """Load brain prompt.
 
     Args:
         custom_skills_section: Pre-formatted custom skills text to inject
+        brain_memory_section: Pre-formatted brain long-term memory to inject
 
     Returns:
         Prompt string, or None if not found
@@ -336,6 +359,7 @@ def get_brain_prompt(custom_skills_section: str = "") -> str | None:
         content = f.read()
 
     content = content.replace("{{CUSTOM_SKILLS}}", custom_skills_section)
+    content = content.replace("{{BRAIN_MEMORY}}", brain_memory_section)
     return content
 
 
@@ -463,6 +487,24 @@ def generate_brain_hooks(
         os.stat(safety_hook_path).st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH,
     )
 
+    # Pre-compaction memory flush hook
+    src_precompact_path = os.path.join(_AGENTS_DIR, "brain", "hooks", "pre-compact.sh")
+    precompact_hook_path = os.path.join(hooks_dir, "pre-compact.sh")
+    shutil.copy2(src_precompact_path, precompact_hook_path)
+    os.chmod(
+        precompact_hook_path,
+        os.stat(precompact_hook_path).st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH,
+    )
+
+    # Session start hook (re-deploy + re-arm heartbeat after /clear)
+    src_session_start_path = os.path.join(_AGENTS_DIR, "brain", "hooks", "on-session-start.sh")
+    session_start_hook_path = os.path.join(hooks_dir, "on-session-start.sh")
+    shutil.copy2(src_session_start_path, session_start_hook_path)
+    os.chmod(
+        session_start_hook_path,
+        os.stat(session_start_hook_path).st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH,
+    )
+
     # Copy settings.json template and substitute placeholders
     claude_dir = os.path.join(brain_dir, ".claude")
     os.makedirs(claude_dir, exist_ok=True)
@@ -475,6 +517,10 @@ def generate_brain_hooks(
 
     settings_content = settings_content.replace("{{INJECT_FOCUS_PATH}}", inject_hook_path)
     settings_content = settings_content.replace("{{SAFETY_HOOK_PATH}}", safety_hook_path)
+    settings_content = settings_content.replace("{{PRE_COMPACT_HOOK_PATH}}", precompact_hook_path)
+    settings_content = settings_content.replace(
+        "{{SESSION_START_HOOK_PATH}}", session_start_hook_path
+    )
 
     with open(settings_path, "w") as f:
         f.write(settings_content)
@@ -758,7 +804,11 @@ def deploy_brain_tmp_contents(
 
     # 2. CLAUDE.md (brain prompt)
     custom_skills_section = format_custom_skills_for_prompt(resolved_custom)
-    brain_prompt = get_brain_prompt(custom_skills_section=custom_skills_section)
+    brain_memory_section = _get_brain_memory_from_db(conn) if conn is not None else ""
+    brain_prompt = get_brain_prompt(
+        custom_skills_section=custom_skills_section,
+        brain_memory_section=brain_memory_section,
+    )
     if brain_prompt:
         with open(os.path.join(brain_dir, "CLAUDE.md"), "w") as f:
             f.write(brain_prompt)
@@ -769,6 +819,8 @@ def deploy_brain_tmp_contents(
     created += [
         "hooks/inject-focus.sh",
         "hooks/check-command.sh",
+        "hooks/pre-compact.sh",
+        "hooks/on-session-start.sh",
         ".claude/settings.json",
     ]
 

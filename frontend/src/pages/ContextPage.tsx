@@ -1,9 +1,11 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
 import { useApp } from '../context/AppContext'
 import { useContextItems } from '../hooks/useContextItems'
+import { useBrainMemory } from '../hooks/useBrainMemory'
 import type { ContextItem } from '../api/types'
 import { timeAgo, parseDate } from '../components/common/TimeAgo'
 import { IconContext, IconFilter, IconSearch } from '../components/common/Icons'
+import SlidingTabs from '../components/common/SlidingTabs'
 import ContextModal from '../components/context/ContextModal'
 import './ContextPage.css'
 
@@ -17,6 +19,7 @@ const SCOPES = ['global', 'brain', 'project'] as const
 
 export default function ContextPage() {
   const { projects } = useApp()
+  const [activeTab, setActiveTab] = useState<'context' | 'brain-memory'>('context')
   const [scopeFilter, setScopeFilter] = useState<string>('')
   const [projectFilter, setProjectFilter] = useState<string>('')
   const [searchText, setSearchText] = useState('')
@@ -26,10 +29,17 @@ export default function ContextPage() {
   const [sortDir, setSortDir] = useState<SortDir>('desc')
   const [showProjectDropdown, setShowProjectDropdown] = useState(false)
   const projectThRef = useRef<HTMLTableCellElement>(null)
+  const [memorySearch, setMemorySearch] = useState('')
 
   const { items, loading, fetch, getItem, create, update, remove } = useContextItems({
     project_id: projectFilter || undefined,
+    excludeScopeCategories: [
+      { scope: 'brain', category: 'memory' },
+      { scope: 'brain', category: 'wisdom' },
+    ],
   })
+
+  const { logs, wisdom, loading: memoryLoading, searchLogs } = useBrainMemory()
 
   useEffect(() => {
     if (!showProjectDropdown) return
@@ -210,18 +220,111 @@ export default function ContextPage() {
 
   return (
     <div className="context-page page-scroll-layout">
-      {/* Header: title + count + actions */}
+      {/* Header: title + tabs + actions */}
       <div className="page-header">
         <h1>Context</h1>
+        <SlidingTabs
+          tabs={[
+            { value: 'context' as const, label: 'Context' },
+            { value: 'brain-memory' as const, label: 'Brain Memory' },
+          ]}
+          value={activeTab}
+          onChange={setActiveTab}
+        />
         <div className="page-header-actions">
-          <button className="btn btn-primary btn-sm" onClick={() => setShowNewContext(true)}>
-            + Add Context
-          </button>
+          {activeTab === 'context' && (
+            <button className="btn btn-primary btn-sm" onClick={() => setShowNewContext(true)}>
+              + Add Context
+            </button>
+          )}
         </div>
       </div>
 
-      {/* Scope pills + inline search */}
-      {items.length > 0 && (
+      {/* === Brain Memory Tab === */}
+      {activeTab === 'brain-memory' && (
+        <>
+          <div className="bm-notice">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="12" cy="12" r="10" />
+              <line x1="12" y1="16" x2="12" y2="12" />
+              <line x1="12" y1="8" x2="12.01" y2="8" />
+            </svg>
+            <span>
+              The brain's learning journal. It captures learnings during work sessions and curates
+              them into a wisdom document injected into its prompt on every start. These entries are
+              managed by the brain — you can review what it has learned here.
+            </span>
+          </div>
+          <div className="page-content">
+            {memoryLoading ? (
+              <p className="empty-state">Loading...</p>
+            ) : (
+              <>
+                {/* Wisdom section */}
+                <div className="bm-section">
+                  <div className="bm-section-title">Wisdom</div>
+                  {wisdom ? (
+                    <div className="bm-wisdom-panel">
+                      <div className="bm-wisdom-content">{wisdom.content}</div>
+                      <div className="bm-wisdom-meta">
+                        Last updated {timeAgo(wisdom.updated_at || wisdom.created_at)}
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="bm-wisdom-empty">
+                      No wisdom document yet. The brain will create one as it accumulates learnings.
+                    </div>
+                  )}
+                </div>
+
+                {/* Learning logs section */}
+                <div className="bm-section">
+                  <div className="bm-section-header">
+                    <div className="bm-section-title">Learning Logs</div>
+                    <div className="bm-search">
+                      <IconSearch size={13} className="bm-search-icon" />
+                      <input
+                        type="text"
+                        placeholder="Search logs..."
+                        value={memorySearch}
+                        onChange={e => {
+                          setMemorySearch(e.target.value)
+                          searchLogs(e.target.value)
+                        }}
+                      />
+                      {memorySearch && (
+                        <button
+                          className="bm-search-clear"
+                          onMouseDown={e => { e.preventDefault(); setMemorySearch(''); searchLogs('') }}
+                          type="button"
+                        >&times;</button>
+                      )}
+                    </div>
+                  </div>
+                  {logs.length === 0 ? (
+                    <div className="bm-logs-empty">
+                      {memorySearch ? 'No logs match your search.' : 'No learning logs yet. The brain will capture learnings as it works.'}
+                    </div>
+                  ) : (
+                    <div className="bm-log-list">
+                      {logs.map(log => (
+                        <div key={log.id} className="bm-log-item">
+                          {log.title && <div className="bm-log-title">{log.title}</div>}
+                          <div className="bm-log-content">{log.content}</div>
+                          <div className="bm-log-meta">{timeAgo(log.created_at)}</div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </>
+            )}
+          </div>
+        </>
+      )}
+
+      {/* === Context Tab === */}
+      {activeTab === 'context' && items.length > 0 && (
         <div className="ctx-scope-bar">
           <button
             className={`ctx-scope-pill${!scopeFilter ? ' active' : ''}`}
@@ -265,7 +368,7 @@ export default function ContextPage() {
         </div>
       )}
 
-      {/* Table */}
+      {activeTab === 'context' && (
       <div className="page-content">
       {loading ? (
         <p className="empty-state">Loading...</p>
@@ -344,6 +447,7 @@ export default function ContextPage() {
         </div>
       )}
       </div>
+      )}
 
       <ContextModal
         context={selectedContext}

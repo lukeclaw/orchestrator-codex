@@ -1,0 +1,163 @@
+#!/bin/bash
+# orch-memory: Brain's private learning journal
+# Thin wrapper over /api/context with scope=brain and category=memory|wisdom
+source "$(dirname "$0")/lib.sh"
+
+show_help() {
+    echo "Usage: orch-memory <command> [options]"
+    echo ""
+    echo "Brain's private learning journal. Captures learnings during work and"
+    echo "maintains a curated wisdom document injected into the brain's prompt."
+    echo ""
+    echo "Commands:"
+    echo "  log <content> [--title T]   Save a learning log"
+    echo "  logs [--search TEXT]        List learning logs"
+    echo "  wisdom                      Show the wisdom document"
+    echo "  wisdom-update               Update wisdom document (reads from stdin)"
+    echo "  delete-log <id>             Delete a single learning log"
+    echo "  clear-logs                  Delete all learning logs"
+    echo ""
+    echo "Examples:"
+    echo "  orch-memory log \"ECONNREFUSED on port 5432 = test DB slow to start\""
+    echo "  orch-memory log \"espresso schema changes need 2 workers\" --title \"espresso: schema pattern\""
+    echo "  orch-memory logs --search \"ECONNREFUSED\""
+    echo "  orch-memory wisdom"
+    echo "  orch-memory wisdom-update <<'EOF'"
+    echo "  (curated learnings)"
+    echo "  EOF"
+}
+
+cmd_log() {
+    local content="" title=""
+    # First positional arg is content
+    if [[ $# -gt 0 && "$1" != --* ]]; then
+        content="$1"; shift
+    fi
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --title) title="$2"; shift 2 ;;
+            *)
+                # Treat remaining positional args as content (allows unquoted)
+                if [[ -z "$content" ]]; then
+                    content="$1"; shift
+                else
+                    echo "Unknown option: $1" >&2; exit 1
+                fi
+                ;;
+        esac
+    done
+
+    if [[ -z "$content" ]]; then
+        echo "Error: content is required. Usage: orch-memory log \"<content>\" [--title \"...\"]" >&2
+        exit 1
+    fi
+
+    local escaped_content=$(json_encode "$content")
+    local json="{\"content\": \"$escaped_content\", \"scope\": \"brain\", \"category\": \"memory\", \"source\": \"brain\""
+    if [[ -n "$title" ]]; then
+        local escaped_title=$(json_encode "$title")
+        json="$json, \"title\": \"$escaped_title\""
+    else
+        # Auto-generate title from first 80 chars of content
+        local auto_title="${content:0:80}"
+        [[ ${#content} -gt 80 ]] && auto_title="$auto_title..."
+        local escaped_title=$(json_encode "$auto_title")
+        json="$json, \"title\": \"$escaped_title\""
+    fi
+    json="$json}"
+
+    curl -s -X POST "$API_BASE/api/context" \
+        -H 'Content-Type: application/json' \
+        -d "$json" | jq '{id: .id, title: .title, created_at: .created_at}'
+}
+
+cmd_logs() {
+    local search=""
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --search) search="$2"; shift 2 ;;
+            *) echo "Unknown option: $1" >&2; exit 1 ;;
+        esac
+    done
+
+    local url="$API_BASE/api/context?scope=brain&category=memory"
+    [[ -n "$search" ]] && url="$url&search=$search"
+
+    curl -s "$url" | jq '.[] | {id: .id, title: .title, description: .description, updated_at: .updated_at}'
+}
+
+cmd_wisdom() {
+    local result=$(curl -s "$API_BASE/api/context?scope=brain&category=wisdom")
+    local count=$(echo "$result" | jq 'length')
+    if [[ "$count" == "0" ]]; then
+        echo "No wisdom document yet. Create one with: orch-memory wisdom-update"
+        exit 0
+    fi
+    # Get the first (most recent) wisdom item and show its content
+    local id=$(echo "$result" | jq -r '.[0].id')
+    curl -s "$API_BASE/api/context/$id" | jq -r '.content'
+}
+
+cmd_wisdom_update() {
+    local content=$(cat)
+    if [[ -z "$content" ]]; then
+        echo "Error: content required via stdin. Usage: orch-memory wisdom-update <<'EOF'" >&2
+        exit 1
+    fi
+
+    local escaped_content=$(json_encode "$content")
+
+    # Check if wisdom item exists
+    local existing=$(curl -s "$API_BASE/api/context?scope=brain&category=wisdom")
+    local count=$(echo "$existing" | jq 'length')
+
+    if [[ "$count" != "0" ]]; then
+        # Update existing
+        local id=$(echo "$existing" | jq -r '.[0].id')
+        curl -s -X PATCH "$API_BASE/api/context/$id" \
+            -H 'Content-Type: application/json' \
+            -d "{\"content\": \"$escaped_content\"}" | jq '{id: .id, title: .title, updated_at: .updated_at}'
+    else
+        # Create new
+        local escaped_title=$(json_encode "Brain Wisdom")
+        curl -s -X POST "$API_BASE/api/context" \
+            -H 'Content-Type: application/json' \
+            -d "{\"title\": \"$escaped_title\", \"content\": \"$escaped_content\", \"scope\": \"brain\", \"category\": \"wisdom\", \"source\": \"brain\"}" \
+            | jq '{id: .id, title: .title, created_at: .created_at}'
+    fi
+}
+
+cmd_delete_log() {
+    local id="$1"
+    if [[ -z "$id" ]]; then
+        echo "Error: log ID required" >&2
+        exit 1
+    fi
+    curl -s -X DELETE "$API_BASE/api/context/$id" | pp
+}
+
+cmd_clear_logs() {
+    local items=$(curl -s "$API_BASE/api/context?scope=brain&category=memory")
+    local count=$(echo "$items" | jq 'length')
+    if [[ "$count" == "0" ]]; then
+        echo "No learning logs to delete."
+        exit 0
+    fi
+    local deleted=0
+    echo "$items" | jq -r '.[].id' | while read -r id; do
+        curl -s -X DELETE "$API_BASE/api/context/$id" > /dev/null
+        deleted=$((deleted + 1))
+    done
+    echo "Deleted $count learning log(s)."
+}
+
+case "$1" in
+    log) shift; cmd_log "$@" ;;
+    logs) shift; cmd_logs "$@" ;;
+    wisdom) shift; cmd_wisdom "$@" ;;
+    wisdom-update) shift; cmd_wisdom_update "$@" ;;
+    delete-log) shift; cmd_delete_log "$@" ;;
+    clear-logs) shift; cmd_clear_logs "$@" ;;
+    -h|--help|"") show_help ;;
+    *) echo "Unknown command: $1" >&2; show_help; exit 1 ;;
+esac

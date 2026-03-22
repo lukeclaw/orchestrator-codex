@@ -8,6 +8,8 @@ interface ContextFilters {
   category?: string
   search?: string
   include_content?: boolean
+  /** Client-side filter: hide items matching these scope+category pairs (e.g. brain memory/wisdom) */
+  excludeScopeCategories?: Array<{ scope: string; category: string }>
 }
 
 export function useContextItems(filters?: ContextFilters) {
@@ -25,7 +27,13 @@ export function useContextItems(filters?: ContextFilters) {
       if (active?.search) params.set('search', active.search)
       if (active?.include_content) params.set('include_content', 'true')
       const qs = params.toString()
-      const data = await api<ContextItem[]>(`/api/context${qs ? `?${qs}` : ''}`)
+      let data = await api<ContextItem[]>(`/api/context${qs ? `?${qs}` : ''}`)
+      const excludes = (f || filters)?.excludeScopeCategories
+      if (excludes?.length) {
+        data = data.filter(item => !excludes.some(
+          ex => item.scope === ex.scope && item.category === ex.category
+        ))
+      }
       setItems(data)
     } catch {
       setItems([])

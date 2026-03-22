@@ -166,6 +166,17 @@ def start_brain(db=Depends(get_db)):
         # Dismiss any "trust this folder" prompt that may appear after launch
         tmux.dismiss_trust_prompt(tmux.TMUX_SESSION, BRAIN_SESSION_NAME, session_id=session_id)
 
+        # If heartbeat is enabled, schedule the autonomous monitoring loop
+        heartbeat_interval = get_config_value(db, "brain.heartbeat", default="off")
+        if heartbeat_interval and heartbeat_interval != "off":
+            time.sleep(2)  # Give Claude time to fully initialize
+            send_to_session(
+                BRAIN_SESSION_NAME,
+                f"/loop {heartbeat_interval} /heartbeat",
+                tmux.TMUX_SESSION,
+            )
+            logger.info("Brain heartbeat enabled: /loop %s /heartbeat", heartbeat_interval)
+
         logger.info("Orchestrator brain started in %s", target)
         return {
             "ok": True,
@@ -209,6 +220,41 @@ def stop_brain(db=Depends(get_db)):
         logger.warning("Could not clean up brain directory %s: %s", brain_dir, e)
 
     return {"ok": True, "message": "Brain stopped"}
+
+
+@router.post("/brain/redeploy", status_code=200)
+def brain_redeploy(db=Depends(get_db)):
+    """Re-deploy brain files and re-arm heartbeat loop.
+
+    Called by the SessionStart hook after /clear or /compact to refresh
+    CLAUDE.md (with latest curated wisdom) and re-establish the /loop schedule.
+    """
+    brain = _get_brain_session(db)
+    if brain is None or brain.status in ("disconnected",):
+        raise HTTPException(400, "Brain is not running")
+
+    brain_dir = "/tmp/orchestrator/brain"
+
+    from orchestrator.agents.deploy import deploy_brain_tmp_contents
+
+    deploy_brain_tmp_contents(brain_dir, conn=db)
+    logger.info("Brain files re-deployed (redeploy)")
+
+    from orchestrator.state.repositories.config import get_config_value
+
+    heartbeat_interval = get_config_value(db, "brain.heartbeat", default="off")
+    loop_sent = False
+    if heartbeat_interval and heartbeat_interval != "off":
+        time.sleep(1)
+        loop_sent = send_to_session(
+            BRAIN_SESSION_NAME,
+            f"/loop {heartbeat_interval} /heartbeat",
+            tmux.TMUX_SESSION,
+        )
+        if loop_sent:
+            logger.info("Brain heartbeat re-armed: /loop %s /heartbeat", heartbeat_interval)
+
+    return {"ok": True, "redeployed": True, "heartbeat_rearmed": loop_sent}
 
 
 @router.post("/brain/sync", status_code=200)

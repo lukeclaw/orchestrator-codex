@@ -33,7 +33,9 @@ def list_context(
         clauses.append("category = ?")
         params.append(category)
     if search:
-        clauses.append("(title LIKE ? OR content LIKE ?)")
+        # Search title + description only (not full content body) to avoid
+        # noisy matches on long documents. Use orch-ctx read <id> for content.
+        clauses.append("(title LIKE ? OR COALESCE(description, '') LIKE ?)")
         params.extend([f"%{search}%", f"%{search}%"])
 
     where = f"WHERE {' AND '.join(clauses)}" if clauses else ""

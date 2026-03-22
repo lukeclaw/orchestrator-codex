@@ -4,6 +4,11 @@
   gap: 16px;
 }
 
+/* Ensure scroll area has generous bottom padding so content isn't clipped */
+.settings-page .page-content {
+  padding-bottom: 40px;
+}
+
 .settings-page .page-header {
   display: flex;
   align-items: center;
@@ -40,7 +45,24 @@
 
 /* Content area */
 .settings-content {
-  max-width: 560px;
+  max-width: 640px;
+}
+
+.settings-content.panel {
+  overflow: visible;
+}
+
+/* Section headers — smaller/muted so they don't compete with setting labels */
+.settings-content .panel-header {
+  padding: 10px 18px;
+}
+
+.settings-content .panel-header h2 {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: var(--text-muted);
 }
 
 .settings-section h3 {
@@ -592,6 +614,80 @@
 .backup-empty p {
   font-size: 13px;
   margin: 0;
+}
+
+/* ── Brain heartbeat ── */
+.settings-beta-badge {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: rgba(var(--yellow-rgb), 0.12);
+  color: var(--yellow);
+  vertical-align: middle;
+  margin-left: 6px;
+}
+
+.brain-heartbeat-combo {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.brain-heartbeat-combo input {
+  width: 155px;
+  font-size: 13px;
+  padding: 5px 10px;
+  background: var(--surface-hover);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius);
+  color: var(--text-primary);
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+.brain-heartbeat-combo input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-muted);
+}
+
+.brain-heartbeat-suggestions {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  display: flex;
+  flex-direction: column;
+  min-width: 190px;
+  padding: 4px;
+  background: var(--surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-md);
+  z-index: 10;
+}
+
+.brain-heartbeat-suggestion {
+  padding: 6px 10px;
+  font-size: 12px;
+  border: none;
+  border-radius: calc(var(--radius) - 2px);
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.1s;
+  white-space: nowrap;
+  text-align: left;
+}
+
+.brain-heartbeat-suggestion:hover {
+  background: var(--surface-hover);
+  color: var(--text-primary);
+}
+
+.brain-heartbeat-suggestion.active {
+  background: var(--accent-muted);
+  color: var(--accent);
 }
 
 /* ── Save button fix ── */

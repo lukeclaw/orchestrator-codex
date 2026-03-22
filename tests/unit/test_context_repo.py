@@ -81,16 +81,25 @@ def test_list_filter_category(db):
 
 
 def test_list_search(db):
-    create_context_item(db, title="Auth pattern", content="Use JWT tokens")
+    """Search matches title and description, not content body."""
+    create_context_item(
+        db, title="Auth pattern", content="Use JWT tokens", description="JWT auth setup"
+    )
     create_context_item(db, title="DB conventions", content="Use PostgreSQL")
 
+    # Matches title
+    results = list_context(db, search="conventions")
+    assert len(results) == 1
+    assert results[0].title == "DB conventions"
+
+    # Matches description
     results = list_context(db, search="JWT")
     assert len(results) == 1
     assert results[0].title == "Auth pattern"
 
-    results = list_context(db, search="conventions")
-    assert len(results) == 1
-    assert results[0].title == "DB conventions"
+    # Does NOT match content body
+    results = list_context(db, search="PostgreSQL")
+    assert len(results) == 0
 
 
 def test_update(db):

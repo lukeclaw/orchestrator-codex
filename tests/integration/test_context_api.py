@@ -89,12 +89,21 @@ class TestContextAPI:
         assert global_items[0]["title"] == "G"
 
     def test_search(self, client):
-        client.post("/api/context", json={"title": "Auth", "content": "Use JWT"})
+        """Search matches title and description, not content body."""
+        client.post(
+            "/api/context",
+            json={"title": "Auth", "content": "Use JWT", "description": "JWT auth setup"},
+        )
         client.post("/api/context", json={"title": "DB", "content": "Use Postgres"})
 
+        # Matches description
         results = client.get("/api/context?search=JWT").json()
         assert len(results) == 1
         assert results[0]["title"] == "Auth"
+
+        # Matches title
+        results = client.get("/api/context?search=DB").json()
+        assert len(results) == 1
 
     def test_update(self, client):
         create = client.post("/api/context", json={"title": "Old", "content": "old"})

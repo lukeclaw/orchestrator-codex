@@ -26,6 +26,8 @@
     "PreToolUse": [
       {"matcher": "Bash", "hooks": [{"type": "command", "command": "{{SAFETY_HOOK_PATH}}"}]}
     ],
-    "UserPromptSubmit": [{"matcher": "", "hooks": [{"type": "command", "command": "{{INJECT_FOCUS_PATH}}"}]}]
+    "UserPromptSubmit": [{"matcher": "", "hooks": [{"type": "command", "command": "{{INJECT_FOCUS_PATH}}"}]}],
+    "PreCompact": [{"matcher": "", "hooks": [{"type": "command", "command": "{{PRE_COMPACT_HOOK_PATH}}"}]}],
+    "SessionStart": [{"matcher": "", "hooks": [{"type": "command", "command": "{{SESSION_START_HOOK_PATH}}"}]}]
   }
 }

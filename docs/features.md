@@ -154,19 +154,49 @@ Each worker's terminal is viewable live in the dashboard as a fully interactive 
 Context items are structured pieces of information injected into agent prompts.
 
 - **Scopes:** Global (applies to all agents), brain-only, or project-scoped (applies to workers on tasks in that project).
-- **Categories:** instruction, requirement, convention, reference, note — each with a clear semantic purpose.
+- **Categories:** instruction, reference — each with a clear semantic purpose. Brain memory uses `memory` and `wisdom` categories (see Brain Memory below).
+- **Search:** Keyword search matches title and description (not full content body) to avoid noisy results on long documents.
 - **Re-brief on recovery:** When a worker reconnects or resumes, relevant context items are re-injected so Claude doesn't lose track of standing instructions.
-- **Management UI:** A dedicated Context page with create/edit/delete, category filtering, and scope selection.
+- **Management UI:** A dedicated Context page with create/edit/delete, category filtering, scope selection, and a separate read-only Brain Memory tab.
 
 ### 3.7 Brain Panel
 
 A dedicated Claude Code session for high-level orchestration.
 
 - **Purpose:** The Brain is where the user plans work, triages incoming requests, coordinates multi-worker strategies, and makes architectural decisions. It's the "manager" Claude that understands the big picture.
+- **Identity:** The brain's prompt establishes it as an engineering lead — not a task router but a technical leader who owns outcomes, thinks before delegating, protects worker context windows, and accumulates wisdom over time.
 - **UI:** A resizable right-side panel that overlays the main content. Toggle via sidebar button or keyboard shortcut. The brain terminal is a full xterm.js instance with the same streaming infrastructure as worker terminals.
 - **Separate agent config:** The brain has its own prompt (`agents/brain/prompt.md`), hooks, and skills — distinct from worker agents. It receives different context (global + brain-scoped items) and has access to orchestrator CLI commands for task/worker management.
+- **Built-in skills:**
+  - `/create` — Plan and delegate new work (tasks, projects, ideas) with approval gates.
+  - `/check_worker` — Interactive worker review with approval workflow.
+  - `/heartbeat` — Autonomous non-blocking monitoring. Takes safe actions immediately, notifies user for awareness, investigates stuck workers. Designed for use with `/loop`.
+  - `/unblock` — Investigate why a worker is stuck. Shifts from delegation to research mode: reads errors, searches memory and context, sends targeted help or escalates to user.
 
-### 3.8 Auto-Approval
+### 3.8 Brain Autonomy (Beta)
+
+Optional autonomous monitoring and long-term memory for the brain.
+
+**Auto-monitoring:**
+- When enabled (Settings > Brain), the brain schedules `/loop {interval} /heartbeat` on startup using Claude Code's built-in `/loop` command.
+- Each heartbeat cycle: gathers worker state, classifies each worker (working/idle/stuck/done), takes safe actions (send "continue", nudge PR, investigate errors), and creates notifications for the user.
+- Non-blocking: never asks for approval, never presents "Approve?" prompts. The user reviews what the brain did via notifications.
+- Setting is opt-in, off by default. Recommended interval: 30 minutes.
+
+**Brain Memory (`orch-memory`):**
+- A private learning journal for the brain, separate from shared context (`orch-ctx`).
+- Two tiers: **learning logs** (raw notes captured via `orch-memory log "..."`) and **wisdom** (a single curated document injected into the brain's system prompt on every start).
+- Storage: reuses the `context_items` table with `scope=brain, category=memory|wisdom`. The `orch-memory` CLI is a thin wrapper over the existing context API.
+- **Pre-compaction hook:** Before Claude Code's auto-compaction, a hook prompts the brain to save useful learnings to memory logs. Captures error fixes, repo quirks, decision rationale — not session summaries.
+- **Wisdom curation:** The brain periodically distills learning logs into the wisdom document. This document is injected into the brain's system prompt via `{{BRAIN_MEMORY}}` at deploy time, so accumulated knowledge survives restarts and compaction.
+- **Cross-scope learning:** Workers write project-scoped context. The brain reads it during investigation and promotes broadly useful patterns into its own memory.
+- **Dashboard:** The Context page has a read-only "Brain Memory" tab showing the wisdom document and learning logs. The user can see what the brain has learned but cannot edit (the brain owns its memory).
+
+**Session lifecycle hooks:**
+- `PreCompact` — Instructs brain to save learnings before context wipe.
+- `SessionStart` — Re-deploys brain files (refreshing wisdom injection) and re-arms the heartbeat loop after `/clear` or `/compact`.
+
+### 3.9 Auto-Approval
 
 Configurable rules that automatically approve trivial Claude permission prompts.
 
@@ -175,7 +205,7 @@ Configurable rules that automatically approve trivial Claude permission prompts.
 - **Configurable:** Users can enable/disable auto-approval globally or per-worker, and configure which prompt patterns are auto-approved via the Settings page.
 - **Safety:** Destructive operations (file deletion, system commands) are never auto-approved. The system errs on the side of caution — unknown prompts are left for the user.
 
-### 3.9 Notification System
+### 3.10 Notification System
 
 Non-blocking alerts from workers and the system.
 
