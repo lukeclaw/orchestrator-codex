@@ -462,19 +462,12 @@ class PtyStreamPool:
         async with self._lock:
             reader = self._readers.get(pane_id)
             if reader and reader.is_alive:
-                if reader.is_stale():
-                    logger.warning(
-                        "PtyStreamReader for pane %s is zombie "
-                        "(alive but no data for %.0fs) — restarting",
-                        pane_id,
-                        ZOMBIE_TIMEOUT,
-                    )
-                    await reader.stop()
-                    del self._readers[pane_id]
-                    reader = None  # fall through to create new reader
-                else:
-                    self._consumers.setdefault(pane_id, set()).add(callback)
-                    return True
+                # Reader is running — just add the subscriber.
+                # Don't restart on idle silence; an idle pane produces no
+                # data and that's perfectly normal.  Broken pipes surface
+                # as EOF, which is handled by _on_reader_eof().
+                self._consumers.setdefault(pane_id, set()).add(callback)
+                return True
 
             # Need a new reader (first subscriber or previous reader died)
             if reader:

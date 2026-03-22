@@ -299,7 +299,6 @@ class TestPtyStreamPool:
 
         mock_reader = AsyncMock(spec=PtyStreamReader)
         mock_reader.is_alive = True
-        mock_reader.is_stale = MagicMock(return_value=False)
         mock_reader.start = AsyncMock(return_value=True)
 
         cb1 = AsyncMock()
@@ -347,7 +346,6 @@ class TestPtyStreamPool:
 
         mock_reader = AsyncMock(spec=PtyStreamReader)
         mock_reader.is_alive = True
-        mock_reader.is_stale = MagicMock(return_value=False)
         mock_reader.start = AsyncMock(return_value=True)
         mock_reader.stop = AsyncMock()
 
@@ -1029,52 +1027,20 @@ class TestPtyStreamReaderStaleness:
 
 
 # ---------------------------------------------------------------------------
-# PtyStreamPool: zombie restart via subscribe()
+# PtyStreamPool: idle reader tolerance
 # ---------------------------------------------------------------------------
 
 
-class TestPtyStreamPoolZombieRestart:
-    """Tests for subscribe() restarting zombie (stale) readers."""
+class TestPtyStreamPoolIdleReader:
+    """subscribe() must not restart alive readers, even if idle."""
 
-    async def test_subscribe_restarts_zombie_reader(self, tmp_fifo_dir):
-        """subscribe() should stop a stale reader and create a new one."""
-        set_tmux_version_cache(3, 4)
-        pool = PtyStreamPool()
-
-        # Set up a "zombie" reader — alive but stale
-        old_reader = AsyncMock(spec=PtyStreamReader)
-        old_reader.is_alive = True
-        old_reader.is_stale = MagicMock(return_value=True)
-        old_reader.stop = AsyncMock()
-        pool._readers["%5"] = old_reader
-
-        new_reader = AsyncMock(spec=PtyStreamReader)
-        new_reader.is_alive = True
-        new_reader.is_stale = MagicMock(return_value=False)
-        new_reader.start = AsyncMock(return_value=True)
-
-        callback = AsyncMock()
-
-        with patch(
-            "orchestrator.terminal.pty_stream.PtyStreamReader",
-            return_value=new_reader,
-        ):
-            result = await pool.subscribe("%5", "sess", "win", callback)
-
-        assert result is True
-        old_reader.stop.assert_awaited_once()
-        new_reader.start.assert_awaited_once()
-        assert pool._readers["%5"] is new_reader
-        assert callback in pool._consumers["%5"]
-
-    async def test_subscribe_keeps_healthy_reader(self, tmp_fifo_dir):
-        """subscribe() should reuse a non-stale alive reader."""
+    async def test_subscribe_reuses_idle_reader(self, tmp_fifo_dir):
+        """subscribe() should reuse an alive reader regardless of idle time."""
         set_tmux_version_cache(3, 4)
         pool = PtyStreamPool()
 
         reader = AsyncMock(spec=PtyStreamReader)
         reader.is_alive = True
-        reader.is_stale = MagicMock(return_value=False)
         pool._readers["%5"] = reader
 
         callback = AsyncMock()
