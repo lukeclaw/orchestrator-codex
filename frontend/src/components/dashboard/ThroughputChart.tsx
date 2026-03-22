@@ -111,7 +111,7 @@ export default function ThroughputChart({ data, range, onBarClick }: Props) {
           <Bar
             dataKey="tasks"
             stackId="a"
-            fill="var(--accent)"
+            fill="var(--fill-accent)"
             name="Tasks"
             radius={[0, 0, 0, 0]}
             animationDuration={400}
@@ -122,7 +122,7 @@ export default function ThroughputChart({ data, range, onBarClick }: Props) {
           <Bar
             dataKey="subtasks"
             stackId="a"
-            fill="var(--purple)"
+            fill="var(--fill-purple)"
             name="Subtasks"
             radius={[2, 2, 0, 0]}
             animationDuration={400}
@@ -135,10 +135,10 @@ export default function ThroughputChart({ data, range, onBarClick }: Props) {
               dataKey="prs"
               name="PRs Merged"
               type="monotone"
-              stroke="var(--green)"
+              stroke="var(--fill-green)"
               strokeWidth={2}
-              dot={{ r: 3, fill: 'var(--green)', strokeWidth: 0 }}
-              activeDot={{ r: 5, fill: 'var(--green)', strokeWidth: 2, stroke: 'var(--surface)' }}
+              dot={{ r: 3, fill: 'var(--fill-green)', strokeWidth: 0 }}
+              activeDot={{ r: 5, fill: 'var(--fill-green)', strokeWidth: 2, stroke: 'var(--surface)' }}
               animationDuration={400}
               animationEasing="ease-out"
             />

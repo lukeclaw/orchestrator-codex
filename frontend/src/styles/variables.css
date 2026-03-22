@@ -84,6 +84,11 @@
   --ease-standard: cubic-bezier(0.4, 0, 0.2, 1);
   --ease-decelerate: cubic-bezier(0, 0, 0.2, 1);
 
+  /* Chart/fill colors — same as base in dark mode, brighter in light */
+  --fill-green: var(--green);
+  --fill-accent: var(--accent);
+  --fill-purple: var(--purple);
+
   /* Shadows */
   --shadow-sm: 0 1px 2px rgba(0,0,0,0.12);
   --shadow-md: 0 3px 8px rgba(0,0,0,0.24);
@@ -171,6 +176,11 @@
   --status-disconnected: #e5534b;
   --status-error: #e5534b;
   --status-paused: #bc4c00;
+
+  /* Chart/fill colors — bright variants for solid fills on white canvas */
+  --fill-green: #2da44e;
+  --fill-accent: #218bff;
+  --fill-purple: #8957e5;
 
   /* Button overrides — white text on vibrant green */
   --btn-primary-bg: #2da44e;

@@ -99,13 +99,13 @@ export default function WorkerHoursChart({ data, humanData = [], range, onPointC
         >
           <defs>
             <linearGradient id="workerHoursGradient" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="5%" stopColor="var(--green)" stopOpacity={0.3} />
-              <stop offset="95%" stopColor="var(--green)" stopOpacity={0} />
+              <stop offset="5%" stopColor="var(--fill-green)" stopOpacity={0.3} />
+              <stop offset="95%" stopColor="var(--fill-green)" stopOpacity={0} />
             </linearGradient>
             {hasHumanData && (
               <linearGradient id="humanHoursGradient" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor="var(--accent)" stopOpacity={0.3} />
-                <stop offset="95%" stopColor="var(--accent)" stopOpacity={0} />
+                <stop offset="5%" stopColor="var(--fill-accent)" stopOpacity={0.3} />
+                <stop offset="95%" stopColor="var(--fill-accent)" stopOpacity={0} />
               </linearGradient>
             )}
           </defs>
@@ -143,7 +143,7 @@ export default function WorkerHoursChart({ data, humanData = [], range, onPointC
           <Area
             type="monotone"
             dataKey="workerHours"
-            stroke="var(--green)"
+            stroke="var(--fill-green)"
             strokeWidth={2}
             fill="url(#workerHoursGradient)"
             animationDuration={400}
@@ -155,7 +155,7 @@ export default function WorkerHoursChart({ data, humanData = [], range, onPointC
                   cx={cx}
                   cy={cy}
                   r={5}
-                  stroke="var(--green)"
+                  stroke="var(--fill-green)"
                   strokeWidth={2}
                   fill="var(--surface)"
                   style={{ cursor: 'pointer' }}
@@ -168,7 +168,7 @@ export default function WorkerHoursChart({ data, humanData = [], range, onPointC
             <Area
               type="monotone"
               dataKey="humanHours"
-              stroke="var(--accent)"
+              stroke="var(--fill-accent)"
               strokeWidth={2}
               fill="url(#humanHoursGradient)"
               animationDuration={400}
