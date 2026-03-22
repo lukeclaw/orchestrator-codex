@@ -2,12 +2,19 @@
 
 from __future__ import annotations
 
+# Force the standard asyncio event loop instead of uvloop.
+# uvloop's pthread_atfork handler triggers a PyMutex_Unlock fatal error in forked
+# children (subprocess.run, create_subprocess_exec) on Python 3.13 + Rosetta,
+# leaving unkillable processes that require a reboot. See launcher.py for details.
+import asyncio as _asyncio
 import logging
 import mimetypes
 import os
 import sqlite3
 from contextlib import asynccontextmanager
 from pathlib import Path
+
+_asyncio.set_event_loop_policy(_asyncio.DefaultEventLoopPolicy())
 
 # Prevent Python from scanning /etc/ or other system paths
 mimetypes.init(files=[])
