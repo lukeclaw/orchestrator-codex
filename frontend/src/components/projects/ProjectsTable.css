@@ -178,29 +178,7 @@
   color: var(--text-muted);
 }
 
-.pt-worker-tag {
-  display: inline-block;
-  padding: 2px 8px;
-  font-size: 11px;
-  font-weight: 500;
-  border-radius: 4px;
-  white-space: nowrap;
-  max-width: 120px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  background: var(--bg);
-  color: var(--text-primary);
-}
-
-/* Worker tag status colors — use --status-* variables for consistency */
-.pt-worker-tag.working      { background: rgba(var(--accent-rgb), 0.08);  color: var(--status-working); }
-.pt-worker-tag.idle          { background: rgba(var(--green-rgb), 0.08);  color: var(--status-idle); }
-.pt-worker-tag.waiting       { background: rgba(45, 204, 184, 0.08); color: var(--status-waiting); }
-.pt-worker-tag.blocked       { background: rgba(var(--yellow-rgb), 0.08); color: var(--status-blocked); }
-.pt-worker-tag.paused        { background: rgba(var(--orange-alt-rgb), 0.08); color: var(--status-paused); }
-.pt-worker-tag.disconnected  { background: rgba(var(--red-rgb), 0.08);  color: var(--status-disconnected); }
-.pt-worker-tag.connecting    { background: rgba(var(--orange-rgb), 0.08); color: var(--status-connecting); }
-.pt-worker-tag.brain         { background: rgba(var(--purple-alt-rgb), 0.08); color: var(--purple); }
+/* pt-worker-tag base + color styles are in global.css */
 
 /* Status column */
 .pt-td.status {

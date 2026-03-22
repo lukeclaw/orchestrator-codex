@@ -122,13 +122,6 @@
   background: rgba(var(--yellow-rgb), 0.08);
 }
 
-/* Worker status dot — uses global .status-dot with size override */
-.worker-tag-link .status-dot {
-  display: inline-block;
-  margin-right: 6px;
-  vertical-align: middle;
-}
-
 /* Worker tag link - clickable badge that links to worker */
 .worker-tag-link {
   text-decoration: none;
@@ -136,17 +129,17 @@
   align-items: center;
 }
 
-.worker-tag-link:hover .status-badge {
-  filter: brightness(1.15);
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.15);
-}
-
-.worker-tag-link .status-badge {
+.worker-tag-link .pt-worker-tag {
   cursor: pointer;
   transition: filter 0.15s, box-shadow 0.15s;
 }
 
-[data-theme="light"] .worker-tag-link:hover .status-badge {
+.worker-tag-link:hover .pt-worker-tag {
+  filter: brightness(1.15);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.15);
+}
+
+[data-theme="light"] .worker-tag-link:hover .pt-worker-tag {
   filter: brightness(0.95);
 }
 
