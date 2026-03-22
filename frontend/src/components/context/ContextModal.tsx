@@ -18,6 +18,7 @@ interface Props {
   projectId?: string
   projects?: Project[]
   isNew?: boolean
+  readOnly?: boolean
   initialContent?: InitialContent
   onClose: () => void
   onSave: (body: Partial<ContextItem> & { title: string; content: string }) => Promise<unknown>
@@ -30,7 +31,7 @@ const CATEGORY_OPTIONS = [
   { value: 'reference', label: 'Reference', className: 'cm-cat-reference' },
 ]
 
-export default function ContextModal({ context, projectId, projects = [], isNew, initialContent, onClose, onSave, onDelete }: Props) {
+export default function ContextModal({ context, projectId, projects = [], isNew, readOnly, initialContent, onClose, onSave, onDelete }: Props) {
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
   const [content, setContent] = useState('')
@@ -290,21 +291,22 @@ export default function ContextModal({ context, projectId, projects = [], isNew,
               </div>
             ) : (
               <span
-                className={`cm-title editable ${!title ? 'empty' : ''}`}
-                onClick={() => setEditingField('title')}
+                className={`cm-title ${readOnly ? '' : 'editable'} ${!title ? 'empty' : ''}`}
+                onClick={() => !readOnly && setEditingField('title')}
               >
-                {title || 'Click to add title...'}
+                {title || (readOnly ? 'Untitled' : 'Click to add title...')}
               </span>
             )}
             <TagDropdown
               value={category}
               options={CATEGORY_OPTIONS}
               onChange={handleCategoryChange}
+              disabled={readOnly}
               renderTag={(opt) => (
                 <span className={`cm-badge ${opt.className}`}>{opt.label}</span>
               )}
             />
-            {!scopeLocked && (
+            {!scopeLocked && !readOnly && (
               <TagDropdown
                 value={scope === 'project' && selectedProjectId ? `project:${selectedProjectId}` : scope}
                 options={scopeOptions}
@@ -353,10 +355,10 @@ export default function ContextModal({ context, projectId, projects = [], isNew,
               </div>
             ) : (
               <span
-                className={`cm-desc editable ${!description ? 'empty' : ''}`}
-                onClick={() => setEditingField('desc')}
+                className={`cm-desc ${readOnly ? '' : 'editable'} ${!description ? 'empty' : ''}`}
+                onClick={() => !readOnly && setEditingField('desc')}
               >
-                {description || 'Click to add description...'}
+                {description || (readOnly ? '' : 'Click to add description...')}
               </span>
             )}
           </div>
@@ -385,7 +387,7 @@ export default function ContextModal({ context, projectId, projects = [], isNew,
                   title={isNew ? 'Done' : 'Discard'}
                 >✕</button>
               </div>
-            ) : (
+            ) : !readOnly ? (
               <button
                 type="button"
                 className="cm-edit-btn"
@@ -397,7 +399,7 @@ export default function ContextModal({ context, projectId, projects = [], isNew,
                   <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
                 </svg>
               </button>
-            )}
+            ) : null}
           </div>
 
           {viewMode === 'edit' ? (

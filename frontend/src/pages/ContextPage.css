@@ -419,24 +419,11 @@
 
 /* ── Brain Memory Tab ── */
 
-.bm-notice {
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
-  padding: 10px 14px;
-  background: rgba(var(--purple-rgb, 147, 130, 220), 0.08);
-  border: 1px solid rgba(var(--purple-rgb, 147, 130, 220), 0.15);
-  border-radius: var(--radius);
-  font-size: 12px;
-  color: var(--text-secondary);
+.bm-desc {
+  font-size: 13px;
+  color: var(--text-muted);
+  margin: 0;
   line-height: 1.5;
-}
-
-.bm-notice svg {
-  flex-shrink: 0;
-  margin-top: 1px;
-  color: var(--purple, #9382dc);
-  opacity: 0.7;
 }
 
 .bm-section {
@@ -465,6 +452,18 @@
 
 .bm-section > .bm-section-title {
   margin-bottom: 8px;
+}
+
+/* Clickable items */
+.bm-wisdom-panel.clickable,
+.bm-log-item.clickable {
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.bm-wisdom-panel.clickable:hover,
+.bm-log-item.clickable:hover {
+  background: var(--surface-hover);
 }
 
 /* Wisdom panel */

@@ -31,6 +31,7 @@ export default function ContextPage() {
   const [showProjectDropdown, setShowProjectDropdown] = useState(false)
   const projectThRef = useRef<HTMLTableCellElement>(null)
   const [memorySearch, setMemorySearch] = useState('')
+  const [viewingMemoryItem, setViewingMemoryItem] = useState<ContextItem | null>(null)
 
   const { items, loading, fetch, getItem, create, update, remove } = useContextItems({
     project_id: projectFilter || undefined,
@@ -40,7 +41,7 @@ export default function ContextPage() {
     ],
   })
 
-  const { logs, wisdom, loading: memoryLoading, searchLogs } = useBrainMemory()
+  const { logs, wisdom, loading: memoryLoading, searchLogs, getItem: getMemoryItem } = useBrainMemory()
 
   useEffect(() => {
     if (!showProjectDropdown) return
@@ -211,6 +212,11 @@ export default function ContextPage() {
     await remove(id)
   }
 
+  async function handleMemoryItemClick(item: ContextItem) {
+    const fullItem = await getMemoryItem(item.id)
+    setViewingMemoryItem(fullItem)
+  }
+
   const hasFilters = scopeFilter || projectFilter || searchText
 
   function clearAllFilters() {
@@ -250,18 +256,10 @@ export default function ContextPage() {
       {/* === Brain Memory Tab === */}
       {isBrainMemoryPage && (
         <>
-          <div className="bm-notice">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <circle cx="12" cy="12" r="10" />
-              <line x1="12" y1="16" x2="12" y2="12" />
-              <line x1="12" y1="8" x2="12.01" y2="8" />
-            </svg>
-            <span>
-              The brain's learning journal. It captures learnings during work sessions and curates
-              them into a wisdom document injected into its prompt on every start. These entries are
-              managed by the brain — you can review what it has learned here.
-            </span>
-          </div>
+          <p className="bm-desc">
+            The brain captures learnings during work and curates them into a wisdom document
+            injected into its prompt on every start. These entries are managed by the brain.
+          </p>
           <div className="page-content">
             {memoryLoading ? (
               <p className="empty-state">Loading...</p>
@@ -271,7 +269,7 @@ export default function ContextPage() {
                 <div className="bm-section">
                   <div className="bm-section-title">Wisdom</div>
                   {wisdom ? (
-                    <div className="bm-wisdom-panel">
+                    <div className="bm-wisdom-panel clickable" onClick={() => handleMemoryItemClick(wisdom)}>
                       <div className="bm-wisdom-content">{wisdom.content}</div>
                       <div className="bm-wisdom-meta">
                         Last updated {timeAgo(wisdom.updated_at || wisdom.created_at)}
@@ -315,7 +313,7 @@ export default function ContextPage() {
                   ) : (
                     <div className="bm-log-list">
                       {logs.map(log => (
-                        <div key={log.id} className="bm-log-item">
+                        <div key={log.id} className="bm-log-item clickable" onClick={() => handleMemoryItemClick(log)}>
                           {log.title && <div className="bm-log-title">{log.title}</div>}
                           <div className="bm-log-content">{log.content}</div>
                           <div className="bm-log-meta">{timeAgo(log.created_at)}</div>
@@ -466,6 +464,15 @@ export default function ContextPage() {
         }}
         onSave={handleSave}
         onDelete={handleDelete}
+      />
+
+      {/* Read-only modal for brain memory items */}
+      <ContextModal
+        context={viewingMemoryItem}
+        projects={projects}
+        readOnly
+        onClose={() => setViewingMemoryItem(null)}
+        onSave={async () => {}}
       />
     </div>
   )

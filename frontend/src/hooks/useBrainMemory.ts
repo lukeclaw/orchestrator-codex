@@ -43,5 +43,9 @@ export function useBrainMemory() {
     await fetchLogs(search || undefined)
   }, [fetchLogs])
 
-  return { logs, wisdom, loading, fetch: fetchAll, searchLogs }
+  const getItem = useCallback(async (id: string): Promise<ContextItem> => {
+    return api<ContextItem>(`/api/context/${id}`)
+  }, [])
+
+  return { logs, wisdom, loading, fetch: fetchAll, searchLogs, getItem }
 }
