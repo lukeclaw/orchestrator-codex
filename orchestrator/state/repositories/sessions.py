@@ -190,8 +190,30 @@ def delete_session(conn: sqlite3.Connection, id: str) -> bool:
     """Delete a session and all related records.
 
     Uses a single transaction to avoid partial deletes and reduce lock time.
+    Records a closing status event before deletion so that trend queries
+    don't treat the last 'working' event as an open interval extending to now.
     """
     with transaction(conn):
+        # Insert a closing status event so worker-hours charts don't overcount.
+        row = conn.execute(
+            "SELECT status, session_type, name FROM sessions WHERE id = ?", (id,)
+        ).fetchone()
+        if row and row["status"] in ("working", "connecting"):
+            try:
+                from orchestrator.state.repositories.status_events import insert_event
+
+                insert_event(
+                    conn,
+                    "session",
+                    id,
+                    row["status"],
+                    "idle",
+                    session_type=row["session_type"],
+                    session_name=row["name"],
+                )
+            except Exception:
+                logger.debug("Failed to insert closing event for session %s", id, exc_info=True)
+
         conn.execute(
             "UPDATE tasks SET assigned_session_id = NULL WHERE assigned_session_id = ?", (id,)
         )

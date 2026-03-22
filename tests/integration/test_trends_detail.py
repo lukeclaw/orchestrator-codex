@@ -436,3 +436,84 @@ class TestTrendsDetailAPI:
         assert resp_90d.status_code == 200
         # 90d range should return >= 7d range results
         assert len(resp_90d.json()["items"]) >= len(resp_7d.json()["items"])
+
+
+class TestDeletedWorkerHours:
+    """Deleted workers must not inflate worker-hours via phantom open intervals."""
+
+    def test_chart_excludes_deleted_worker_open_interval(self, db):
+        """query_worker_hours should not extend open intervals for deleted sessions."""
+        w = sessions.create_session(db, "worker-phantom", "h1", session_type="worker")
+        sessions.update_session(db, w.id, status="working")
+        # Delete the session WITHOUT an explicit idle transition
+        sessions.delete_session(db, w.id)
+
+        since = (datetime.now().astimezone() - timedelta(days=1)).strftime("%Y-%m-%d")
+        result = status_events.query_worker_hours(db, since)
+        # The closing event from delete_session should produce a short interval,
+        # not an open one extending to now.
+        today = datetime.now().astimezone().strftime("%Y-%m-%d")
+        today_hours = next((r["hours"] for r in result if r["date"] == today), 0)
+        # Should be a few seconds at most, not hours
+        assert today_hours < 0.1
+
+    def test_detail_excludes_deleted_worker_open_interval(self, db):
+        """query_worker_hours_detail should skip open intervals for deleted sessions."""
+        w = sessions.create_session(db, "worker-ghost", "h1", session_type="worker")
+        sessions.update_session(db, w.id, status="working")
+
+        # Manually delete WITHOUT the closing event fix to test safety net
+        db.execute("DELETE FROM sessions WHERE id = ?", (w.id,))
+        db.commit()
+
+        today = datetime.now().astimezone().strftime("%Y-%m-%d")
+        items = status_events.query_worker_hours_detail(db, today)
+        ghost = next((i for i in items if i["session_id"] == w.id), None)
+        # Should not appear (open interval skipped for deleted session)
+        assert ghost is None
+
+    def test_delete_session_inserts_closing_event(self, db):
+        """delete_session should record a closing status event."""
+        w = sessions.create_session(db, "worker-close", "h1", session_type="worker")
+        sessions.update_session(db, w.id, status="working")
+
+        # Count events before delete
+        before = db.execute(
+            "SELECT COUNT(*) FROM status_events WHERE entity_id = ?", (w.id,)
+        ).fetchone()[0]
+
+        sessions.delete_session(db, w.id)
+
+        after = db.execute(
+            "SELECT COUNT(*) FROM status_events WHERE entity_id = ?", (w.id,)
+        ).fetchone()[0]
+        # Should have one more event (the closing idle transition)
+        assert after == before + 1
+
+        # The last event should be idle
+        last = db.execute(
+            "SELECT new_status FROM status_events"
+            " WHERE entity_id = ? ORDER BY timestamp DESC LIMIT 1",
+            (w.id,),
+        ).fetchone()
+        assert last["new_status"] == "idle"
+
+    def test_chart_and_detail_agree_after_delete(self, db):
+        """Chart and detail should produce the same hours after session deletion."""
+        w = sessions.create_session(db, "worker-agree", "h1", session_type="worker")
+        sessions.update_session(db, w.id, status="working")
+        sessions.update_session(db, w.id, status="idle")
+        sessions.update_session(db, w.id, status="working")
+        # Delete while working — closing event should be inserted
+        sessions.delete_session(db, w.id)
+
+        today = datetime.now().astimezone().strftime("%Y-%m-%d")
+        since = (datetime.now().astimezone() - timedelta(days=1)).strftime("%Y-%m-%d")
+
+        chart_result = status_events.query_worker_hours(db, since)
+        chart_h = next((r["hours"] for r in chart_result if r["date"] == today), 0)
+
+        detail_items = status_events.query_worker_hours_detail(db, today)
+        detail_h = sum(i["total_hours"] for i in detail_items)
+
+        assert abs(chart_h - detail_h) < 0.02  # Allow rounding

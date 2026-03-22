@@ -115,15 +115,15 @@ def query_worker_hours(conn: sqlite3.Connection, since_date: str) -> list[dict]:
     # Group events by worker
     workers: dict[str, list[tuple[str, str]]] = {}
     for r in rows:
-        wid = r["entity_id"]
-        if wid not in workers:
-            workers[wid] = []
-        workers[wid].append((r["new_status"], r["timestamp"]))
+        eid = r["entity_id"]
+        if eid not in workers:
+            workers[eid] = []
+        workers[eid].append((r["new_status"], r["timestamp"]))
 
     now = datetime.now(UTC)
     hours_by_date: dict[str, float] = {}
 
-    for events in workers.values():
+    for wid, events in workers.items():
         work_start: datetime | None = None
 
         for status, ts_str in events:
@@ -135,9 +135,13 @@ def query_worker_hours(conn: sqlite3.Connection, since_date: str) -> list[dict]:
                 _add_interval(hours_by_date, work_start, ts)
                 work_start = None
 
-        # Clamp open interval to now
+        # Clamp open interval to now — but only if the session still exists.
+        # Deleted sessions with a stale 'working' event would otherwise add
+        # phantom hours from the last event all the way to now.
         if work_start is not None:
-            _add_interval(hours_by_date, work_start, now)
+            session = sessions_repo.get_session(conn, wid)
+            if session is not None:
+                _add_interval(hours_by_date, work_start, now)
 
     result = [{"date": d, "hours": round(h, 2)} for d, h in sorted(hours_by_date.items())]
     return result
@@ -306,19 +310,23 @@ def query_worker_hours_detail(conn: sqlite3.Connection, date: str) -> list[dict]
                 work_task_id = None
                 work_task_title = None
 
-        # Clamp open interval to now (or target_end)
+        # Clamp open interval to now (or target_end).
+        # Skip if the session was deleted — no closing event means the
+        # interval would extend indefinitely, overcounting hours.
         if work_start is not None:
-            clamped_start = max(work_start, target_start)
-            clamped_end = min(now, target_end)
-            if clamped_start < clamped_end:
-                intervals.append(
-                    {
-                        "start": clamped_start.isoformat(),
-                        "end": clamped_end.isoformat(),
-                        "task_id": work_task_id,
-                        "task_title": work_task_title,
-                    }
-                )
+            session_exists = sessions_repo.get_session(conn, wid) is not None
+            if session_exists:
+                clamped_start = max(work_start, target_start)
+                clamped_end = min(now, target_end)
+                if clamped_start < clamped_end:
+                    intervals.append(
+                        {
+                            "start": clamped_start.isoformat(),
+                            "end": clamped_end.isoformat(),
+                            "task_id": work_task_id,
+                            "task_title": work_task_title,
+                        }
+                    )
 
         if not intervals:
             continue
