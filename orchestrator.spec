@@ -120,8 +120,6 @@ a = Analysis(
         "orchestrator.utils",
         # Dependencies that may not be auto-detected
         "yaml",
-        "click",
-        "rich",
         "httpx",
         "anthropic",
         "pydantic",

@@ -5,9 +5,6 @@ description = "Meta-agent that manages multiple concurrent Claude Code sessions"
 requires-python = ">=3.11"
 
 dependencies = [
-    # CLI & Display
-    "click>=8.0",
-    "rich>=13.0",
     # Web Server & API
     "fastapi>=0.115.0",
     # uvicorn[standard] minus uvloop — uvloop's pthread_atfork handler crashes
@@ -49,7 +46,7 @@ knowledge = [
 ]
 
 [project.scripts]
-orchestrator = "orchestrator.main:cli"
+orchestrator = "orchestrator.launcher:main"
 
 [build-system]
 requires = ["hatchling"]
