@@ -76,6 +76,7 @@ export default function SettingsPage() {
   const [brainHeartbeat, setBrainHeartbeat] = useState('off')
   const [heartbeatInput, setHeartbeatInput] = useState('')
   const [heartbeatFocused, setHeartbeatFocused] = useState(false)
+  const [heartbeatSaved, setHeartbeatSaved] = useState(false)
 
   // Sync settings from DB
   useEffect(() => {
@@ -116,16 +117,21 @@ export default function SettingsPage() {
 
   const HEARTBEAT_PRESETS = [
     'Every 30 minutes',
-    'Every 2 hours',
-    'Every 8 hours',
+    'Every hour',
+    'Every 4 hours',
     'Weekdays at 9 AM',
   ]
 
   const handleBrainHeartbeatToggle = async () => {
-    const newValue = brainHeartbeat === 'off' ? 'Every 30 minutes' : 'off'
+    const newValue = brainHeartbeat === 'off' ? 'Every hour' : 'off'
     setBrainHeartbeat(newValue)
     setHeartbeatInput(newValue === 'off' ? '' : newValue)
     await save({ 'brain.heartbeat': newValue })
+  }
+
+  const flashHeartbeatSaved = () => {
+    setHeartbeatSaved(true)
+    setTimeout(() => setHeartbeatSaved(false), 1500)
   }
 
   const selectHeartbeatPreset = async (preset: string) => {
@@ -133,6 +139,7 @@ export default function SettingsPage() {
     setHeartbeatInput(preset)
     setHeartbeatFocused(false)
     await save({ 'brain.heartbeat': preset })
+    flashHeartbeatSaved()
   }
 
   const commitHeartbeatInput = async () => {
@@ -144,6 +151,7 @@ export default function SettingsPage() {
     setBrainHeartbeat(trimmed)
     setHeartbeatInput(trimmed)
     await save({ 'brain.heartbeat': trimmed })
+    flashHeartbeatSaved()
   }
 
   const [backupDir, setBackupDir] = useState('')
@@ -516,16 +524,23 @@ export default function SettingsPage() {
                     </div>
                   </div>
                   <div className="brain-heartbeat-combo">
-                    <input
-                      type="text"
-                      value={heartbeatInput}
-                      onChange={e => setHeartbeatInput(e.target.value)}
-                      onFocus={() => setHeartbeatFocused(true)}
-                      onBlur={() => { setHeartbeatFocused(false); commitHeartbeatInput() }}
-                      onKeyDown={e => { if (e.key === 'Enter') { commitHeartbeatInput(); (e.target as HTMLInputElement).blur() } }}
-                      placeholder="Every 30 minutes"
-                      spellCheck={false}
-                    />
+                    <div className="brain-heartbeat-input-wrap">
+                      <input
+                        type="text"
+                        value={heartbeatInput}
+                        onChange={e => setHeartbeatInput(e.target.value)}
+                        onFocus={() => setHeartbeatFocused(true)}
+                        onBlur={() => { setHeartbeatFocused(false); commitHeartbeatInput() }}
+                        onKeyDown={e => { if (e.key === 'Enter') { commitHeartbeatInput(); (e.target as HTMLInputElement).blur() } }}
+                        placeholder="Every hour"
+                        spellCheck={false}
+                      />
+                      {heartbeatSaved && (
+                        <svg className="brain-heartbeat-saved" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--green)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                          <polyline points="20 6 9 17 4 12" />
+                        </svg>
+                      )}
+                    </div>
                     {heartbeatFocused && (
                       <div className="brain-heartbeat-suggestions">
                         {HEARTBEAT_PRESETS.map(preset => (

@@ -635,10 +635,14 @@
   flex-shrink: 0;
 }
 
+.brain-heartbeat-input-wrap {
+  position: relative;
+}
+
 .brain-heartbeat-combo input {
   width: 155px;
   font-size: 13px;
-  padding: 5px 10px;
+  padding: 5px 26px 5px 10px;
   background: var(--surface-hover);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius);
@@ -650,6 +654,24 @@
 .brain-heartbeat-combo input:focus {
   border-color: var(--accent);
   box-shadow: 0 0 0 2px var(--accent-muted);
+}
+
+.brain-heartbeat-saved {
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  animation: heartbeat-check-in 0.2s ease-out, heartbeat-check-out 0.3s 1.2s ease-in forwards;
+}
+
+@keyframes heartbeat-check-in {
+  from { opacity: 0; transform: translateY(-50%) scale(0.5); }
+  to   { opacity: 1; transform: translateY(-50%) scale(1); }
+}
+
+@keyframes heartbeat-check-out {
+  from { opacity: 1; }
+  to   { opacity: 0; }
 }
 
 .brain-heartbeat-suggestions {
