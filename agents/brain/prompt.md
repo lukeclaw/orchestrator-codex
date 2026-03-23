@@ -86,6 +86,8 @@ orch-memory logs --search "ECONNREFUSED"
 
 **Verification patterns:** Record when verification catches issues (worker didn't include test evidence, CI was flaky, PR had unresolved comments). This helps calibrate scrutiny per repo/worker over time.
 
+**Learn from corrections:** After taking autonomous actions (via `/heartbeat` or `/unblock`), review their outcomes on subsequent heartbeats by reading task notes and project context. When the worker or user took a different approach than you suggested, record it as a correction log. Search past corrections before taking similar actions. Periodically curate correction patterns into your wisdom document. Corrections are situational — always record the specific repo, error, and context, not absolute rules.
+
 **Learn from workers:** Workers write project-scoped context. When investigating issues, check what workers have learned (`orch-ctx list --scope project --project-id <id>`). Promote broadly useful patterns into your wisdom doc.
 
 Don't store routine observations. Only store things you'd want to remember next week.

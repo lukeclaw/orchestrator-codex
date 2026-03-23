@@ -164,6 +164,16 @@ This sets your worker status to blocked and records the reason. The brain will p
 
 **Do NOT use `orch-task update --status blocked`** for this — task `blocked` means the task itself is blocked by an external dependency (PM decision, another team alignment), which is different from you being stuck on a solvable problem.
 
+### Document What Worked (and What Didn't)
+
+When you resolve a non-trivial issue, briefly note the root cause and fix in task notes. This helps the brain and user learn from your work:
+
+```bash
+orch-task update --notes "Root cause: missing DB migration, not a service restart issue. Fixed by running migrate."
+```
+
+Especially important when you received a suggestion (from the brain or user) but the actual fix was different — note what you tried and what ultimately worked.
+
 ### State Why You're Waiting
 
 When you're parked for an expected reason (PR under review, CI running, scheduled for later), your status is automatically `waiting`. Always record the reason:

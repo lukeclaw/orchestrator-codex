@@ -35,6 +35,32 @@ orch-workers preview <worker-name>
 orch-tasks show <task-id>   # Check notes for "Waiting: ..." messages
 ```
 
+**Review your past actions on this worker.** Check if you have pending `action:` notes:
+
+```bash
+orch-memory logs --search "action: <worker-name>"
+```
+
+If you find a pending action note, compare your suggestion against what the worker actually did (visible in task notes):
+
+- Worker followed your suggestion and it worked → **Effective**. Delete the action note: `orch-memory delete-log <id>`
+- Task notes show a *different* fix or root cause than what you suggested → **Correction**. Delete the action note and record the lesson:
+  ```bash
+  orch-memory log "correction: I suggested <X> for <situation>, but actual fix was <Y>. Lesson: <Z>" \
+    --title "correction: <repo/context> — <short description>"
+  ```
+- Task re-opened after you marked it done, or worker restarted after you stopped it → **Correction**. Same as above.
+- Task notes empty or no new activity yet → **Skip**. Leave the action note for next cycle. Glance at terminal as fallback.
+- User's follow-up *extends* your suggestion (complementary, not contradictory) → **Effective**. Delete action note.
+
+**Before taking any new action**, also search for past corrections on similar situations:
+
+```bash
+orch-memory logs --search "correction: <error keyword or situation>"
+```
+
+If a relevant correction exists, factor it into your decision.
+
 ### 3. Act based on state
 
 **Act:**
@@ -91,6 +117,15 @@ orch-notifications create --type "brain_heartbeat" \
 
 Routine actions (sending "continue", skipping workers) do not need notifications.
 
+**Log significant actions** so you can review their outcomes on later heartbeats:
+
+```bash
+orch-memory log "<what you did and why — include worker name, task ID, key context>" \
+  --title "action: <worker-name> — <short description>"
+```
+
+Skip logging routine actions (sending "continue", skipping). Log investigations, fixes sent, tasks marked done, workers stopped.
+
 **Skip (no action needed):**
 
 | Condition | Reason |
@@ -139,7 +174,28 @@ When a worker has been idle 10m+ with a visible error in its terminal:
 
 **Key rule**: Never send a worker down a wrong path. Uncertainty -> notify user.
 
-### 5. Brief output
+### 5. Self-reflection
+
+If you have accumulated `correction:` logs, periodically curate them into your wisdom document:
+
+1. `orch-memory logs --search "correction:"` — check for correction patterns
+2. If you see patterns (same mistake repeated, or enough corrections to distill a useful rule), update your wisdom document:
+   ```bash
+   orch-memory wisdom-update <<'EOF'
+   (your current wisdom with the new correction pattern added/updated)
+   EOF
+   ```
+3. Delete correction logs that have been curated into wisdom.
+4. Clean up stale `action:` notes that are no longer resolvable (worker gone, task done long ago).
+5. If you curated new patterns, notify the user:
+   ```bash
+   orch-notifications create --type "brain_heartbeat" \
+     --message "Brain learned from recent corrections: <brief summary>"
+   ```
+
+Skip this step if there are no correction logs or nothing worth curating yet.
+
+### 6. Brief output
 
 After processing all workers, log what you did -- one line per worker:
 
