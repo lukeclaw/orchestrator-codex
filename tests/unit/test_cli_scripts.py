@@ -766,3 +766,17 @@ class TestWorkerHooksOverwrite:
 
             assert "new-session" in content
             assert "old-session" not in content, "Old session ID should be overwritten"
+
+
+@pytest.mark.allow_subprocess
+class TestHookCommandGating:
+    """Run the shell-based command gating test suite via pytest."""
+
+    @pytest.mark.timeout(30)
+    def test_check_command_gating(self):
+        """Execute test_hook_command_gating.sh and verify all checks pass."""
+        test_script = os.path.join(os.path.dirname(__file__), "test_hook_command_gating.sh")
+        result = subprocess.run(["bash", test_script], capture_output=True, text=True, timeout=30)
+        assert result.returncode == 0, (
+            f"Hook command gating tests failed:\n{result.stdout}\n{result.stderr}"
+        )

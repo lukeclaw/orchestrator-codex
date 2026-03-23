@@ -137,6 +137,26 @@ assert_allowed 'kubectl apply -f deploy.yaml -n staging'       "kubectl apply to
 assert_allowed 'kubectl delete pod my-pod -n dev'              "kubectl delete in dev"
 echo ""
 
+# --- PR creation without --draft ---
+echo "-- PR creation without --draft --"
+assert_asks 'gh pr create --title "My PR" --body "description"'       "gh pr create without --draft"
+assert_asks 'gh pr create --title "fix" --body "body" --base main'    "gh pr create with other flags but no --draft"
+assert_asks 'gh pr create'                                             "bare gh pr create"
+assert_asks 'gh pr create --title "test" --body "$(cat <<EOF
+multi-line body
+EOF
+)"'                                                                    "gh pr create with heredoc body, no --draft"
+assert_asks 'cd /tmp && gh pr create --title "test"'                   "gh pr create after cd, no --draft"
+
+assert_allowed 'gh pr create --draft --title "My PR" --body "desc"'   "gh pr create --draft (before title)"
+assert_allowed 'gh pr create --title "My PR" --draft --body "desc"'   "gh pr create --draft (mid-flags)"
+assert_allowed 'gh pr create --title "My PR" --body "desc" --draft'   "gh pr create --draft (at end)"
+assert_allowed 'gh pr view'                                            "gh pr view (not create)"
+assert_allowed 'gh pr list'                                            "gh pr list (not create)"
+assert_allowed 'gh pr merge --squash'                                  "gh pr merge (not create)"
+assert_asks 'echo "gh pr create"'                                      "gh pr create in echo (conservative — blocks keyword in any context)"
+echo ""
+
 # --- Non-Bash tools should pass through ---
 echo "-- Non-Bash tools --"
 NON_BASH_PAYLOAD='{"hook_event_name": "PreToolUse", "tool_name": "Write", "tool_input": {"file_path": "/etc/passwd", "content": "hacked"}}'

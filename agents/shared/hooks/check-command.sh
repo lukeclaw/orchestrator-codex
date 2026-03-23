@@ -14,6 +14,7 @@
 #   5. Fork bombs
 #   6. chmod 777 on system paths
 #   7. kubectl delete/apply targeting production namespace
+#   8. PR creation (gh pr create) without --draft flag
 
 INPUT=$(cat)
 
@@ -65,6 +66,13 @@ fi
 if [ -z "$REASON" ] && echo "$CMD" | grep -qE '\bkubectl\s+(delete|apply)\b'; then
     if echo "$CMD" | grep -qiE '(-n\s+prod|--namespace[= ]prod)\b'; then
         REASON="kubectl destructive operation targeting production namespace"
+    fi
+fi
+
+# 8. PR creation without --draft flag
+if [ -z "$REASON" ] && echo "$CMD" | grep -qE '\bgh\s+pr\s+create\b'; then
+    if ! echo "$CMD" | grep -qE '\-\-draft\b'; then
+        REASON="PR creation must use --draft flag (gh pr create --draft)"
     fi
 fi
 
