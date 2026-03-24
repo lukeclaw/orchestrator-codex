@@ -77,6 +77,7 @@ class RemoteWorkerServer:
         self._cmd_sock: socket.socket | None = None
         self._cmd_buffer = bytearray()
         self._lock = threading.Lock()
+        self._lifecycle_lock = threading.Lock()  # protects tunnel + stop operations
 
     def start(self, timeout: float = 30.0) -> None:
         """Deploy daemon via SSH, establish forward tunnel, verify with ping."""
@@ -634,27 +635,28 @@ class RemoteWorkerServer:
         Kills old tunnel process and starts a new one, then reconnects
         the command socket.
         """
-        # Kill old tunnel
-        if self._tunnel_proc is not None:
-            try:
-                self._tunnel_proc.kill()
-                self._tunnel_proc.wait(timeout=5)
-            except Exception:
-                pass
-            self._tunnel_proc = None
+        with self._lifecycle_lock:
+            # Kill old tunnel
+            if self._tunnel_proc is not None:
+                try:
+                    self._tunnel_proc.kill()
+                    self._tunnel_proc.wait(timeout=5)
+                except Exception:
+                    pass
+                self._tunnel_proc = None
 
-        # Close old command socket
-        if self._cmd_sock is not None:
-            try:
-                self._cmd_sock.close()
-            except OSError:
-                pass
-            self._cmd_sock = None
-            self._cmd_buffer = bytearray()
+            # Close old command socket
+            if self._cmd_sock is not None:
+                try:
+                    self._cmd_sock.close()
+                except OSError:
+                    pass
+                self._cmd_sock = None
+                self._cmd_buffer = bytearray()
 
-        # Start new tunnel and reconnect
-        self._start_tunnel()
-        self._connect_command_socket()
+            # Start new tunnel and reconnect
+            self._start_tunnel()
+            self._connect_command_socket()
 
     def kill_remote_daemon(self) -> None:
         """Kill the daemon process on the remote host via SSH (final resort)."""
@@ -681,20 +683,21 @@ class RemoteWorkerServer:
 
     def stop(self) -> None:
         """Close connections and kill tunnel. Does NOT kill the daemon."""
-        if self._cmd_sock is not None:
-            try:
-                self._cmd_sock.close()
-            except OSError:
-                pass
-            self._cmd_sock = None
+        with self._lifecycle_lock:
+            if self._cmd_sock is not None:
+                try:
+                    self._cmd_sock.close()
+                except OSError:
+                    pass
+                self._cmd_sock = None
 
-        if self._tunnel_proc is not None:
-            try:
-                self._tunnel_proc.kill()
-                self._tunnel_proc.wait(timeout=5)
-            except Exception:
-                pass
-            self._tunnel_proc = None
+            if self._tunnel_proc is not None:
+                try:
+                    self._tunnel_proc.kill()
+                    self._tunnel_proc.wait(timeout=5)
+                except Exception:
+                    pass
+                self._tunnel_proc = None
 
-        self._local_port = None
+            self._local_port = None
         logger.info("Remote worker server client stopped for %s", self.host)

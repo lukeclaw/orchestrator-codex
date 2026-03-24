@@ -841,6 +841,64 @@ class TestStreamRemotePtyNotFound:
 
         assert ws.closed
 
+    async def test_timeout_error_closes_with_4004(self):
+        """TimeoutError from connect_pty_stream should be caught and close with 4004."""
+        from orchestrator.api.ws_terminal import terminal_websocket
+
+        ws = FakeWebSocket()
+        mock_rws = MagicMock()
+        mock_rws.connect_pty_stream.side_effect = TimeoutError("connect timed out")
+
+        with (
+            patch("orchestrator.api.ws_terminal._get_conn") as mock_get_conn,
+            patch(
+                "orchestrator.terminal.remote_worker_server.get_remote_worker_server",
+                return_value=mock_rws,
+            ),
+            patch("orchestrator.terminal.ssh.is_remote_host", return_value=True),
+            patch("orchestrator.state.repositories.sessions.update_session"),
+        ):
+            db_conn = MagicMock()
+            db_conn.execute.return_value.fetchone.return_value = _make_remote_db_row()
+            mock_get_conn.return_value = db_conn
+            ws.app.state.conn_factory = None
+            ws.app.state.conn = db_conn
+
+            await terminal_websocket(ws, "sess-1")
+
+        assert any(m.get("type") == "error" for m in ws.sent_json)
+        assert ws.closed
+        assert ws.close_code == 4004
+
+    async def test_oserror_closes_with_4004(self):
+        """OSError from connect_pty_stream should be caught and close with 4004."""
+        from orchestrator.api.ws_terminal import terminal_websocket
+
+        ws = FakeWebSocket()
+        mock_rws = MagicMock()
+        mock_rws.connect_pty_stream.side_effect = OSError("Connection refused")
+
+        with (
+            patch("orchestrator.api.ws_terminal._get_conn") as mock_get_conn,
+            patch(
+                "orchestrator.terminal.remote_worker_server.get_remote_worker_server",
+                return_value=mock_rws,
+            ),
+            patch("orchestrator.terminal.ssh.is_remote_host", return_value=True),
+            patch("orchestrator.state.repositories.sessions.update_session"),
+        ):
+            db_conn = MagicMock()
+            db_conn.execute.return_value.fetchone.return_value = _make_remote_db_row()
+            mock_get_conn.return_value = db_conn
+            ws.app.state.conn_factory = None
+            ws.app.state.conn = db_conn
+
+            await terminal_websocket(ws, "sess-1")
+
+        assert any(m.get("type") == "error" for m in ws.sent_json)
+        assert ws.closed
+        assert ws.close_code == 4004
+
 
 class TestStreamRemotePtyCleanup:
     """Verify stream cleanup only sends pty_exit when PTY is confirmed dead."""

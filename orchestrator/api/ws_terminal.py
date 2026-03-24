@@ -737,8 +737,11 @@ async def stream_remote_pty(
         return False
 
     try:
-        stream_sock, initial_data = rws.connect_pty_stream(pty_id, skip_ringbuffer=True)
-    except RuntimeError as e:
+        loop = asyncio.get_running_loop()
+        stream_sock, initial_data = await loop.run_in_executor(
+            None, lambda: rws.connect_pty_stream(pty_id, skip_ringbuffer=True)
+        )
+    except (RuntimeError, OSError, TimeoutError) as e:
         err_msg = str(e)
         pty_gone = "PTY not found" in err_msg
         if pty_gone:

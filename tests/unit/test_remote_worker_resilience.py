@@ -922,3 +922,122 @@ class TestEscalationDiagnostics:
                 f"Expected 'unreachable' warning, got: "
                 f"{[str(c) for c in mock_logger.warning.call_args_list]}"
             )
+
+
+# ===========================================================================
+# Lifecycle Lock Thread Safety
+# ===========================================================================
+
+
+@pytest.mark.allow_threading
+class TestLifecycleLock:
+    """Verify _lifecycle_lock prevents stop()/reconnect_tunnel() races."""
+
+    def test_concurrent_stop_during_reconnect_no_attribute_error(self):
+        """Concurrent stop() during reconnect_tunnel() must not cause AttributeError."""
+        from orchestrator.terminal.remote_worker_server import RemoteWorkerServer
+
+        server = RemoteWorkerServer.__new__(RemoteWorkerServer)
+        server.host = "test-host"
+        server._local_port = 12345
+        server._remote_pid = 1234
+        server._tunnel_proc = MagicMock()
+        server._tunnel_proc.poll.return_value = None
+        server._tunnel_proc.kill = MagicMock()
+        server._tunnel_proc.wait = MagicMock()
+        server._cmd_sock = MagicMock()
+        server._cmd_buffer = bytearray()
+        server._lock = threading.Lock()
+        server._lifecycle_lock = threading.Lock()
+
+        errors: list[Exception] = []
+
+        def slow_start_tunnel():
+            """Simulate _start_tunnel with a sleep to widen the race window."""
+            time.sleep(0.1)
+            server._tunnel_proc = MagicMock()
+            server._tunnel_proc.poll.return_value = None
+            server._local_port = 54321
+
+        def fake_connect(timeout=10.0):
+            server._cmd_sock = MagicMock()
+
+        server._start_tunnel = slow_start_tunnel
+        server._connect_command_socket = fake_connect
+
+        def do_reconnect():
+            try:
+                server.reconnect_tunnel()
+            except Exception as e:
+                errors.append(e)
+
+        def do_stop():
+            time.sleep(0.05)  # race into the middle of reconnect
+            try:
+                server.stop()
+            except Exception as e:
+                errors.append(e)
+
+        t1 = threading.Thread(target=do_reconnect)
+        t2 = threading.Thread(target=do_stop)
+        t1.start()
+        t2.start()
+        t1.join(timeout=10)
+        t2.join(timeout=10)
+
+        attr_errors = [e for e in errors if isinstance(e, AttributeError)]
+        assert not attr_errors, f"Got AttributeError: {attr_errors}"
+
+    def test_stop_waits_for_reconnect_to_finish(self):
+        """stop() should block until reconnect_tunnel() completes, not race."""
+        from orchestrator.terminal.remote_worker_server import RemoteWorkerServer
+
+        server = RemoteWorkerServer.__new__(RemoteWorkerServer)
+        server.host = "test-host"
+        server._local_port = 12345
+        server._remote_pid = 1234
+        server._tunnel_proc = MagicMock()
+        server._tunnel_proc.poll.return_value = None
+        server._tunnel_proc.kill = MagicMock()
+        server._tunnel_proc.wait = MagicMock()
+        server._cmd_sock = MagicMock()
+        server._cmd_buffer = bytearray()
+        server._lock = threading.Lock()
+        server._lifecycle_lock = threading.Lock()
+
+        events: list[str] = []
+
+        def slow_start_tunnel():
+            events.append("tunnel_start")
+            time.sleep(0.1)
+            server._tunnel_proc = MagicMock()
+            server._local_port = 54321
+            events.append("tunnel_done")
+
+        def fake_connect(timeout=10.0):
+            server._cmd_sock = MagicMock()
+
+        server._start_tunnel = slow_start_tunnel
+        server._connect_command_socket = fake_connect
+
+        def do_reconnect():
+            server.reconnect_tunnel()
+
+        def do_stop():
+            time.sleep(0.02)  # start shortly after reconnect
+            server.stop()
+            events.append("stop_done")
+
+        t1 = threading.Thread(target=do_reconnect)
+        t2 = threading.Thread(target=do_stop)
+        t1.start()
+        t2.start()
+        t1.join(timeout=10)
+        t2.join(timeout=10)
+
+        # stop_done must come after tunnel_done (lock serializes them)
+        assert "tunnel_done" in events
+        assert "stop_done" in events
+        tunnel_idx = events.index("tunnel_done")
+        stop_idx = events.index("stop_done")
+        assert stop_idx > tunnel_idx, f"stop() should wait for reconnect: {events}"
