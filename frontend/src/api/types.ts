@@ -53,6 +53,7 @@ export interface Project {
   description: string | null
   status: string
   target_date: string | null
+  starred: boolean
   created_at: string
   updated_at?: string
   stats?: ProjectStats

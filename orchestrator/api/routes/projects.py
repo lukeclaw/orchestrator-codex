@@ -75,6 +75,7 @@ class ProjectUpdate(BaseModel):
     status: str | None = None
     target_date: str | None = None
     task_prefix: str | None = None
+    starred: bool | None = None
 
 
 @router.get("/projects")
@@ -88,6 +89,7 @@ def list_projects(status: str | None = None, include_stats: bool = True, db=Depe
             "description": p.description,
             "status": p.status,
             "target_date": p.target_date,
+            "starred": p.starred,
             "created_at": p.created_at,
         }
         if include_stats:
@@ -107,6 +109,7 @@ def get_project(project_id: str, db=Depends(get_db)):
         "description": p.description,
         "status": p.status,
         "target_date": p.target_date,
+        "starred": p.starred,
         "created_at": p.created_at,
     }
 
@@ -130,6 +133,7 @@ def update_project(project_id: str, body: ProjectUpdate, db=Depends(get_db)):
         status=body.status,
         target_date=body.target_date if "target_date" in body.model_fields_set else ...,
         task_prefix=body.task_prefix,
+        starred=body.starred,
     )
     return {"id": updated.id, "name": updated.name, "status": updated.status}
 

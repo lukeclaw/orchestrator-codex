@@ -65,10 +65,15 @@ export default function ProjectsPage() {
     return result
   }, [projects, statusFilter, searchQuery])
 
-  async function handleUpdate(projectId: string, data: { name?: string; description?: string; status?: string; target_date?: string }) {
+  async function handleUpdate(projectId: string, data: { name?: string; description?: string; status?: string; target_date?: string; starred?: boolean }) {
     await api(`/api/projects/${projectId}`, { method: 'PATCH', body: JSON.stringify(data) })
     refreshProjects()
     refreshApp()
+  }
+
+  async function handleToggleStar(projectId: string, starred: boolean) {
+    await api(`/api/projects/${projectId}`, { method: 'PATCH', body: JSON.stringify({ starred }) })
+    refreshProjects()
   }
 
   async function handleDelete(projectId: string) {
@@ -208,7 +213,7 @@ export default function ProjectsPage() {
       ) : (
         <div className="projects-grid">
           {filtered.map(p => (
-            <ProjectCard key={p.id} project={p} onEdit={setEditingProject} />
+            <ProjectCard key={p.id} project={p} onEdit={setEditingProject} onToggleStar={handleToggleStar} />
           ))}
         </div>
       )}

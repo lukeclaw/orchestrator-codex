@@ -16,10 +16,11 @@ def get_project(conn: sqlite3.Connection, id: str) -> Project | None:
 def list_projects(conn: sqlite3.Connection, status: str | None = None) -> list[Project]:
     if status:
         rows = conn.execute(
-            "SELECT * FROM projects WHERE status = ? ORDER BY name", (status,)
+            "SELECT * FROM projects WHERE status = ? ORDER BY starred DESC, name",
+            (status,),
         ).fetchall()
     else:
-        rows = conn.execute("SELECT * FROM projects ORDER BY name").fetchall()
+        rows = conn.execute("SELECT * FROM projects ORDER BY starred DESC, name").fetchall()
     return [Project(**dict(r)) for r in rows]
 
 
@@ -51,6 +52,7 @@ def update_project(
     status: str | None = None,
     target_date: str | None = ...,
     task_prefix: str | None = None,
+    starred: bool | None = None,
 ) -> Project | None:
     sets = []
     params = []
@@ -69,6 +71,9 @@ def update_project(
     if task_prefix is not None:
         sets.append("task_prefix = ?")
         params.append(task_prefix)
+    if starred is not None:
+        sets.append("starred = ?")
+        params.append(starred)
     if not sets:
         return get_project(conn, id)
     sets.append("updated_at = CURRENT_TIMESTAMP")

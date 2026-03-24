@@ -44,6 +44,7 @@ class Project:
     status: str = "active"
     target_date: str | None = None
     task_prefix: str | None = None  # e.g., "UTI" for human-readable task keys
+    starred: bool = False
     created_at: str = ""
     updated_at: str = ""
 

@@ -58,14 +58,28 @@
 .pc-status-pill.completed { background: rgba(var(--accent-rgb), 0.12); color: var(--accent); }
 .pc-status-pill.paused    { background: rgba(var(--yellow-rgb), 0.15); color: var(--yellow); }
 
-.pc-target-date {
+/* ── Star button ── */
+.pc-star-btn {
+  all: unset;
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  font-size: 11px;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: var(--radius-sm);
   color: var(--text-muted);
-  white-space: nowrap;
+  cursor: pointer;
   flex-shrink: 0;
+  transition: color 0.15s, background 0.15s;
+}
+
+.pc-star-btn:hover {
+  color: var(--yellow);
+  background: rgba(var(--yellow-rgb), 0.1);
+}
+
+.pc-star-btn.starred {
+  color: var(--yellow);
 }
 
 /* ── Description ── */
