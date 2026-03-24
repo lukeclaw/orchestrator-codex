@@ -1,5 +1,8 @@
 """Context items CRUD API."""
 
+import re
+import sqlite3
+
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
@@ -7,6 +10,8 @@ from orchestrator.api.deps import get_db
 from orchestrator.state.repositories import context as repo
 
 router = APIRouter()
+
+_UUID_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
 
 
 class ContextCreate(BaseModel):
@@ -31,7 +36,37 @@ class ContextUpdate(BaseModel):
     metadata: str | None = None
 
 
-def _serialize(c, include_content: bool = True):
+def _resolve_worker_uuid(source: str | None, db: sqlite3.Connection) -> str | None:
+    """Resolve 'worker:<uuid>' to 'worker:<name>' for DB storage."""
+    if not source or not source.startswith("worker:"):
+        return source
+    ref = source[len("worker:") :]
+    if not _UUID_RE.match(ref):
+        return source  # already a name
+    row = db.execute("SELECT name FROM sessions WHERE id = ?", (ref,)).fetchone()
+    if row:
+        return f"worker:{row['name']}"
+    return source
+
+
+def _display_source(source: str | None, db: sqlite3.Connection) -> str | None:
+    """Convert stored source to a display-friendly string.
+
+    'worker:<uuid>' → 'worker:<name>' (resolved from sessions table),
+    everything else passes through unchanged.
+    """
+    if not source or not source.startswith("worker:"):
+        return source
+    ref = source[len("worker:") :]
+    if not _UUID_RE.match(ref):
+        return source  # already worker:<name>
+    row = db.execute("SELECT name FROM sessions WHERE id = ?", (ref,)).fetchone()
+    if row:
+        return f"worker:{row['name']}"
+    return source  # deleted session, show raw value
+
+
+def _serialize(c, db: sqlite3.Connection, include_content: bool = True):
     """Serialize context item. Set include_content=False for list views."""
     result = {
         "id": c.id,
@@ -40,7 +75,7 @@ def _serialize(c, include_content: bool = True):
         "title": c.title,
         "description": c.description,
         "category": c.category,
-        "source": c.source,
+        "source": _display_source(c.source, db),
         "metadata": c.metadata,
         "created_at": c.created_at,
         "updated_at": c.updated_at,
@@ -65,7 +100,7 @@ def list_context(
     items = repo.list_context(
         db, scope=scope, project_id=project_id, category=category, search=search
     )
-    return [_serialize(c, include_content=include_content) for c in items]
+    return [_serialize(c, db, include_content=include_content) for c in items]
 
 
 @router.get("/context/{item_id}")
@@ -73,11 +108,14 @@ def get_context_item(item_id: str, db=Depends(get_db)):
     c = repo.get_context_item(db, item_id)
     if c is None:
         raise HTTPException(404, "Context item not found")
-    return _serialize(c)
+    return _serialize(c, db)
 
 
 @router.post("/context", status_code=201)
 def create_context_item(body: ContextCreate, db=Depends(get_db)):
+    # Resolve worker:<uuid> to worker:<name> at creation time so the name
+    # persists even after the worker session is deleted.
+    source = _resolve_worker_uuid(body.source, db)
     c = repo.create_context_item(
         db,
         title=body.title,
@@ -86,10 +124,10 @@ def create_context_item(body: ContextCreate, db=Depends(get_db)):
         scope=body.scope,
         project_id=body.project_id,
         category=body.category,
-        source=body.source,
+        source=source,
         metadata=body.metadata,
     )
-    return _serialize(c)
+    return _serialize(c, db)
 
 
 @router.patch("/context/{item_id}")
@@ -114,7 +152,7 @@ def update_context_item(item_id: str, body: ContextUpdate, db=Depends(get_db)):
             kwargs[field] = data[field]
 
     updated = repo.update_context_item(db, item_id, **kwargs)
-    return _serialize(updated)
+    return _serialize(updated, db)
 
 
 @router.delete("/context/{item_id}")

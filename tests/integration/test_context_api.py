@@ -167,6 +167,59 @@ class TestContextAPI:
         assert resp.status_code == 201
         assert resp.json()["category"] == "reference"
 
+    def test_worker_source_resolved_to_name(self, client):
+        """worker:<uuid> source is resolved to worker:<name> at creation time."""
+        # Create a session to act as a worker
+        session = client.post(
+            "/api/sessions",
+            json={"name": "my-worker", "host": "localhost"},
+        )
+        session_id = session.json()["id"]
+
+        resp = client.post(
+            "/api/context",
+            json={
+                "title": "Worker note",
+                "content": "body",
+                "source": f"worker:{session_id}",
+            },
+        )
+        assert resp.status_code == 201
+        assert resp.json()["source"] == "worker:my-worker"
+
+    def test_worker_source_name_preserved_after_deletion(self, client):
+        """Once stored as worker:<name>, it survives worker deletion."""
+        session = client.post(
+            "/api/sessions",
+            json={"name": "temp-worker", "host": "localhost"},
+        )
+        session_id = session.json()["id"]
+
+        create = client.post(
+            "/api/context",
+            json={
+                "title": "Note",
+                "content": "body",
+                "source": f"worker:{session_id}",
+            },
+        )
+        item_id = create.json()["id"]
+
+        # Delete the worker session
+        client.delete(f"/api/sessions/{session_id}")
+
+        # Source should still show the name, not the UUID
+        resp = client.get(f"/api/context/{item_id}")
+        assert resp.json()["source"] == "worker:temp-worker"
+
+    def test_user_source_unchanged(self, client):
+        """Non-worker sources pass through unchanged."""
+        resp = client.post(
+            "/api/context",
+            json={"title": "User note", "content": "body", "source": "user"},
+        )
+        assert resp.json()["source"] == "user"
+
     def test_filter_by_category(self, client):
         client.post(
             "/api/context",

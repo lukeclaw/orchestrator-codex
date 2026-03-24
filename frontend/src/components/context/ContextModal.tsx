@@ -446,10 +446,7 @@ export default function ContextModal({ context, projectId, projects = [], isNew,
           )}
           {context && (
             <div className="cm-meta">
-              <span>{parseDate(context.created_at).toLocaleDateString()}</span>
-              {context.updated_at && (
-                <span>· {parseDate(context.updated_at).toLocaleDateString()}</span>
-              )}
+              <span>{parseDate(context.updated_at || context.created_at).toLocaleDateString()}</span>
               {context.source && <span>· {context.source}</span>}
             </div>
           )}
