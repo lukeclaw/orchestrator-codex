@@ -26,7 +26,7 @@ If zero non-idle workers with tasks, output "All clear." and stop.
 
 Process workers in this order:
 1. **`blocked` workers first** — these need immediate help
-2. **`waiting` workers** — check if PR merged, nudge if idle too long
+2. **`waiting` workers** — nudge if idle too long on PR review
 3. **`working` workers** — skip unless error visible in terminal
 
 For each worker, read terminal and task:
@@ -34,6 +34,8 @@ For each worker, read terminal and task:
 orch-workers preview <worker-name>
 orch-tasks show <task-id>   # Check notes for "Waiting: ..." messages
 ```
+
+**Classify PR-wait status**: Check if the task has PR links (`links` field with tag "PR"). If yes AND worker status is `waiting`, this is a **PR review wait** — use `last_status_changed_at` from worker data for wait duration. Do NOT treat as a generic idle worker.
 
 **Review your past actions on this worker.** Check if you have pending `action:` notes:
 
@@ -68,15 +70,18 @@ If a relevant correction exists, factor it into your decision.
 | Condition | Action |
 |-----------|--------|
 | **Status: `blocked`** | **Priority** — investigate immediately (see "Investigating stuck workers" below). The worker explicitly asked for help. |
-| At Claude `>` prompt, idle 5m+ | `orch-send <id> "continue"` -- but FIRST check if the last user message in the terminal is already "continue". If so, **skip** (don't spam). |
+| **PR review wait, >2h** | `orch-send <id> "Use /pr-workflow to check PR status, address comments if any, merge if approved"` |
+| **PR review wait, <2h** | Skip — reviews take time |
+| At Claude `>` prompt, idle 5m+ (not PR-wait) | `orch-send <id> "continue"` -- but FIRST check if the last user message in the terminal is already "continue". If so, **skip** (don't spam). |
 | Context exhaustion (0%) | `orch-send <id> "continue"` (triggers auto-compact) |
-| PR review wait >3h | `orch-send <id> "Use /pr-workflow to check PR status, address comments if any, merge if approved"` |
 | Stuck with visible error (idle 10m+) | Investigate, and also set status to blocked: `orch-workers update <id> --status blocked` |
 | At interactive prompt (y/n, menu) | Attempt to answer if obvious, otherwise notify |
 | Worker claims task complete | Run verification checklist (see below). If all pass: mark done + stop. If concern: notify user. |
 | PR open, missing evidence | Nudge worker to add evidence to PR description (see evidence nudge below) |
 | Worker idle >2h, no visible progress | Notify: "Worker X may be stuck, needs human review" |
 | Blocked on auth/access/human decision | Notify with details of what's needed |
+
+**Resolving PR info**: Get the PR URL from task links (`orch-tasks show <task-id>` → `links` field with tag "PR") or from the worker's terminal output. Parse the URL: `github.com/ORG/REPO/pull/N` → `--repo ORG/REPO N`. Never guess the org name — multiproduct names are not GitHub org names.
 
 **Verification checklist** (before marking done):
 
@@ -87,10 +92,23 @@ If a relevant correction exists, factor it into your decision.
 5. `orch-tasks show <task-id>` — look for "## Verification" section in notes
 6. If all pass → mark done + stop + notify. If any concern → notify user with specifics, don't auto-mark done.
 
+If the PR is not merged, don't mark done — check the `orch-prs` action field:
+- `ci_failing` / `changes_requested` / `merge_conflicts` → send worker: "Use /pr-workflow to fix PR issues"
+- `ready_to_merge` → send worker: "Use /pr-workflow to merge"
+- `review_pending` / `draft` → not actually complete, skip
+
+**Tasks without PRs** (docs, config, investigation): verify the deliverable exists (file committed, answer in task notes). Check for "## Verification" section. If unverifiable → notify user instead of marking done.
+
 For large/critical PRs, use `/review` (Claude Code built-in) with task context for a deeper review.
 
-**Marking done + stopping**:
+**Marking done + stopping** (always notify first):
 ```bash
+# 1. Notify with verification summary
+orch-notifications create --type "brain_heartbeat" \
+  --message "Verified task <key>: <summary>. Marking done, stopping worker." \
+  --task-id "<id>" --link "<pr-url>"
+
+# 2. Mark done + stop
 orch-tasks update <task-id> --status done
 orch-workers stop <worker-id>
 ```
@@ -132,7 +150,6 @@ Skip logging routine actions (sending "continue", skipping). Log investigations,
 |-----------|--------|
 | Actively running a command | Working -- don't interrupt |
 | Idle <5m | Just finished, give it a moment |
-| PR review <3h | Reviews take time |
 | Stated wait reason in task notes | Respecting worker's stated blocker |
 | Last message was already "continue" | Avoid spam -- worker may need different help |
 
@@ -219,3 +236,5 @@ test-worker: sent fix suggestion (ECONNREFUSED — missing DB env var) — notif
 - **Respect wait reasons** -- if a worker stated why it's waiting in task notes, don't nudge
 - **Always mention `/pr-workflow`** -- when sending any PR-related message, include `/pr-workflow` so the worker invokes the skill
 - **Act on facts only** -- if unsure, notify the user rather than guessing
+- **Never guess org/repo** -- parse PR URLs from task links: `github.com/ORG/REPO/pull/N` → `--repo ORG/REPO N`. Multiproduct names ≠ GitHub org names
+- **Special keys for interactive prompts** -- use `orch-workers type <worker-name> $'\x1b[A'` (Up) or `$'\x1b[B'` (Down) for selection menus
