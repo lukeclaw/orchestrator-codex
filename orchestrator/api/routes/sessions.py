@@ -439,6 +439,8 @@ def create_session(body: SessionCreate, request: Request, db=Depends(get_db)):
         remote_skip_permissions = bool(
             get_config_value(db, "claude.skip_permissions", default=False)
         )
+        remote_default_model = str(get_config_value(db, "claude.default_model", default="opus"))
+        remote_default_effort = str(get_config_value(db, "claude.default_effort", default="high"))
 
         def _background_setup():
             from orchestrator.state.db import get_connection
@@ -460,6 +462,8 @@ def create_session(body: SessionCreate, request: Request, db=Depends(get_db)):
                     disabled_builtin_names=remote_disabled_builtins,
                     update_before_start=remote_update_before_start,
                     skip_permissions=remote_skip_permissions,
+                    model=remote_default_model,
+                    effort=remote_default_effort,
                 )
                 if result["ok"]:
                     # Detect work_dir if not provided at creation
@@ -538,6 +542,10 @@ def create_session(body: SessionCreate, request: Request, db=Depends(get_db)):
             local_skip_permissions = bool(
                 get_config_value(db, "claude.skip_permissions", default=False)
             )
+            local_default_model = str(get_config_value(db, "claude.default_model", default="opus"))
+            local_default_effort = str(
+                get_config_value(db, "claude.default_effort", default="high")
+            )
 
             setup_local_worker(
                 db,
@@ -551,6 +559,8 @@ def create_session(body: SessionCreate, request: Request, db=Depends(get_db)):
                 disabled_builtin_names=disabled_builtins,
                 update_before_start=local_update_before_start,
                 skip_permissions=local_skip_permissions,
+                model=local_default_model,
+                effort=local_default_effort,
             )
             if body.task_id:
                 from orchestrator.state.repositories import tasks

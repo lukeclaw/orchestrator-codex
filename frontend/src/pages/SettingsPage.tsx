@@ -72,6 +72,8 @@ export default function SettingsPage() {
   const [claudeUpdateBeforeStart, setClaudeUpdateBeforeStart] = useState(false)
   const [preserveFilters, setPreserveFilters] = useState(false)
   const [skipPermissions, setSkipPermissions] = useState(false)
+  const [defaultModel, setDefaultModel] = useState('opus')
+  const [defaultEffort, setDefaultEffort] = useState('high')
   const [theme, setTheme] = useState<ThemeMode>('dark')
   const [brainHeartbeat, setBrainHeartbeat] = useState('off')
   const [heartbeatInput, setHeartbeatInput] = useState('')
@@ -84,6 +86,8 @@ export default function SettingsPage() {
       setClaudeUpdateBeforeStart(Boolean(getValue('claude.update_before_start')))
       setPreserveFilters(Boolean(getValue('ui.preserve_filters')))
       setSkipPermissions(Boolean(getValue('claude.skip_permissions')))
+      setDefaultModel(String(getValue('claude.default_model') || 'opus'))
+      setDefaultEffort(String(getValue('claude.default_effort') || 'high'))
       setTheme((getValue('ui.theme') as ThemeMode) || 'dark')
       const hb = String(getValue('brain.heartbeat') || 'off')
       setBrainHeartbeat(hb)
@@ -107,6 +111,16 @@ export default function SettingsPage() {
     const newValue = !skipPermissions
     setSkipPermissions(newValue)
     await save({ 'claude.skip_permissions': newValue })
+  }
+
+  const handleDefaultModelChange = async (value: string) => {
+    setDefaultModel(value)
+    await save({ 'claude.default_model': value })
+  }
+
+  const handleDefaultEffortChange = async (value: string) => {
+    setDefaultEffort(value)
+    await save({ 'claude.default_effort': value })
   }
 
   const handleThemeChange = async (value: string) => {
@@ -475,6 +489,42 @@ export default function SettingsPage() {
                 </span>
               </div>
             )}
+
+            <div className="settings-toggle-row">
+              <div>
+                <div className="settings-toggle-label">Default model</div>
+                <div className="settings-toggle-desc">
+                  Claude model used when launching new workers and brain
+                </div>
+              </div>
+              <SlidingTabs
+                tabs={[
+                  { value: 'opus' as const, label: 'Opus' },
+                  { value: 'sonnet' as const, label: 'Sonnet' },
+                  { value: 'haiku' as const, label: 'Haiku' },
+                ]}
+                value={defaultModel}
+                onChange={handleDefaultModelChange}
+              />
+            </div>
+
+            <div className="settings-toggle-row">
+              <div>
+                <div className="settings-toggle-label">Default effort</div>
+                <div className="settings-toggle-desc">
+                  Reasoning effort level for new workers and brain
+                </div>
+              </div>
+              <SlidingTabs
+                tabs={[
+                  { value: 'high' as const, label: 'High' },
+                  { value: 'medium' as const, label: 'Medium' },
+                  { value: 'low' as const, label: 'Low' },
+                ]}
+                value={defaultEffort}
+                onChange={handleDefaultEffortChange}
+              />
+            </div>
           </div>
         </div>
 

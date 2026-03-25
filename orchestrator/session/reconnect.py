@@ -580,6 +580,15 @@ def _ensure_local_configs_exist(
     """
     from orchestrator.agents.deploy import deploy_worker_tmp_contents
 
+    # Read model/effort from DB if available
+    model = "opus"
+    effort = "high"
+    if conn is not None:
+        from orchestrator.state.repositories.config import get_config_value
+
+        model = str(get_config_value(conn, "claude.default_model", default="opus"))
+        effort = str(get_config_value(conn, "claude.default_effort", default="high"))
+
     cdp_port = _read_cdp_port_from_lib(tmp_dir)
     deploy_worker_tmp_contents(
         tmp_dir,
@@ -588,6 +597,8 @@ def _ensure_local_configs_exist(
         cdp_port=cdp_port,
         browser_headless=False,
         conn=conn,
+        model=model,
+        effort=effort,
     )
     logger.info("Regenerated local configs at %s via SOT", tmp_dir)
 

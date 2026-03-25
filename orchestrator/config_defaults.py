@@ -10,4 +10,6 @@ SETTING_DEFAULTS: dict[str, object] = {
     "ui.preserve_filters": False,
     "ui.theme": "dark",
     "brain.heartbeat": "off",
+    "claude.default_model": "opus",
+    "claude.default_effort": "high",
 }

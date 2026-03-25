@@ -398,6 +398,8 @@ def generate_worker_hooks(
     worker_dir: str,
     session_id: str,
     api_base: str = "http://127.0.0.1:8093",
+    model: str = "opus",
+    effort: str = "high",
 ) -> str:
     """Generate Claude Code hooks settings.json for automatic status management.
 
@@ -438,7 +440,7 @@ def generate_worker_hooks(
         os.stat(safety_hook_path).st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH,
     )
 
-    # Copy settings.json template and substitute placeholders
+    # Copy settings.json template, substitute placeholders, and inject model/effort
     src_settings_path = os.path.join(_AGENTS_DIR, "worker", "settings.json")
     dst_settings_path = os.path.join(worker_dir, "settings.json")
 
@@ -448,8 +450,15 @@ def generate_worker_hooks(
     settings_content = settings_content.replace("{{HOOK_SCRIPT_PATH}}", hook_script_path)
     settings_content = settings_content.replace("{{SAFETY_HOOK_PATH}}", safety_hook_path)
 
+    # Inject user-configured model and effort
+    settings_data = json.loads(settings_content)
+    settings_data["model"] = model
+    if effort != "high":
+        settings_data["reasoningEffort"] = effort
+
     with open(dst_settings_path, "w") as f:
-        f.write(settings_content)
+        json.dump(settings_data, f, indent=2)
+        f.write("\n")
 
     return worker_dir
 
@@ -457,6 +466,8 @@ def generate_worker_hooks(
 def generate_brain_hooks(
     brain_dir: str,
     api_base: str = "http://127.0.0.1:8093",
+    model: str = "opus",
+    effort: str = "high",
 ) -> str:
     """Deploy brain hooks and settings.
 
@@ -506,7 +517,7 @@ def generate_brain_hooks(
         os.stat(session_start_hook_path).st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH,
     )
 
-    # Copy settings.json template and substitute placeholders
+    # Copy settings.json template, substitute placeholders, and inject model/effort
     claude_dir = os.path.join(brain_dir, ".claude")
     os.makedirs(claude_dir, exist_ok=True)
 
@@ -523,8 +534,15 @@ def generate_brain_hooks(
         "{{SESSION_START_HOOK_PATH}}", session_start_hook_path
     )
 
+    # Inject user-configured model and effort
+    settings_data = json.loads(settings_content)
+    settings_data["model"] = model
+    if effort != "high":
+        settings_data["reasoningEffort"] = effort
+
     with open(settings_path, "w") as f:
-        f.write(settings_content)
+        json.dump(settings_data, f, indent=2)
+        f.write("\n")
 
     return settings_path
 
@@ -672,6 +690,8 @@ def deploy_worker_tmp_contents(
     conn: sqlite3.Connection | None = None,
     custom_skills: list[dict] | None = None,
     disabled_builtin_names: set[str] | None = None,
+    model: str = "opus",
+    effort: str = "high",
 ) -> list[str]:
     """Deploy all worker files to tmp_dir. SINGLE SOURCE OF TRUTH.
 
@@ -707,7 +727,7 @@ def deploy_worker_tmp_contents(
     # 1. Hooks + settings.json
     configs_dir = os.path.join(tmp_dir, "configs")
     os.makedirs(configs_dir, exist_ok=True)
-    generate_worker_hooks(configs_dir, session_id, api_base)
+    generate_worker_hooks(configs_dir, session_id, api_base, model=model, effort=effort)
     created += [
         "configs/settings.json",
         "configs/hooks/update-status.sh",
@@ -767,6 +787,8 @@ def deploy_brain_tmp_contents(
     conn: sqlite3.Connection | None = None,
     custom_skills: list[dict] | None = None,
     disabled_builtin_names: set[str] | None = None,
+    model: str = "opus",
+    effort: str = "high",
 ) -> list[str]:
     """Deploy all brain files to brain_dir. SINGLE SOURCE OF TRUTH.
 
@@ -816,7 +838,7 @@ def deploy_brain_tmp_contents(
         created.append("CLAUDE.md")
 
     # 3. Hooks + settings
-    generate_brain_hooks(brain_dir, api_base)
+    generate_brain_hooks(brain_dir, api_base, model=model, effort=effort)
     created += [
         "hooks/inject-focus.sh",
         "hooks/check-command.sh",

@@ -476,6 +476,8 @@ def setup_remote_worker(
     disabled_builtin_names: set[str] | None = None,
     update_before_start: bool = False,
     skip_permissions: bool = False,
+    model: str = "opus",
+    effort: str = "high",
 ) -> dict:
     """Set up a full remote worker via RWS PTY (new architecture).
 
@@ -541,6 +543,8 @@ def setup_remote_worker(
             browser_headless=True,  # Remote: headless (no display)
             custom_skills=custom_skills,
             disabled_builtin_names=disabled_builtin_names,
+            model=model,
+            effort=effort,
         )
         logger.info("Deployed worker tmp contents for remote worker %s", name)
 
@@ -676,6 +680,8 @@ def setup_local_worker(
     disabled_builtin_names: set[str] | None = None,
     update_before_start: bool = False,
     skip_permissions: bool = False,
+    model: str = "opus",
+    effort: str = "high",
 ) -> dict:
     """Set up a local worker: deploy scripts, hooks, skills, prompt, launch Claude.
 
@@ -705,6 +711,8 @@ def setup_local_worker(
             browser_headless=False,  # Local: headed for Touch ID / passkeys
             custom_skills=custom_skills,
             disabled_builtin_names=disabled_builtin_names,
+            model=model,
+            effort=effort,
         )
         logger.info("Deployed worker tmp contents for local worker %s", name)
 

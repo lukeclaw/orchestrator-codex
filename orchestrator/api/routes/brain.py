@@ -102,8 +102,11 @@ def start_brain(db=Depends(get_db)):
     brain_dir = "/tmp/orchestrator/brain"
 
     from orchestrator.agents.deploy import deploy_brain_tmp_contents
+    from orchestrator.state.repositories.config import get_config_value
 
-    deploy_brain_tmp_contents(brain_dir, conn=db)
+    brain_model = str(get_config_value(db, "claude.default_model", default="opus"))
+    brain_effort = str(get_config_value(db, "claude.default_effort", default="high"))
+    deploy_brain_tmp_contents(brain_dir, conn=db, model=brain_model, effort=brain_effort)
     logger.info("Deployed brain tmp contents via SOT")
 
     bin_dir = os.path.join(brain_dir, "bin")
@@ -156,8 +159,6 @@ def start_brain(db=Depends(get_db)):
             )
 
         time.sleep(0.5)
-        from orchestrator.state.repositories.config import get_config_value
-
         cmd = f"claude --settings {settings_path}"
         if get_config_value(db, "claude.skip_permissions", default=False):
             cmd = f"claude --dangerously-skip-permissions --settings {settings_path}"
@@ -236,8 +237,11 @@ def brain_redeploy(db=Depends(get_db)):
     brain_dir = "/tmp/orchestrator/brain"
 
     from orchestrator.agents.deploy import deploy_brain_tmp_contents
+    from orchestrator.state.repositories.config import get_config_value
 
-    deploy_brain_tmp_contents(brain_dir, conn=db)
+    brain_model = str(get_config_value(db, "claude.default_model", default="opus"))
+    brain_effort = str(get_config_value(db, "claude.default_effort", default="high"))
+    deploy_brain_tmp_contents(brain_dir, conn=db, model=brain_model, effort=brain_effort)
     logger.info("Brain files re-deployed (redeploy)")
 
     from orchestrator.state.repositories.config import get_config_value

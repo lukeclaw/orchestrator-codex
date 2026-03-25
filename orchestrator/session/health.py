@@ -573,6 +573,15 @@ def ensure_tmp_dir_health(
 
     manifest = _read_manifest(tmp_dir)
 
+    # Read model/effort from DB if available, so regenerated settings match user prefs
+    model = "opus"
+    effort = "high"
+    if conn is not None:
+        from orchestrator.state.repositories.config import get_config_value
+
+        model = str(get_config_value(conn, "claude.default_model", default="opus"))
+        effort = str(get_config_value(conn, "claude.default_effort", default="high"))
+
     if manifest is None:
         # Manifest missing — whole dir was likely wiped
         logger.warning("Tmp dir manifest missing: %s — regenerating", tmp_dir)
@@ -583,6 +592,8 @@ def ensure_tmp_dir_health(
             cdp_port=cdp_port,
             browser_headless=browser_headless,
             conn=conn,
+            model=model,
+            effort=effort,
         )
         return {"healthy": False, "regenerated": True, "missing": ["<manifest>"]}
 
@@ -604,6 +615,8 @@ def ensure_tmp_dir_health(
         cdp_port=cdp_port,
         browser_headless=browser_headless,
         conn=conn,
+        model=model,
+        effort=effort,
     )
     return {"healthy": False, "regenerated": True, "missing": missing}
 
@@ -627,11 +640,22 @@ def ensure_brain_tmp_health(
     """
     from orchestrator.agents.deploy import _read_manifest, deploy_brain_tmp_contents
 
+    # Read model/effort from DB if available
+    model = "opus"
+    effort = "high"
+    if conn is not None:
+        from orchestrator.state.repositories.config import get_config_value
+
+        model = str(get_config_value(conn, "claude.default_model", default="opus"))
+        effort = str(get_config_value(conn, "claude.default_effort", default="high"))
+
     manifest = _read_manifest(brain_dir)
 
     if manifest is None:
         logger.warning("Brain tmp dir manifest missing: %s — regenerating", brain_dir)
-        deploy_brain_tmp_contents(brain_dir, api_base=api_base, conn=conn)
+        deploy_brain_tmp_contents(
+            brain_dir, api_base=api_base, conn=conn, model=model, effort=effort
+        )
         return {"healthy": False, "regenerated": True, "missing": ["<manifest>"]}
 
     missing = [p for p in manifest if not os.path.exists(os.path.join(brain_dir, p))]
@@ -644,7 +668,7 @@ def ensure_brain_tmp_health(
         len(missing),
         ", ".join(missing[:5]),
     )
-    deploy_brain_tmp_contents(brain_dir, api_base=api_base, conn=conn)
+    deploy_brain_tmp_contents(brain_dir, api_base=api_base, conn=conn, model=model, effort=effort)
     return {"healthy": False, "regenerated": True, "missing": missing}
 
 
