@@ -214,6 +214,10 @@
   padding: 4px 0;
 }
 
+.settings-toggle-row + .settings-toggle-row {
+  margin-top: 8px;
+}
+
 .settings-toggle-label {
   font-size: 14px;
   font-weight: 500;
