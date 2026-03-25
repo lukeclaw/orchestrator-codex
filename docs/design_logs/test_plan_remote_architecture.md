@@ -57,7 +57,7 @@ The architecture rewrite replaces GNU Screen + tmux send_keys with RWS (Remote W
 **How**: Open TCP connection with `{"type": "pty_stream", "pty_id": "..."}` handshake.
 **Pass**: Receives initial bytes (ringbuffer content) + continues with live stream.
 **Fail**: No initial data, or connection rejected.
-**Constraint**: Ringbuffer is 512KB (`RINGBUFFER_MAX = 524288`).
+**Constraint**: Ringbuffer is 256KB (`RINGBUFFER_MAX = 262144`).
 
 ### TC-6: PTY Destroy
 **What**: `pty_destroy` terminates the PTY and child process.

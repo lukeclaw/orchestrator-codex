@@ -12,7 +12,7 @@ import base64, tempfile, re, uuid, threading
 LISTEN_HOST = "127.0.0.1"
 LISTEN_PORT = 9741
 INACTIVITY_TIMEOUT = 3600  # 60 min
-RINGBUFFER_MAX = 524288    # 512 KB per PTY
+RINGBUFFER_MAX = 262144    # 256 KB per PTY
 
 # Set by bootstrap; used for version-aware daemon replacement
 SCRIPT_VERSION = os.environ.get("_RWS_VERSION", "unknown")
