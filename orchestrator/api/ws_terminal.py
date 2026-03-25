@@ -770,6 +770,11 @@ async def stream_remote_pty(
     # When skip_ringbuffer is honoured (new daemon), initial_data is empty
     # and we fetch raw bytes via the reliable command socket instead.
     # Old daemons ignore the flag and send the ringbuffer on the stream socket.
+    #
+    # Edge case: a NUL heartbeat (\x00) can arrive during the handshake recv
+    # and end up in initial_data as 1 byte.  This is NOT ringbuffer data —
+    # strip heartbeat NULs before checking so we take the cmd-socket path.
+    initial_data = initial_data.replace(b"\x00", b"")
     if initial_data:
         # Old daemon didn't honour skip_ringbuffer — send raw bytes (fallback)
         logger.info(
