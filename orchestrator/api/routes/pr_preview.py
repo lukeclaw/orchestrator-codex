@@ -40,22 +40,37 @@ _GH_HTTP_CACHE = "1s"  # short TTL forces ETag revalidation (304s are free)
 _GH_ENV = {**os.environ, "GH_BROWSER": "true", "BROWSER": "true"}
 
 
+_GH_RETRIES = 2  # retry up to 2 times on transient server errors
+_GH_RETRY_DELAYS = (1.0, 3.0)  # backoff delays in seconds
+
+
 async def _run_gh(*args: str, cache: str | None = None) -> dict | list:
-    """Run `gh api <args>` and return parsed JSON."""
+    """Run `gh api <args>` and return parsed JSON.
+
+    Retries up to _GH_RETRIES times on transient server errors (502/503/504)
+    with exponential backoff.
+    """
     cmd = ["gh", "api"]
     if cache:
         cmd.extend(["--cache", cache])
     cmd.extend(args)
-    proc = await asyncio.create_subprocess_exec(
-        *cmd,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
-        env=_GH_ENV,
-    )
-    stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=_GH_TIMEOUT)
-    if proc.returncode != 0:
-        err = stderr.decode().strip()
-        err_lower = err.lower()
+
+    last_err = ""
+    for attempt in range(_GH_RETRIES + 1):
+        proc = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+            env=_GH_ENV,
+        )
+        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=_GH_TIMEOUT)
+        if proc.returncode == 0:
+            return json.loads(stdout)
+
+        last_err = stderr.decode().strip()
+        err_lower = last_err.lower()
+
+        # Non-retryable errors — raise immediately
         if (
             "auth" in err_lower
             or "login" in err_lower
@@ -64,17 +79,34 @@ async def _run_gh(*args: str, cache: str | None = None) -> dict | list:
             or "saml" in err_lower
             or "sso" in err_lower
             or "bad credentials" in err_lower
-            or "401" in err
+            or "401" in last_err
         ):
             raise HTTPException(
                 401, "GitHub CLI not authenticated. Run `gh auth login` in a terminal to fix this."
             )
-        if "404" in err or "Not Found" in err:
+        if "404" in last_err or "Not Found" in last_err:
             raise HTTPException(404, "PR not found on GitHub")
         if "rate limit" in err_lower:
             raise HTTPException(429, "GitHub API rate limit exceeded")
-        raise HTTPException(502, f"gh api error: {err}")
-    return json.loads(stdout)
+
+        # Retryable: 502/503/504 or generic server errors
+        is_retryable = any(code in last_err for code in ("502", "503", "504"))
+        if is_retryable and attempt < _GH_RETRIES:
+            delay = _GH_RETRY_DELAYS[min(attempt, len(_GH_RETRY_DELAYS) - 1)]
+            logger.warning(
+                "gh api transient error (attempt %d/%d), retrying in %.1fs: %s",
+                attempt + 1,
+                _GH_RETRIES + 1,
+                delay,
+                last_err[:200],
+            )
+            await asyncio.sleep(delay)
+            continue
+
+        # Not retryable or retries exhausted
+        break
+
+    raise HTTPException(502, f"gh api error: {last_err}")
 
 
 def _parse_pr_url(url: str) -> tuple[str, str, str]:

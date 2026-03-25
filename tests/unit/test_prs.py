@@ -116,9 +116,19 @@ def _make_graphql_node(
     }
 
 
-def _wrap_graphql(*nodes):
+def _wrap_graphql(*nodes, has_next_page=False, end_cursor=None):
     """Wrap nodes in the GraphQL search response structure."""
-    return {"data": {"search": {"nodes": list(nodes)}}}
+    return {
+        "data": {
+            "search": {
+                "pageInfo": {
+                    "hasNextPage": has_next_page,
+                    "endCursor": end_cursor,
+                },
+                "nodes": list(nodes),
+            }
+        }
+    }
 
 
 SEARCH_RESPONSE = _wrap_graphql(
@@ -960,3 +970,67 @@ def test_recent_incremental_refreshes_task_links(mock_gh, client, conn):
     pr = resp.json()["prs"][0]
     assert pr["linked_task"] is not None
     assert pr["linked_task"]["id"] == "task-1"
+
+
+# --- Active tab pagination tests ---
+
+
+@patch.object(prs, "_run_gh", new_callable=AsyncMock)
+def test_active_tab_paginates(mock_gh, client):
+    """Active tab fetches multiple pages when hasNextPage is true."""
+    page1 = _wrap_graphql(
+        _make_graphql_node(number=1, title="PR 1"),
+        has_next_page=True,
+        end_cursor="cursor_1",
+    )
+    page2 = _wrap_graphql(
+        _make_graphql_node(number=2, title="PR 2"),
+        has_next_page=False,
+    )
+    mock_gh.side_effect = [page1, page2]
+
+    resp = client.get("/api/prs?tab=active")
+    assert resp.status_code == 200
+    numbers = {pr["number"] for pr in resp.json()["prs"]}
+    assert numbers == {1, 2}
+    assert mock_gh.call_count == 2
+
+    # Second call should include the cursor
+    second_call_args = mock_gh.call_args_list[1][0]
+    cursor_args = [a for a in second_call_args if a.startswith("cursor=")]
+    assert len(cursor_args) == 1
+    assert cursor_args[0] == "cursor=cursor_1"
+
+
+@patch.object(prs, "_run_gh", new_callable=AsyncMock)
+def test_active_tab_stops_at_max_pages(mock_gh, client):
+    """Active tab stops paginating after _MAX_ACTIVE_PAGES."""
+    # All pages say hasNextPage=True, but we should stop at max
+    pages = []
+    for i in range(prs._MAX_ACTIVE_PAGES):
+        pages.append(
+            _wrap_graphql(
+                _make_graphql_node(number=i + 1),
+                has_next_page=True,
+                end_cursor=f"cursor_{i + 1}",
+            )
+        )
+    mock_gh.side_effect = pages
+
+    resp = client.get("/api/prs?tab=active")
+    assert resp.status_code == 200
+    assert mock_gh.call_count == prs._MAX_ACTIVE_PAGES
+    assert len(resp.json()["prs"]) == prs._MAX_ACTIVE_PAGES
+
+
+@patch.object(prs, "_run_gh", new_callable=AsyncMock)
+def test_active_single_page_no_extra_calls(mock_gh, client):
+    """Active tab with hasNextPage=false makes only one call."""
+    mock_gh.return_value = _wrap_graphql(
+        _make_graphql_node(number=1),
+        has_next_page=False,
+    )
+
+    resp = client.get("/api/prs?tab=active")
+    assert resp.status_code == 200
+    assert mock_gh.call_count == 1

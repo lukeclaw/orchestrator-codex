@@ -26,8 +26,12 @@ _SEARCH_CACHE_TTL_RECENT = 1200.0  # 20 minutes — matches frontend polling int
 
 # Single GraphQL query fetches the PR list AND status details in one API call.
 _GRAPHQL_QUERY = """\
-query($q: String!) {
-  search(query: $q, type: ISSUE, first: 100) {
+query($q: String!, $cursor: String) {
+  search(query: $q, type: ISSUE, first: 40, after: $cursor) {
+    pageInfo {
+      hasNextPage
+      endCursor
+    }
     nodes {
       ... on PullRequest {
         url
@@ -107,6 +111,7 @@ query($q: String!, $cursor: String) {
   }
 }"""
 
+_MAX_ACTIVE_PAGES = 5  # Up to 200 active PRs (40 per page)
 _MAX_RECENT_PAGES = 5  # Up to 500 recent PRs
 
 
@@ -342,7 +347,7 @@ async def search_prs(
     try:
         all_nodes: list[dict] = []
         cursor: str | None = None
-        max_pages = _MAX_RECENT_PAGES if tab == "recent" else 1
+        max_pages = _MAX_RECENT_PAGES if tab == "recent" else _MAX_ACTIVE_PAGES
 
         for _ in range(max_pages):
             args = ["graphql", "-f", f"query={gql}", "-f", f"q={search_q}"]

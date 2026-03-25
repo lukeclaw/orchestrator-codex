@@ -787,3 +787,116 @@ class TestGhBrowserSuppression:
         env = kwargs.get("env", {})
         assert env.get("GH_BROWSER") == "true"
         assert env.get("BROWSER") == "true"
+
+
+class TestRunGhRetry:
+    """Tests for _run_gh retry logic on transient server errors."""
+
+    @pytest.mark.asyncio
+    async def test_retries_on_502_then_succeeds(self):
+        """_run_gh retries on 502 and returns result on success."""
+        fail_proc = AsyncMock()
+        fail_proc.communicate.return_value = (b"", b"gh: HTTP 502")
+        fail_proc.returncode = 1
+
+        ok_proc = AsyncMock()
+        ok_proc.communicate.return_value = (b'{"ok": true}', b"")
+        ok_proc.returncode = 0
+
+        with (
+            patch("asyncio.create_subprocess_exec", side_effect=[fail_proc, ok_proc]),
+            patch("asyncio.sleep", new_callable=AsyncMock) as mock_sleep,
+        ):
+            result = await pr_preview._run_gh("graphql", "-f", "query=test")
+
+        assert result == {"ok": True}
+        assert mock_sleep.call_count == 1
+        assert mock_sleep.call_args[0][0] == pr_preview._GH_RETRY_DELAYS[0]
+
+    @pytest.mark.asyncio
+    async def test_retries_exhausted_raises_502(self):
+        """_run_gh raises 502 after all retries are exhausted."""
+        fail_proc = AsyncMock()
+        fail_proc.communicate.return_value = (b"", b"gh: HTTP 502")
+        fail_proc.returncode = 1
+
+        with (
+            patch(
+                "asyncio.create_subprocess_exec",
+                return_value=fail_proc,
+            ),
+            patch("asyncio.sleep", new_callable=AsyncMock),
+        ):
+            with pytest.raises(pr_preview.HTTPException) as exc_info:
+                await pr_preview._run_gh("graphql", "-f", "query=test")
+        assert exc_info.value.status_code == 502
+
+    @pytest.mark.asyncio
+    async def test_no_retry_on_404(self):
+        """_run_gh does not retry on 404 errors."""
+        fail_proc = AsyncMock()
+        fail_proc.communicate.return_value = (b"", b"404 Not Found")
+        fail_proc.returncode = 1
+
+        with (
+            patch("asyncio.create_subprocess_exec", return_value=fail_proc),
+            patch("asyncio.sleep", new_callable=AsyncMock) as mock_sleep,
+        ):
+            with pytest.raises(pr_preview.HTTPException) as exc_info:
+                await pr_preview._run_gh("graphql", "-f", "query=test")
+
+        assert exc_info.value.status_code == 404
+        mock_sleep.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_no_retry_on_auth_error(self):
+        """_run_gh does not retry on auth errors."""
+        fail_proc = AsyncMock()
+        fail_proc.communicate.return_value = (b"", b"Bad credentials (HTTP 401)")
+        fail_proc.returncode = 1
+
+        with (
+            patch("asyncio.create_subprocess_exec", return_value=fail_proc),
+            patch("asyncio.sleep", new_callable=AsyncMock) as mock_sleep,
+        ):
+            with pytest.raises(pr_preview.HTTPException) as exc_info:
+                await pr_preview._run_gh("graphql", "-f", "query=test")
+
+        assert exc_info.value.status_code == 401
+        mock_sleep.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_no_retry_on_non_5xx_error(self):
+        """_run_gh does not retry on non-5xx gh errors."""
+        fail_proc = AsyncMock()
+        fail_proc.communicate.return_value = (b"", b"some unknown error")
+        fail_proc.returncode = 1
+
+        with (
+            patch("asyncio.create_subprocess_exec", return_value=fail_proc),
+            patch("asyncio.sleep", new_callable=AsyncMock) as mock_sleep,
+        ):
+            with pytest.raises(pr_preview.HTTPException) as exc_info:
+                await pr_preview._run_gh("graphql", "-f", "query=test")
+
+        assert exc_info.value.status_code == 502
+        mock_sleep.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_retries_on_503(self):
+        """_run_gh retries on 503 errors too."""
+        fail_proc = AsyncMock()
+        fail_proc.communicate.return_value = (b"", b"gh: HTTP 503 Service Unavailable")
+        fail_proc.returncode = 1
+
+        ok_proc = AsyncMock()
+        ok_proc.communicate.return_value = (b'{"ok": true}', b"")
+        ok_proc.returncode = 0
+
+        with (
+            patch("asyncio.create_subprocess_exec", side_effect=[fail_proc, ok_proc]),
+            patch("asyncio.sleep", new_callable=AsyncMock),
+        ):
+            result = await pr_preview._run_gh("graphql", "-f", "query=test")
+
+        assert result == {"ok": True}
