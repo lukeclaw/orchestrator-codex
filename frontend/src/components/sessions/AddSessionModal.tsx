@@ -4,7 +4,17 @@ import Modal from '../common/Modal'
 import { api } from '../../api/client'
 import { pickFolder } from '../../api/pickFolder'
 import { useApp } from '../../context/AppContext'
+import { useSettings } from '../../context/SettingsContext'
 import { IconRefresh, IconServer, IconSessions, IconLaptop } from '../common/Icons'
+import SlidingTabs from '../common/SlidingTabs'
+import {
+  DEFAULT_PROVIDER_ID,
+  CAPABILITY_REMOTE_SESSIONS,
+  getCapabilityDisabledReason,
+  type ProviderRegistryResponse,
+  type ProviderOption,
+  useProviderRegistry,
+} from '../../hooks/useProviderRegistry'
 import './AddSessionModal.css'
 
 interface Props {
@@ -47,9 +57,57 @@ const WORKER_TYPE_DESCRIPTIONS: Record<string, string> = {
   local: 'Run a worker on your local machine.',
 }
 
+export function getRemoteWorkerTypeDisabledReason(
+  registry: ProviderRegistryResponse,
+  providerId: string,
+): string | null {
+  return getCapabilityDisabledReason(registry, providerId, CAPABILITY_REMOTE_SESSIONS)
+}
+
+export function buildWorkerCreatePayload(params: {
+  workerType: 'rdev' | 'ssh' | 'local'
+  provider: string
+  name: string
+  selectedRdev: string
+  sshHost: string
+  sshWorkDir: string
+  mpPath: string
+}): Record<string, unknown> | null {
+  const sanitizedName = params.name.trim().replace(/[/\\]/g, '_')
+
+  if (params.workerType === 'rdev') {
+    if (!params.selectedRdev) return null
+    return {
+      name: params.selectedRdev.replace(/[/\\]/g, '_'),
+      host: params.selectedRdev,
+      provider: params.provider,
+    }
+  }
+
+  if (params.workerType === 'ssh') {
+    if (!params.sshHost.trim()) return null
+    return {
+      name: sanitizedName,
+      host: params.sshHost.trim(),
+      work_dir: params.sshWorkDir.trim() || null,
+      provider: params.provider,
+    }
+  }
+
+  return {
+    name: sanitizedName,
+    host: 'localhost',
+    work_dir: params.mpPath.trim() || null,
+    provider: params.provider,
+  }
+}
+
 export default function AddSessionModal({ open, onClose }: Props) {
   const { refresh } = useApp()
+  const { getValue, loading: settingsLoading } = useSettings()
+  const { registry, providerOptions } = useProviderRegistry()
   const [workerType, setWorkerType] = useState<'rdev' | 'ssh' | 'local'>('local')
+  const [provider, setProvider] = useState(DEFAULT_PROVIDER_ID)
 
   // Local worker state
   const [localName, setLocalName] = useState(generateWorkerName)
@@ -79,11 +137,14 @@ export default function AddSessionModal({ open, onClose }: Props) {
   // Get current name based on worker type (not used for rdev)
   const name = workerType === 'ssh' ? sshName : localName
   const setName = workerType === 'ssh' ? setSshName : setLocalName
+  const remoteDisabledReason = getRemoteWorkerTypeDisabledReason(registry, provider)
+  const remoteWorkersEnabled = !remoteDisabledReason
 
   // Reset state when modal is closed
   useEffect(() => {
     if (!open) {
       setWorkerType('local')
+      setProvider(DEFAULT_PROVIDER_ID)
       setLocalName(generateWorkerName())
       setMpPath('')
       setSelectedRdev('')
@@ -96,6 +157,21 @@ export default function AddSessionModal({ open, onClose }: Props) {
       setTouchedFields(new Set())
     }
   }, [open])
+
+  // Sync default provider from settings when opening the modal.
+  useEffect(() => {
+    if (!open || settingsLoading) return
+    const workerDefaultProvider = String(getValue('worker.default_provider') || DEFAULT_PROVIDER_ID)
+    setProvider(workerDefaultProvider)
+  }, [open, settingsLoading, getValue])
+
+  // Codex MVP only supports local workers. If the provider changes to one that
+  // does not allow remote sessions, keep the form in a valid local-only state.
+  useEffect(() => {
+    if (!remoteWorkersEnabled && workerType !== 'local') {
+      setWorkerType('local')
+    }
+  }, [remoteWorkersEnabled, workerType])
 
   // Auto-derive SSH name from host
   useEffect(() => {
@@ -138,6 +214,10 @@ export default function AddSessionModal({ open, onClose }: Props) {
       : ''
   const rdevError2 = touchedFields.has('rdev') && workerType === 'rdev' && !selectedRdev ? 'Please select an rdev instance' : ''
   const sshHostError = touchedFields.has('sshHost') && workerType === 'ssh' && !sshHost.trim() ? 'SSH host is required' : ''
+  const providerTabs = providerOptions.map((option: ProviderOption) => ({
+    value: option.value,
+    label: option.label,
+  }))
 
   // Form is valid when all required fields are filled
   const isFormValid = validateForm()
@@ -216,21 +296,16 @@ export default function AddSessionModal({ open, onClose }: Props) {
     setCreating(true)
 
     try {
-      let payload: Record<string, unknown>
-
-      if (workerType === 'rdev') {
-        if (!selectedRdev) return
-        // Worker name matches rdev instance name
-        const sanitizedName = selectedRdev.replace(/[/\\]/g, '_')
-        payload = { name: sanitizedName, host: selectedRdev }
-      } else if (workerType === 'ssh') {
-        if (!sshHost.trim()) return
-        const sanitizedName = name.trim().replace(/[/\\]/g, '_')
-        payload = { name: sanitizedName, host: sshHost.trim(), work_dir: sshWorkDir.trim() || null }
-      } else {
-        const sanitizedName = name.trim().replace(/[/\\]/g, '_')
-        payload = { name: sanitizedName, host: 'localhost', work_dir: mpPath.trim() || null }
-      }
+      const payload = buildWorkerCreatePayload({
+        workerType,
+        provider,
+        name,
+        selectedRdev,
+        sshHost,
+        sshWorkDir,
+        mpPath,
+      })
+      if (!payload) return
 
       await api('/api/sessions', {
         method: 'POST',
@@ -286,28 +361,48 @@ export default function AddSessionModal({ open, onClose }: Props) {
     <Modal open={open} onClose={onClose} title="Add New Worker">
       <form onSubmit={handleSubmit} data-testid="add-session-form">
         <div className="modal-body add-worker-body">
+          <div className="form-group provider-select-group">
+            <label>Provider</label>
+            <SlidingTabs
+              tabs={providerTabs}
+              value={provider}
+              onChange={setProvider}
+            />
+            <div className="field-hint">
+              New workers inherit the selected provider. Claude remains the default baseline.
+            </div>
+          </div>
+
           <div className="worker-type-toggle" data-testid="worker-type-toggle">
             <div className="toggle-group">
-              <button
-                type="button"
-                className={`toggle-btn${workerType === 'rdev' ? ' active' : ''}`}
-                onClick={() => {
-                  setWorkerType('rdev')
-                  setSshNameManual(false)
-                }}
-              >
-                <IconServer size={14} /> rdev VM
-              </button>
-              <button
-                type="button"
-                className={`toggle-btn${workerType === 'ssh' ? ' active' : ''}`}
-                onClick={() => {
-                  setWorkerType('ssh')
-                  setSshNameManual(false)
-                }}
-              >
-                <IconSessions size={14} /> SSH
-              </button>
+              <span className="toggle-btn-wrapper" title={!remoteWorkersEnabled ? remoteDisabledReason : undefined}>
+                <button
+                  type="button"
+                  className={`toggle-btn${workerType === 'rdev' ? ' active' : ''}${!remoteWorkersEnabled ? ' disabled' : ''}`}
+                  onClick={() => {
+                    if (!remoteWorkersEnabled) return
+                    setWorkerType('rdev')
+                    setSshNameManual(false)
+                  }}
+                  disabled={!remoteWorkersEnabled}
+                >
+                  <IconServer size={14} /> rdev VM
+                </button>
+              </span>
+              <span className="toggle-btn-wrapper" title={!remoteWorkersEnabled ? remoteDisabledReason : undefined}>
+                <button
+                  type="button"
+                  className={`toggle-btn${workerType === 'ssh' ? ' active' : ''}${!remoteWorkersEnabled ? ' disabled' : ''}`}
+                  onClick={() => {
+                    if (!remoteWorkersEnabled) return
+                    setWorkerType('ssh')
+                    setSshNameManual(false)
+                  }}
+                  disabled={!remoteWorkersEnabled}
+                >
+                  <IconSessions size={14} /> SSH
+                </button>
+              </span>
               <button
                 type="button"
                 className={`toggle-btn${workerType === 'local' ? ' active' : ''}`}
@@ -457,13 +552,13 @@ export default function AddSessionModal({ open, onClose }: Props) {
         </div>
         <div className="modal-footer">
           <button type="button" className="btn btn-secondary" onClick={onClose}>Cancel</button>
-          <button
-            type="submit"
-            className="btn btn-primary"
-            data-testid="create-session-btn"
-            disabled={creating || !isFormValid}
-            title={disabledReason}
-          >
+            <button
+              type="submit"
+              className="btn btn-primary"
+              data-testid="create-session-btn"
+              disabled={creating || !isFormValid}
+              title={disabledReason || undefined}
+            >
             {creating ? <><IconRefresh size={14} className="spinning" /> Creating...</> : 'Create Worker'}
           </button>
         </div>

@@ -18,6 +18,14 @@
   margin-bottom: 18px;
 }
 
+.provider-select-group {
+  margin-bottom: 20px;
+}
+
+.provider-select-group .sliding-tabs {
+  width: fit-content;
+}
+
 /* Worker type toggle with icons and description */
 .worker-type-toggle {
   margin-bottom: 18px;
@@ -27,6 +35,19 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
+}
+
+.toggle-btn-wrapper {
+  display: inline-flex;
+}
+
+.toggle-btn-wrapper[title] {
+  cursor: help;
+}
+
+.toggle-btn.disabled {
+  opacity: 0.5;
+  pointer-events: none;
 }
 
 .worker-type-description {
