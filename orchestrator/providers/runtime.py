@@ -46,6 +46,15 @@ class ProviderRuntime(Protocol):
     def launch_remote_worker(self, request: WorkerLaunchRequest) -> dict:
         """Launch a remote worker session for this provider."""
 
+    def start_brain(self, conn: sqlite3.Connection) -> dict:
+        """Start the provider's brain session."""
+
+    def stop_brain(self, conn: sqlite3.Connection) -> dict:
+        """Stop the provider's brain session."""
+
+    def redeploy_brain(self, conn: sqlite3.Connection) -> dict:
+        """Redeploy provider-managed brain assets."""
+
 
 def _load_runtime(provider_id: str) -> ProviderRuntime:
     # Transitional bridge: Codex sessions still route through the Claude

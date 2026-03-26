@@ -2,9 +2,6 @@
 
 import base64
 import logging
-import os
-import shlex
-import shutil
 import time
 import uuid
 from datetime import datetime
@@ -12,13 +9,13 @@ from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-from orchestrator.agents import get_path_export_command
 from orchestrator.api.deps import get_db
 from orchestrator.api.websocket import (
     get_current_focus,
     request_focus_from_frontend,
     set_current_focus,
 )
+from orchestrator.providers import DEFAULT_PROVIDER_ID, get_provider_runtime
 from orchestrator.state.repositories import sessions as sessions_repo
 from orchestrator.terminal import manager as tmux
 from orchestrator.terminal.remote_worker_server import get_remote_worker_server
@@ -35,6 +32,16 @@ BRAIN_SESSION_NAME = "brain"
 def _get_brain_session(db):
     """Get the brain session from DB, or None."""
     return sessions_repo.get_session_by_name(db, BRAIN_SESSION_NAME)
+
+
+def _get_brain_provider(db):
+    session = _get_brain_session(db)
+    if session and session.provider:
+        return session.provider
+
+    from orchestrator.state.repositories.config import get_config_value
+
+    return str(get_config_value(db, "brain.default_provider", default=DEFAULT_PROVIDER_ID))
 
 
 @router.get("/brain/status")
@@ -80,112 +87,10 @@ def set_focus(focus: FocusUpdate):
 
 @router.post("/brain/start", status_code=200)
 def start_brain(db=Depends(get_db)):
-    """Start the orchestrator brain — a Claude Code process with project management tools.
-
-    Idempotent: safe to call regardless of current state.  Uses the tmux
-    pane as the single source of truth (the DB record is reconciled to
-    match).
-
-    Decision matrix based on pane_foreground_command():
-      - None          → pane doesn't exist yet → create & launch
-      - shell name    → pane exists, Claude not running → launch
-      - anything else → Claude (or another process) is running → skip
-    """
-    session = _get_brain_session(db)
-
-    # ── Check tmux pane state (single source of truth) ──────────────
-    shells = {"bash", "zsh", "fish", "sh", "dash"}
-    pane_cmd = tmux.pane_foreground_command(tmux.TMUX_SESSION, BRAIN_SESSION_NAME)
-    claude_already_running = pane_cmd is not None and pane_cmd not in shells
-
-    # ── Deploy brain files (always, so hooks/skills stay current) ───
-    brain_dir = "/tmp/orchestrator/brain"
-
-    from orchestrator.agents.deploy import deploy_brain_tmp_contents
-    from orchestrator.state.repositories.config import get_config_value
-
-    brain_model = str(get_config_value(db, "claude.default_model", default="opus"))
-    brain_effort = str(get_config_value(db, "claude.default_effort", default="high"))
-    deploy_brain_tmp_contents(brain_dir, conn=db, model=brain_model, effort=brain_effort)
-    logger.info("Deployed brain tmp contents via SOT")
-
-    bin_dir = os.path.join(brain_dir, "bin")
-    path_export = get_path_export_command(bin_dir)
-    settings_path = os.path.join(brain_dir, ".claude", "settings.json")
-
+    """Start the orchestrator brain via the selected provider runtime."""
+    runtime = get_provider_runtime(_get_brain_provider(db))
     try:
-        # ensure_window is itself idempotent (no-op when window exists)
-        target = tmux.ensure_window(tmux.TMUX_SESSION, BRAIN_SESSION_NAME)
-
-        # ── Reconcile DB record ─────────────────────────────────────
-        if session:
-            sessions_repo.update_session(db, session.id, status="working")
-            session_id = session.id
-        else:
-            s = sessions_repo.create_session(
-                db,
-                name=BRAIN_SESSION_NAME,
-                host="local",
-                work_dir=brain_dir,
-                session_type="brain",
-            )
-            session_id = s.id
-            sessions_repo.update_session(db, session_id, status="working")
-
-        # ── If Claude is already running, we're done ────────────────
-        if claude_already_running:
-            logger.info("Brain pane already running '%s'; skipping launch", pane_cmd)
-            return {
-                "ok": True,
-                "session_id": session_id,
-                "status": "working",
-                "message": "Brain already running (reconnected)",
-            }
-
-        # ── Pane is at a shell prompt (new or leftover) — launch ────
-        tmux.send_keys(tmux.TMUX_SESSION, BRAIN_SESSION_NAME, f"cd {shlex.quote(brain_dir)}")
-        tmux.send_keys(tmux.TMUX_SESSION, BRAIN_SESSION_NAME, path_export)
-
-        # Optionally update Claude Code before launching
-        from orchestrator.terminal.claude_update import (
-            run_claude_update,
-            should_update_before_start,
-        )
-
-        if should_update_before_start(db):
-            time.sleep(0.3)
-            run_claude_update(
-                tmux.send_keys, tmux.capture_output, tmux.TMUX_SESSION, BRAIN_SESSION_NAME
-            )
-
-        time.sleep(0.5)
-        cmd = f"claude --settings {settings_path}"
-        if get_config_value(db, "claude.skip_permissions", default=False):
-            cmd = f"claude --dangerously-skip-permissions --settings {settings_path}"
-        tmux.send_keys(tmux.TMUX_SESSION, BRAIN_SESSION_NAME, cmd)
-
-        # Dismiss any "trust this folder" prompt that may appear after launch
-        tmux.dismiss_trust_prompt(tmux.TMUX_SESSION, BRAIN_SESSION_NAME, session_id=session_id)
-
-        # If heartbeat is enabled, schedule the autonomous monitoring loop
-        heartbeat_interval = get_config_value(db, "brain.heartbeat", default="off")
-        if heartbeat_interval and heartbeat_interval != "off":
-            time.sleep(2)  # Give Claude time to fully initialize
-            send_to_session(
-                BRAIN_SESSION_NAME,
-                f"/loop {heartbeat_interval} /heartbeat",
-                tmux.TMUX_SESSION,
-            )
-            logger.info("Brain heartbeat enabled: /loop %s /heartbeat", heartbeat_interval)
-
-        logger.info("Orchestrator brain started in %s", target)
-        return {
-            "ok": True,
-            "session_id": session_id,
-            "status": "working",
-            "message": "Brain started",
-        }
-
+        return runtime.start_brain(db)
     except Exception as e:
         logger.exception("Failed to start orchestrator brain")
         raise HTTPException(500, f"Failed to start brain: {e}")
@@ -193,72 +98,19 @@ def start_brain(db=Depends(get_db)):
 
 @router.post("/brain/stop", status_code=200)
 def stop_brain(db=Depends(get_db)):
-    """Stop the orchestrator brain and clean up tmp directory."""
-    session = _get_brain_session(db)
-    if session is None:
-        return {"ok": True, "message": "Brain not running"}
-
-    brain_dir = "/tmp/orchestrator/brain"
-
-    try:
-        # Send Ctrl-C three times to force-exit Claude Code
-        for _ in range(3):
-            tmux.send_keys(tmux.TMUX_SESSION, BRAIN_SESSION_NAME, "C-c", enter=False)
-            time.sleep(0.3)
-        sessions_repo.update_session(db, session.id, status="disconnected")
-        logger.info("Orchestrator brain stopped")
-    except Exception:
-        logger.exception("Failed to stop brain")
-        # Force-update status even if tmux command failed
-        sessions_repo.update_session(db, session.id, status="disconnected")
-
-    # Clean up brain tmp directory so next start is clean
-    try:
-        if os.path.exists(brain_dir):
-            shutil.rmtree(brain_dir)
-            logger.info("Cleaned up brain directory: %s", brain_dir)
-    except Exception as e:
-        logger.warning("Could not clean up brain directory %s: %s", brain_dir, e)
-
-    return {"ok": True, "message": "Brain stopped"}
+    """Stop the orchestrator brain."""
+    runtime = get_provider_runtime(_get_brain_provider(db))
+    return runtime.stop_brain(db)
 
 
 @router.post("/brain/redeploy", status_code=200)
 def brain_redeploy(db=Depends(get_db)):
-    """Re-deploy brain files and re-arm heartbeat loop.
-
-    Called by the SessionStart hook after /clear or /compact to refresh
-    CLAUDE.md (with latest curated wisdom) and re-establish the /loop schedule.
-    """
-    brain = _get_brain_session(db)
-    if brain is None or brain.status in ("disconnected",):
-        raise HTTPException(400, "Brain is not running")
-
-    brain_dir = "/tmp/orchestrator/brain"
-
-    from orchestrator.agents.deploy import deploy_brain_tmp_contents
-    from orchestrator.state.repositories.config import get_config_value
-
-    brain_model = str(get_config_value(db, "claude.default_model", default="opus"))
-    brain_effort = str(get_config_value(db, "claude.default_effort", default="high"))
-    deploy_brain_tmp_contents(brain_dir, conn=db, model=brain_model, effort=brain_effort)
-    logger.info("Brain files re-deployed (redeploy)")
-
-    from orchestrator.state.repositories.config import get_config_value
-
-    heartbeat_interval = get_config_value(db, "brain.heartbeat", default="off")
-    loop_sent = False
-    if heartbeat_interval and heartbeat_interval != "off":
-        time.sleep(1)
-        loop_sent = send_to_session(
-            BRAIN_SESSION_NAME,
-            f"/loop {heartbeat_interval} /heartbeat",
-            tmux.TMUX_SESSION,
-        )
-        if loop_sent:
-            logger.info("Brain heartbeat re-armed: /loop %s /heartbeat", heartbeat_interval)
-
-    return {"ok": True, "redeployed": True, "heartbeat_rearmed": loop_sent}
+    """Re-deploy brain files and re-arm heartbeat loop."""
+    runtime = get_provider_runtime(_get_brain_provider(db))
+    try:
+        return runtime.redeploy_brain(db)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
 
 
 @router.post("/brain/sync", status_code=200)

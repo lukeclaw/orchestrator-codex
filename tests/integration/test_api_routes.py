@@ -346,7 +346,7 @@ class TestTasks:
 
 # --- Brain ---
 
-_SKIP_UPDATE = "orchestrator.terminal.claude_update.should_update_before_start"
+_SKIP_UPDATE = "orchestrator.providers.runtimes.claude.should_update_before_start"
 
 
 class TestBrain:
@@ -361,7 +361,7 @@ class TestBrain:
     def test_brain_start_fresh(self, client):
         """Start brain when no brain session exists yet."""
         with patch(_SKIP_UPDATE, return_value=False):
-            with patch("orchestrator.api.routes.brain.tmux") as mock_tmux:
+            with patch("orchestrator.providers.runtimes.claude.tmux") as mock_tmux:
                 mock_tmux.pane_foreground_command.return_value = None
                 mock_tmux.ensure_window.return_value = "orchestrator:brain"
                 mock_tmux.send_keys.return_value = True
@@ -380,7 +380,7 @@ class TestBrain:
     def test_brain_start_already_running(self, client):
         """Starting brain when already running returns early with existing info."""
         with patch(_SKIP_UPDATE, return_value=False):
-            with patch("orchestrator.api.routes.brain.tmux") as mock_tmux:
+            with patch("orchestrator.providers.runtimes.claude.tmux") as mock_tmux:
                 mock_tmux.pane_foreground_command.return_value = None
                 mock_tmux.ensure_window.return_value = "orchestrator:brain"
                 mock_tmux.send_keys.return_value = True
@@ -394,18 +394,18 @@ class TestBrain:
     def test_brain_start_after_stopped(self, client):
         """Restarting brain after stop reuses the existing session record."""
         with patch(_SKIP_UPDATE, return_value=False):
-            with patch("orchestrator.api.routes.brain.tmux") as mock_tmux:
+            with patch("orchestrator.providers.runtimes.claude.tmux") as mock_tmux:
                 mock_tmux.pane_foreground_command.return_value = None
                 mock_tmux.ensure_window.return_value = "orchestrator:brain"
                 mock_tmux.send_keys.return_value = True
                 first = client.post("/api/brain/start")
             first_id = first.json()["session_id"]
 
-            with patch("orchestrator.api.routes.brain.tmux") as mock_tmux:
+            with patch("orchestrator.providers.runtimes.claude.tmux") as mock_tmux:
                 mock_tmux.send_keys.return_value = True
                 client.post("/api/brain/stop")
 
-            with patch("orchestrator.api.routes.brain.tmux") as mock_tmux:
+            with patch("orchestrator.providers.runtimes.claude.tmux") as mock_tmux:
                 mock_tmux.pane_foreground_command.return_value = None
                 mock_tmux.ensure_window.return_value = "orchestrator:brain"
                 mock_tmux.send_keys.return_value = True
@@ -415,12 +415,12 @@ class TestBrain:
 
     def test_brain_stop(self, client):
         with patch(_SKIP_UPDATE, return_value=False):
-            with patch("orchestrator.api.routes.brain.tmux") as mock_tmux:
+            with patch("orchestrator.providers.runtimes.claude.tmux") as mock_tmux:
                 mock_tmux.ensure_window.return_value = "orchestrator:brain"
                 mock_tmux.send_keys.return_value = True
                 client.post("/api/brain/start")
 
-            with patch("orchestrator.api.routes.brain.tmux") as mock_tmux:
+            with patch("orchestrator.providers.runtimes.claude.tmux") as mock_tmux:
                 mock_tmux.send_keys.return_value = True
                 resp = client.post("/api/brain/stop")
         assert resp.status_code == 200
@@ -438,7 +438,7 @@ class TestBrain:
 
     def test_brain_start_tmux_failure_returns_500(self, client):
         """If tmux fails, brain start should return 500, not crash."""
-        with patch("orchestrator.api.routes.brain.tmux") as mock_tmux:
+        with patch("orchestrator.providers.runtimes.claude.tmux") as mock_tmux:
             mock_tmux.pane_foreground_command.return_value = None
             mock_tmux.ensure_window.side_effect = RuntimeError("tmux not available")
             resp = client.post("/api/brain/start")
@@ -448,7 +448,7 @@ class TestBrain:
     def test_brain_session_appears_in_sessions_list(self, client):
         """Brain session should appear in GET /api/sessions with all fields."""
         with patch(_SKIP_UPDATE, return_value=False):
-            with patch("orchestrator.api.routes.brain.tmux") as mock_tmux:
+            with patch("orchestrator.providers.runtimes.claude.tmux") as mock_tmux:
                 mock_tmux.pane_foreground_command.return_value = None
                 mock_tmux.ensure_window.return_value = "orchestrator:brain"
                 mock_tmux.send_keys.return_value = True

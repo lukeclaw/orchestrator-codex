@@ -164,16 +164,16 @@ class TestSessionUploadFile:
 class TestBrainUploadFile:
     def _start_brain(self, client):
         """Start the brain so upload endpoint works."""
-        with patch("orchestrator.api.routes.brain.tmux") as mock_tmux:
+        with patch("orchestrator.providers.runtimes.claude.tmux") as mock_tmux:
             mock_tmux.TMUX_SESSION = "orchestrator"
             mock_tmux.pane_foreground_command.return_value = None
             mock_tmux.ensure_window.return_value = "orchestrator:brain"
             mock_tmux.dismiss_trust_prompt.return_value = None
             with (
-                patch("orchestrator.agents.deploy.deploy_brain_tmp_contents"),
-                patch("orchestrator.api.routes.brain.get_path_export_command", return_value=""),
+                patch("orchestrator.providers.runtimes.claude.deploy_brain_tmp_contents"),
+                patch("orchestrator.providers.runtimes.claude.get_path_export_command", return_value=""),
                 patch(
-                    "orchestrator.terminal.claude_update.should_update_before_start",
+                    "orchestrator.providers.runtimes.claude.should_update_before_start",
                     return_value=False,
                 ),
             ):
