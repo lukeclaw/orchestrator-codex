@@ -1,0 +1,21 @@
+"""Provider registry and capability definitions."""
+
+from orchestrator.providers.registry import (
+    CAPABILITY_KEYS,
+    DEFAULT_PROVIDER_ID,
+    PROVIDERS,
+    ProviderCapability,
+    ProviderDefinition,
+    get_provider,
+    list_providers,
+)
+
+__all__ = [
+    "CAPABILITY_KEYS",
+    "DEFAULT_PROVIDER_ID",
+    "PROVIDERS",
+    "ProviderCapability",
+    "ProviderDefinition",
+    "get_provider",
+    "list_providers",
+]

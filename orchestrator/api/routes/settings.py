@@ -5,6 +5,7 @@ from pydantic import BaseModel
 
 from orchestrator.api.deps import get_db
 from orchestrator.config_defaults import SETTING_DEFAULTS
+from orchestrator.providers import DEFAULT_PROVIDER_ID, list_providers
 from orchestrator.state.repositories import config as config_repo
 
 router = APIRouter()
@@ -43,6 +44,18 @@ def get_settings(category: str | None = None, db=Depends(get_db)):
         )
 
     return entries
+
+
+@router.get("/settings/providers")
+def get_provider_settings():
+    """Expose the provider registry for UI/config consumers."""
+    return {
+        "providers": [provider.as_dict() for provider in list_providers()],
+        "defaults": {
+            "worker": DEFAULT_PROVIDER_ID,
+            "brain": DEFAULT_PROVIDER_ID,
+        },
+    }
 
 
 class SettingsUpdate(BaseModel):
