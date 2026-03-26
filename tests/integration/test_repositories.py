@@ -16,9 +16,18 @@ class TestSessionsRepo:
         assert s.host == "rdev1.example.com"
         assert s.status == "idle"
         assert s.work_dir == "/path/to/repo"
+        assert s.provider == "claude"
 
         fetched = sessions.get_session(db, s.id)
         assert fetched.name == s.name
+        assert fetched.provider == "claude"
+
+    def test_create_with_provider(self, db):
+        s = sessions.create_session(db, "codex-worker", "localhost", provider="codex")
+        assert s.provider == "codex"
+
+        fetched = sessions.get_session(db, s.id)
+        assert fetched.provider == "codex"
 
     def test_get_by_name(self, db):
         sessions.create_session(db, "named-worker", "local")
@@ -31,6 +40,7 @@ class TestSessionsRepo:
         sessions.create_session(db, "w2", "host2")
         all_sessions = sessions.list_sessions(db)
         assert len(all_sessions) == 2
+        assert all(s.provider == "claude" for s in all_sessions)
 
     def test_update_session(self, db):
         s = sessions.create_session(db, "update-me", "host")

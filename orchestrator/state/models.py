@@ -5,6 +5,8 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 
+from orchestrator.providers import DEFAULT_PROVIDER_ID
+
 
 def generate_task_prefix(name: str) -> str:
     """Generate a 3-letter uppercase prefix from project name.
@@ -61,6 +63,7 @@ class Session:
     created_at: str = ""
     last_status_changed_at: str | None = None
     session_type: str = "worker"  # "worker" | "brain" | "system"
+    provider: str = DEFAULT_PROVIDER_ID
     last_viewed_at: str | None = None
     auto_reconnect: bool = True
     claude_session_id: str | None = None
@@ -69,6 +72,7 @@ class Session:
     def __post_init__(self):
         self.takeover_mode = bool(self.takeover_mode)
         self.auto_reconnect = bool(self.auto_reconnect)
+        self.provider = self.provider or DEFAULT_PROVIDER_ID
 
 
 @dataclass

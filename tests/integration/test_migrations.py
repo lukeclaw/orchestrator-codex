@@ -23,7 +23,7 @@ def test_fresh_migration():
     # 32=soft_delete_sessions, 33=session_name_in_events,
     # 34=drop_sessions_deleted_at, 35=human_activity_events,
     # 36=add_task_to_status_events, 37=fix_auto_reconnect_default,
-    # 38=add_project_starred
+    # 38=add_project_starred, 39=add_session_provider
     assert applied == [
         1,
         2,
@@ -62,6 +62,7 @@ def test_fresh_migration():
         36,
         37,
         38,
+        39,
     ]
 
     # Verify key tables exist
@@ -160,7 +161,7 @@ def test_current_version_after_migration():
     conn = get_memory_connection()
     assert get_current_version(conn) == 0
     apply_migrations(conn)
-    assert get_current_version(conn) == 38
+    assert get_current_version(conn) == 39
     conn.close()
 
 

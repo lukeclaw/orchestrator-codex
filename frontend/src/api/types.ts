@@ -9,6 +9,7 @@ export interface Session {
   last_status_changed_at: string | null
   last_viewed_at: string | null
   session_type: 'worker' | 'brain' | 'system'
+  provider: string
   preview?: string
   tunnels?: Record<string, { remote_port: number; pid: number; host: string }>
   auto_reconnect: boolean

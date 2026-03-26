@@ -19,6 +19,7 @@ def test_session_defaults():
     s = Session(id="s1", name="worker-1", host="rdev1.example.com")
     assert s.status == "idle"
     assert s.takeover_mode is False
+    assert s.provider == "claude"
 
 
 def test_task_defaults():

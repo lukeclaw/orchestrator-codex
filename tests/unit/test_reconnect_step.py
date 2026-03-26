@@ -144,6 +144,7 @@ def test_serialize_session_includes_step(db):
 
     result = _serialize_session(session)
     assert result["reconnect_step"] == "daemon"
+    assert result["provider"] == "claude"
 
 
 def test_serialize_session_no_step(db):
@@ -155,6 +156,7 @@ def test_serialize_session_no_step(db):
 
     result = _serialize_session(session)
     assert result["reconnect_step"] is None
+    assert result["provider"] == "claude"
 
 
 # ---------------------------------------------------------------------------

@@ -21,6 +21,7 @@ from orchestrator.session import (
     is_reconnectable,
     trigger_reconnect,
 )
+from orchestrator.providers import DEFAULT_PROVIDER_ID, get_provider
 from orchestrator.state.repositories import sessions as repo
 from orchestrator.terminal.manager import (
     capture_pane_with_escapes,
@@ -53,6 +54,7 @@ class SessionCreate(BaseModel):
     host: str = "localhost"
     work_dir: str | None = None
     task_id: str | None = None
+    provider: str | None = None
 
 
 class SessionUpdate(BaseModel):
@@ -116,6 +118,7 @@ def _serialize_session(s):
         "last_status_changed_at": s.last_status_changed_at,
         "status_age": status_age,  # Human-readable: "5m ago", "2h ago"
         "session_type": s.session_type,
+        "provider": s.provider,
         "last_viewed_at": s.last_viewed_at,
         "auto_reconnect": s.auto_reconnect,
         "rws_pty_id": s.rws_pty_id,
@@ -388,6 +391,15 @@ def _sanitize_worker_name(name: str) -> str:
 def create_session(body: SessionCreate, request: Request, db=Depends(get_db)):
     # Sanitize name to avoid folder structure issues
     sanitized_name = _sanitize_worker_name(body.name)
+    from orchestrator.state.repositories.config import get_config_value
+
+    provider = body.provider or str(
+        get_config_value(db, "worker.default_provider", default=DEFAULT_PROVIDER_ID)
+    )
+    try:
+        get_provider(provider)
+    except KeyError as exc:
+        raise HTTPException(400, exc.args[0]) from exc
 
     # Set up tmp directory for CLI scripts and configs (before tmux window so we can use it as cwd)
     tmp_dir = os.path.join(WORKER_BASE_DIR, sanitized_name)
@@ -404,7 +416,7 @@ def create_session(body: SessionCreate, request: Request, db=Depends(get_db)):
     # work_dir is where Claude runs - user-specified or defaults
     work_dir = body.work_dir  # Can be None, will be set later based on host
 
-    s = repo.create_session(db, sanitized_name, body.host, work_dir)
+    s = repo.create_session(db, sanitized_name, body.host, work_dir, provider=provider)
 
     if is_remote_host(body.host):
         # Remote worker — launch full setup in background thread
@@ -433,8 +445,6 @@ def create_session(body: SessionCreate, request: Request, db=Depends(get_db)):
         from orchestrator.terminal.claude_update import should_update_before_start
 
         remote_update_before_start = should_update_before_start(db)
-
-        from orchestrator.state.repositories.config import get_config_value
 
         remote_skip_permissions = bool(
             get_config_value(db, "claude.skip_permissions", default=False)
@@ -511,7 +521,7 @@ def create_session(body: SessionCreate, request: Request, db=Depends(get_db)):
         thread = threading.Thread(target=_background_setup, daemon=True)
         thread.start()
 
-        return {"id": s.id, "name": s.name, "status": "connecting"}
+        return {"id": s.id, "name": s.name, "status": "connecting", "provider": s.provider}
 
     else:
         # Local worker — deploy scripts and launch claude.
@@ -536,8 +546,6 @@ def create_session(body: SessionCreate, request: Request, db=Depends(get_db)):
             from orchestrator.terminal.claude_update import should_update_before_start
 
             local_update_before_start = should_update_before_start(db)
-
-            from orchestrator.state.repositories.config import get_config_value
 
             local_skip_permissions = bool(
                 get_config_value(db, "claude.skip_permissions", default=False)
@@ -569,7 +577,7 @@ def create_session(body: SessionCreate, request: Request, db=Depends(get_db)):
         except Exception:
             logger.warning("Could not deploy/launch local worker %s", sanitized_name, exc_info=True)
 
-        return {"id": s.id, "name": s.name, "status": s.status}
+        return {"id": s.id, "name": s.name, "status": s.status, "provider": s.provider}
 
 
 @router.patch("/sessions/{session_id}")

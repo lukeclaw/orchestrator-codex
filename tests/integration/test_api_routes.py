@@ -38,6 +38,39 @@ class TestSessions:
         data = resp.json()
         assert data["name"] == "worker-1"
         assert data["status"] == "idle"
+        assert data["provider"] == "claude"
+
+    def test_create_session_with_provider(self, client):
+        with patch(
+            "orchestrator.api.routes.sessions.ensure_window", return_value="orchestrator:worker-2"
+        ):
+            resp = client.post(
+                "/api/sessions",
+                json={"name": "worker-2", "host": "localhost", "provider": "codex"},
+            )
+        assert resp.status_code == 201
+        data = resp.json()
+        assert data["provider"] == "codex"
+
+    def test_create_session_uses_default_worker_provider_setting(self, client):
+        client.put("/api/settings", json={"settings": {"worker.default_provider": "codex"}})
+        with patch(
+            "orchestrator.api.routes.sessions.ensure_window", return_value="orchestrator:worker-3"
+        ):
+            resp = client.post("/api/sessions", json={"name": "worker-3", "host": "localhost"})
+        assert resp.status_code == 201
+        assert resp.json()["provider"] == "codex"
+
+    def test_create_session_rejects_unknown_provider(self, client):
+        with patch(
+            "orchestrator.api.routes.sessions.ensure_window", return_value="orchestrator:bad-provider"
+        ):
+            resp = client.post(
+                "/api/sessions",
+                json={"name": "bad-provider", "host": "localhost", "provider": "does-not-exist"},
+            )
+        assert resp.status_code == 400
+        assert resp.json()["detail"] == "Unknown provider: does-not-exist"
 
     def test_get_session(self, client):
         with patch(
@@ -48,6 +81,7 @@ class TestSessions:
         resp = client.get(f"/api/sessions/{sid}")
         assert resp.status_code == 200
         assert resp.json()["name"] == "w1"
+        assert resp.json()["provider"] == "claude"
 
     def test_get_session_not_found(self, client):
         resp = client.get("/api/sessions/nonexistent")
@@ -108,6 +142,7 @@ class TestSessions:
         resp = client.get(f"/api/sessions/{sid}")
         assert "tunnel_pid" in resp.json()
         assert resp.json()["tunnel_pid"] is None
+        assert resp.json()["provider"] == "claude"
 
     def test_delete_rdev_session_stops_tunnel(self, client):
         """Deleting an rdev session stops the tunnel subprocess."""
@@ -427,6 +462,7 @@ class TestBrain:
         s = brain_sessions[0]
         assert s["host"] == "local"
         assert s["status"] == "working"
+        assert s["provider"] == "claude"
         assert "tunnel_pid" in s
         assert s["tunnel_pid"] is None
 
