@@ -79,7 +79,13 @@ class ClaudeRuntime:
 
         brain_model = str(get_config_value(conn, "claude.default_model", default="opus"))
         brain_effort = str(get_config_value(conn, "claude.default_effort", default="high"))
-        deploy_brain_tmp_contents(_BRAIN_DIR, conn=conn, model=brain_model, effort=brain_effort)
+        deploy_brain_tmp_contents(
+            _BRAIN_DIR,
+            conn=conn,
+            provider=self.provider_id,
+            model=brain_model,
+            effort=brain_effort,
+        )
         logger.info("Deployed brain tmp contents via provider runtime")
 
         bin_dir = os.path.join(_BRAIN_DIR, "bin")
@@ -180,7 +186,13 @@ class ClaudeRuntime:
 
         brain_model = str(get_config_value(conn, "claude.default_model", default="opus"))
         brain_effort = str(get_config_value(conn, "claude.default_effort", default="high"))
-        deploy_brain_tmp_contents(_BRAIN_DIR, conn=conn, model=brain_model, effort=brain_effort)
+        deploy_brain_tmp_contents(
+            _BRAIN_DIR,
+            conn=conn,
+            provider=self.provider_id,
+            model=brain_model,
+            effort=brain_effort,
+        )
         logger.info("Brain files re-deployed (provider runtime)")
 
         heartbeat_interval = get_config_value(conn, "brain.heartbeat", default="off")

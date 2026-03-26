@@ -299,20 +299,25 @@ def format_custom_skills_for_prompt(skills: list[dict]) -> str:
     return "\n".join(lines)
 
 
-def _get_brain_memory_from_db(conn: sqlite3.Connection) -> str:
+def get_brain_memory_section(conn: sqlite3.Connection, provider: str | None = None) -> str:
     """Load the curated brain wisdom item for system prompt injection.
 
     Looks for a single context item with scope=brain, category=wisdom.
+    When ``provider`` is set, shared and provider-matching wisdom is considered.
     Returns formatted markdown section, or empty string if not found.
     """
     from orchestrator.state.repositories.context import list_context
 
-    items = list_context(conn, scope="brain", category="wisdom")
+    items = list_context(conn, scope="brain", category="wisdom", provider=provider)
     if not items:
         return ""
 
-    # Use the first (most recently updated) wisdom item
     item = items[0]
+    if provider is not None:
+        exact_match = next((candidate for candidate in items if candidate.provider == provider), None)
+        if exact_match is not None:
+            item = exact_match
+
     content = item.content.strip()
     if not content:
         return ""
@@ -785,6 +790,7 @@ def deploy_brain_tmp_contents(
     brain_dir: str,
     api_base: str = "http://127.0.0.1:8093",
     conn: sqlite3.Connection | None = None,
+    provider: str | None = None,
     custom_skills: list[dict] | None = None,
     disabled_builtin_names: set[str] | None = None,
     model: str = "opus",
@@ -827,7 +833,9 @@ def deploy_brain_tmp_contents(
 
     # 2. CLAUDE.md (brain prompt)
     custom_skills_section = format_custom_skills_for_prompt(resolved_custom)
-    brain_memory_section = _get_brain_memory_from_db(conn) if conn is not None else ""
+    brain_memory_section = (
+        get_brain_memory_section(conn, provider=provider) if conn is not None else ""
+    )
     brain_prompt = get_brain_prompt(
         custom_skills_section=custom_skills_section,
         brain_memory_section=brain_memory_section,

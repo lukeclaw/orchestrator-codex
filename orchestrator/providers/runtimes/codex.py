@@ -9,6 +9,7 @@ import shutil
 
 from orchestrator import paths
 from orchestrator.agents import deploy_brain_scripts, deploy_worker_scripts, get_path_export_command
+from orchestrator.agents.deploy import get_brain_memory_section
 from orchestrator.browser.cdp_worker_proxy import start_cdp_proxy
 from orchestrator.providers.config import get_provider_default_effort, get_provider_default_model
 from orchestrator.state.repositories import sessions as sessions_repo
@@ -157,7 +158,8 @@ class CodexRuntime:
         codex_already_running = pane_cmd is not None and pane_cmd not in shells
 
         deploy_brain_scripts(_BRAIN_DIR)
-        prompt_text = _read_prompt_template("brain", "prompt.md")
+        prompt_text = get_brain_memory_section(conn, provider=self.provider_id)
+        prompt_text += _read_prompt_template("brain", "prompt.md")
         prompt_path = _write_prompt_file(_BRAIN_DIR, prompt_text)
         target = tmux.ensure_window(tmux.TMUX_SESSION, BRAIN_SESSION_NAME)
 
@@ -233,7 +235,8 @@ class CodexRuntime:
             raise ValueError("Brain is not running")
 
         deploy_brain_scripts(_BRAIN_DIR)
-        prompt_text = _read_prompt_template("brain", "prompt.md")
+        prompt_text = get_brain_memory_section(conn, provider=self.provider_id)
+        prompt_text += _read_prompt_template("brain", "prompt.md")
         _write_prompt_file(_BRAIN_DIR, prompt_text)
         logger.info("Brain files re-deployed for Codex")
         return {"ok": True, "redeployed": True, "heartbeat_rearmed": False}

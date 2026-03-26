@@ -93,6 +93,42 @@ class TestDBHelpers:
         result = _get_disabled_builtins_from_db(db, "worker")
         assert result == set()
 
+    def test_get_brain_memory_section_filters_by_provider(self, db):
+        from orchestrator.agents.deploy import get_brain_memory_section
+        from orchestrator.state.repositories.context import create_context_item
+
+        create_context_item(
+            db,
+            title="Shared Wisdom",
+            content="Shared lesson",
+            scope="brain",
+            category="wisdom",
+        )
+        create_context_item(
+            db,
+            title="Claude Wisdom",
+            content="Claude lesson",
+            scope="brain",
+            category="wisdom",
+            provider="claude",
+        )
+        create_context_item(
+            db,
+            title="Codex Wisdom",
+            content="Codex lesson",
+            scope="brain",
+            category="wisdom",
+            provider="codex",
+        )
+
+        codex_section = get_brain_memory_section(db, provider="codex")
+        assert "Codex lesson" in codex_section
+        assert "Claude lesson" not in codex_section
+
+        claude_section = get_brain_memory_section(db, provider="claude")
+        assert "Claude lesson" in claude_section
+        assert "Codex lesson" not in claude_section
+
 
 # ---------------------------------------------------------------------------
 # _deploy_builtin_skills
@@ -263,12 +299,22 @@ class TestDeployBrainTmpContents:
 
     def test_with_db_conn(self, db, tmp_path):
         from orchestrator.agents.deploy import deploy_brain_tmp_contents
+        from orchestrator.state.repositories.context import create_context_item
         from orchestrator.state.repositories.skills import create_skill
 
         create_skill(db, name="brain-skill", target="brain", description="d", content="c")
+        create_context_item(
+            db,
+            title="Codex Wisdom",
+            content="Use Codex-specific guidance",
+            scope="brain",
+            category="wisdom",
+            provider="codex",
+        )
         brain_dir = str(tmp_path / "brain3")
-        created = deploy_brain_tmp_contents(brain_dir, conn=db)
+        created = deploy_brain_tmp_contents(brain_dir, conn=db, provider="codex")
         assert ".claude/commands/brain-skill.md" in created
+        assert "Use Codex-specific guidance" in open(os.path.join(brain_dir, "CLAUDE.md")).read()
 
 
 # ---------------------------------------------------------------------------
