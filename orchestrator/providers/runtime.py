@@ -57,12 +57,14 @@ class ProviderRuntime(Protocol):
 
 
 def _load_runtime(provider_id: str) -> ProviderRuntime:
-    # Transitional bridge: Codex sessions still route through the Claude
-    # runtime until the dedicated Codex runtime lands.
-    if provider_id in {"claude", "codex"}:
+    if provider_id == "claude":
         from orchestrator.providers.runtimes.claude import CLAUDE_RUNTIME
 
         return CLAUDE_RUNTIME
+    if provider_id == "codex":
+        from orchestrator.providers.runtimes.codex import CODEX_RUNTIME
+
+        return CODEX_RUNTIME
     raise KeyError(f"Unknown provider runtime: {provider_id}")
 
 
