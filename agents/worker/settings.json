@@ -28,6 +28,7 @@
       {"matcher": "", "hooks": [{"type": "command", "command": "{{HOOK_SCRIPT_PATH}}"}]}
     ],
     "Stop": [{"matcher": "", "hooks": [{"type": "command", "command": "{{HOOK_SCRIPT_PATH}}"}]}],
+    "PostToolUseFailure": [{"matcher": "", "hooks": [{"type": "command", "command": "{{HOOK_SCRIPT_PATH}}"}]}],
     "Notification": [{"matcher": "", "hooks": [{"type": "command", "command": "{{HOOK_SCRIPT_PATH}}"}]}],
     "SessionEnd": [{"matcher": "", "hooks": [{"type": "command", "command": "{{HOOK_SCRIPT_PATH}}"}]}]
   }

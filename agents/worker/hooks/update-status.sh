@@ -28,7 +28,19 @@ case "$EVENT" in
         STATUS="working"
         ;;
     Stop)
+        # Note: Stop only fires on natural completion, NOT on user interrupt.
+        # User interrupts during tool use fire PostToolUseFailure with is_interrupt=true.
         STATUS="waiting"
+        ;;
+    PostToolUseFailure)
+        # Fires when a tool call fails. If the failure was caused by user interrupt
+        # (Escape), set status to waiting so the UI reflects that Claude stopped.
+        IS_INTERRUPT=$(echo "$INPUT" | jq -r '.is_interrupt // false')
+        if [ "$IS_INTERRUPT" = "true" ]; then
+            STATUS="waiting"
+        else
+            exit 0
+        fi
         ;;
     Notification)
         # Only set waiting for notification types that indicate Claude needs input
