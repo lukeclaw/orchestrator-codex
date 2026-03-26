@@ -418,12 +418,12 @@ def probe_tunnel_connectivity(
         return False
 
 
-def _has_claude_in_process_tree(root_pid: int) -> bool:
-    """Check if there is a ``claude`` process descended from *root_pid*.
+def _has_process_in_tree(root_pid: int, process_substring: str) -> bool:
+    """Check if there is a matching process descended from *root_pid*.
 
     Uses the full command args (``ps -eo pid,ppid,args``) instead of just
-    the short command name because Claude Code runs via a Node.js wrapper
-    and the ``comm`` field may show ``node`` instead of ``claude``.
+    the short command name because provider CLIs may run via wrappers and
+    the ``comm`` field may not reflect the binary name.
     """
     try:
         result = subprocess.run(
@@ -455,8 +455,7 @@ def _has_claude_in_process_tree(root_pid: int) -> bool:
         while queue:
             pid = queue.pop(0)
             args = commands.get(pid, "")
-            # Match "claude" in command args but exclude grep/ps artifacts
-            if "claude" in args.lower() and "grep" not in args:
+            if process_substring in args.lower() and "grep" not in args:
                 return True
             queue.extend(children.get(pid, []))
 
@@ -464,8 +463,16 @@ def _has_claude_in_process_tree(root_pid: int) -> bool:
     except subprocess.TimeoutExpired:
         return False
     except Exception as e:
-        logger.debug("_has_claude_in_process_tree error: %s", e)
+        logger.debug("_has_process_in_tree error: %s", e)
         return False
+
+
+def _has_claude_in_process_tree(root_pid: int) -> bool:
+    return _has_process_in_tree(root_pid, "claude")
+
+
+def _has_codex_in_process_tree(root_pid: int) -> bool:
+    return _has_process_in_tree(root_pid, "codex")
 
 
 def check_claude_process_local(session_id: str) -> tuple[bool, str]:
@@ -536,6 +543,14 @@ def check_claude_running_local(
             return alive, reason
 
     return False, reason
+
+
+def check_codex_running_local(tmux_sess: str, tmux_win: str) -> tuple[bool, str]:
+    """Check if Codex is running for a local worker via the tmux pane process tree."""
+    pane_pid = _get_pane_pid(tmux_sess, tmux_win)
+    if pane_pid is not None and _has_codex_in_process_tree(pane_pid):
+        return True, "Codex process running in pane"
+    return False, "No Codex process found in pane"
 
 
 # =============================================================================
@@ -970,12 +985,15 @@ def check_and_update_worker_health(db, session, tunnel_manager=None) -> dict:
     # After /clear or /compact, Claude's internal session ID changes
     # but the process command line retains the original --session-id,
     # so relying solely on claude_session_id causes false disconnects.
-    alive, reason = check_claude_running_local(
-        session.id,
-        session.claude_session_id,
-        tmux_sess,
-        tmux_win,
-    )
+    if session.provider == "codex":
+        alive, reason = check_codex_running_local(tmux_sess, tmux_win)
+    else:
+        alive, reason = check_claude_running_local(
+            session.id,
+            session.claude_session_id,
+            tmux_sess,
+            tmux_win,
+        )
     if not alive:
         _recycle_frozen_pane(pane_preexisted, tmux_sess, tmux_win, worker_tmp_dir, session.name)
 
@@ -990,23 +1008,24 @@ def check_and_update_worker_health(db, session, tunnel_manager=None) -> dict:
         }
 
     # --- Local alive: ensure tmp dir is healthy ---
-    tmp_dir = f"/tmp/orchestrator/workers/{session.name}"
-    try:
-        tmp_result = ensure_tmp_dir_health(
-            tmp_dir,
-            session.id,
-            api_base=f"http://127.0.0.1:{DEFAULT_API_PORT}",
-            browser_headless=False,
-            conn=db,
-        )
-        if tmp_result.get("regenerated"):
-            logger.warning("Health check: %s regenerated local tmp dir", session.name)
-    except Exception:
-        logger.debug(
-            "Health check: %s tmp dir check failed",
-            session.name,
-            exc_info=True,
-        )
+    if session.provider != "codex":
+        tmp_dir = f"/tmp/orchestrator/workers/{session.name}"
+        try:
+            tmp_result = ensure_tmp_dir_health(
+                tmp_dir,
+                session.id,
+                api_base=f"http://127.0.0.1:{DEFAULT_API_PORT}",
+                browser_headless=False,
+                conn=db,
+            )
+            if tmp_result.get("regenerated"):
+                logger.warning("Health check: %s regenerated local tmp dir", session.name)
+        except Exception:
+            logger.debug(
+                "Health check: %s tmp dir check failed",
+                session.name,
+                exc_info=True,
+            )
 
     if session.status in ("disconnected", "error"):
         from orchestrator.session.reconnect import _recovery_status

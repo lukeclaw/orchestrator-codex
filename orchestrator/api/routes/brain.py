@@ -45,6 +45,29 @@ def _get_brain_provider(db):
     return str(get_config_value(db, "brain.default_provider", default=DEFAULT_PROVIDER_ID))
 
 
+def _translate_brain_command(provider: str, command: str) -> str:
+    if provider != "codex":
+        return command
+
+    stripped = command.strip()
+    if stripped == "/clear":
+        return (
+            "Reset your coordination context for a fresh turn. Drop prior task-specific "
+            "assumptions and wait for the next instruction."
+        )
+    if stripped == "/check_worker":
+        return (
+            "Review all active workers now. Use the orchestration CLI tools to identify completed, "
+            "blocked, or stalled work, take the necessary coordination actions, and summarize the result."
+        )
+    if stripped.startswith("/create"):
+        details = stripped[len("/create") :].strip()
+        if details:
+            return f"Create a new worker for this request: {details}"
+        return "Create a new worker for the next requested task."
+    return command
+
+
 @router.get("/brain/status")
 def brain_status(db=Depends(get_db)):
     """Get the orchestrator brain status."""
@@ -349,6 +372,7 @@ def brain_command(req: BrainCommandRequest, db=Depends(get_db)):
     session = _get_brain_session(db)
     if session is None or session.status in ("disconnected",):
         raise HTTPException(400, "Brain is not running")
+    translated_command = _translate_brain_command(session.provider or DEFAULT_PROVIDER_ID, req.command)
 
     try:
         # 1. Send Ctrl-C to cancel any running operation
@@ -364,14 +388,19 @@ def brain_command(req: BrainCommandRequest, db=Depends(get_db)):
         time.sleep(0.1)
 
         # 4. Type the command using literal mode (safe for special chars)
-        tmux.send_keys_literal(tmux.TMUX_SESSION, BRAIN_SESSION_NAME, req.command)
+        tmux.send_keys_literal(tmux.TMUX_SESSION, BRAIN_SESSION_NAME, translated_command)
 
         # 5. Optionally press Enter
         if req.enter:
             time.sleep(0.1)
             tmux.send_keys(tmux.TMUX_SESSION, BRAIN_SESSION_NAME, "", enter=True)
 
-        return {"ok": True, "command": req.command, "entered": req.enter}
+        return {
+            "ok": True,
+            "command": translated_command,
+            "requested_command": req.command,
+            "entered": req.enter,
+        }
 
     except Exception as e:
         logger.exception("Failed to send command to brain")

@@ -22,6 +22,7 @@ from orchestrator.session import (
     trigger_reconnect,
 )
 from orchestrator.providers import (
+    CAPABILITY_REMOTE_SESSIONS,
     DEFAULT_PROVIDER_ID,
     WorkerLaunchRequest,
     get_provider,
@@ -165,6 +166,21 @@ def _interrupt_and_send_command(session, command: str) -> None:
         send_keys_literal(tmux_sess, tmux_win, command)
         time.sleep(0.1)
         send_keys(tmux_sess, tmux_win, "", enter=True)
+
+
+def _get_continue_command(session) -> str:
+    if session.provider == "codex":
+        return "Continue the current task from where you left off and keep working."
+    return "continue"
+
+
+def _get_reset_command(session) -> str:
+    if session.provider == "codex":
+        return (
+            "Reset your task context. Stop the current line of work, discard prior task-specific "
+            "assumptions, and wait for the next instruction."
+        )
+    return "/clear"
 
 
 def _write_to_rws_pty(session, data: str) -> bool:
@@ -402,9 +418,16 @@ def create_session(body: SessionCreate, request: Request, db=Depends(get_db)):
         get_config_value(db, "worker.default_provider", default=DEFAULT_PROVIDER_ID)
     )
     try:
-        get_provider(provider)
+        provider_def = get_provider(provider)
     except KeyError as exc:
         raise HTTPException(400, exc.args[0]) from exc
+    if is_remote_host(body.host):
+        remote_capability = provider_def.capabilities[CAPABILITY_REMOTE_SESSIONS]
+        if not remote_capability.supported:
+            raise HTTPException(
+                400,
+                remote_capability.disabled_reason or f"Remote sessions are not supported for {provider}.",
+            )
 
     # Set up tmp directory for CLI scripts and configs (before tmux window so we can use it as cwd)
     tmp_dir = os.path.join(WORKER_BASE_DIR, sanitized_name)
@@ -1035,14 +1058,14 @@ def pause_session(session_id: str, db=Depends(get_db)):
 
 @router.post("/sessions/{session_id}/continue")
 def continue_session(session_id: str, db=Depends(get_db)):
-    """Continue a paused worker session (send 'continue' message)."""
+    """Continue a paused worker session with a provider-appropriate prompt."""
     s = _resolve_session(db, session_id)
     if s is None:
         raise HTTPException(404, "Session not found")
     session_id = s.id
 
     try:
-        _interrupt_and_send_command(s, "continue")
+        _interrupt_and_send_command(s, _get_continue_command(s))
     except Exception:
         logger.warning("Could not send continue to session %s", s.name, exc_info=True)
 
@@ -1052,14 +1075,14 @@ def continue_session(session_id: str, db=Depends(get_db)):
 
 @router.post("/sessions/{session_id}/stop")
 def stop_session(session_id: str, db=Depends(get_db)):
-    """Stop a worker session: send Escape, then /clear, unassign task, go to idle."""
+    """Stop a worker session, reset its context, unassign its task, and go idle."""
     s = _resolve_session(db, session_id)
     if s is None:
         raise HTTPException(404, "Session not found")
     session_id = s.id
 
     try:
-        _interrupt_and_send_command(s, "/clear")
+        _interrupt_and_send_command(s, _get_reset_command(s))
     except Exception:
         logger.warning(
             "Could not send stop commands to session %s",
@@ -1091,7 +1114,7 @@ def prepare_session_for_task(session_id: str, db=Depends(get_db)):
     """Prepare a worker session for a new task assignment.
 
     Sends Escape + Ctrl-C to cancel any running terminal commands,
-    then sends /clear to reset the Claude Code context.
+    then sends a provider-appropriate reset command to clear task context.
 
     This should be called before reassigning a worker to a different task.
     """
@@ -1105,7 +1128,7 @@ def prepare_session_for_task(session_id: str, db=Depends(get_db)):
         raise HTTPException(400, f"Session is not connected (status: {s.status})")
 
     try:
-        _interrupt_and_send_command(s, "/clear")
+        _interrupt_and_send_command(s, _get_reset_command(s))
         logger.info("Prepared session %s for new task assignment", s.name)
     except Exception:
         logger.warning("Could not fully prepare session %s", s.name, exc_info=True)
@@ -1215,7 +1238,11 @@ async def health_check_all_sessions(request: Request, db=Depends(get_db)):
         from orchestrator.session.health import ensure_brain_tmp_health
 
         brain_session = repo.get_session_by_name(db, "brain")
-        if brain_session and brain_session.status not in ("disconnected",):
+        if (
+            brain_session
+            and brain_session.status not in ("disconnected",)
+            and brain_session.provider != "codex"
+        ):
             brain_dir = "/tmp/orchestrator/brain"
             api_base = f"http://127.0.0.1:{api_port}"
             brain_health = ensure_brain_tmp_health(brain_dir, api_base=api_base, conn=db)

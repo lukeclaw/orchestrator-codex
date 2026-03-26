@@ -349,6 +349,8 @@ class TestTasks:
 _SKIP_UPDATE = "orchestrator.providers.runtimes.claude.should_update_before_start"
 _BRAIN_DEPLOY = "orchestrator.providers.runtimes.claude.deploy_brain_tmp_contents"
 _BRAIN_PATH_EXPORT = "orchestrator.providers.runtimes.claude.get_path_export_command"
+_CODEX_BRAIN_DEPLOY = "orchestrator.providers.runtimes.codex.deploy_brain_scripts"
+_CODEX_BRAIN_PROMPT_WRITE = "orchestrator.providers.runtimes.codex._write_prompt_file"
 
 
 class TestBrain:
@@ -482,6 +484,48 @@ class TestBrain:
         resp = client.post("/api/brain/sync")
         assert resp.status_code == 400
 
+    def test_brain_start_uses_codex_default_provider(self, client):
+        client.put("/api/settings", json={"settings": {"brain.default_provider": "codex"}})
+
+        with patch(_CODEX_BRAIN_DEPLOY), patch(
+            _CODEX_BRAIN_PROMPT_WRITE, return_value="/tmp/orchestrator/brain/prompt.md"
+        ):
+            with patch("orchestrator.providers.runtimes.codex.tmux") as mock_tmux:
+                mock_tmux.pane_foreground_command.return_value = None
+                mock_tmux.ensure_window.return_value = "orchestrator:brain"
+                mock_tmux.send_keys.return_value = True
+                resp = client.post("/api/brain/start")
+
+        assert resp.status_code == 200
+        assert resp.json()["status"] == "working"
+
+        status = client.get("/api/brain/status")
+        session_id = status.json()["session_id"]
+        session = client.get(f"/api/sessions/{session_id}")
+        assert session.json()["provider"] == "codex"
+
+    def test_brain_command_translates_codex_quick_clear(self, client):
+        client.put("/api/settings", json={"settings": {"brain.default_provider": "codex"}})
+
+        with patch(_CODEX_BRAIN_DEPLOY), patch(
+            _CODEX_BRAIN_PROMPT_WRITE, return_value="/tmp/orchestrator/brain/prompt.md"
+        ):
+            with patch("orchestrator.providers.runtimes.codex.tmux") as mock_tmux:
+                mock_tmux.pane_foreground_command.return_value = None
+                mock_tmux.ensure_window.return_value = "orchestrator:brain"
+                mock_tmux.send_keys.return_value = True
+                client.post("/api/brain/start")
+
+        with patch("orchestrator.api.routes.brain.tmux") as mock_tmux:
+            mock_tmux.send_keys.return_value = True
+            mock_tmux.send_keys_literal.return_value = True
+            resp = client.post("/api/brain/command", json={"command": "/clear"})
+
+        assert resp.status_code == 200
+        sent_command = mock_tmux.send_keys_literal.call_args.args[2]
+        assert sent_command != "/clear"
+        assert "Reset your coordination context" in sent_command
+
 
 # --- Dashboard ---
 
@@ -511,6 +555,17 @@ class TestDashboard:
         assert resp.status_code == 200
         data = resp.json()
         assert "running" in data
+
+
+class TestCodexSessions:
+    def test_create_remote_codex_session_is_rejected(self, client):
+        resp = client.post(
+            "/api/sessions",
+            json={"name": "remote-codex", "host": "subs-mt/test", "provider": "codex"},
+        )
+
+        assert resp.status_code == 400
+        assert resp.json()["detail"] == "Remote Codex support is not available in MVP."
 
 
 # --- Paste ---
