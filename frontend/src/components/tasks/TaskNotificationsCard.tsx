@@ -11,6 +11,7 @@ import {
   IconCheck,
   IconExternalLink,
 } from '../common/Icons'
+import ConfirmPopover from '../common/ConfirmPopover'
 import { useNotify } from '../../context/NotificationContext'
 import { useApp } from '../../context/AppContext'
 
@@ -83,6 +84,25 @@ export default function TaskNotificationsCard({ taskId }: TaskNotificationsCardP
     }
   }
 
+  const handleDismissAll = async () => {
+    try {
+      await api('/api/notifications/dismiss-all', {
+        method: 'POST',
+        body: JSON.stringify({ task_id: taskId }),
+      })
+      // Animate all out
+      const allIds = new Set(notifications.map(n => n.id))
+      setDismissingNotifications(allIds)
+      setTimeout(() => {
+        setNotifications([])
+        setDismissingNotifications(new Set())
+      }, 300)
+    } catch (err) {
+      console.error('Failed to dismiss all notifications:', err)
+      notify('Failed to dismiss notifications', 'error')
+    }
+  }
+
   if (notifications.length === 0) return null
 
   return (
@@ -93,6 +113,20 @@ export default function TaskNotificationsCard({ taskId }: TaskNotificationsCardP
           Notifications
           <span className="count notification-count">({notifications.length})</span>
         </h3>
+        {notificationsExpanded && notifications.length > 1 && (
+          <ConfirmPopover
+            onConfirm={handleDismissAll}
+            message={`Dismiss all ${notifications.length} notifications?`}
+            confirmLabel="Dismiss All"
+            variant="warning"
+          >
+            {({ onClick }) => (
+              <button className="np-group-clear-btn" onClick={onClick}>
+                Dismiss All
+              </button>
+            )}
+          </ConfirmPopover>
+        )}
       </div>
       {notificationsExpanded && (
         <div className="tdp-notifications-list">
@@ -125,8 +159,7 @@ export default function TaskNotificationsCard({ taskId }: TaskNotificationsCardP
                 <div className="np-card-body">
                   <div className="np-card-top">
                     <div className="np-card-header">
-                      <span className={`np-badge ${typeConfig.color}`}>{typeConfig.label}</span>
-                      <time className="np-time">{formatNotificationTime(n.created_at)}</time>
+                      <time className="np-time" style={{ whiteSpace: 'nowrap' }}>{formatNotificationTime(n.created_at)}</time>
                       {(() => {
                         const sender = n.session_id ? sessionMap.get(n.session_id) : null
                         if (sender) {
