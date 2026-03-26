@@ -30,6 +30,8 @@ from orchestrator.providers import (
     get_provider,
     get_provider_runtime,
 )
+from orchestrator.providers.config import get_provider_default_effort, get_provider_default_model
+from orchestrator.state.repositories.config import get_config_value
 from orchestrator.state.repositories import sessions as repo
 from orchestrator.terminal.manager import (
     capture_pane_with_escapes,
@@ -190,6 +192,28 @@ def _is_reconnect_supported(provider: str | None) -> bool:
         return get_provider(provider or DEFAULT_PROVIDER_ID).capabilities[CAPABILITY_RECONNECT].supported
     except KeyError:
         return True
+
+
+def _get_provider_launch_preferences(db, provider: str) -> dict[str, object]:
+    model = get_provider_default_model(db, provider)
+    effort = get_provider_default_effort(db, provider)
+
+    if provider == "claude":
+        from orchestrator.terminal.claude_update import should_update_before_start
+
+        return {
+            "update_before_start": should_update_before_start(db),
+            "skip_permissions": bool(get_config_value(db, "claude.skip_permissions", default=False)),
+            "model": model,
+            "effort": effort,
+        }
+
+    return {
+        "update_before_start": False,
+        "skip_permissions": False,
+        "model": model,
+        "effort": effort,
+    }
 
 
 def _write_to_rws_pty(session, data: str) -> bool:
@@ -484,16 +508,7 @@ def create_session(body: SessionCreate, request: Request, db=Depends(get_db)):
             name for name, _ in skills_repo.list_disabled_builtin_skills(db, "worker")
         }
 
-        # Read claude settings before spawning background thread
-        from orchestrator.terminal.claude_update import should_update_before_start
-
-        remote_update_before_start = should_update_before_start(db)
-
-        remote_skip_permissions = bool(
-            get_config_value(db, "claude.skip_permissions", default=False)
-        )
-        remote_default_model = str(get_config_value(db, "claude.default_model", default="opus"))
-        remote_default_effort = str(get_config_value(db, "claude.default_effort", default="high"))
+        remote_launch_preferences = _get_provider_launch_preferences(db, provider)
 
         def _background_setup():
             from orchestrator.state.db import get_connection
@@ -514,10 +529,10 @@ def create_session(body: SessionCreate, request: Request, db=Depends(get_db)):
                         tunnel_manager=tunnel_manager,
                         custom_skills=remote_custom_skills_dicts,
                         disabled_builtin_names=remote_disabled_builtins,
-                        update_before_start=remote_update_before_start,
-                        skip_permissions=remote_skip_permissions,
-                        model=remote_default_model,
-                        effort=remote_default_effort,
+                        update_before_start=bool(remote_launch_preferences["update_before_start"]),
+                        skip_permissions=bool(remote_launch_preferences["skip_permissions"]),
+                        model=str(remote_launch_preferences["model"]),
+                        effort=str(remote_launch_preferences["effort"]),
                     )
                 )
                 if result["ok"]:
@@ -586,17 +601,7 @@ def create_session(body: SessionCreate, request: Request, db=Depends(get_db)):
                 name for name, _ in skills_repo.list_disabled_builtin_skills(db, "worker")
             }
 
-            from orchestrator.terminal.claude_update import should_update_before_start
-
-            local_update_before_start = should_update_before_start(db)
-
-            local_skip_permissions = bool(
-                get_config_value(db, "claude.skip_permissions", default=False)
-            )
-            local_default_model = str(get_config_value(db, "claude.default_model", default="opus"))
-            local_default_effort = str(
-                get_config_value(db, "claude.default_effort", default="high")
-            )
+            local_launch_preferences = _get_provider_launch_preferences(db, provider)
 
             runtime.launch_local_worker(
                 WorkerLaunchRequest(
@@ -610,10 +615,10 @@ def create_session(body: SessionCreate, request: Request, db=Depends(get_db)):
                     tmp_dir=tmp_dir,
                     custom_skills=custom_skills_dicts,
                     disabled_builtin_names=disabled_builtins,
-                    update_before_start=local_update_before_start,
-                    skip_permissions=local_skip_permissions,
-                    model=local_default_model,
-                    effort=local_default_effort,
+                    update_before_start=bool(local_launch_preferences["update_before_start"]),
+                    skip_permissions=bool(local_launch_preferences["skip_permissions"]),
+                    model=str(local_launch_preferences["model"]),
+                    effort=str(local_launch_preferences["effort"]),
                 )
             )
             if body.task_id:

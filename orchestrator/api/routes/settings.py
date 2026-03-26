@@ -47,13 +47,17 @@ def get_settings(category: str | None = None, db=Depends(get_db)):
 
 
 @router.get("/settings/providers")
-def get_provider_settings():
+def get_provider_settings(db=Depends(get_db)):
     """Expose the provider registry for UI/config consumers."""
     return {
         "providers": [provider.as_dict() for provider in list_providers()],
         "defaults": {
-            "worker": DEFAULT_PROVIDER_ID,
-            "brain": DEFAULT_PROVIDER_ID,
+            "worker": str(
+                config_repo.get_config_value(db, "worker.default_provider", default=DEFAULT_PROVIDER_ID)
+            ),
+            "brain": str(
+                config_repo.get_config_value(db, "brain.default_provider", default=DEFAULT_PROVIDER_ID)
+            ),
         },
     }
 

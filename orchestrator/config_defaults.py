@@ -11,6 +11,8 @@ SETTING_DEFAULTS: dict[str, object] = {
     "brain.default_provider": DEFAULT_PROVIDER_ID,
     "claude.update_before_start": False,
     "claude.skip_permissions": False,
+    "codex.default_model": "gpt-5-codex",
+    "codex.default_effort": "high",
     "ui.preserve_filters": False,
     "ui.theme": "dark",
     "brain.heartbeat": "off",

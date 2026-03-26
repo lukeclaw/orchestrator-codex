@@ -1,5 +1,4 @@
 """Provider registry and capability definitions."""
-
 from orchestrator.providers.registry import (
     CAPABILITY_RECONNECT,
     CAPABILITY_REMOTE_SESSIONS,

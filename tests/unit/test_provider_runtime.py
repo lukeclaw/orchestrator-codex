@@ -79,8 +79,8 @@ def test_codex_runtime_builds_local_launch_command(db, tmp_path):
         host="localhost",
         work_dir="/tmp/project",
         tmp_dir=str(tmp_path / "worker-3"),
-        model="opus",
-        effort="high",
+        model="gpt-5.1-codex",
+        effort="medium",
     )
 
     with (
@@ -98,8 +98,9 @@ def test_codex_runtime_builds_local_launch_command(db, tmp_path):
     command = mock_send.call_args.args[2]
     assert "codex" in command
     assert "--add-dir" in command
-    assert "gpt-5-codex" in command
+    assert "gpt-5.1-codex" in command
     assert "model_reasoning_effort" in command
+    assert "medium" in command
     assert "model_instructions_file" in command
 
 

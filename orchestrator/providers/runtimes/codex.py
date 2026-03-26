@@ -10,6 +10,7 @@ import shutil
 from orchestrator import paths
 from orchestrator.agents import deploy_brain_scripts, deploy_worker_scripts, get_path_export_command
 from orchestrator.browser.cdp_worker_proxy import start_cdp_proxy
+from orchestrator.providers.config import get_provider_default_effort, get_provider_default_model
 from orchestrator.state.repositories import sessions as sessions_repo
 from orchestrator.terminal import manager as tmux
 
@@ -190,8 +191,8 @@ class CodexRuntime:
             _build_codex_command(
                 workspace_dir=_BRAIN_DIR,
                 prompt_path=prompt_path,
-                model=_DEFAULT_CODEX_MODEL,
-                effort=_DEFAULT_REASONING_EFFORT,
+                model=get_provider_default_model(conn, self.provider_id),
+                effort=get_provider_default_effort(conn, self.provider_id),
             ),
         ]
         tmux.send_keys(tmux.TMUX_SESSION, BRAIN_SESSION_NAME, " && ".join(cmd_parts))

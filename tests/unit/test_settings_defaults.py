@@ -44,6 +44,18 @@ class TestSettingsDefaults:
         assert worker["category"] == "worker"
         assert brain["category"] == "brain"
 
+    def test_codex_defaults_are_present_for_empty_db(self, client):
+        """Codex launch defaults should be exposed by GET /settings."""
+        resp = client.get("/api/settings")
+        assert resp.status_code == 200
+        entries = resp.json()
+        codex_model = next(e for e in entries if e["key"] == "codex.default_model")
+        codex_effort = next(e for e in entries if e["key"] == "codex.default_effort")
+        assert codex_model["value"] == "gpt-5-codex"
+        assert codex_effort["value"] == "high"
+        assert codex_model["category"] == "codex"
+        assert codex_effort["category"] == "codex"
+
     def test_db_override_takes_precedence(self, client):
         """Once a user sets a value, that overrides the default."""
         client.put("/api/settings", json={"settings": {"ui.preserve_filters": True}})
@@ -128,3 +140,19 @@ class TestSettingsDefaults:
         assert claude["capabilities"]["worker_sessions"]["supported"] is True
         assert codex["capabilities"]["remote_sessions"]["supported"] is False
         assert codex["capabilities"]["remote_sessions"]["disabled_reason"]
+
+    def test_provider_registry_defaults_reflect_saved_values(self, client):
+        client.put(
+            "/api/settings",
+            json={
+                "settings": {
+                    "worker.default_provider": "codex",
+                    "brain.default_provider": "codex",
+                }
+            },
+        )
+
+        resp = client.get("/api/settings/providers")
+
+        assert resp.status_code == 200
+        assert resp.json()["defaults"] == {"worker": "codex", "brain": "codex"}

@@ -489,7 +489,16 @@ class TestBrain:
         assert resp.status_code == 400
 
     def test_brain_start_uses_codex_default_provider(self, client):
-        client.put("/api/settings", json={"settings": {"brain.default_provider": "codex"}})
+        client.put(
+            "/api/settings",
+            json={
+                "settings": {
+                    "brain.default_provider": "codex",
+                    "codex.default_model": "gpt-5.1-codex",
+                    "codex.default_effort": "medium",
+                }
+            },
+        )
 
         with patch(_CODEX_BRAIN_DEPLOY), patch(
             _CODEX_BRAIN_PROMPT_WRITE, return_value="/tmp/orchestrator/brain/prompt.md"
@@ -507,6 +516,9 @@ class TestBrain:
         session_id = status.json()["session_id"]
         session = client.get(f"/api/sessions/{session_id}")
         assert session.json()["provider"] == "codex"
+        launch_command = mock_tmux.send_keys.call_args_list[-1].args[2]
+        assert "gpt-5.1-codex" in launch_command
+        assert "medium" in launch_command
 
     def test_brain_command_translates_codex_quick_clear(self, client):
         client.put("/api/settings", json={"settings": {"brain.default_provider": "codex"}})
