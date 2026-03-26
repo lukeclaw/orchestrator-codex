@@ -193,6 +193,14 @@
   gap: 4px;
 }
 
+.bp-footer-action-wrapper {
+  display: inline-flex;
+}
+
+.bp-footer-action-wrapper.disabled {
+  cursor: not-allowed;
+}
+
 .bp-footer-action-btn {
   display: flex;
   align-items: center;
@@ -215,6 +223,11 @@
 
 .bp-footer-action-btn:active {
   background: var(--border-subtle);
+}
+
+.bp-footer-action-btn:disabled {
+  opacity: 0.45;
+  pointer-events: none;
 }
 
 .bp-footer-action-create:hover {

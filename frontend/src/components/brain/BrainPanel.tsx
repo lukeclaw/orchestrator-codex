@@ -4,6 +4,12 @@ import Modal from '../common/Modal'
 import { isSupportedDropFile, LARGE_FILE_THRESHOLD, fileToBase64 } from '../../utils/fileDropUtils'
 import { useNotify } from '../../context/NotificationContext'
 import { useSmartPaste } from '../../hooks/useSmartPaste'
+import {
+  DEFAULT_PROVIDER_ID,
+  getBrainQuickActionDisabledReason,
+  type ProviderRegistryResponse,
+  useProviderRegistry,
+} from '../../hooks/useProviderRegistry'
 import BrainTerminal from './BrainTerminal'
 import type { BrainStatus } from './BrainTerminal'
 import { IconChevronLeft, IconChevronRight, IconClipboard, IconEraser, IconPlus, IconStop, IconSync } from '../common/Icons'
@@ -19,6 +25,15 @@ interface BrainPanelProps {
   maxWidth: number
 }
 
+export function getBrainPanelQuickActionState(
+  registry: ProviderRegistryResponse,
+  providerId: string,
+) {
+  return {
+    clearDisabledReason: getBrainQuickActionDisabledReason(registry, providerId, 'clear'),
+  }
+}
+
 export default function BrainPanel({
   collapsed,
   onToggleCollapsed,
@@ -28,7 +43,9 @@ export default function BrainPanel({
   maxWidth,
 }: BrainPanelProps) {
   const notify = useNotify()
+  const { registry } = useProviderRegistry()
   const [brainStatus, setBrainStatus] = useState<BrainStatus | null>(null)
+  const [brainProvider, setBrainProvider] = useState(DEFAULT_PROVIDER_ID)
   const [starting, setStarting] = useState(false)
   const [stopping, setStopping] = useState(false)
   const [pasting, setPasting] = useState(false)
@@ -51,11 +68,29 @@ export default function BrainPanel({
     }
   }, [])
 
+  const fetchBrainProvider = useCallback(async (sessionId: string | null) => {
+    if (!sessionId) {
+      setBrainProvider(DEFAULT_PROVIDER_ID)
+      return
+    }
+
+    try {
+      const session = await api<{ provider?: string }>(`/api/sessions/${sessionId}`)
+      setBrainProvider(session.provider || DEFAULT_PROVIDER_ID)
+    } catch {
+      setBrainProvider(DEFAULT_PROVIDER_ID)
+    }
+  }, [])
+
   useEffect(() => {
     fetchStatus()
     const interval = setInterval(fetchStatus, 5000)
     return () => clearInterval(interval)
   }, [fetchStatus])
+
+  useEffect(() => {
+    fetchBrainProvider(brainStatus?.session_id ?? null)
+  }, [brainStatus?.session_id, fetchBrainProvider])
 
   // Auto-start brain once on mount if not already running
   useEffect(() => {
@@ -283,6 +318,9 @@ export default function BrainPanel({
   }
 
   const isRunning = brainStatus?.running && brainStatus?.session_id
+  const { clearDisabledReason } = brainStatus?.session_id
+    ? getBrainPanelQuickActionState(registry, brainProvider)
+    : { clearDisabledReason: null }
 
   if (collapsed) {
     return (
@@ -372,14 +410,20 @@ export default function BrainPanel({
       {isRunning && (
         <div className="bp-footer">
           <div className="bp-footer-actions">
-            <button
-              className="bp-footer-action-btn"
-              onClick={() => sendBrainCommand('/clear')}
-              title="Clear brain context"
+            <span
+              className={`bp-footer-action-wrapper${clearDisabledReason ? ' disabled' : ''}`}
+              title={clearDisabledReason || 'Clear brain context'}
             >
-              <IconEraser size={12} />
-              <span>Clear</span>
-            </button>
+              <button
+                className="bp-footer-action-btn"
+                onClick={clearDisabledReason ? undefined : () => sendBrainCommand('/clear')}
+                disabled={!!clearDisabledReason}
+                aria-disabled={!!clearDisabledReason}
+              >
+                <IconEraser size={12} />
+                <span>Clear</span>
+              </button>
+            </span>
             <button
               className="bp-footer-action-btn"
               onClick={() => sendBrainCommand('/check_worker')}
