@@ -22,6 +22,7 @@ import threading
 import time
 
 from orchestrator.agents import get_path_export_command, get_worker_prompt
+from orchestrator.providers import CAPABILITY_RECONNECT, get_provider
 from orchestrator.session.health import (
     check_tui_running_in_pane,
 )
@@ -1460,6 +1461,17 @@ reconnect_rdev_worker = reconnect_remote_worker
 WORKER_BASE_DIR = "/tmp/orchestrator/workers"
 
 
+def get_reconnect_disabled_reason(provider: str | None) -> str | None:
+    """Return the provider-specific reconnect disabled reason, if any."""
+    try:
+        capability = get_provider(provider or "claude").capabilities[CAPABILITY_RECONNECT]
+    except KeyError:
+        return None
+    if capability.supported:
+        return None
+    return capability.disabled_reason or "Reconnect is not supported for this provider."
+
+
 def trigger_reconnect(
     session,
     db,
@@ -1497,6 +1509,14 @@ def trigger_reconnect(
 
     tmux_sess, tmux_win = tmux_target(session.name)
     tmp_dir = os.path.join(WORKER_BASE_DIR, session.name)
+    reconnect_disabled_reason = get_reconnect_disabled_reason(getattr(session, "provider", None))
+    if reconnect_disabled_reason:
+        logger.info(
+            "trigger_reconnect %s: reconnect disabled for provider %s",
+            session.name,
+            getattr(session, "provider", None),
+        )
+        return {"ok": False, "error": reconnect_disabled_reason}
 
     # Check if a reconnect is already in progress (RC-18: avoid double-click confusion)
     lock = get_reconnect_lock(session.id)

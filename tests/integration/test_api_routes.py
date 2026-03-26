@@ -51,6 +51,8 @@ class TestSessions:
         assert resp.status_code == 201
         data = resp.json()
         assert data["provider"] == "codex"
+        details = client.get(f"/api/sessions/{data['id']}")
+        assert details.json()["auto_reconnect"] is False
 
     def test_create_session_uses_default_worker_provider_setting(self, client):
         client.put("/api/settings", json={"settings": {"worker.default_provider": "codex"}})
@@ -60,6 +62,8 @@ class TestSessions:
             resp = client.post("/api/sessions", json={"name": "worker-3", "host": "localhost"})
         assert resp.status_code == 201
         assert resp.json()["provider"] == "codex"
+        details = client.get(f"/api/sessions/{resp.json()['id']}")
+        assert details.json()["auto_reconnect"] is False
 
     def test_create_session_rejects_unknown_provider(self, client):
         with patch(
@@ -566,6 +570,37 @@ class TestCodexSessions:
 
         assert resp.status_code == 400
         assert resp.json()["detail"] == "Remote Codex support is not available in MVP."
+
+    def test_reconnect_codex_session_is_rejected(self, client):
+        with patch(
+            "orchestrator.api.routes.sessions.ensure_window", return_value="orchestrator:codex-reconnect"
+        ):
+            created = client.post(
+                "/api/sessions",
+                json={"name": "codex-reconnect", "host": "localhost", "provider": "codex"},
+            )
+        session_id = created.json()["id"]
+        client.patch(f"/api/sessions/{session_id}", json={"status": "disconnected"})
+
+        resp = client.post(f"/api/sessions/{session_id}/reconnect")
+
+        assert resp.status_code == 400
+        assert resp.json()["detail"] == "Codex reconnect support is not implemented yet."
+
+    def test_enable_auto_reconnect_for_codex_session_is_rejected(self, client):
+        with patch(
+            "orchestrator.api.routes.sessions.ensure_window", return_value="orchestrator:codex-auto"
+        ):
+            created = client.post(
+                "/api/sessions",
+                json={"name": "codex-auto", "host": "localhost", "provider": "codex"},
+            )
+        session_id = created.json()["id"]
+
+        resp = client.post(f"/api/sessions/{session_id}/auto-reconnect")
+
+        assert resp.status_code == 400
+        assert resp.json()["detail"] == "Codex reconnect support is not implemented yet."
 
 
 # --- Paste ---

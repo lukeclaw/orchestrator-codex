@@ -1066,7 +1066,7 @@ def check_all_workers_health(
     """
     from datetime import datetime
 
-    from orchestrator.session.reconnect import trigger_reconnect
+    from orchestrator.session.reconnect import get_reconnect_disabled_reason, trigger_reconnect
 
     results = {
         "checked": 0,
@@ -1263,6 +1263,8 @@ def check_all_workers_health(
     for s in unique_pool:
         if not s.auto_reconnect:
             continue
+        if get_reconnect_disabled_reason(getattr(s, "provider", None)):
+            continue
         if s.id in skipped_session_ids:
             continue
         if is_user_active(s.id):
@@ -1277,14 +1279,15 @@ def check_all_workers_health(
             continue
         try:
             logger.info("Auto-reconnect: triggering reconnect for %s", s.name)
-            trigger_reconnect(
+            reconnect_result = trigger_reconnect(
                 fresh,
                 db,
                 db_path=db_path,
                 api_port=api_port,
                 tunnel_manager=tunnel_manager,
             )
-            results["auto_reconnected"].append(s.name)
+            if reconnect_result.get("ok"):
+                results["auto_reconnected"].append(s.name)
         except Exception as e:
             logger.warning("Auto-reconnect: failed to start reconnect for %s: %s", s.name, e)
 

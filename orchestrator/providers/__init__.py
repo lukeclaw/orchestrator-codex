@@ -1,6 +1,7 @@
 """Provider registry and capability definitions."""
 
 from orchestrator.providers.registry import (
+    CAPABILITY_RECONNECT,
     CAPABILITY_REMOTE_SESSIONS,
     CAPABILITY_KEYS,
     DEFAULT_PROVIDER_ID,
@@ -14,6 +15,7 @@ from orchestrator.providers.runtime import WorkerLaunchRequest, get_provider_run
 
 __all__ = [
     "CAPABILITY_KEYS",
+    "CAPABILITY_RECONNECT",
     "CAPABILITY_REMOTE_SESSIONS",
     "DEFAULT_PROVIDER_ID",
     "PROVIDERS",

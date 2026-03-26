@@ -4,7 +4,7 @@ import logging
 import sqlite3
 import uuid
 
-from orchestrator.providers import DEFAULT_PROVIDER_ID
+from orchestrator.providers import CAPABILITY_RECONNECT, DEFAULT_PROVIDER_ID, get_provider
 from orchestrator.session.state_machine import SessionStatus
 from orchestrator.state.db import transaction, with_retry
 from orchestrator.state.models import Session
@@ -67,15 +67,31 @@ def create_session(
     work_dir: str | None = None,
     session_type: str = "worker",
     provider: str = DEFAULT_PROVIDER_ID,
+    auto_reconnect: bool | None = None,
 ) -> Session:
     id = str(uuid.uuid4())
     now = utc_now_iso()
+    if auto_reconnect is None:
+        try:
+            auto_reconnect = get_provider(provider).capabilities[CAPABILITY_RECONNECT].supported
+        except KeyError:
+            auto_reconnect = True
     conn.execute(
         """INSERT INTO sessions
            (id, name, host, work_dir, session_type, provider,
             last_status_changed_at, claude_session_id, auto_reconnect)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)""",
-        (id, name, host, work_dir, session_type, provider or DEFAULT_PROVIDER_ID, now, id),
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        (
+            id,
+            name,
+            host,
+            work_dir,
+            session_type,
+            provider or DEFAULT_PROVIDER_ID,
+            now,
+            id,
+            int(bool(auto_reconnect)),
+        ),
     )
     conn.commit()
     return get_session(conn, id)

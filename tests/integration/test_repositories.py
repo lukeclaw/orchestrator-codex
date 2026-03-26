@@ -25,9 +25,11 @@ class TestSessionsRepo:
     def test_create_with_provider(self, db):
         s = sessions.create_session(db, "codex-worker", "localhost", provider="codex")
         assert s.provider == "codex"
+        assert s.auto_reconnect is False
 
         fetched = sessions.get_session(db, s.id)
         assert fetched.provider == "codex"
+        assert fetched.auto_reconnect is False
 
     def test_get_by_name(self, db):
         sessions.create_session(db, "named-worker", "local")

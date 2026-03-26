@@ -21,7 +21,9 @@ from orchestrator.session import (
     is_reconnectable,
     trigger_reconnect,
 )
+from orchestrator.session.reconnect import get_reconnect_disabled_reason
 from orchestrator.providers import (
+    CAPABILITY_RECONNECT,
     CAPABILITY_REMOTE_SESSIONS,
     DEFAULT_PROVIDER_ID,
     WorkerLaunchRequest,
@@ -181,6 +183,13 @@ def _get_reset_command(session) -> str:
             "assumptions, and wait for the next instruction."
         )
     return "/clear"
+
+
+def _is_reconnect_supported(provider: str | None) -> bool:
+    try:
+        return get_provider(provider or DEFAULT_PROVIDER_ID).capabilities[CAPABILITY_RECONNECT].supported
+    except KeyError:
+        return True
 
 
 def _write_to_rws_pty(session, data: str) -> bool:
@@ -355,6 +364,8 @@ def record_session_viewed(session_id: str, request: Request, db=Depends(get_db))
     # Auto-reconnect: if user opens a disconnected session, trigger reconnect
     # immediately instead of waiting for the periodic health check.
     if s.auto_reconnect and (is_reconnectable(s.status) or s.status == "error"):
+        if not _is_reconnect_supported(s.provider):
+            return {"ok": True}
         config = getattr(request.app.state, "config", {})
         api_port = config.get("server", {}).get("port", 8093)
         db_path = getattr(request.app.state, "db_path", None)
@@ -376,6 +387,9 @@ def toggle_auto_reconnect(session_id: str, request: Request, db=Depends(get_db))
         raise HTTPException(404, "Session not found")
     session_id = s.id
     new_value = not s.auto_reconnect
+    reconnect_disabled_reason = get_reconnect_disabled_reason(s.provider)
+    if new_value and reconnect_disabled_reason:
+        raise HTTPException(400, reconnect_disabled_reason)
     repo.update_session(db, session_id, auto_reconnect=new_value)
 
     # If enabling and worker is currently in a reconnectable state, reconnect now
@@ -1150,6 +1164,9 @@ def reconnect_session(session_id: str, request: Request, db=Depends(get_db)):
     s = _resolve_session(db, session_id)
     if s is None:
         raise HTTPException(404, "Session not found")
+    reconnect_disabled_reason = get_reconnect_disabled_reason(s.provider)
+    if reconnect_disabled_reason:
+        raise HTTPException(400, reconnect_disabled_reason)
 
     # Allow reconnect from disconnected state (and legacy "error" for backwards compat)
     if not is_reconnectable(s.status) and s.status != "error":
