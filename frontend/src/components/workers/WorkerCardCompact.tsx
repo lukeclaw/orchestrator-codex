@@ -2,6 +2,7 @@ import { useNavigate, Link } from 'react-router-dom'
 import type { Session, Task } from '../../api/types'
 import { timeAgo } from '../common/TimeAgo'
 import StatusDot from '../common/StatusDot'
+import ProviderBadge from '../common/ProviderBadge'
 import './WorkerCardCompact.css'
 
 interface Props {
@@ -34,6 +35,7 @@ export default function WorkerCardCompact({ session, assignedTask, allRdev }: Pr
           {hasPrefix && <span className="wcc-name-prefix">{namePrefix}_</span>}
           <span className="wcc-name-suffix">{nameSuffix}</span>
         </span>
+        <ProviderBadge provider={session.provider} compact />
         {!allRdev && session.host.includes('/') && <span className="wcc-type-tag rdev">rdev</span>}
         {session.host !== 'localhost' && !session.host.includes('/') && <span className="wcc-type-tag ssh">ssh</span>}
         <span className={`status-badge ${session.status}`}>{session.status}</span>

@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { IconRefresh } from '../common/Icons'
 import StatusDot from '../common/StatusDot'
+import ProviderBadge from '../common/ProviderBadge'
 import { api } from '../../api/client'
 import type { Task, Session } from '../../api/types'
 import { useNotify } from '../../context/NotificationContext'
@@ -108,6 +109,7 @@ export default function WorkerAssignModal({
               >
                 <StatusDot status={s.status} />
                 <span className="worker-name">{s.name}</span>
+                <ProviderBadge provider={s.provider} compact />
                 {s.host.includes('/') ? <span className="wc-type-tag rdev">rdev</span> : s.host !== 'localhost' ? <span className="wc-type-tag ssh">ssh</span> : null}
                 {assigningId === s.id ? (
                   <span className="worker-assigning-label">Assigning...</span>
@@ -131,6 +133,7 @@ export default function WorkerAssignModal({
               >
                 <StatusDot status={s.status} />
                 <span className="worker-name">{s.name}</span>
+                <ProviderBadge provider={s.provider} compact />
                 {s.host.includes('/') ? <span className="wc-type-tag rdev">rdev</span> : s.host !== 'localhost' ? <span className="wc-type-tag ssh">ssh</span> : null}
                 <span className={`worker-status-label status-${s.status}`}>{s.status}</span>
                 <button

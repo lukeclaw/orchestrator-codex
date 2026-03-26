@@ -13,6 +13,7 @@ import InteractiveCLI from '../components/terminal/InteractiveCLI'
 import BrowserView from '../components/browser/BrowserView'
 import FileExplorerPanel from '../components/file-explorer/FileExplorerPanel'
 import FileViewer from '../components/file-explorer/FileViewer'
+import ProviderBadge from '../components/common/ProviderBadge'
 import { IconPause, IconPlay, IconStop, IconRefresh, IconTrash, IconSync, IconBrain } from '../components/common/Icons'
 import ConfirmPopover from '../components/common/ConfirmPopover'
 import AssignTaskModal from '../components/tasks/AssignTaskModal'
@@ -619,6 +620,7 @@ export default function SessionDetailPage() {
                 .catch(() => notify('Failed to copy', 'error'))
             }}
           >{session.name}</h2>
+          <ProviderBadge provider={session.provider} />
           {session.host.includes('/') && <span className="sd-type-tag rdev">rdev</span>}
           {isSsh && <span className="sd-type-tag ssh">ssh</span>}
           <span className={`status-badge ${session.status}`}>{session.status}</span>

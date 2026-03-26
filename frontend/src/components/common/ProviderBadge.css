@@ -1,0 +1,39 @@
+.provider-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.provider-badge--compact {
+  padding: 1px 6px;
+  font-size: 10px;
+}
+
+.provider-badge--claude {
+  background: rgba(var(--purple-alt-rgb), 0.12);
+  color: var(--purple);
+  border-color: rgba(var(--purple-alt-rgb), 0.22);
+}
+
+.provider-badge--codex {
+  background: rgba(var(--accent-rgb), 0.12);
+  color: var(--accent);
+  border-color: rgba(var(--accent-rgb), 0.22);
+}
+
+[data-theme="light"] .provider-badge--claude {
+  background: rgba(var(--purple-alt-rgb), 0.16);
+}
+
+[data-theme="light"] .provider-badge--codex {
+  background: rgba(var(--accent-rgb), 0.16);
+}

@@ -79,7 +79,7 @@ export default function DashboardPage() {
           <div className="dashboard-empty-state">
             <IconSessions size={48} />
             <h3>No workers yet</h3>
-            <p>Add a worker to get started with Claude Code sessions.</p>
+            <p>Add a worker to get started.</p>
             <button className="btn btn-primary" onClick={() => setShowAddWorker(true)}>+ Add Worker</button>
           </div>
         ) : (

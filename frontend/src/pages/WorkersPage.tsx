@@ -409,7 +409,7 @@ export default function WorkersPage() {
                 <>
                   <IconSessions size={48} />
                   <h3>No workers yet</h3>
-                  <p>Add a worker to get started with Claude Code sessions.</p>
+                  <p>Add a worker to get started.</p>
                   <button
                     className="btn btn-primary"
                     onClick={() => setShowAddModal(true)}

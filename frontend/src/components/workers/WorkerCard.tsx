@@ -4,6 +4,7 @@ import type { Session, Task } from '../../api/types'
 import { api } from '../../api/client'
 import { useNotify } from '../../context/NotificationContext'
 import { timeAgo } from '../common/TimeAgo'
+import ProviderBadge from '../common/ProviderBadge'
 import { IconTrash, IconPause, IconPlay, IconStop, IconRefresh, IconBrain, IconKebab } from '../common/Icons'
 import StatusDot from '../common/StatusDot'
 
@@ -172,6 +173,7 @@ export default function WorkerCard({
           ) : (
             <span className="wc-name">{session.name}</span>
           )}
+          <ProviderBadge provider={session.provider} compact />
           {isRdev && <span className="wc-type-tag rdev">rdev</span>}
           {isSsh && <span className="wc-type-tag ssh">ssh</span>}
           <span className={`status-badge ${session.status}`}>{session.status}</span>

@@ -11,6 +11,7 @@ import {
 } from '../common/Icons'
 import ConfirmPopover from '../common/ConfirmPopover'
 import StatusDot from '../common/StatusDot'
+import ProviderBadge from '../common/ProviderBadge'
 
 interface TaskWorkerPreviewProps {
   worker: Session
@@ -86,6 +87,7 @@ export default function TaskWorkerPreview({ worker, onRefresh }: TaskWorkerPrevi
           <span className="tdp-worker-preview-name">
             {worker.name}
           </span>
+          <ProviderBadge provider={worker.provider} compact />
           {worker.host.includes('/') && <span className="wc-type-tag rdev">rdev</span>}
           <span className={`status-badge small ${worker.status}`}>{worker.status}</span>
         </div>
