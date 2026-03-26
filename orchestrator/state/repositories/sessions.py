@@ -102,6 +102,7 @@ def update_session(
     conn: sqlite3.Connection,
     id: str,
     status: str | None = None,
+    provider: str | None = None,
     tunnel_pid: int | None = ...,
     takeover_mode: bool | None = None,
     last_viewed_at: str | None = None,
@@ -123,6 +124,9 @@ def update_session(
         params.append(status)
         sets.append("last_status_changed_at = ?")
         params.append(utc_now_iso())
+    if provider is not None:
+        sets.append("provider = ?")
+        params.append(provider)
     if tunnel_pid is not ...:
         sets.append("tunnel_pid = ?")
         params.append(tunnel_pid)

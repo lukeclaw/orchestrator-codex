@@ -162,7 +162,7 @@ class CodexRuntime:
         target = tmux.ensure_window(tmux.TMUX_SESSION, BRAIN_SESSION_NAME)
 
         if session:
-            sessions_repo.update_session(conn, session.id, status="working")
+            sessions_repo.update_session(conn, session.id, status="working", provider=self.provider_id)
             session_id = session.id
         else:
             session = sessions_repo.create_session(
@@ -174,7 +174,7 @@ class CodexRuntime:
                 provider=self.provider_id,
             )
             session_id = session.id
-            sessions_repo.update_session(conn, session_id, status="working")
+            sessions_repo.update_session(conn, session_id, status="working", provider=self.provider_id)
 
         if codex_already_running:
             logger.info("Brain pane already running '%s'; skipping Codex launch", pane_cmd)

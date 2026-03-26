@@ -36,13 +36,16 @@ def _get_brain_session(db):
 
 
 def _get_brain_provider(db):
-    session = _get_brain_session(db)
-    if session and session.provider:
-        return session.provider
-
     from orchestrator.state.repositories.config import get_config_value
 
     return str(get_config_value(db, "brain.default_provider", default=DEFAULT_PROVIDER_ID))
+
+
+def _get_effective_brain_provider(db):
+    session = _get_brain_session(db)
+    if session and session.status not in ("disconnected",) and session.provider:
+        return session.provider
+    return _get_brain_provider(db)
 
 
 def _translate_brain_command(provider: str, command: str) -> str:
@@ -72,14 +75,14 @@ def _translate_brain_command(provider: str, command: str) -> str:
 def brain_status(db=Depends(get_db)):
     """Get the orchestrator brain status."""
     session = _get_brain_session(db)
-    provider = _get_brain_provider(db)
+    provider = _get_effective_brain_provider(db)
     if session is None:
         return {"running": False, "session_id": None, "status": None, "provider": provider}
     return {
         "running": session.status not in ("disconnected",),
         "session_id": session.id,
         "status": session.status,
-        "provider": session.provider or provider,
+        "provider": provider,
     }
 
 
@@ -114,7 +117,11 @@ def set_focus(focus: FocusUpdate):
 @router.post("/brain/start", status_code=200)
 def start_brain(db=Depends(get_db)):
     """Start the orchestrator brain via the selected provider runtime."""
-    runtime = get_provider_runtime(_get_brain_provider(db))
+    provider = _get_brain_provider(db)
+    session = _get_brain_session(db)
+    if session is not None and session.status in ("disconnected",) and session.provider != provider:
+        sessions_repo.update_session(db, session.id, provider=provider)
+    runtime = get_provider_runtime(provider)
     try:
         return runtime.start_brain(db)
     except Exception as e:
@@ -125,14 +132,14 @@ def start_brain(db=Depends(get_db)):
 @router.post("/brain/stop", status_code=200)
 def stop_brain(db=Depends(get_db)):
     """Stop the orchestrator brain."""
-    runtime = get_provider_runtime(_get_brain_provider(db))
+    runtime = get_provider_runtime(_get_effective_brain_provider(db))
     return runtime.stop_brain(db)
 
 
 @router.post("/brain/redeploy", status_code=200)
 def brain_redeploy(db=Depends(get_db)):
     """Re-deploy brain files and re-arm heartbeat loop."""
-    runtime = get_provider_runtime(_get_brain_provider(db))
+    runtime = get_provider_runtime(_get_effective_brain_provider(db))
     try:
         return runtime.redeploy_brain(db)
     except ValueError as exc:

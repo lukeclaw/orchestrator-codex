@@ -545,6 +545,39 @@ class TestBrain:
         assert sent_command != "/clear"
         assert "Reset your coordination context" in sent_command
 
+    def test_brain_restart_uses_updated_default_provider_after_stop(self, client):
+        with patch(_SKIP_UPDATE, return_value=False), patch(_BRAIN_DEPLOY), patch(
+            _BRAIN_PATH_EXPORT, return_value=""
+        ):
+            with patch("orchestrator.providers.runtimes.claude.tmux") as mock_tmux:
+                mock_tmux.pane_foreground_command.return_value = None
+                mock_tmux.ensure_window.return_value = "orchestrator:brain"
+                mock_tmux.send_keys.return_value = True
+                client.post("/api/brain/start")
+
+        with patch("orchestrator.providers.runtimes.claude.tmux") as mock_tmux:
+            mock_tmux.send_keys.return_value = True
+            client.post("/api/brain/stop")
+
+        client.put("/api/settings", json={"settings": {"brain.default_provider": "codex"}})
+
+        status = client.get("/api/brain/status")
+        assert status.json()["provider"] == "codex"
+
+        with patch(_CODEX_BRAIN_DEPLOY), patch(
+            _CODEX_BRAIN_PROMPT_WRITE, return_value="/tmp/orchestrator/brain/prompt.md"
+        ):
+            with patch("orchestrator.providers.runtimes.codex.tmux") as mock_tmux:
+                mock_tmux.pane_foreground_command.return_value = None
+                mock_tmux.ensure_window.return_value = "orchestrator:brain"
+                mock_tmux.send_keys.return_value = True
+                resp = client.post("/api/brain/start")
+
+        assert resp.status_code == 200
+        session_id = resp.json()["session_id"]
+        session = client.get(f"/api/sessions/{session_id}")
+        assert session.json()["provider"] == "codex"
+
 
 # --- Dashboard ---
 
