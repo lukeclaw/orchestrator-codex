@@ -9,6 +9,7 @@ from orchestrator.providers.registry import (
     get_provider,
     list_providers,
 )
+from orchestrator.providers.runtime import WorkerLaunchRequest, get_provider_runtime
 
 __all__ = [
     "CAPABILITY_KEYS",
@@ -16,6 +17,8 @@ __all__ = [
     "PROVIDERS",
     "ProviderCapability",
     "ProviderDefinition",
+    "WorkerLaunchRequest",
     "get_provider",
+    "get_provider_runtime",
     "list_providers",
 ]

@@ -21,7 +21,12 @@ from orchestrator.session import (
     is_reconnectable,
     trigger_reconnect,
 )
-from orchestrator.providers import DEFAULT_PROVIDER_ID, get_provider
+from orchestrator.providers import (
+    DEFAULT_PROVIDER_ID,
+    WorkerLaunchRequest,
+    get_provider,
+    get_provider_runtime,
+)
 from orchestrator.state.repositories import sessions as repo
 from orchestrator.terminal.manager import (
     capture_pane_with_escapes,
@@ -417,6 +422,7 @@ def create_session(body: SessionCreate, request: Request, db=Depends(get_db)):
     work_dir = body.work_dir  # Can be None, will be set later based on host
 
     s = repo.create_session(db, sanitized_name, body.host, work_dir, provider=provider)
+    runtime = get_provider_runtime(provider)
 
     if is_remote_host(body.host):
         # Remote worker — launch full setup in background thread
@@ -458,22 +464,24 @@ def create_session(body: SessionCreate, request: Request, db=Depends(get_db)):
 
             bg_conn = get_connection(db_path) if db_path else db
             try:
-                result = setup_remote_worker(
-                    bg_conn,
-                    s.id,
-                    sanitized_name,
-                    body.host,
-                    tmux_session_name,
-                    api_port,
-                    work_dir=work_dir,
-                    tmp_dir=tmp_dir,
-                    tunnel_manager=tunnel_manager,
-                    custom_skills=remote_custom_skills_dicts,
-                    disabled_builtin_names=remote_disabled_builtins,
-                    update_before_start=remote_update_before_start,
-                    skip_permissions=remote_skip_permissions,
-                    model=remote_default_model,
-                    effort=remote_default_effort,
+                result = runtime.launch_remote_worker(
+                    WorkerLaunchRequest(
+                        conn=bg_conn,
+                        session_id=s.id,
+                        name=sanitized_name,
+                        host=body.host,
+                        tmux_session=tmux_session_name,
+                        api_port=api_port,
+                        work_dir=work_dir,
+                        tmp_dir=tmp_dir,
+                        tunnel_manager=tunnel_manager,
+                        custom_skills=remote_custom_skills_dicts,
+                        disabled_builtin_names=remote_disabled_builtins,
+                        update_before_start=remote_update_before_start,
+                        skip_permissions=remote_skip_permissions,
+                        model=remote_default_model,
+                        effort=remote_default_effort,
+                    )
                 )
                 if result["ok"]:
                     # Detect work_dir if not provided at creation
@@ -529,8 +537,6 @@ def create_session(body: SessionCreate, request: Request, db=Depends(get_db)):
         # non-fatal: log them but still return success to the client.
         try:
             from orchestrator.state.repositories import skills as skills_repo
-            from orchestrator.terminal.session import setup_local_worker
-
             config = getattr(request.app.state, "config", {})
             api_port = config.get("server", {}).get("port", 8093)
 
@@ -555,20 +561,23 @@ def create_session(body: SessionCreate, request: Request, db=Depends(get_db)):
                 get_config_value(db, "claude.default_effort", default="high")
             )
 
-            setup_local_worker(
-                db,
-                s.id,
-                sanitized_name,
-                tmux_session=tmux_session_name,
-                api_port=api_port,
-                work_dir=work_dir,
-                tmp_dir=tmp_dir,
-                custom_skills=custom_skills_dicts,
-                disabled_builtin_names=disabled_builtins,
-                update_before_start=local_update_before_start,
-                skip_permissions=local_skip_permissions,
-                model=local_default_model,
-                effort=local_default_effort,
+            runtime.launch_local_worker(
+                WorkerLaunchRequest(
+                    conn=db,
+                    session_id=s.id,
+                    name=sanitized_name,
+                    host=body.host,
+                    tmux_session=tmux_session_name,
+                    api_port=api_port,
+                    work_dir=work_dir,
+                    tmp_dir=tmp_dir,
+                    custom_skills=custom_skills_dicts,
+                    disabled_builtin_names=disabled_builtins,
+                    update_before_start=local_update_before_start,
+                    skip_permissions=local_skip_permissions,
+                    model=local_default_model,
+                    effort=local_default_effort,
+                )
             )
             if body.task_id:
                 from orchestrator.state.repositories import tasks
