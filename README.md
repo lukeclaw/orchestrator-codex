@@ -18,13 +18,15 @@ Current provider matrix:
 | Skip permission prompts | Yes | No |
 | Hook automation | Yes | No |
 | Skills deployment | Yes | No |
-| Brain heartbeat / auto-monitoring | Yes | No |
-| Quick clear | Yes | No |
+| Brain heartbeat / auto-monitoring | Yes | Yes |
+| Quick clear | Yes | Yes |
 | Reconnect / auto-reconnect | Yes | No |
 
 Notes:
 - Claude is still the full-featured baseline path.
 - Codex currently targets strong local brain + local worker support.
+- Codex heartbeat is app-managed by Orchestrator rather than provider-native.
+- Codex quick clear is implemented as a translated reset flow, not a native slash-command path.
 - Unsupported Codex features remain visible in the UI and are disabled with tooltips.
 
 
