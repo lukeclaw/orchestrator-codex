@@ -290,6 +290,20 @@
   background: var(--accent);
 }
 
+.settings-page .sd-toggle-switch.disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.settings-tabs-disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.settings-tabs-disabled .sliding-tabs {
+  pointer-events: none;
+}
+
 .settings-page .sd-toggle-knob {
   position: absolute;
   top: 2px;

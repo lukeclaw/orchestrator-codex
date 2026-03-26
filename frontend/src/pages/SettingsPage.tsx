@@ -9,6 +9,18 @@ import { pickFolder } from '../api/pickFolder'
 import ConfirmPopover from '../components/common/ConfirmPopover'
 import SlidingTabs from '../components/common/SlidingTabs'
 import type { ThemeMode } from '../hooks/useTheme'
+import {
+  DEFAULT_PROVIDER_ID,
+  CAPABILITY_HOOKS,
+  CAPABILITY_MODEL_SELECTION,
+  CAPABILITY_EFFORT_SELECTION,
+  CAPABILITY_SKIP_PERMISSIONS,
+  CAPABILITY_HEARTBEAT_LOOP,
+  getSharedCapabilityDisabledReason,
+  getCapabilityDisabledReason,
+  type ProviderRegistryResponse,
+  useProviderRegistry,
+} from '../hooks/useProviderRegistry'
 import './SettingsPage.css'
 
 function formatBytes(bytes: number): string {
@@ -40,8 +52,51 @@ const BACKUPS_PER_PAGE = 10
 
 type SettingsTab = 'updates' | 'preferences' | 'backup'
 
+export interface SettingsCapabilityState {
+  updateBeforeStartDisabledReason: string | null
+  skipPermissionsDisabledReason: string | null
+  defaultModelDisabledReason: string | null
+  defaultEffortDisabledReason: string | null
+  brainHeartbeatDisabledReason: string | null
+}
+
+export function getSettingsCapabilityState(
+  registry: ProviderRegistryResponse,
+  workerProviderId: string,
+  brainProviderId: string,
+): SettingsCapabilityState {
+  return {
+    updateBeforeStartDisabledReason: getSharedCapabilityDisabledReason(
+      registry,
+      [workerProviderId, brainProviderId],
+      CAPABILITY_HOOKS,
+    ),
+    skipPermissionsDisabledReason: getSharedCapabilityDisabledReason(
+      registry,
+      [workerProviderId, brainProviderId],
+      CAPABILITY_SKIP_PERMISSIONS,
+    ),
+    defaultModelDisabledReason: getSharedCapabilityDisabledReason(
+      registry,
+      [workerProviderId, brainProviderId],
+      CAPABILITY_MODEL_SELECTION,
+    ),
+    defaultEffortDisabledReason: getSharedCapabilityDisabledReason(
+      registry,
+      [workerProviderId, brainProviderId],
+      CAPABILITY_EFFORT_SELECTION,
+    ),
+    brainHeartbeatDisabledReason: getCapabilityDisabledReason(
+      registry,
+      brainProviderId,
+      CAPABILITY_HEARTBEAT_LOOP,
+    ),
+  }
+}
+
 export default function SettingsPage() {
   const { loading, getValue, save } = useSettings()
+  const { registry, providerOptions, getCapabilityDisabledReason } = useProviderRegistry()
   const notify = useNotify()
   const { setUpdateAvailable } = useApp()
   const [searchParams, setSearchParams] = useSearchParams()
@@ -74,6 +129,8 @@ export default function SettingsPage() {
   const [skipPermissions, setSkipPermissions] = useState(false)
   const [defaultModel, setDefaultModel] = useState('opus')
   const [defaultEffort, setDefaultEffort] = useState('high')
+  const [workerDefaultProvider, setWorkerDefaultProvider] = useState(DEFAULT_PROVIDER_ID)
+  const [brainDefaultProvider, setBrainDefaultProvider] = useState(DEFAULT_PROVIDER_ID)
   const [theme, setTheme] = useState<ThemeMode>('dark')
   const [brainHeartbeat, setBrainHeartbeat] = useState('off')
   const [heartbeatInput, setHeartbeatInput] = useState('')
@@ -88,6 +145,8 @@ export default function SettingsPage() {
       setSkipPermissions(Boolean(getValue('claude.skip_permissions')))
       setDefaultModel(String(getValue('claude.default_model') || 'opus'))
       setDefaultEffort(String(getValue('claude.default_effort') || 'high'))
+      setWorkerDefaultProvider(String(getValue('worker.default_provider') || DEFAULT_PROVIDER_ID))
+      setBrainDefaultProvider(String(getValue('brain.default_provider') || DEFAULT_PROVIDER_ID))
       setTheme((getValue('ui.theme') as ThemeMode) || 'dark')
       const hb = String(getValue('brain.heartbeat') || 'off')
       setBrainHeartbeat(hb)
@@ -105,6 +164,16 @@ export default function SettingsPage() {
     const newValue = !preserveFilters
     setPreserveFilters(newValue)
     await save({ 'ui.preserve_filters': newValue })
+  }
+
+  const handleWorkerDefaultProviderChange = async (value: string) => {
+    setWorkerDefaultProvider(value)
+    await save({ 'worker.default_provider': value })
+  }
+
+  const handleBrainDefaultProviderChange = async (value: string) => {
+    setBrainDefaultProvider(value)
+    await save({ 'brain.default_provider': value })
   }
 
   const handleSkipPermissionsToggle = async () => {
@@ -221,6 +290,18 @@ export default function SettingsPage() {
   }
 
   const isBackupConfigured = backupSettings?.directory && backupSettings?.has_password
+
+  const providerTabs = providerOptions.map(option => ({
+    value: option.value,
+    label: option.label,
+  }))
+  const {
+    updateBeforeStartDisabledReason,
+    skipPermissionsDisabledReason,
+    defaultModelDisabledReason,
+    defaultEffortDisabledReason,
+    brainHeartbeatDisabledReason,
+  } = getSettingsCapabilityState(registry, workerDefaultProvider, brainDefaultProvider)
 
   // Pagination
   const totalPages = Math.max(1, Math.ceil(backups.length / BACKUPS_PER_PAGE))
@@ -438,10 +519,45 @@ export default function SettingsPage() {
 
         <div className="settings-content panel">
           <div className="panel-header">
-            <h2>Claude Code</h2>
+            <h2>Provider Defaults</h2>
           </div>
           <div className="panel-body">
             <div className="settings-toggle-row">
+              <div>
+                <div className="settings-toggle-label">Worker provider</div>
+                <div className="settings-toggle-desc">
+                  Default provider for new worker sessions
+                </div>
+              </div>
+              <SlidingTabs
+                tabs={providerTabs}
+                value={workerDefaultProvider}
+                onChange={handleWorkerDefaultProviderChange}
+              />
+            </div>
+
+            <div className="settings-toggle-row">
+              <div>
+                <div className="settings-toggle-label">Brain provider</div>
+                <div className="settings-toggle-desc">
+                  Default provider for the brain session
+                </div>
+              </div>
+              <SlidingTabs
+                tabs={providerTabs}
+                value={brainDefaultProvider}
+                onChange={handleBrainDefaultProviderChange}
+              />
+            </div>
+          </div>
+        </div>
+
+        <div className="settings-content panel">
+          <div className="panel-header">
+            <h2>Claude Code</h2>
+          </div>
+          <div className="panel-body">
+            <div className="settings-toggle-row" title={updateBeforeStartDisabledReason || undefined}>
               <div>
                 <div className="settings-toggle-label">Update before start</div>
                 <div className="settings-toggle-desc">
@@ -449,16 +565,17 @@ export default function SettingsPage() {
                 </div>
               </div>
               <div
-                className={`sd-toggle-switch ${claudeUpdateBeforeStart ? 'on' : ''}`}
-                onClick={handleClaudeUpdateToggle}
+                className={`sd-toggle-switch ${claudeUpdateBeforeStart ? 'on' : ''}${updateBeforeStartDisabledReason ? ' disabled' : ''}`}
+                onClick={updateBeforeStartDisabledReason ? undefined : handleClaudeUpdateToggle}
                 role="switch"
                 aria-checked={claudeUpdateBeforeStart}
+                aria-disabled={!!updateBeforeStartDisabledReason}
               >
                 <div className="sd-toggle-knob" />
               </div>
             </div>
 
-            <div className="settings-toggle-row">
+            <div className="settings-toggle-row" title={skipPermissionsDisabledReason || undefined}>
               <div>
                 <div className="settings-toggle-label">Skip permission prompts</div>
                 <div className="settings-toggle-desc">
@@ -467,15 +584,16 @@ export default function SettingsPage() {
                 </div>
               </div>
               <div
-                className={`sd-toggle-switch ${skipPermissions ? 'on' : ''}`}
-                onClick={handleSkipPermissionsToggle}
+                className={`sd-toggle-switch ${skipPermissions ? 'on' : ''}${skipPermissionsDisabledReason ? ' disabled' : ''}`}
+                onClick={skipPermissionsDisabledReason ? undefined : handleSkipPermissionsToggle}
                 role="switch"
                 aria-checked={skipPermissions}
+                aria-disabled={!!skipPermissionsDisabledReason}
               >
                 <div className="sd-toggle-knob" />
               </div>
             </div>
-            {skipPermissions && (
+            {skipPermissions && !skipPermissionsDisabledReason && (
               <div className="settings-warning-note">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
@@ -490,40 +608,44 @@ export default function SettingsPage() {
               </div>
             )}
 
-            <div className="settings-toggle-row">
+            <div className="settings-toggle-row" title={defaultModelDisabledReason || undefined}>
               <div>
                 <div className="settings-toggle-label">Default model</div>
                 <div className="settings-toggle-desc">
                   Claude model used when launching new workers and brain
                 </div>
               </div>
-              <SlidingTabs
-                tabs={[
-                  { value: 'opus' as const, label: 'Opus' },
-                  { value: 'sonnet' as const, label: 'Sonnet' },
-                  { value: 'haiku' as const, label: 'Haiku' },
-                ]}
-                value={defaultModel}
-                onChange={handleDefaultModelChange}
-              />
+              <div className={defaultModelDisabledReason ? 'settings-tabs-disabled' : ''}>
+                <SlidingTabs
+                  tabs={[
+                    { value: 'opus' as const, label: 'Opus' },
+                    { value: 'sonnet' as const, label: 'Sonnet' },
+                    { value: 'haiku' as const, label: 'Haiku' },
+                  ]}
+                  value={defaultModel}
+                  onChange={handleDefaultModelChange}
+                />
+              </div>
             </div>
 
-            <div className="settings-toggle-row">
+            <div className="settings-toggle-row" title={defaultEffortDisabledReason || undefined}>
               <div>
                 <div className="settings-toggle-label">Default effort</div>
                 <div className="settings-toggle-desc">
                   Reasoning effort level for new workers and brain
                 </div>
               </div>
-              <SlidingTabs
-                tabs={[
-                  { value: 'high' as const, label: 'High' },
-                  { value: 'medium' as const, label: 'Medium' },
-                  { value: 'low' as const, label: 'Low' },
-                ]}
-                value={defaultEffort}
-                onChange={handleDefaultEffortChange}
-              />
+              <div className={defaultEffortDisabledReason ? 'settings-tabs-disabled' : ''}>
+                <SlidingTabs
+                  tabs={[
+                    { value: 'high' as const, label: 'High' },
+                    { value: 'medium' as const, label: 'Medium' },
+                    { value: 'low' as const, label: 'Low' },
+                  ]}
+                  value={defaultEffort}
+                  onChange={handleDefaultEffortChange}
+                />
+              </div>
             </div>
           </div>
         </div>
@@ -533,7 +655,7 @@ export default function SettingsPage() {
             <h2>Brain</h2>
           </div>
           <div className="panel-body">
-            <div className="settings-toggle-row">
+            <div className="settings-toggle-row" title={brainHeartbeatDisabledReason || undefined}>
               <div>
                 <div className="settings-toggle-label">
                   Auto-monitoring <span className="settings-beta-badge">Beta</span>
@@ -544,29 +666,32 @@ export default function SettingsPage() {
                 </div>
               </div>
               <div
-                className={`sd-toggle-switch ${brainHeartbeat !== 'off' ? 'on' : ''}`}
-                onClick={handleBrainHeartbeatToggle}
+                className={`sd-toggle-switch ${brainHeartbeat !== 'off' ? 'on' : ''}${brainHeartbeatDisabledReason ? ' disabled' : ''}`}
+                onClick={brainHeartbeatDisabledReason ? undefined : handleBrainHeartbeatToggle}
                 role="switch"
                 aria-checked={brainHeartbeat !== 'off'}
+                aria-disabled={!!brainHeartbeatDisabledReason}
               >
                 <div className="sd-toggle-knob" />
               </div>
             </div>
             {brainHeartbeat !== 'off' && (
               <>
-                <div className="settings-warning-note">
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
-                    <line x1="12" y1="9" x2="12" y2="13" />
-                    <line x1="12" y1="17" x2="12.01" y2="17" />
-                  </svg>
-                  <span>
-                    The brain will autonomously check workers, send "continue" to idle
-                    ones, investigate stuck workers, and mark completed tasks done.
-                    Takes effect on next brain start.
-                  </span>
-                </div>
-                <div className="settings-toggle-row" style={{ marginTop: 8 }}>
+                {!brainHeartbeatDisabledReason && (
+                  <div className="settings-warning-note">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
+                      <line x1="12" y1="9" x2="12" y2="13" />
+                      <line x1="12" y1="17" x2="12.01" y2="17" />
+                    </svg>
+                    <span>
+                      The brain will autonomously check workers, send "continue" to idle
+                      ones, investigate stuck workers, and mark completed tasks done.
+                      Takes effect on next brain start.
+                    </span>
+                  </div>
+                )}
+                <div className="settings-toggle-row" style={{ marginTop: 8 }} title={brainHeartbeatDisabledReason || undefined}>
                   <div>
                     <div className="settings-toggle-label">Check interval</div>
                     <div className="settings-toggle-desc">
@@ -584,6 +709,7 @@ export default function SettingsPage() {
                         onKeyDown={e => { if (e.key === 'Enter') { commitHeartbeatInput(); (e.target as HTMLInputElement).blur() } }}
                         placeholder="Every hour"
                         spellCheck={false}
+                        disabled={!!brainHeartbeatDisabledReason}
                       />
                       {heartbeatSaved && (
                         <svg className="brain-heartbeat-saved" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--green)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
@@ -591,7 +717,7 @@ export default function SettingsPage() {
                         </svg>
                       )}
                     </div>
-                    {heartbeatFocused && (
+                    {heartbeatFocused && !brainHeartbeatDisabledReason && (
                       <div className="brain-heartbeat-suggestions">
                         {HEARTBEAT_PRESETS.map(preset => (
                           <button
