@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from orchestrator.api.deps import get_db
+from orchestrator.providers import get_provider
 from orchestrator.state.repositories import context as repo
 
 router = APIRouter()
@@ -19,6 +20,7 @@ class ContextCreate(BaseModel):
     content: str
     description: str | None = None
     scope: str = "global"
+    provider: str | None = None
     project_id: str | None = None
     category: str | None = None
     source: str | None = None
@@ -30,10 +32,21 @@ class ContextUpdate(BaseModel):
     content: str | None = None
     description: str | None = None
     scope: str | None = None
+    provider: str | None = None
     project_id: str | None = None
     category: str | None = None
     source: str | None = None
     metadata: str | None = None
+
+
+def _validate_provider(provider: str | None) -> str | None:
+    if provider is None:
+        return None
+    try:
+        get_provider(provider)
+    except KeyError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return provider
 
 
 def _resolve_worker_uuid(source: str | None, db: sqlite3.Connection) -> str | None:
@@ -71,6 +84,7 @@ def _serialize(c, db: sqlite3.Connection, include_content: bool = True):
     result = {
         "id": c.id,
         "scope": c.scope,
+        "provider": c.provider,
         "project_id": c.project_id,
         "title": c.title,
         "description": c.description,
@@ -88,17 +102,25 @@ def _serialize(c, db: sqlite3.Connection, include_content: bool = True):
 @router.get("/context")
 def list_context(
     scope: str | None = None,
+    provider: str | None = None,
     project_id: str | None = None,
     category: str | None = None,
     search: str | None = None,
     include_content: bool = False,
+    include_shared: bool = True,
     db=Depends(get_db),
 ):
     """List context items. By default returns only title/description (no content).
     Set include_content=true to get full content (for backward compatibility or specific needs).
     """
     items = repo.list_context(
-        db, scope=scope, project_id=project_id, category=category, search=search
+        db,
+        scope=scope,
+        provider=_validate_provider(provider),
+        project_id=project_id,
+        category=category,
+        search=search,
+        include_shared=include_shared,
     )
     return [_serialize(c, db, include_content=include_content) for c in items]
 
@@ -122,6 +144,7 @@ def create_context_item(body: ContextCreate, db=Depends(get_db)):
         content=body.content,
         description=body.description,
         scope=body.scope,
+        provider=_validate_provider(body.provider),
         project_id=body.project_id,
         category=body.category,
         source=source,
@@ -143,13 +166,14 @@ def update_context_item(item_id: str, body: ContextUpdate, db=Depends(get_db)):
         "content",
         "description",
         "scope",
+        "provider",
         "project_id",
         "category",
         "source",
         "metadata",
     ):
         if field in data:
-            kwargs[field] = data[field]
+            kwargs[field] = _validate_provider(data[field]) if field == "provider" else data[field]
 
     updated = repo.update_context_item(db, item_id, **kwargs)
     return _serialize(updated, db)

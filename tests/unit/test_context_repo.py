@@ -15,6 +15,7 @@ def test_create_and_get(db):
     assert item.title == "Test"
     assert item.content == "Hello world"
     assert item.scope == "global"
+    assert item.provider is None
     assert item.project_id is None
 
     fetched = get_context_item(db, item.id)
@@ -71,6 +72,27 @@ def test_list_filter_project_id(db):
     assert list_context(db, project_id="p1")[0].title == "For P1"
 
 
+def test_list_filter_provider_includes_shared_by_default(db):
+    create_context_item(db, title="Shared", content="shared")
+    create_context_item(db, title="Claude Only", content="claude", provider="claude")
+    create_context_item(db, title="Codex Only", content="codex", provider="codex")
+
+    results = list_context(db, provider="codex")
+    titles = {item.title for item in results}
+
+    assert titles == {"Shared", "Codex Only"}
+
+
+def test_list_filter_provider_exact_when_include_shared_disabled(db):
+    create_context_item(db, title="Shared", content="shared")
+    create_context_item(db, title="Claude Only", content="claude", provider="claude")
+
+    results = list_context(db, provider="claude", include_shared=False)
+
+    assert len(results) == 1
+    assert results[0].title == "Claude Only"
+
+
 def test_list_filter_category(db):
     create_context_item(db, title="A", content="a", category="note")
     create_context_item(db, title="B", content="b", category="convention")
@@ -114,6 +136,12 @@ def test_update_partial(db):
     updated = update_context_item(db, item.id, category="convention")
     assert updated.title == "Title"  # unchanged
     assert updated.category == "convention"
+
+
+def test_update_provider(db):
+    item = create_context_item(db, title="Title", content="Content")
+    updated = update_context_item(db, item.id, provider="codex")
+    assert updated.provider == "codex"
 
 
 def test_update_no_changes(db):

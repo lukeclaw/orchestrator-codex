@@ -125,6 +125,7 @@ class Config:
 class ContextItem:
     id: str
     scope: str = "global"
+    provider: str | None = None
     project_id: str | None = None
     title: str = ""
     description: str | None = None

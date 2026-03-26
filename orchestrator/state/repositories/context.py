@@ -16,9 +16,11 @@ def get_context_item(conn: sqlite3.Connection, id: str) -> ContextItem | None:
 def list_context(
     conn: sqlite3.Connection,
     scope: str | None = None,
+    provider: str | None = None,
     project_id: str | None = None,
     category: str | None = None,
     search: str | None = None,
+    include_shared: bool = True,
 ) -> list[ContextItem]:
     clauses = []
     params: list = []
@@ -26,6 +28,12 @@ def list_context(
     if scope:
         clauses.append("scope = ?")
         params.append(scope)
+    if provider:
+        if include_shared:
+            clauses.append("(provider = ? OR provider IS NULL)")
+        else:
+            clauses.append("provider = ?")
+        params.append(provider)
     if project_id:
         clauses.append("project_id = ?")
         params.append(project_id)
@@ -50,6 +58,7 @@ def create_context_item(
     title: str,
     content: str,
     scope: str = "global",
+    provider: str | None = None,
     project_id: str | None = None,
     description: str | None = None,
     category: str | None = None,
@@ -59,9 +68,9 @@ def create_context_item(
     id = str(uuid.uuid4())
     conn.execute(
         """INSERT INTO context_items
-           (id, scope, project_id, title, description, content, category, source, metadata)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-        (id, scope, project_id, title, description, content, category, source, metadata),
+           (id, scope, provider, project_id, title, description, content, category, source, metadata)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        (id, scope, provider, project_id, title, description, content, category, source, metadata),
     )
     conn.commit()
     return get_context_item(conn, id)
@@ -73,6 +82,7 @@ def update_context_item(
     title: str | None = None,
     content: str | None = None,
     scope: str | None = None,
+    provider: str | None = ...,
     project_id: str | None = ...,
     description: str | None = ...,
     category: str | None = ...,
@@ -91,6 +101,9 @@ def update_context_item(
     if scope is not None:
         sets.append("scope = ?")
         params.append(scope)
+    if provider is not ...:
+        sets.append("provider = ?")
+        params.append(provider)
     if project_id is not ...:
         sets.append("project_id = ?")
         params.append(project_id)

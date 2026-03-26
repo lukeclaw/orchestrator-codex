@@ -37,6 +37,7 @@ class TestContextAPI:
         data = resp.json()
         assert data["title"] == "Test item"
         assert data["scope"] == "global"
+        assert data["provider"] is None
         assert data["project_id"] is None
         assert data["category"] == "note"
 
@@ -87,6 +88,41 @@ class TestContextAPI:
         global_items = client.get("/api/context?scope=global").json()
         assert len(global_items) == 1
         assert global_items[0]["title"] == "G"
+
+    def test_filter_by_provider_includes_shared(self, client):
+        client.post("/api/context", json={"title": "Shared", "content": "shared"})
+        client.post(
+            "/api/context",
+            json={"title": "Codex", "content": "codex", "provider": "codex"},
+        )
+        client.post(
+            "/api/context",
+            json={"title": "Claude", "content": "claude", "provider": "claude"},
+        )
+
+        results = client.get("/api/context?provider=codex").json()
+        titles = {item["title"] for item in results}
+
+        assert titles == {"Shared", "Codex"}
+
+    def test_filter_by_provider_exact(self, client):
+        client.post("/api/context", json={"title": "Shared", "content": "shared"})
+        client.post(
+            "/api/context",
+            json={"title": "Claude", "content": "claude", "provider": "claude"},
+        )
+
+        results = client.get("/api/context?provider=claude&include_shared=false").json()
+
+        assert len(results) == 1
+        assert results[0]["title"] == "Claude"
+
+    def test_reject_unknown_provider(self, client):
+        resp = client.post(
+            "/api/context",
+            json={"title": "Bad", "content": "bad", "provider": "nope"},
+        )
+        assert resp.status_code == 400
 
     def test_search(self, client):
         """Search matches title and description, not content body."""
