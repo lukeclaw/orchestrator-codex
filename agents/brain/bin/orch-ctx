@@ -17,6 +17,7 @@ show_help() {
     echo "  --project-id ID               Filter by project ID"
     echo "  --category CAT                Filter by category"
     echo "  --search TEXT                 Search in title/content"
+    echo "  --provider PROVIDER           Provider filter: shared|claude|codex"
     echo ""
     echo "Create/Update Options:"
     echo "  --title TITLE                 Context title (required for create)"
@@ -27,6 +28,7 @@ show_help() {
     echo "  --scope SCOPE                 Scope: global|brain|project (default: global)"
     echo "  --project-id ID               Project ID (required if scope=project)"
     echo "  --category CAT                Category: instruction|reference (optional)"
+    echo "  --provider PROVIDER           Provider: shared|claude|codex (default: shared)"
     echo ""
     echo "Examples:"
     echo "  orch-ctx list --scope global"
@@ -35,27 +37,41 @@ show_help() {
     echo "  orch-ctx create --title \"Strategy\" --content \"Worker-1 handles API\" --scope brain"
 }
 
+current_brain_provider() {
+    curl -s "$API_BASE/api/brain/status" | jq -r '.provider // empty'
+}
+
 cmd_list() {
     [[ "$1" == "-h" || "$1" == "--help" ]] && show_help && exit 0
-    local scope="" project_id="" category="" search=""
+    local scope="" project_id="" category="" search="" provider=""
     while [[ $# -gt 0 ]]; do
         case "$1" in
             --scope) scope="$2"; shift 2 ;;
             --project-id) project_id="$2"; shift 2 ;;
             --category) category="$2"; shift 2 ;;
             --search) search="$2"; shift 2 ;;
+            --provider) provider="$2"; shift 2 ;;
             *) echo "Unknown option: $1" >&2; exit 1 ;;
         esac
     done
-    
+
+    if [[ -z "$provider" ]]; then
+        provider=$(current_brain_provider)
+    fi
+
     local url="$API_BASE/api/context"
     local sep="?"
     [[ -n "$scope" ]] && url="$url${sep}scope=$scope" && sep="&"
     [[ -n "$project_id" ]] && url="$url${sep}project_id=$project_id" && sep="&"
     [[ -n "$category" ]] && url="$url${sep}category=$category" && sep="&"
-    [[ -n "$search" ]] && url="$url${sep}search=$search"
-    
-    curl -s "$url" | jq '.[] | {id: .id, title: .title, description: .description, category: .category, scope: .scope}'
+    [[ -n "$search" ]] && url="$url${sep}search=$search" && sep="&"
+    if [[ "$provider" == "shared" ]]; then
+        curl -s "$url" | jq '.[] | select(.provider == null) | {id: .id, title: .title, description: .description, category: .category, scope: .scope, provider: (.provider // "shared")}'
+        return
+    fi
+    [[ -n "$provider" ]] && url="$url${sep}provider=$provider"
+
+    curl -s "$url" | jq '.[] | {id: .id, title: .title, description: .description, category: .category, scope: .scope, provider: (.provider // "shared")}'
 }
 
 cmd_read() {
@@ -73,7 +89,7 @@ cmd_read() {
 
 cmd_create() {
     [[ "$1" == "-h" || "$1" == "--help" ]] && show_help && exit 0
-    local title="" content="" content_file="" content_stdin="" description="" scope="global" project_id="" category=""
+    local title="" content="" content_file="" content_stdin="" description="" scope="global" project_id="" category="" provider="shared"
     while [[ $# -gt 0 ]]; do
         case "$1" in
             --title) title="$2"; shift 2 ;;
@@ -84,6 +100,7 @@ cmd_create() {
             --scope) scope="$2"; shift 2 ;;
             --project-id) project_id="$2"; shift 2 ;;
             --category) category="$2"; shift 2 ;;
+            --provider) provider="$2"; shift 2 ;;
             *) echo "Unknown option: $1" >&2; exit 1 ;;
         esac
     done
@@ -110,10 +127,10 @@ cmd_create() {
         echo "Error: --project-id is required when scope=project" >&2
         exit 1
     fi
-    
+
     local escaped_content=$(json_encode "$content")
     local escaped_title=$(json_encode "$title")
-    
+
     local json="{\"title\": \"$escaped_title\", \"content\": \"$escaped_content\", \"scope\": \"$scope\", \"source\": \"brain\""
     if [[ -n "$description" ]]; then
         local escaped_desc=$(json_encode "$description")
@@ -121,6 +138,9 @@ cmd_create() {
     fi
     [[ -n "$project_id" ]] && json="$json, \"project_id\": \"$project_id\""
     [[ -n "$category" ]] && json="$json, \"category\": \"$category\""
+    if [[ -n "$provider" && "$provider" != "shared" ]]; then
+        json="$json, \"provider\": \"$provider\""
+    fi
     json="$json}"
     
     curl -s -X POST "$API_BASE/api/context" \
@@ -137,7 +157,7 @@ cmd_update() {
         exit 1
     fi
     
-    local title="" content="" content_file="" content_stdin="" description="" category=""
+    local title="" content="" content_file="" content_stdin="" description="" category="" provider=""
     while [[ $# -gt 0 ]]; do
         case "$1" in
             --title) title="$2"; shift 2 ;;
@@ -146,6 +166,7 @@ cmd_update() {
             --content-stdin) content_stdin="1"; shift ;;
             --description) description="$2"; shift 2 ;;
             --category) category="$2"; shift 2 ;;
+            --provider) provider="$2"; shift 2 ;;
             *) echo "Unknown option: $1" >&2; exit 1 ;;
         esac
     done
@@ -177,7 +198,15 @@ cmd_update() {
     fi
     if [[ -n "$category" ]]; then
         [[ "$first" != true ]] && json="$json, "
-        json="$json\"category\": \"$category\""
+        json="$json\"category\": \"$category\""; first=false
+    fi
+    if [[ -n "$provider" ]]; then
+        [[ "$first" != true ]] && json="$json, "
+        if [[ "$provider" == "shared" ]]; then
+            json="$json\"provider\": null"
+        else
+            json="$json\"provider\": \"$provider\""
+        fi
     fi
     json="$json}"
     

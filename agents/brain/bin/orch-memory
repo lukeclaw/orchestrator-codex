@@ -27,6 +27,10 @@ show_help() {
     echo "  EOF"
 }
 
+current_brain_provider() {
+    curl -s "$API_BASE/api/brain/status" | jq -r '.provider // empty'
+}
+
 cmd_log() {
     local content="" title=""
     # First positional arg is content
@@ -52,6 +56,8 @@ cmd_log() {
         exit 1
     fi
 
+    local provider
+    provider=$(current_brain_provider)
     local escaped_content=$(json_encode "$content")
     local json="{\"content\": \"$escaped_content\", \"scope\": \"brain\", \"category\": \"memory\", \"source\": \"brain\""
     if [[ -n "$title" ]]; then
@@ -63,6 +69,9 @@ cmd_log() {
         [[ ${#content} -gt 80 ]] && auto_title="$auto_title..."
         local escaped_title=$(json_encode "$auto_title")
         json="$json, \"title\": \"$escaped_title\""
+    fi
+    if [[ -n "$provider" ]]; then
+        json="$json, \"provider\": \"$provider\""
     fi
     json="$json}"
 
@@ -80,14 +89,21 @@ cmd_logs() {
         esac
     done
 
+    local provider
+    provider=$(current_brain_provider)
     local url="$API_BASE/api/context?scope=brain&category=memory"
+    [[ -n "$provider" ]] && url="$url&provider=$provider"
     [[ -n "$search" ]] && url="$url&search=$search"
 
     curl -s "$url" | jq '.[] | {id: .id, title: .title, description: .description, updated_at: .updated_at}'
 }
 
 cmd_wisdom() {
-    local result=$(curl -s "$API_BASE/api/context?scope=brain&category=wisdom")
+    local provider
+    provider=$(current_brain_provider)
+    local url="$API_BASE/api/context?scope=brain&category=wisdom"
+    [[ -n "$provider" ]] && url="$url&provider=$provider"
+    local result=$(curl -s "$url")
     local count=$(echo "$result" | jq 'length')
     if [[ "$count" == "0" ]]; then
         echo "No wisdom document yet. Create one with: orch-memory wisdom-update"
@@ -106,23 +122,37 @@ cmd_wisdom_update() {
     fi
 
     local escaped_content=$(json_encode "$content")
+    local provider
+    provider=$(current_brain_provider)
 
     # Check if wisdom item exists
-    local existing=$(curl -s "$API_BASE/api/context?scope=brain&category=wisdom")
+    local existing_url="$API_BASE/api/context?scope=brain&category=wisdom"
+    [[ -n "$provider" ]] && existing_url="$existing_url&provider=$provider"
+    local existing=$(curl -s "$existing_url")
     local count=$(echo "$existing" | jq 'length')
 
     if [[ "$count" != "0" ]]; then
         # Update existing
         local id=$(echo "$existing" | jq -r '.[0].id')
+        local json="{\"content\": \"$escaped_content\""
+        if [[ -n "$provider" ]]; then
+            json="$json, \"provider\": \"$provider\""
+        fi
+        json="$json}"
         curl -s -X PATCH "$API_BASE/api/context/$id" \
             -H 'Content-Type: application/json' \
-            -d "{\"content\": \"$escaped_content\"}" | jq '{id: .id, title: .title, updated_at: .updated_at}'
+            -d "$json" | jq '{id: .id, title: .title, updated_at: .updated_at}'
     else
         # Create new
         local escaped_title=$(json_encode "Brain Wisdom")
+        local json="{\"title\": \"$escaped_title\", \"content\": \"$escaped_content\", \"scope\": \"brain\", \"category\": \"wisdom\", \"source\": \"brain\""
+        if [[ -n "$provider" ]]; then
+            json="$json, \"provider\": \"$provider\""
+        fi
+        json="$json}"
         curl -s -X POST "$API_BASE/api/context" \
             -H 'Content-Type: application/json' \
-            -d "{\"title\": \"$escaped_title\", \"content\": \"$escaped_content\", \"scope\": \"brain\", \"category\": \"wisdom\", \"source\": \"brain\"}" \
+            -d "$json" \
             | jq '{id: .id, title: .title, created_at: .created_at}'
     fi
 }
@@ -137,7 +167,11 @@ cmd_delete_log() {
 }
 
 cmd_clear_logs() {
-    local items=$(curl -s "$API_BASE/api/context?scope=brain&category=memory")
+    local provider
+    provider=$(current_brain_provider)
+    local url="$API_BASE/api/context?scope=brain&category=memory"
+    [[ -n "$provider" ]] && url="$url&provider=$provider"
+    local items=$(curl -s "$url")
     local count=$(echo "$items" | jq 'length')
     if [[ "$count" == "0" ]]; then
         echo "No learning logs to delete."

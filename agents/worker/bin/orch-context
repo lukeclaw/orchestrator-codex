@@ -60,6 +60,10 @@ show_help() {
     echo "          of relevant items. This saves your context window."
 }
 
+current_worker_provider() {
+    curl -s "$API_BASE/api/sessions/$SESSION_ID" | jq -r '.provider // empty'
+}
+
 cmd_list() {
     [[ "$1" == "-h" || "$1" == "--help" ]] && show_help && exit 0
     local scope=""
@@ -84,10 +88,18 @@ cmd_list() {
     case "$scope" in
         project)
             load_task_info || exit 1
-            curl -s "$API_BASE/api/context?project_id=$PROJECT_ID" | jq '.[] | {id: .id, title: .title, description: .description, category: .category}'
+            local provider
+            provider=$(current_worker_provider)
+            local url="$API_BASE/api/context?project_id=$PROJECT_ID"
+            [[ -n "$provider" ]] && url="$url&provider=$provider"
+            curl -s "$url" | jq '.[] | {id: .id, title: .title, description: .description, category: .category, provider: (.provider // "shared")}'
             ;;
         global)
-            curl -s "$API_BASE/api/context?scope=global" | jq '.[] | {id: .id, title: .title, description: .description, category: .category}'
+            local provider
+            provider=$(current_worker_provider)
+            local url="$API_BASE/api/context?scope=global"
+            [[ -n "$provider" ]] && url="$url&provider=$provider"
+            curl -s "$url" | jq '.[] | {id: .id, title: .title, description: .description, category: .category, provider: (.provider // "shared")}'
             ;;
         *)
             echo "Error: Invalid scope. Use 'project' or 'global'" >&2
@@ -169,6 +181,8 @@ cmd_add() {
     
     # Load task info to get project_id
     load_task_info || exit 1
+    local provider
+    provider=$(current_worker_provider)
     
     # Build JSON payload
     local json_payload
@@ -178,6 +192,7 @@ cmd_add() {
         --arg description "$description" \
         --arg category "$category" \
         --arg project_id "$PROJECT_ID" \
+        --arg provider "$provider" \
         --arg source "worker:$SESSION_ID" \
         '{
             title: $title,
@@ -186,7 +201,8 @@ cmd_add() {
             project_id: $project_id,
             source: $source
         } + (if $description != "" then {description: $description} else {} end)
-          + (if $category != "" then {category: $category} else {} end)'
+          + (if $category != "" then {category: $category} else {} end)
+          + (if $provider != "" then {provider: $provider} else {} end)'
     )
     
     # POST to API
@@ -224,6 +240,14 @@ verify_project_scope() {
     item_project=$(echo "$item_json" | jq -r '.project_id // empty')
     if [[ "$item_project" != "$PROJECT_ID" ]]; then
         echo "Error: Context item $item_id belongs to a different project. Workers can only modify items in their own project." >&2
+        return 1
+    fi
+
+    local worker_provider item_provider
+    worker_provider=$(current_worker_provider)
+    item_provider=$(echo "$item_json" | jq -r '.provider // empty')
+    if [[ -n "$item_provider" && "$item_provider" != "$worker_provider" ]]; then
+        echo "Error: Context item $item_id is scoped to provider '$item_provider'. This $worker_provider worker cannot modify it." >&2
         return 1
     fi
     
