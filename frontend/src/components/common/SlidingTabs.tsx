@@ -29,6 +29,7 @@ export default function SlidingTabs<T extends string = string>({
       {tabs.map(tab => (
         <button
           key={tab.value}
+          type="button"
           className={`sliding-tabs__tab ${tab.value === value ? 'active' : ''}`}
           onClick={() => onChange(tab.value)}
         >
