@@ -36,6 +36,11 @@ Check each open draft (`gh pr view`, `gh pr checks`, `gh pr view --json reviews,
 - **Too stale / conflicts** — `git fetch origin master && git rebase origin/master && git push --force-with-lease`. If conflicts are unclear: **STOP and wait for help.**
 - **Chained PR (targets another PR's branch)** — Keep as draft. After upstream merges, GitHub retargets to `master`; then treat as clean.
 
+**After ANY push to an existing PR**, update the PR description and docs:
+1. **Re-read the current PR body** — `gh pr view --json body --jq .body`
+2. **Update the PR description** — Rewrite the Summary and Testing Done sections to reflect the current state of the code, not the original submission. Use `gh pr edit --body "$(cat <<'EOF' ... EOF)"`.
+3. **Update project docs** — If your changes affect behavior described in project docs (architecture, features, design logs, learnings, README), update those files in the same push. Don't leave docs describing old behavior.
+
 ---
 
 ## Create New PRs
@@ -89,7 +94,8 @@ Follow the MP's PR template checklist, plus:
    - **Human reviewers** (priority): Conversational — explain reasoning, invite follow-up.
    - **Bots** (`Copilot`, `github-actions[bot]`, `linkedin-svc`, etc.): Only act on clearly valid feedback. Keep short. Bots won't read replies.
 5. **Push fixes** — Commit and push (rebase pattern)
-6. **Notify immediately** — before moving to next PR. Include PR number/title, exact comment URL(s), and **full reply text** (not a summary):
+6. **Update PR description & docs** — Re-read the PR body (`gh pr view --json body --jq .body`). Rewrite Summary/Testing Done to match the current code. Update any project docs that describe changed behavior. Use `gh pr edit --body` to save.
+7. **Notify immediately** — before moving to next PR. Include PR number/title, exact comment URL(s), and **full reply text** (not a summary):
    ```bash
    orch-notify "Replied to review on PR #123 (Add rate limiting):\n\nComment by @reviewer on src/api.py:\n> Should we add a retry here?\n\nMy reply:\nGood point — added exponential backoff in commit abc1234." \
      --type pr_comment --link "https://github.com/OWNER/REPO/pull/123#discussion_r456"

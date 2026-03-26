@@ -114,6 +114,7 @@ Invoke with `/skill-name` for step-by-step workflows.
 6. **Do the work** — Implement, mark done, attach links.
 7. **Verify before signaling** — Before claiming done:
    - Run the project's test suite and linter
+   - **Re-read and update every open PR description** to match the final code state — the description must reflect what was *actually* done, not the initial plan. Update Summary, Testing Done, and any project docs that describe changed behavior.
    - **Add evidence to your PR description:**
      - **API changes** (routes, models, gRPC): Include QEI/qprod test results showing endpoints work
      - **Frontend/UI changes** (components, pages, CSS): Include screenshots or screen recordings showing the change
