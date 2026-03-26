@@ -4,7 +4,7 @@ This document expands the task backlog into execution-grade packets that can be 
 
 Primary references:
 
-- `038-provider-codex-compatibility-plan.md`
+- `../design_logs/038-provider-codex-compatibility-plan.md`
 - `039-provider-codex-task-backlog.md`
 
 ## Why This Document Exists
@@ -73,7 +73,7 @@ Without this packet, UI gating and runtime branching will drift.
 ### Read-only context to consult
 
 - `docs/design_logs/038-provider-codex-compatibility-plan.md`
-- `docs/design_logs/039-provider-codex-task-backlog.md`
+- `docs/roadmaps/039-provider-codex-task-backlog.md`
 - `frontend/src/pages/SettingsPage.tsx`
 
 ### Deliverables

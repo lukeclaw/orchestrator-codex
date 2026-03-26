@@ -286,6 +286,6 @@ Recommended next work:
 
 For planning and investigation context:
 - `038-provider-codex-compatibility-plan.md`
-- `039-provider-codex-task-backlog.md`
-- `040-provider-codex-detailed-task-packets.md`
+- `../roadmaps/039-provider-codex-task-backlog.md`
+- `../roadmaps/040-provider-codex-detailed-task-packets.md`
 - `041-codex-hooks-investigation.md`

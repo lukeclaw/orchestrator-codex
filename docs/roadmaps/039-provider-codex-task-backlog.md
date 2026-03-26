@@ -2,7 +2,7 @@
 
 This document turns the provider-compatibility plan into an execution backlog with milestones, dependencies, batching guidance, and subagent-ready task packets.
 
-Primary reference: `038-provider-codex-compatibility-plan.md`
+Primary reference: `../design_logs/038-provider-codex-compatibility-plan.md`
 
 ## Confirmed Product Decisions
 
