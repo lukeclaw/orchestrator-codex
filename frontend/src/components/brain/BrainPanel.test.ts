@@ -5,11 +5,11 @@ import {
 import { getBrainPanelQuickActionState } from './BrainPanel'
 
 describe('BrainPanel provider gating', () => {
-  it('disables the clear quick action for Codex but not Claude', () => {
+  it('keeps the clear quick action enabled for Codex and Claude', () => {
     expect(
       getBrainPanelQuickActionState(FALLBACK_PROVIDER_REGISTRY, 'codex'),
     ).toEqual({
-      clearDisabledReason: 'Codex quick-clear support is not implemented yet.',
+      clearDisabledReason: null,
     })
 
     expect(

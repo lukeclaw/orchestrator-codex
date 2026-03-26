@@ -353,8 +353,7 @@ class TestTasks:
 _SKIP_UPDATE = "orchestrator.providers.runtimes.claude.should_update_before_start"
 _BRAIN_DEPLOY = "orchestrator.providers.runtimes.claude.deploy_brain_tmp_contents"
 _BRAIN_PATH_EXPORT = "orchestrator.providers.runtimes.claude.get_path_export_command"
-_CODEX_BRAIN_DEPLOY = "orchestrator.providers.runtimes.codex.deploy_brain_scripts"
-_CODEX_BRAIN_PROMPT_WRITE = "orchestrator.providers.runtimes.codex._write_prompt_file"
+_CODEX_BRAIN_DEPLOY = "orchestrator.providers.runtimes.codex.deploy_codex_brain_tmp_contents"
 
 
 class TestBrain:
@@ -503,7 +502,8 @@ class TestBrain:
         )
 
         with patch(_CODEX_BRAIN_DEPLOY), patch(
-            _CODEX_BRAIN_PROMPT_WRITE, return_value="/tmp/orchestrator/brain/prompt.md"
+            "orchestrator.providers.runtimes.codex._CODEX_HEARTBEAT_LOOP.restart",
+            return_value=False,
         ):
             with patch("orchestrator.providers.runtimes.codex.tmux") as mock_tmux:
                 mock_tmux.pane_foreground_command.return_value = None
@@ -527,7 +527,8 @@ class TestBrain:
         client.put("/api/settings", json={"settings": {"brain.default_provider": "codex"}})
 
         with patch(_CODEX_BRAIN_DEPLOY), patch(
-            _CODEX_BRAIN_PROMPT_WRITE, return_value="/tmp/orchestrator/brain/prompt.md"
+            "orchestrator.providers.runtimes.codex._CODEX_HEARTBEAT_LOOP.restart",
+            return_value=False,
         ):
             with patch("orchestrator.providers.runtimes.codex.tmux") as mock_tmux:
                 mock_tmux.pane_foreground_command.return_value = None
@@ -535,12 +536,18 @@ class TestBrain:
                 mock_tmux.send_keys.return_value = True
                 client.post("/api/brain/start")
 
-        with patch("orchestrator.api.routes.brain.tmux") as mock_tmux:
+        with patch("orchestrator.api.routes.brain.tmux") as mock_tmux, patch(
+            _CODEX_BRAIN_DEPLOY
+        ) as mock_redeploy, patch(
+            "orchestrator.providers.runtimes.codex._CODEX_HEARTBEAT_LOOP.restart",
+            return_value=False,
+        ):
             mock_tmux.send_keys.return_value = True
             mock_tmux.send_keys_literal.return_value = True
             resp = client.post("/api/brain/command", json={"command": "/clear"})
 
         assert resp.status_code == 200
+        mock_redeploy.assert_called_once()
         sent_command = mock_tmux.send_keys_literal.call_args.args[2]
         assert sent_command != "/clear"
         assert "Reset your coordination context" in sent_command
@@ -565,7 +572,8 @@ class TestBrain:
         assert status.json()["provider"] == "codex"
 
         with patch(_CODEX_BRAIN_DEPLOY), patch(
-            _CODEX_BRAIN_PROMPT_WRITE, return_value="/tmp/orchestrator/brain/prompt.md"
+            "orchestrator.providers.runtimes.codex._CODEX_HEARTBEAT_LOOP.restart",
+            return_value=False,
         ):
             with patch("orchestrator.providers.runtimes.codex.tmux") as mock_tmux:
                 mock_tmux.pane_foreground_command.return_value = None

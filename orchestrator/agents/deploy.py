@@ -369,6 +369,30 @@ def get_brain_prompt(custom_skills_section: str = "", brain_memory_section: str 
     return content
 
 
+def _read_provider_prompt_template(provider: str, *parts: str) -> str | None:
+    prompt_path = os.path.join(_AGENTS_DIR, provider, *parts)
+    if not os.path.exists(prompt_path):
+        return None
+
+    with open(prompt_path) as f:
+        return f.read()
+
+
+def get_codex_worker_prompt() -> str | None:
+    """Load the Codex worker prompt template."""
+    return _read_provider_prompt_template("codex", "worker", "prompt.md")
+
+
+def get_codex_brain_prompt(brain_memory_section: str = "") -> str | None:
+    """Load the Codex brain prompt template with optional memory prelude."""
+    content = _read_provider_prompt_template("codex", "brain", "prompt.md")
+    if content is None:
+        return None
+    if brain_memory_section:
+        return f"{brain_memory_section.rstrip()}\n\n{content}"
+    return content
+
+
 def deploy_custom_skills(skills_dest: str, custom_skills: list[dict]):
     """Write custom skill markdown files to a skills directory.
 
@@ -786,6 +810,36 @@ def deploy_worker_tmp_contents(
     return created
 
 
+def deploy_codex_worker_tmp_contents(
+    tmp_dir: str,
+    session_id: str,
+    api_base: str = "http://127.0.0.1:8093",
+    cdp_port: int = 9222,
+    browser_headless: bool = False,
+) -> list[str]:
+    """Deploy all Codex worker files to tmp_dir."""
+    created: list[str] = []
+    os.makedirs(tmp_dir, exist_ok=True)
+
+    deploy_worker_scripts(
+        tmp_dir, session_id, api_base, cdp_port=cdp_port, browser_headless=browser_headless
+    )
+    created.append("bin/lib.sh")
+    created += [f"bin/{name}" for name in WORKER_SCRIPT_NAMES]
+
+    prompt = get_codex_worker_prompt()
+    if prompt:
+        with open(os.path.join(tmp_dir, "prompt.md"), "w") as f:
+            f.write(prompt)
+        created.append("prompt.md")
+
+    _write_manifest(tmp_dir, created)
+    logger.info(
+        "deploy_codex_worker_tmp_contents: deployed %d files to %s", len(created), tmp_dir
+    )
+    return created
+
+
 def deploy_brain_tmp_contents(
     brain_dir: str,
     api_base: str = "http://127.0.0.1:8093",
@@ -877,4 +931,34 @@ def deploy_brain_tmp_contents(
     _write_manifest(brain_dir, created)
     logger.info("deploy_brain_tmp_contents: deployed %d files to %s", len(created), brain_dir)
 
+    return created
+
+
+def deploy_codex_brain_tmp_contents(
+    brain_dir: str,
+    api_base: str = "http://127.0.0.1:8093",
+    conn: sqlite3.Connection | None = None,
+    provider: str | None = "codex",
+) -> list[str]:
+    """Deploy all Codex brain files to brain_dir."""
+    created: list[str] = []
+    os.makedirs(brain_dir, exist_ok=True)
+
+    brain_memory_section = (
+        get_brain_memory_section(conn, provider=provider) if conn is not None else ""
+    )
+    prompt = get_codex_brain_prompt(brain_memory_section=brain_memory_section)
+    if prompt:
+        with open(os.path.join(brain_dir, "prompt.md"), "w") as f:
+            f.write(prompt)
+        created.append("prompt.md")
+
+    deploy_brain_scripts(brain_dir, api_base)
+    created.append("bin/lib.sh")
+    created += [f"bin/{name}" for name in BRAIN_SCRIPT_NAMES]
+
+    _write_manifest(brain_dir, created)
+    logger.info(
+        "deploy_codex_brain_tmp_contents: deployed %d files to %s", len(created), brain_dir
+    )
     return created

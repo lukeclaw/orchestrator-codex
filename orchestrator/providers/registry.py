@@ -130,12 +130,8 @@ PROVIDERS: dict[str, ProviderDefinition] = {
             CAPABILITY_SKILLS_DEPLOYMENT: _unsupported(
                 "Codex skills deployment is not implemented yet."
             ),
-            CAPABILITY_HEARTBEAT_LOOP: _unsupported(
-                "Codex heartbeat loop support is not implemented yet."
-            ),
-            CAPABILITY_QUICK_CLEAR: _unsupported(
-                "Codex quick-clear support is not implemented yet."
-            ),
+            CAPABILITY_HEARTBEAT_LOOP: _supported(),
+            CAPABILITY_QUICK_CLEAR: _supported(),
             CAPABILITY_RECONNECT: _unsupported("Codex reconnect support is not implemented yet."),
         },
     ),

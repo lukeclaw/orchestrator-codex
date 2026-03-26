@@ -19,7 +19,7 @@ describe('SettingsPage provider gating', () => {
     })
   })
 
-  it('disables only the brain heartbeat when the brain default is Codex', () => {
+  it('keeps the brain heartbeat enabled when the brain default is Codex', () => {
     expect(
       getSettingsCapabilityState(FALLBACK_PROVIDER_REGISTRY, 'codex'),
     ).toEqual({
@@ -29,7 +29,7 @@ describe('SettingsPage provider gating', () => {
       claudeDefaultEffortDisabledReason: null,
       codexDefaultModelDisabledReason: null,
       codexDefaultEffortDisabledReason: null,
-      brainHeartbeatDisabledReason: 'Codex heartbeat loop support is not implemented yet.',
+      brainHeartbeatDisabledReason: null,
     })
   })
 })

@@ -102,14 +102,8 @@ export const FALLBACK_PROVIDER_REGISTRY: ProviderRegistryResponse = {
           supported: false,
           disabled_reason: 'Codex skills deployment is not implemented yet.',
         },
-        [CAPABILITY_HEARTBEAT_LOOP]: {
-          supported: false,
-          disabled_reason: 'Codex heartbeat loop support is not implemented yet.',
-        },
-        [CAPABILITY_QUICK_CLEAR]: {
-          supported: false,
-          disabled_reason: 'Codex quick-clear support is not implemented yet.',
-        },
+        [CAPABILITY_HEARTBEAT_LOOP]: { supported: true, disabled_reason: null },
+        [CAPABILITY_QUICK_CLEAR]: { supported: true, disabled_reason: null },
         [CAPABILITY_RECONNECT]: {
           supported: false,
           disabled_reason: 'Codex reconnect support is not implemented yet.',

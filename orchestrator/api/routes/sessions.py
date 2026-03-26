@@ -1260,14 +1260,15 @@ async def health_check_all_sessions(request: Request, db=Depends(get_db)):
         from orchestrator.session.health import ensure_brain_tmp_health
 
         brain_session = repo.get_session_by_name(db, "brain")
-        if (
-            brain_session
-            and brain_session.status not in ("disconnected",)
-            and brain_session.provider != "codex"
-        ):
+        if brain_session and brain_session.status not in ("disconnected",):
             brain_dir = "/tmp/orchestrator/brain"
             api_base = f"http://127.0.0.1:{api_port}"
-            brain_health = ensure_brain_tmp_health(brain_dir, api_base=api_base, conn=db)
+            brain_health = ensure_brain_tmp_health(
+                brain_dir,
+                api_base=api_base,
+                conn=db,
+                provider=brain_session.provider or "claude",
+            )
             result["brain_tmp_health"] = brain_health
             if brain_health.get("regenerated"):
                 logger.warning("Health check: brain tmp dir regenerated")

@@ -84,7 +84,9 @@ def test_codex_runtime_builds_local_launch_command(db, tmp_path):
     )
 
     with (
-        patch("orchestrator.providers.runtimes.codex.deploy_worker_scripts") as mock_deploy,
+        patch(
+            "orchestrator.providers.runtimes.codex.deploy_codex_worker_tmp_contents"
+        ) as mock_deploy,
         patch(
             "orchestrator.providers.runtimes.codex.start_cdp_proxy", return_value=9777
         ) as mock_proxy,
@@ -102,6 +104,35 @@ def test_codex_runtime_builds_local_launch_command(db, tmp_path):
     assert "model_reasoning_effort" in command
     assert "medium" in command
     assert "model_instructions_file" in command
+
+
+def test_codex_runtime_redeploy_brain_rearms_heartbeat(db):
+    runtime = get_provider_runtime("codex")
+    db.execute(
+        """
+        INSERT INTO sessions (id, name, host, status, session_type, provider)
+        VALUES ('brain-session', 'brain', 'local', 'working', 'brain', 'codex')
+        """
+    )
+    db.execute(
+        """
+        INSERT OR REPLACE INTO config (key, value)
+        VALUES ('brain.heartbeat', 'Every hour')
+        """
+    )
+    db.commit()
+
+    with (
+        patch("orchestrator.providers.runtimes.codex.deploy_codex_brain_tmp_contents"),
+        patch(
+            "orchestrator.providers.runtimes.codex._CODEX_HEARTBEAT_LOOP.restart",
+            return_value=True,
+        ) as mock_restart,
+    ):
+        result = runtime.redeploy_brain(db)
+
+    assert result == {"ok": True, "redeployed": True, "heartbeat_rearmed": True}
+    mock_restart.assert_called_once_with("Every hour")
 
 
 def test_codex_runtime_rejects_remote_launch(db):

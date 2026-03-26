@@ -565,6 +565,7 @@ def ensure_tmp_dir_health(
     cdp_port: int = 9222,
     browser_headless: bool = False,
     conn=None,
+    provider: str = "claude",
 ) -> dict:
     """Check if the local tmp dir has all required files; regenerate if any missing.
 
@@ -584,32 +585,47 @@ def ensure_tmp_dir_health(
     Returns:
         {"healthy": bool, "regenerated": bool, "missing": list[str]}
     """
-    from orchestrator.agents.deploy import _read_manifest, deploy_worker_tmp_contents
+    from orchestrator.agents.deploy import (
+        _read_manifest,
+        deploy_codex_worker_tmp_contents,
+        deploy_worker_tmp_contents,
+    )
 
     manifest = _read_manifest(tmp_dir)
 
-    # Read model/effort from DB if available, so regenerated settings match user prefs
+    # Read model/effort from DB if available, so regenerated Claude settings match user prefs
     model = "opus"
     effort = "high"
-    if conn is not None:
+    if provider != "codex" and conn is not None:
         from orchestrator.state.repositories.config import get_config_value
 
         model = str(get_config_value(conn, "claude.default_model", default="opus"))
         effort = str(get_config_value(conn, "claude.default_effort", default="high"))
 
+    deploy = deploy_codex_worker_tmp_contents if provider == "codex" else deploy_worker_tmp_contents
+
     if manifest is None:
         # Manifest missing — whole dir was likely wiped
         logger.warning("Tmp dir manifest missing: %s — regenerating", tmp_dir)
-        deploy_worker_tmp_contents(
-            tmp_dir,
-            session_id,
-            api_base=api_base,
-            cdp_port=cdp_port,
-            browser_headless=browser_headless,
-            conn=conn,
-            model=model,
-            effort=effort,
-        )
+        if provider == "codex":
+            deploy(
+                tmp_dir,
+                session_id,
+                api_base=api_base,
+                cdp_port=cdp_port,
+                browser_headless=browser_headless,
+            )
+        else:
+            deploy(
+                tmp_dir,
+                session_id,
+                api_base=api_base,
+                cdp_port=cdp_port,
+                browser_headless=browser_headless,
+                conn=conn,
+                model=model,
+                effort=effort,
+            )
         return {"healthy": False, "regenerated": True, "missing": ["<manifest>"]}
 
     # Check every file listed in the manifest
@@ -623,16 +639,25 @@ def ensure_tmp_dir_health(
         len(missing),
         ", ".join(missing[:5]),
     )
-    deploy_worker_tmp_contents(
-        tmp_dir,
-        session_id,
-        api_base=api_base,
-        cdp_port=cdp_port,
-        browser_headless=browser_headless,
-        conn=conn,
-        model=model,
-        effort=effort,
-    )
+    if provider == "codex":
+        deploy(
+            tmp_dir,
+            session_id,
+            api_base=api_base,
+            cdp_port=cdp_port,
+            browser_headless=browser_headless,
+        )
+    else:
+        deploy(
+            tmp_dir,
+            session_id,
+            api_base=api_base,
+            cdp_port=cdp_port,
+            browser_headless=browser_headless,
+            conn=conn,
+            model=model,
+            effort=effort,
+        )
     return {"healthy": False, "regenerated": True, "missing": missing}
 
 
@@ -640,6 +665,7 @@ def ensure_brain_tmp_health(
     brain_dir: str,
     api_base: str = "http://127.0.0.1:8093",
     conn=None,
+    provider: str = "claude",
 ) -> dict:
     """Check if the brain tmp dir has all required files; regenerate if any missing.
 
@@ -653,24 +679,30 @@ def ensure_brain_tmp_health(
     Returns:
         {"healthy": bool, "regenerated": bool, "missing": list[str]}
     """
-    from orchestrator.agents.deploy import _read_manifest, deploy_brain_tmp_contents
+    from orchestrator.agents.deploy import (
+        _read_manifest,
+        deploy_brain_tmp_contents,
+        deploy_codex_brain_tmp_contents,
+    )
 
     # Read model/effort from DB if available
     model = "opus"
     effort = "high"
-    if conn is not None:
+    if provider != "codex" and conn is not None:
         from orchestrator.state.repositories.config import get_config_value
 
         model = str(get_config_value(conn, "claude.default_model", default="opus"))
         effort = str(get_config_value(conn, "claude.default_effort", default="high"))
 
     manifest = _read_manifest(brain_dir)
+    deploy = deploy_codex_brain_tmp_contents if provider == "codex" else deploy_brain_tmp_contents
 
     if manifest is None:
         logger.warning("Brain tmp dir manifest missing: %s — regenerating", brain_dir)
-        deploy_brain_tmp_contents(
-            brain_dir, api_base=api_base, conn=conn, model=model, effort=effort
-        )
+        if provider == "codex":
+            deploy(brain_dir, api_base=api_base, conn=conn, provider=provider)
+        else:
+            deploy(brain_dir, api_base=api_base, conn=conn, provider=provider, model=model, effort=effort)
         return {"healthy": False, "regenerated": True, "missing": ["<manifest>"]}
 
     missing = [p for p in manifest if not os.path.exists(os.path.join(brain_dir, p))]
@@ -683,7 +715,10 @@ def ensure_brain_tmp_health(
         len(missing),
         ", ".join(missing[:5]),
     )
-    deploy_brain_tmp_contents(brain_dir, api_base=api_base, conn=conn, model=model, effort=effort)
+    if provider == "codex":
+        deploy(brain_dir, api_base=api_base, conn=conn, provider=provider)
+    else:
+        deploy(brain_dir, api_base=api_base, conn=conn, provider=provider, model=model, effort=effort)
     return {"healthy": False, "regenerated": True, "missing": missing}
 
 
@@ -1008,24 +1043,24 @@ def check_and_update_worker_health(db, session, tunnel_manager=None) -> dict:
         }
 
     # --- Local alive: ensure tmp dir is healthy ---
-    if session.provider != "codex":
-        tmp_dir = f"/tmp/orchestrator/workers/{session.name}"
-        try:
-            tmp_result = ensure_tmp_dir_health(
-                tmp_dir,
-                session.id,
-                api_base=f"http://127.0.0.1:{DEFAULT_API_PORT}",
-                browser_headless=False,
-                conn=db,
-            )
-            if tmp_result.get("regenerated"):
-                logger.warning("Health check: %s regenerated local tmp dir", session.name)
-        except Exception:
-            logger.debug(
-                "Health check: %s tmp dir check failed",
-                session.name,
-                exc_info=True,
-            )
+    tmp_dir = f"/tmp/orchestrator/workers/{session.name}"
+    try:
+        tmp_result = ensure_tmp_dir_health(
+            tmp_dir,
+            session.id,
+            api_base=f"http://127.0.0.1:{DEFAULT_API_PORT}",
+            browser_headless=False,
+            conn=db,
+            provider=session.provider or "claude",
+        )
+        if tmp_result.get("regenerated"):
+            logger.warning("Health check: %s regenerated local tmp dir", session.name)
+    except Exception:
+        logger.debug(
+            "Health check: %s tmp dir check failed",
+            session.name,
+            exc_info=True,
+        )
 
     if session.status in ("disconnected", "error"):
         from orchestrator.session.reconnect import _recovery_status

@@ -4,16 +4,24 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 import shlex
 import shutil
+import threading
+import time
+from datetime import datetime, timedelta
 
-from orchestrator import paths
-from orchestrator.agents import deploy_brain_scripts, deploy_worker_scripts, get_path_export_command
-from orchestrator.agents.deploy import get_brain_memory_section
+from orchestrator.agents import get_path_export_command
+from orchestrator.agents.deploy import (
+    deploy_codex_brain_tmp_contents,
+    deploy_codex_worker_tmp_contents,
+)
 from orchestrator.browser.cdp_worker_proxy import start_cdp_proxy
 from orchestrator.providers.config import get_provider_default_effort, get_provider_default_model
 from orchestrator.state.repositories import sessions as sessions_repo
+from orchestrator.state.repositories.config import get_config_value
 from orchestrator.terminal import manager as tmux
+from orchestrator.terminal.session import send_to_session
 
 from orchestrator.providers.runtime import WorkerLaunchRequest
 
@@ -25,19 +33,14 @@ _DEFAULT_CODEX_MODEL = "gpt-5-codex"
 _DEFAULT_REASONING_EFFORT = "high"
 _SUPPORTED_REASONING_EFFORTS = {"low", "medium", "high"}
 _CLAUDE_MODELS = {"haiku", "sonnet", "opus"}
-
-
-def _read_prompt_template(*parts: str) -> str:
-    prompt_path = paths.agents_dir().joinpath("codex", *parts)
-    return prompt_path.read_text()
-
-
-def _write_prompt_file(tmp_dir: str, prompt_text: str) -> str:
-    os.makedirs(tmp_dir, exist_ok=True)
-    prompt_path = os.path.join(tmp_dir, "prompt.md")
-    with open(prompt_path, "w") as f:
-        f.write(prompt_text)
-    return prompt_path
+_HEARTBEAT_WEEKDAY_RE = re.compile(
+    r"^weekdays at (?P<hour>\d{1,2})(?::(?P<minute>\d{2}))?\s*(?P<ampm>am|pm)$",
+    re.IGNORECASE,
+)
+_HEARTBEAT_INTERVAL_RE = re.compile(
+    r"^every (?:(?P<count>\d+)\s+)?(?P<unit>minute|minutes|hour|hours|day|days)$",
+    re.IGNORECASE,
+)
 
 
 def _resolve_model(model: str | None) -> str:
@@ -89,6 +92,137 @@ def _get_brain_session(conn):
     return sessions_repo.get_session_by_name(conn, BRAIN_SESSION_NAME)
 
 
+def _build_codex_heartbeat_prompt() -> str:
+    return (
+        "Heartbeat cycle: review active workers now using the orchestration CLI tools. "
+        "Check blocked and waiting workers first, investigate visible failures, send "
+        '\"continue\" only when a worker is idle at a prompt, stop and mark done only when '
+        "completion is verified, and notify the user for anything risky or ambiguous. "
+        "Keep the output brief and operational."
+    )
+
+
+def _parse_heartbeat_schedule(value: str | None):
+    normalized = (value or "").strip()
+    if not normalized or normalized.lower() == "off":
+        return None
+
+    match = _HEARTBEAT_INTERVAL_RE.match(normalized)
+    if match:
+        count = int(match.group("count") or "1")
+        unit = match.group("unit").lower()
+        seconds_per_unit = {
+            "minute": 60,
+            "minutes": 60,
+            "hour": 3600,
+            "hours": 3600,
+            "day": 86400,
+            "days": 86400,
+        }
+        return ("interval", count * seconds_per_unit[unit])
+
+    match = _HEARTBEAT_WEEKDAY_RE.match(normalized)
+    if match:
+        hour = int(match.group("hour"))
+        minute = int(match.group("minute") or "0")
+        ampm = match.group("ampm").lower()
+        if hour == 12:
+            hour = 0
+        if ampm == "pm":
+            hour += 12
+        return ("weekday_time", (hour, minute))
+
+    return None
+
+
+def _next_heartbeat_delay(schedule) -> float:
+    kind, payload = schedule
+    if kind == "interval":
+        return float(payload)
+
+    hour, minute = payload
+    now = datetime.now()
+    candidate = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
+
+    if now.weekday() >= 5:
+        days_until = 7 - now.weekday()
+        candidate = candidate + timedelta(days=days_until)
+    elif candidate <= now:
+        candidate = candidate + timedelta(days=1)
+        while candidate.weekday() >= 5:
+            candidate = candidate + timedelta(days=1)
+
+    while candidate.weekday() >= 5:
+        candidate = candidate + timedelta(days=1)
+
+    return max((candidate - now).total_seconds(), 1.0)
+
+
+class _CodexHeartbeatLoop:
+    def __init__(self):
+        self._lock = threading.Lock()
+        self._thread: threading.Thread | None = None
+        self._stop_event: threading.Event | None = None
+        self._schedule = None
+
+    def restart(self, interval_text: str | None) -> bool:
+        schedule = _parse_heartbeat_schedule(interval_text)
+        self.stop()
+        if schedule is None:
+            return False
+
+        stop_event = threading.Event()
+        thread = threading.Thread(
+            target=self._run,
+            args=(stop_event, schedule),
+            daemon=True,
+            name="codex-brain-heartbeat",
+        )
+        with self._lock:
+            self._stop_event = stop_event
+            self._thread = thread
+            self._schedule = schedule
+        thread.start()
+        logger.info("Started Codex brain heartbeat loop for schedule %r", interval_text)
+        return True
+
+    def stop(self) -> None:
+        thread = None
+        stop_event = None
+        with self._lock:
+            thread = self._thread
+            stop_event = self._stop_event
+            self._thread = None
+            self._stop_event = None
+            self._schedule = None
+        if stop_event is not None:
+            stop_event.set()
+        if thread is not None and thread.is_alive():
+            thread.join(timeout=1.0)
+
+    def _run(self, stop_event: threading.Event, schedule) -> None:
+        while not stop_event.wait(_next_heartbeat_delay(schedule)):
+            try:
+                pane_cmd = tmux.pane_foreground_command(tmux.TMUX_SESSION, BRAIN_SESSION_NAME)
+                if not pane_cmd or "codex" not in pane_cmd.lower():
+                    logger.info("Stopping Codex heartbeat loop because brain pane is not running Codex")
+                    return
+                sent = send_to_session(
+                    BRAIN_SESSION_NAME,
+                    _build_codex_heartbeat_prompt(),
+                    tmux.TMUX_SESSION,
+                )
+                if sent:
+                    logger.info("Codex brain heartbeat prompt sent")
+                else:
+                    logger.warning("Codex brain heartbeat prompt could not be sent")
+            except Exception:
+                logger.exception("Codex brain heartbeat loop error")
+
+
+_CODEX_HEARTBEAT_LOOP = _CodexHeartbeatLoop()
+
+
 class CodexRuntime:
     """Codex provider runtime."""
 
@@ -100,16 +234,14 @@ class CodexRuntime:
         cdp_port = 9222
 
         try:
-            deploy_worker_scripts(
+            deploy_codex_worker_tmp_contents(
                 local_tmp_dir,
                 request.session_id,
                 api_base=api_base,
                 cdp_port=cdp_port,
                 browser_headless=False,
             )
-
-            prompt_text = _read_prompt_template("worker", "prompt.md")
-            prompt_path = _write_prompt_file(local_tmp_dir, prompt_text)
+            prompt_path = os.path.join(local_tmp_dir, "prompt.md")
 
             cmd_parts: list[str] = []
             workspace_dir = request.work_dir or local_tmp_dir
@@ -157,10 +289,8 @@ class CodexRuntime:
         pane_cmd = tmux.pane_foreground_command(tmux.TMUX_SESSION, BRAIN_SESSION_NAME)
         codex_already_running = pane_cmd is not None and pane_cmd not in shells
 
-        deploy_brain_scripts(_BRAIN_DIR)
-        prompt_text = get_brain_memory_section(conn, provider=self.provider_id)
-        prompt_text += _read_prompt_template("brain", "prompt.md")
-        prompt_path = _write_prompt_file(_BRAIN_DIR, prompt_text)
+        deploy_codex_brain_tmp_contents(_BRAIN_DIR, conn=conn, provider=self.provider_id)
+        prompt_path = os.path.join(_BRAIN_DIR, "prompt.md")
         target = tmux.ensure_window(tmux.TMUX_SESSION, BRAIN_SESSION_NAME)
 
         if session:
@@ -179,6 +309,7 @@ class CodexRuntime:
             sessions_repo.update_session(conn, session_id, status="working", provider=self.provider_id)
 
         if codex_already_running:
+            _CODEX_HEARTBEAT_LOOP.restart(get_config_value(conn, "brain.heartbeat", default="off"))
             logger.info("Brain pane already running '%s'; skipping Codex launch", pane_cmd)
             return {
                 "ok": True,
@@ -198,19 +329,23 @@ class CodexRuntime:
             ),
         ]
         tmux.send_keys(tmux.TMUX_SESSION, BRAIN_SESSION_NAME, " && ".join(cmd_parts))
+        heartbeat_rearmed = _CODEX_HEARTBEAT_LOOP.restart(
+            str(get_config_value(conn, "brain.heartbeat", default="off"))
+        )
         logger.info("Orchestrator brain started in %s via Codex", target)
         return {
             "ok": True,
             "session_id": session_id,
             "status": "working",
             "message": "Brain started",
+            "heartbeat_rearmed": heartbeat_rearmed,
         }
 
     def stop_brain(self, conn) -> dict:
+        _CODEX_HEARTBEAT_LOOP.stop()
         session = _get_brain_session(conn)
         if session is None:
             return {"ok": True, "message": "Brain not running"}
-
         try:
             for _ in range(3):
                 tmux.send_keys(tmux.TMUX_SESSION, BRAIN_SESSION_NAME, "C-c", enter=False)
@@ -234,12 +369,12 @@ class CodexRuntime:
         if brain is None or brain.status in ("disconnected",):
             raise ValueError("Brain is not running")
 
-        deploy_brain_scripts(_BRAIN_DIR)
-        prompt_text = get_brain_memory_section(conn, provider=self.provider_id)
-        prompt_text += _read_prompt_template("brain", "prompt.md")
-        _write_prompt_file(_BRAIN_DIR, prompt_text)
+        deploy_codex_brain_tmp_contents(_BRAIN_DIR, conn=conn, provider=self.provider_id)
+        heartbeat_rearmed = _CODEX_HEARTBEAT_LOOP.restart(
+            str(get_config_value(conn, "brain.heartbeat", default="off"))
+        )
         logger.info("Brain files re-deployed for Codex")
-        return {"ok": True, "redeployed": True, "heartbeat_rearmed": False}
+        return {"ok": True, "redeployed": True, "heartbeat_rearmed": heartbeat_rearmed}
 
 
 CODEX_RUNTIME = CodexRuntime()

@@ -71,6 +71,10 @@ def _translate_brain_command(provider: str, command: str) -> str:
     return command
 
 
+def _is_codex_quick_clear(provider: str, command: str) -> bool:
+    return provider == "codex" and command.strip() == "/clear"
+
+
 @router.get("/brain/status")
 def brain_status(db=Depends(get_db)):
     """Get the orchestrator brain status."""
@@ -381,7 +385,18 @@ def brain_command(req: BrainCommandRequest, db=Depends(get_db)):
     session = _get_brain_session(db)
     if session is None or session.status in ("disconnected",):
         raise HTTPException(400, "Brain is not running")
-    translated_command = _translate_brain_command(session.provider or DEFAULT_PROVIDER_ID, req.command)
+    provider = session.provider or DEFAULT_PROVIDER_ID
+    translated_command = _translate_brain_command(provider, req.command)
+
+    if _is_codex_quick_clear(provider, req.command):
+        runtime = get_provider_runtime(provider)
+        try:
+            runtime.redeploy_brain(db)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
+        except Exception as exc:
+            logger.exception("Failed to redeploy Codex brain before quick-clear")
+            raise HTTPException(500, f"Failed to prepare quick-clear: {exc}") from exc
 
     try:
         # 1. Send Ctrl-C to cancel any running operation

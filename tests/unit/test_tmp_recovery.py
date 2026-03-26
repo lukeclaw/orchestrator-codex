@@ -274,6 +274,20 @@ class TestDeployWorkerTmpContents:
         assert manifest is not None
 
 
+class TestDeployCodexWorkerTmpContents:
+    def test_creates_codex_worker_files(self, tmp_path):
+        from orchestrator.agents.deploy import _read_manifest, deploy_codex_worker_tmp_contents
+
+        tmp_dir = str(tmp_path / "codex-worker")
+        created = deploy_codex_worker_tmp_contents(tmp_dir, session_id="sid-123")
+
+        assert "prompt.md" in created
+        assert "bin/lib.sh" in created
+        assert not os.path.exists(os.path.join(tmp_dir, "configs", "settings.json"))
+        manifest = _read_manifest(tmp_dir)
+        assert manifest is not None
+
+
 class TestDeployBrainTmpContents:
     def test_creates_all_expected_files(self, tmp_path):
         from orchestrator.agents.deploy import _read_manifest, deploy_brain_tmp_contents
@@ -315,6 +329,31 @@ class TestDeployBrainTmpContents:
         created = deploy_brain_tmp_contents(brain_dir, conn=db, provider="codex")
         assert ".claude/commands/brain-skill.md" in created
         assert "Use Codex-specific guidance" in open(os.path.join(brain_dir, "CLAUDE.md")).read()
+
+
+class TestDeployCodexBrainTmpContents:
+    def test_creates_codex_brain_files(self, db, tmp_path):
+        from orchestrator.agents.deploy import _read_manifest, deploy_codex_brain_tmp_contents
+        from orchestrator.state.repositories.context import create_context_item
+
+        create_context_item(
+            db,
+            title="Codex Wisdom",
+            content="Codex memory",
+            scope="brain",
+            category="wisdom",
+            provider="codex",
+        )
+
+        brain_dir = str(tmp_path / "codex-brain")
+        created = deploy_codex_brain_tmp_contents(brain_dir, conn=db, provider="codex")
+
+        assert "prompt.md" in created
+        assert "bin/lib.sh" in created
+        assert not os.path.exists(os.path.join(brain_dir, ".claude", "settings.json"))
+        assert "Codex memory" in open(os.path.join(brain_dir, "prompt.md")).read()
+        manifest = _read_manifest(brain_dir)
+        assert manifest is not None
 
 
 # ---------------------------------------------------------------------------
@@ -365,6 +404,17 @@ class TestEnsureTmpDirHealth:
         # After regeneration, file should exist again
         assert os.path.exists(settings)
 
+    def test_codex_health_uses_codex_manifest(self, tmp_path):
+        from orchestrator.agents.deploy import deploy_codex_worker_tmp_contents
+        from orchestrator.session.health import ensure_tmp_dir_health
+
+        tmp_dir = str(tmp_path / "codex-worker")
+        deploy_codex_worker_tmp_contents(tmp_dir, session_id="sid")
+
+        result = ensure_tmp_dir_health(tmp_dir, session_id="sid", provider="codex")
+        assert result["healthy"] is True
+        assert result["regenerated"] is False
+
 
 class TestEnsureBrainTmpHealth:
     def test_healthy_brain(self, tmp_path):
@@ -387,3 +437,14 @@ class TestEnsureBrainTmpHealth:
         result = ensure_brain_tmp_health(brain_dir)
         assert result["healthy"] is False
         assert result["regenerated"] is True
+
+    def test_codex_brain_health_uses_codex_manifest(self, db, tmp_path):
+        from orchestrator.agents.deploy import deploy_codex_brain_tmp_contents
+        from orchestrator.session.health import ensure_brain_tmp_health
+
+        brain_dir = str(tmp_path / "codex-brain")
+        deploy_codex_brain_tmp_contents(brain_dir, conn=db, provider="codex")
+
+        result = ensure_brain_tmp_health(brain_dir, conn=db, provider="codex")
+        assert result["healthy"] is True
+        assert result["regenerated"] is False
