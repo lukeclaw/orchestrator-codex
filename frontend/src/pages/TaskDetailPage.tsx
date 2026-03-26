@@ -11,6 +11,7 @@ import { timeAgo, parseDate } from '../components/common/TimeAgo'
 import TagDropdown from '../components/common/TagDropdown'
 import ConfirmPopover from '../components/common/ConfirmPopover'
 import Markdown from '../components/common/Markdown'
+import ProviderBadge from '../components/common/ProviderBadge'
 import TaskLinksCard from '../components/tasks/TaskLinksCard'
 import TaskSubtasksCard from '../components/tasks/TaskSubtasksCard'
 import TaskNotificationsCard from '../components/tasks/TaskNotificationsCard'
@@ -442,6 +443,7 @@ export default function TaskDetailPage() {
                     parentAssignedWorker ? (
                       <Link to={`/workers/${parentAssignedWorker.id}`} className={`tdp-worker-link status-${parentAssignedWorker.status}`}>
                         {parentAssignedWorker.name}
+                        <ProviderBadge provider={parentAssignedWorker.provider} compact />
                       </Link>
                     ) : (
                       <span className="sidebar-empty">Assign the parent task</span>
@@ -453,6 +455,7 @@ export default function TaskDetailPage() {
                       ) : assignedWorker ? (
                         <Link to={`/workers/${assignedWorker.id}`} className={`tdp-worker-link status-${assignedWorker.status}`}>
                           {assignedWorker.name}
+                          <ProviderBadge provider={assignedWorker.provider} compact />
                         </Link>
                       ) : (
                         <span className="sidebar-empty">Unassigned</span>

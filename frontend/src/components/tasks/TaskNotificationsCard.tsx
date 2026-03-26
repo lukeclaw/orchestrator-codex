@@ -13,6 +13,7 @@ import {
 } from '../common/Icons'
 import { useNotify } from '../../context/NotificationContext'
 import { useApp } from '../../context/AppContext'
+import ProviderBadge from '../common/ProviderBadge'
 
 function formatNotificationTime(dateStr: string): string {
   const d = parseDate(dateStr)
@@ -48,9 +49,9 @@ export default function TaskNotificationsCard({ taskId }: TaskNotificationsCardP
   const { workers } = useApp()
 
   const sessionMap = useMemo(() => {
-    const map = new Map<string, { name: string; status: string }>()
+    const map = new Map<string, { name: string; status: string; provider?: string | null }>()
     for (const w of workers) {
-      map.set(w.id, { name: w.name, status: w.status })
+      map.set(w.id, { name: w.name, status: w.status, provider: w.provider })
     }
     return map
   }, [workers])
@@ -138,8 +139,12 @@ export default function TaskNotificationsCard({ taskId }: TaskNotificationsCardP
                                 className="np-sender-link"
                                 onClick={e => e.stopPropagation()}
                               >
-                                <span className={`pt-worker-tag ${sender.status}`}>
+                                <span
+                                  className={`pt-worker-tag ${sender.status}`}
+                                  style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', maxWidth: 'none' }}
+                                >
                                   {sender.name}
+                                  <ProviderBadge provider={sender.provider} compact />
                                 </span>
                               </Link>
                             </>

@@ -5,6 +5,7 @@ import { api } from '../api/client'
 import type { Task } from '../api/types'
 import { timeAgo, parseDate } from '../components/common/TimeAgo'
 import { IconTasks, IconFilter, IconSearch } from '../components/common/Icons'
+import ProviderBadge from '../components/common/ProviderBadge'
 import TaskForm from '../components/tasks/TaskForm'
 import './TasksPage.css'
 
@@ -356,8 +357,13 @@ export default function TasksPage() {
                     </td>
                     <td className="pt-td task-assigned">
                       {worker ? (
-                        <span className={`pt-worker-tag ${worker.status}`} title={`${worker.name} (${worker.status})`}>
+                        <span
+                          className={`pt-worker-tag ${worker.status}`}
+                          title={`${worker.name} (${worker.status})`}
+                          style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', maxWidth: 'none' }}
+                        >
                           {worker.name}
+                          <ProviderBadge provider={worker.provider} compact />
                         </span>
                       ) : '—'}
                     </td>

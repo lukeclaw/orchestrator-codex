@@ -19,6 +19,7 @@ import {
 import ConfirmPopover from '../components/common/ConfirmPopover'
 import { parseDate } from '../components/common/TimeAgo'
 import { linkifyText } from '../components/common/linkify'
+import ProviderBadge from '../components/common/ProviderBadge'
 import SlidingTabs from '../components/common/SlidingTabs'
 import './NotificationsPage.css'
 
@@ -66,9 +67,9 @@ export default function NotificationsPage() {
 
   // Build session lookup for sender badges
   const sessionMap = useMemo(() => {
-    const map = new Map<string, { name: string; status: string }>()
+    const map = new Map<string, { name: string; status: string; provider?: string | null }>()
     for (const w of workers) {
-      map.set(w.id, { name: w.name, status: w.status })
+      map.set(w.id, { name: w.name, status: w.status, provider: w.provider })
     }
     return map
   }, [workers])
@@ -361,8 +362,12 @@ export default function NotificationsPage() {
                         className="np-sender-link"
                         onClick={e => e.stopPropagation()}
                       >
-                        <span className={`pt-worker-tag ${sender.status}`}>
+                        <span
+                          className={`pt-worker-tag ${sender.status}`}
+                          style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', maxWidth: 'none' }}
+                        >
                           {sender.name}
+                          <ProviderBadge provider={sender.provider} compact />
                         </span>
                       </Link>
                     </>

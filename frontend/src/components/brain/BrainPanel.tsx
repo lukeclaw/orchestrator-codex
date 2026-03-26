@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { api, ApiError } from '../../api/client'
+import { useSettings } from '../../context/SettingsContext'
 import Modal from '../common/Modal'
 import { isSupportedDropFile, LARGE_FILE_THRESHOLD, fileToBase64 } from '../../utils/fileDropUtils'
 import { useNotify } from '../../context/NotificationContext'
@@ -14,6 +15,7 @@ import BrainTerminal from './BrainTerminal'
 import type { BrainStatus } from './BrainTerminal'
 import { IconChevronLeft, IconChevronRight, IconClipboard, IconEraser, IconPlus, IconStop, IconSync } from '../common/Icons'
 import ConfirmPopover from '../common/ConfirmPopover'
+import ProviderBadge from '../common/ProviderBadge'
 import './BrainPanel.css'
 
 interface BrainPanelProps {
@@ -43,6 +45,7 @@ export default function BrainPanel({
   maxWidth,
 }: BrainPanelProps) {
   const notify = useNotify()
+  const { getValue, loading: settingsLoading } = useSettings()
   const { registry } = useProviderRegistry()
   const [brainStatus, setBrainStatus] = useState<BrainStatus | null>(null)
   const [brainProvider, setBrainProvider] = useState(DEFAULT_PROVIDER_ID)
@@ -91,6 +94,12 @@ export default function BrainPanel({
   useEffect(() => {
     fetchBrainProvider(brainStatus?.session_id ?? null)
   }, [brainStatus?.session_id, fetchBrainProvider])
+
+  useEffect(() => {
+    if (!brainStatus?.session_id && !settingsLoading) {
+      setBrainProvider(String(getValue('brain.default_provider') || DEFAULT_PROVIDER_ID))
+    }
+  }, [brainStatus?.session_id, getValue, settingsLoading])
 
   // Auto-start brain once on mount if not already running
   useEffect(() => {
@@ -356,6 +365,7 @@ export default function BrainPanel({
         <div className="bp-header-center">
           <span className={`brain-indicator ${isRunning ? 'active' : 'inactive'}`} />
           <span className="bp-title">Brain</span>
+          <ProviderBadge provider={brainProvider} compact />
           {brainStatus?.status && (
             <span className={`status-badge ${brainStatus.status}`}>{brainStatus.status === 'working' ? 'Active' : brainStatus.status}</span>
           )}

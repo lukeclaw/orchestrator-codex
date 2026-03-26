@@ -1,6 +1,8 @@
 import { Link } from 'react-router-dom'
 import { IconStop, IconTrash, IconPlay } from '../common/Icons'
 import ConfirmPopover from '../common/ConfirmPopover'
+import { useApp } from '../../context/AppContext'
+import ProviderBadge from '../common/ProviderBadge'
 import './RdevTable.css'
 
 interface Rdev {
@@ -30,6 +32,9 @@ interface Props {
 }
 
 export default function RdevTable({ rdevs, onDelete, onRestart, onStop, actionLoading, sortKey, sortDir, onSort }: Props) {
+  const { sessions } = useApp()
+  const sessionById = new Map(sessions.map(s => [s.id, s]))
+
   if (!rdevs.length) {
     return <p className="empty-state">No rdevs found</p>
   }
@@ -75,8 +80,13 @@ export default function RdevTable({ rdevs, onDelete, onRestart, onStop, actionLo
                 <td>
                   {rdev.in_use && rdev.worker_name && rdev.worker_id ? (
                     <Link to={`/workers/${rdev.worker_id}`} className="worker-tag-link">
-                      <span className={`pt-worker-tag ${rdev.worker_status || 'idle'}`} title={`${rdev.worker_name} (${rdev.worker_status || 'idle'})`}>
+                      <span
+                        className={`pt-worker-tag ${rdev.worker_status || 'idle'}`}
+                        title={`${rdev.worker_name} (${rdev.worker_status || 'idle'})`}
+                        style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', maxWidth: 'none' }}
+                      >
                         {rdev.worker_name}
+                        <ProviderBadge provider={sessionById.get(rdev.worker_id)?.provider} compact />
                       </span>
                     </Link>
                   ) : (

@@ -1,7 +1,9 @@
 import { useState, useMemo } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import type { Project } from '../../api/types'
+import { useApp } from '../../context/AppContext'
 import { timeAgo, parseDate } from '../common/TimeAgo'
+import ProviderBadge from '../common/ProviderBadge'
 import './ProjectsTable.css'
 
 type SortKey = 'name' | 'tasks' | 'subtasks' | 'progress' | 'workers' | 'status' | 'created' | 'updated'
@@ -55,8 +57,10 @@ function getProjectSortValue(p: Project, key: SortKey): string | number {
 export default function ProjectsTable({ projects, hiddenColumns }: Props) {
   const hidden = new Set(hiddenColumns ?? [])
   const navigate = useNavigate()
+  const { sessions } = useApp()
   const [sortKey, setSortKey] = useState<SortKey>('updated')
   const [sortDir, setSortDir] = useState<SortDir>('desc')
+  const sessionById = useMemo(() => new Map(sessions.map(s => [s.id, s])), [sessions])
 
   const sortedProjects = useMemo(() => {
     return [...projects].sort((a, b) => {
@@ -148,11 +152,20 @@ export default function ProjectsTable({ projects, hiddenColumns }: Props) {
                   {workerDetails.length === 0 ? (
                     <span className="pt-no-workers">—</span>
                   ) : (
-                    workerDetails.map(w => (
-                      <span key={w.id} className={`pt-worker-tag ${w.status}`} title={`${w.name} (${w.status})`}>
-                        {w.name}
-                      </span>
-                    ))
+                    workerDetails.map(w => {
+                      const provider = sessionById.get(w.id)?.provider
+                      return (
+                        <span
+                          key={w.id}
+                          className={`pt-worker-tag ${w.status}`}
+                          title={`${w.name} (${w.status})`}
+                          style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', maxWidth: 'none' }}
+                        >
+                          {w.name}
+                          <ProviderBadge provider={provider} compact />
+                        </span>
+                      )
+                    })
                   )}
                 </div>
               </td>

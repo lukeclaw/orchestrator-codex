@@ -1,5 +1,8 @@
 import { Link } from 'react-router-dom'
+import { useMemo } from 'react'
 import type { Project } from '../../api/types'
+import { useApp } from '../../context/AppContext'
+import ProviderBadge from '../common/ProviderBadge'
 import { timeAgo } from '../common/TimeAgo'
 import StatusDot from '../common/StatusDot'
 import './ProjectCard.css'
@@ -26,6 +29,7 @@ function SegmentedBar({ done, active, blocked, total }: { done: number; active: 
 }
 
 export default function ProjectCard({ project, onToggleStar }: Props) {
+  const { sessions } = useApp()
   const stats = project.stats
   const taskStats = stats?.tasks
   const subtaskStats = stats?.subtasks
@@ -39,6 +43,7 @@ export default function ProjectCard({ project, onToggleStar }: Props) {
   const subtasksDone = subtaskStats?.done ?? 0
 
   const workerDetails = workerStats?.details ?? []
+  const sessionById = useMemo(() => new Map(sessions.map(s => [s.id, s])), [sessions])
 
   /** Show only the alias part of auto-generated worker names (after last '_') */
   function shortWorkerName(name: string) {
@@ -98,9 +103,14 @@ export default function ProjectCard({ project, onToggleStar }: Props) {
         <div className="pc-footer-workers">
           {workerDetails.length > 0 ? (
             workerDetails.map(w => (
-              <span key={w.id} className={`pc-worker ${w.status}`} title={`${w.name} (${w.status})`}>
+              <span
+                key={w.id}
+                className={`pc-worker ${w.status}`}
+                title={`${w.name} (${w.status})`}
+              >
                 <StatusDot status={w.status} size="sm" />
                 {shortWorkerName(w.name)}
+                <ProviderBadge provider={sessionById.get(w.id)?.provider} compact />
               </span>
             ))
           ) : (
