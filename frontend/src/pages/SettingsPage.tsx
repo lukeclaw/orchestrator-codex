@@ -528,7 +528,7 @@ export default function SettingsPage() {
                   Choose your preferred color scheme
                 </div>
                 <div className="settings-toggle-hint">
-                  Tip: run <code>/theme</code> in a worker session to switch Claude Code's terminal theme
+                  Tip: Claude workers can run <code>/theme</code> in-session to change the Claude Code terminal theme
                 </div>
               </div>
               <SlidingTabs

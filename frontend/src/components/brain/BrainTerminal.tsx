@@ -56,7 +56,7 @@ export default function BrainTerminal({
         <div className="brain-empty">
           <div className="brain-empty-icon">&#x1F9E0;</div>
           <p>The orchestrator brain manages your workers.</p>
-          <p>Start it to coordinate projects and monitor progress.</p>
+          <p>Start it to coordinate projects and monitor progress with the selected provider.</p>
           <button
             className="btn btn-primary btn-sm"
             onClick={onStart}

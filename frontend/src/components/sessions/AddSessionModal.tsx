@@ -369,7 +369,7 @@ export default function AddSessionModal({ open, onClose }: Props) {
               onChange={setProvider}
             />
             <div className="field-hint">
-              New workers inherit the selected provider. Claude remains the default baseline.
+              New workers inherit the selected provider. The default comes from Settings.
             </div>
           </div>
 
