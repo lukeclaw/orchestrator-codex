@@ -12,6 +12,11 @@ import {
 import ConfirmPopover from '../common/ConfirmPopover'
 import StatusDot from '../common/StatusDot'
 import ProviderBadge from '../common/ProviderBadge'
+import {
+  CAPABILITY_RECONNECT,
+  FALLBACK_PROVIDER_REGISTRY,
+  getCapabilityDisabledReason,
+} from '../../hooks/useProviderRegistry'
 
 interface TaskWorkerPreviewProps {
   worker: Session
@@ -22,6 +27,11 @@ export default function TaskWorkerPreview({ worker, onRefresh }: TaskWorkerPrevi
   const navigate = useNavigate()
   const [workerPreview, setWorkerPreview] = useState('')
   const [actionPending, setActionPending] = useState(false)
+  const reconnectDisabledReason = getCapabilityDisabledReason(
+    FALLBACK_PROVIDER_REGISTRY,
+    worker.provider,
+    CAPABILITY_RECONNECT,
+  )
 
   useEffect(() => {
     async function fetchPreview() {
@@ -64,6 +74,7 @@ export default function TaskWorkerPreview({ worker, onRefresh }: TaskWorkerPrevi
 
   async function handleReconnect(e: React.MouseEvent) {
     e.stopPropagation()
+    if (reconnectDisabledReason) return
     if (actionPending) return
     setActionPending(true)
     try {
@@ -96,8 +107,8 @@ export default function TaskWorkerPreview({ worker, onRefresh }: TaskWorkerPrevi
             <button
               className="wc-action-btn reconnect"
               onClick={handleReconnect}
-              disabled={actionPending}
-              title="Reconnect"
+              disabled={actionPending || !!reconnectDisabledReason}
+              title={reconnectDisabledReason || 'Reconnect'}
             >
               <IconRefresh size={14} />
             </button>

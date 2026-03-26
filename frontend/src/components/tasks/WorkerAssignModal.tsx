@@ -5,6 +5,11 @@ import ProviderBadge from '../common/ProviderBadge'
 import { api } from '../../api/client'
 import type { Task, Session } from '../../api/types'
 import { useNotify } from '../../context/NotificationContext'
+import {
+  CAPABILITY_RECONNECT,
+  FALLBACK_PROVIDER_REGISTRY,
+  getCapabilityDisabledReason,
+} from '../../hooks/useProviderRegistry'
 
 interface WorkerAssignModalProps {
   task: Task
@@ -126,25 +131,34 @@ export default function WorkerAssignModal({
                 <span>Disconnected</span>
               </div>
             )}
-            {disconnectedWorkers.map(s => (
-              <div
-                key={s.id}
-                className="tdp-worker-option disabled"
-              >
-                <StatusDot status={s.status} />
-                <span className="worker-name">{s.name}</span>
-                <ProviderBadge provider={s.provider} compact />
-                {s.host.includes('/') ? <span className="wc-type-tag rdev">rdev</span> : s.host !== 'localhost' ? <span className="wc-type-tag ssh">ssh</span> : null}
-                <span className={`worker-status-label status-${s.status}`}>{s.status}</span>
-                <button
-                  className="tdp-worker-reconnect-btn"
-                  onClick={(e) => handleReconnectInModal(s.id, e)}
-                  title="Reconnect worker"
+            {disconnectedWorkers.map(s => {
+              const reconnectDisabledReason = getCapabilityDisabledReason(
+                FALLBACK_PROVIDER_REGISTRY,
+                s.provider,
+                CAPABILITY_RECONNECT,
+              )
+
+              return (
+                <div
+                  key={s.id}
+                  className="tdp-worker-option disabled"
                 >
-                  <IconRefresh size={12} />
-                </button>
-              </div>
-            ))}
+                  <StatusDot status={s.status} />
+                  <span className="worker-name">{s.name}</span>
+                  <ProviderBadge provider={s.provider} compact />
+                  {s.host.includes('/') ? <span className="wc-type-tag rdev">rdev</span> : s.host !== 'localhost' ? <span className="wc-type-tag ssh">ssh</span> : null}
+                  <span className={`worker-status-label status-${s.status}`}>{s.status}</span>
+                  <button
+                    className="tdp-worker-reconnect-btn"
+                    onClick={(e) => handleReconnectInModal(s.id, e)}
+                    title={reconnectDisabledReason || 'Reconnect worker'}
+                    disabled={!!reconnectDisabledReason}
+                  >
+                    <IconRefresh size={12} />
+                  </button>
+                </div>
+              )
+            })}
           </div>
         </div>
       </div>

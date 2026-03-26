@@ -8,6 +8,11 @@ import { useApp } from '../context/AppContext'
 import { useSmartPaste } from '../hooks/useSmartPaste'
 import { useFileExplorerState } from '../hooks/useFileExplorerState'
 import { useEditorTabs } from '../hooks/useEditorTabs'
+import {
+  CAPABILITY_RECONNECT,
+  FALLBACK_PROVIDER_REGISTRY,
+  getCapabilityDisabledReason,
+} from '../hooks/useProviderRegistry'
 import TerminalView from '../components/terminal/TerminalView'
 import InteractiveCLI from '../components/terminal/InteractiveCLI'
 import BrowserView from '../components/browser/BrowserView'
@@ -37,6 +42,13 @@ export default function SessionDetailPage() {
   const isRdev = session?.host?.includes('/') ?? false
   const isSsh = !isRdev && (session?.host ? session.host !== 'localhost' : false)
   const isRemote = session?.host ? session.host !== 'localhost' : false
+  const reconnectDisabledReason = session
+    ? getCapabilityDisabledReason(
+      FALLBACK_PROVIDER_REGISTRY,
+      session.provider,
+      CAPABILITY_RECONNECT,
+    )
+    : null
 
   const { readClipboard } = useSmartPaste()
   const terminalFocusRef = useRef<(() => void) | null>(null)
@@ -308,6 +320,10 @@ export default function SessionDetailPage() {
   }
 
   async function handleReconnect() {
+    if (reconnectDisabledReason) {
+      notify(reconnectDisabledReason, 'error')
+      return
+    }
     if (!id || actionPending) return
     setActionPending(true)
     try {
@@ -322,6 +338,10 @@ export default function SessionDetailPage() {
   }
 
   async function handleToggleAutoReconnect() {
+    if (reconnectDisabledReason) {
+      notify(reconnectDisabledReason, 'error')
+      return
+    }
     if (!id) return
     try {
       const result = await api<{ ok: boolean; auto_reconnect: boolean }>(
@@ -642,8 +662,8 @@ export default function SessionDetailPage() {
             <button
               className="sd-control-btn reconnect"
               onClick={handleReconnect}
-              disabled={actionPending}
-              title="Reconnect"
+              disabled={actionPending || !!reconnectDisabledReason}
+              title={reconnectDisabledReason || 'Reconnect'}
             >
               <IconRefresh size={16} />
             </button>
@@ -844,13 +864,21 @@ export default function SessionDetailPage() {
           )}
         </div>
         <div className="sd-footer-right">
-          <label className="sd-auto-reconnect-toggle" title="When enabled, automatically reconnect this worker if it disconnects">
+          <label
+            className="sd-auto-reconnect-toggle"
+            title={
+              reconnectDisabledReason
+                ? reconnectDisabledReason
+                : 'When enabled, automatically reconnect this worker if it disconnects'
+            }
+          >
             <span className="sd-auto-reconnect-label">Auto-reconnect</span>
             <button
               className={`sd-toggle-switch ${session.auto_reconnect ? 'on' : ''}`}
               onClick={handleToggleAutoReconnect}
               role="switch"
               aria-checked={session.auto_reconnect}
+              disabled={!!reconnectDisabledReason}
             >
               <span className="sd-toggle-knob" />
             </button>

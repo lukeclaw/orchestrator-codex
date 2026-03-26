@@ -5,6 +5,11 @@ import { api } from '../../api/client'
 import { useNotify } from '../../context/NotificationContext'
 import { timeAgo } from '../common/TimeAgo'
 import ProviderBadge from '../common/ProviderBadge'
+import {
+  CAPABILITY_RECONNECT,
+  FALLBACK_PROVIDER_REGISTRY,
+  getCapabilityDisabledReason,
+} from '../../hooks/useProviderRegistry'
 import { IconTrash, IconPause, IconPlay, IconStop, IconRefresh, IconBrain, IconKebab } from '../common/Icons'
 import StatusDot from '../common/StatusDot'
 
@@ -37,6 +42,11 @@ export default function WorkerCard({
 
   // Tunnels come from the bulk sessions fetch (AppContext) — no per-card polling needed
   const tunnels = session.tunnels || {}
+  const reconnectDisabledReason = getCapabilityDisabledReason(
+    FALLBACK_PROVIDER_REGISTRY,
+    session.provider,
+    CAPABILITY_RECONNECT,
+  )
 
   // Close overflow menu on click outside
   useEffect(() => {
@@ -111,6 +121,7 @@ export default function WorkerCard({
 
   async function handleReconnect(e: React.MouseEvent) {
     e.stopPropagation()
+    if (reconnectDisabledReason) return
     if (actionPending) return
     setActionPending(true)
     try {
@@ -186,8 +197,8 @@ export default function WorkerCard({
               <button
                 className="wc-action-btn reconnect"
                 onClick={handleReconnect}
-                disabled={actionPending}
-                title="Reconnect"
+                disabled={actionPending || !!reconnectDisabledReason}
+                title={reconnectDisabledReason || 'Reconnect'}
               >
                 <IconRefresh size={14} />
               </button>
