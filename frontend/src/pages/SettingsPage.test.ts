@@ -5,26 +5,30 @@ import {
 import { getSettingsCapabilityState } from './SettingsPage'
 
 describe('SettingsPage provider gating', () => {
-  it('keeps Claude settings enabled when both defaults are Claude', () => {
+  it('keeps provider-specific launch settings enabled for supported providers', () => {
     expect(
-      getSettingsCapabilityState(FALLBACK_PROVIDER_REGISTRY, 'claude', 'claude'),
+      getSettingsCapabilityState(FALLBACK_PROVIDER_REGISTRY, 'claude'),
     ).toEqual({
-      updateBeforeStartDisabledReason: null,
-      skipPermissionsDisabledReason: null,
-      defaultModelDisabledReason: null,
-      defaultEffortDisabledReason: null,
+      claudeUpdateBeforeStartDisabledReason: null,
+      claudeSkipPermissionsDisabledReason: null,
+      claudeDefaultModelDisabledReason: null,
+      claudeDefaultEffortDisabledReason: null,
+      codexDefaultModelDisabledReason: null,
+      codexDefaultEffortDisabledReason: null,
       brainHeartbeatDisabledReason: null,
     })
   })
 
-  it('disables Claude-only launch settings for Codex defaults', () => {
+  it('disables only the brain heartbeat when the brain default is Codex', () => {
     expect(
-      getSettingsCapabilityState(FALLBACK_PROVIDER_REGISTRY, 'codex', 'codex'),
+      getSettingsCapabilityState(FALLBACK_PROVIDER_REGISTRY, 'codex'),
     ).toEqual({
-      updateBeforeStartDisabledReason: 'Codex hook automation is not implemented yet.',
-      skipPermissionsDisabledReason: 'Codex skip-permissions support is not implemented yet.',
-      defaultModelDisabledReason: null,
-      defaultEffortDisabledReason: null,
+      claudeUpdateBeforeStartDisabledReason: null,
+      claudeSkipPermissionsDisabledReason: null,
+      claudeDefaultModelDisabledReason: null,
+      claudeDefaultEffortDisabledReason: null,
+      codexDefaultModelDisabledReason: null,
+      codexDefaultEffortDisabledReason: null,
       brainHeartbeatDisabledReason: 'Codex heartbeat loop support is not implemented yet.',
     })
   })

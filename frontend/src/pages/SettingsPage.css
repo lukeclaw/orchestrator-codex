@@ -246,6 +246,32 @@
   font-size: 13px;
 }
 
+.settings-inline-control {
+  flex-shrink: 0;
+}
+
+.settings-text-input {
+  width: 220px;
+  max-width: 100%;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--surface-hover);
+  color: var(--text-primary);
+  font-size: 13px;
+}
+
+.settings-text-input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(var(--accent-emphasis-rgb), 0.15);
+}
+
+.settings-text-input:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
 .settings-toggle-desc code {
   font-size: 11px;
   padding: 1px 5px;

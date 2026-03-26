@@ -16,7 +16,6 @@ import {
   CAPABILITY_EFFORT_SELECTION,
   CAPABILITY_SKIP_PERMISSIONS,
   CAPABILITY_HEARTBEAT_LOOP,
-  getSharedCapabilityDisabledReason,
   getCapabilityDisabledReason,
   type ProviderRegistryResponse,
   useProviderRegistry,
@@ -53,37 +52,48 @@ const BACKUPS_PER_PAGE = 10
 type SettingsTab = 'updates' | 'preferences' | 'backup'
 
 export interface SettingsCapabilityState {
-  updateBeforeStartDisabledReason: string | null
-  skipPermissionsDisabledReason: string | null
-  defaultModelDisabledReason: string | null
-  defaultEffortDisabledReason: string | null
+  claudeUpdateBeforeStartDisabledReason: string | null
+  claudeSkipPermissionsDisabledReason: string | null
+  claudeDefaultModelDisabledReason: string | null
+  claudeDefaultEffortDisabledReason: string | null
+  codexDefaultModelDisabledReason: string | null
+  codexDefaultEffortDisabledReason: string | null
   brainHeartbeatDisabledReason: string | null
 }
 
 export function getSettingsCapabilityState(
   registry: ProviderRegistryResponse,
-  workerProviderId: string,
   brainProviderId: string,
 ): SettingsCapabilityState {
   return {
-    updateBeforeStartDisabledReason: getSharedCapabilityDisabledReason(
+    claudeUpdateBeforeStartDisabledReason: getCapabilityDisabledReason(
       registry,
-      [workerProviderId, brainProviderId],
+      'claude',
       CAPABILITY_HOOKS,
     ),
-    skipPermissionsDisabledReason: getSharedCapabilityDisabledReason(
+    claudeSkipPermissionsDisabledReason: getCapabilityDisabledReason(
       registry,
-      [workerProviderId, brainProviderId],
+      'claude',
       CAPABILITY_SKIP_PERMISSIONS,
     ),
-    defaultModelDisabledReason: getSharedCapabilityDisabledReason(
+    claudeDefaultModelDisabledReason: getCapabilityDisabledReason(
       registry,
-      [workerProviderId, brainProviderId],
+      'claude',
       CAPABILITY_MODEL_SELECTION,
     ),
-    defaultEffortDisabledReason: getSharedCapabilityDisabledReason(
+    claudeDefaultEffortDisabledReason: getCapabilityDisabledReason(
       registry,
-      [workerProviderId, brainProviderId],
+      'claude',
+      CAPABILITY_EFFORT_SELECTION,
+    ),
+    codexDefaultModelDisabledReason: getCapabilityDisabledReason(
+      registry,
+      'codex',
+      CAPABILITY_MODEL_SELECTION,
+    ),
+    codexDefaultEffortDisabledReason: getCapabilityDisabledReason(
+      registry,
+      'codex',
       CAPABILITY_EFFORT_SELECTION,
     ),
     brainHeartbeatDisabledReason: getCapabilityDisabledReason(
@@ -96,7 +106,7 @@ export function getSettingsCapabilityState(
 
 export default function SettingsPage() {
   const { loading, getValue, save } = useSettings()
-  const { registry, providerOptions, getCapabilityDisabledReason } = useProviderRegistry()
+  const { registry, providerOptions } = useProviderRegistry()
   const notify = useNotify()
   const { setUpdateAvailable } = useApp()
   const [searchParams, setSearchParams] = useSearchParams()
@@ -127,8 +137,10 @@ export default function SettingsPage() {
   const [claudeUpdateBeforeStart, setClaudeUpdateBeforeStart] = useState(false)
   const [preserveFilters, setPreserveFilters] = useState(false)
   const [skipPermissions, setSkipPermissions] = useState(false)
-  const [defaultModel, setDefaultModel] = useState('opus')
-  const [defaultEffort, setDefaultEffort] = useState('high')
+  const [claudeDefaultModel, setClaudeDefaultModel] = useState('opus')
+  const [claudeDefaultEffort, setClaudeDefaultEffort] = useState('high')
+  const [codexDefaultModel, setCodexDefaultModel] = useState('gpt-5-codex')
+  const [codexDefaultEffort, setCodexDefaultEffort] = useState('high')
   const [workerDefaultProvider, setWorkerDefaultProvider] = useState(DEFAULT_PROVIDER_ID)
   const [brainDefaultProvider, setBrainDefaultProvider] = useState(DEFAULT_PROVIDER_ID)
   const [theme, setTheme] = useState<ThemeMode>('dark')
@@ -143,8 +155,10 @@ export default function SettingsPage() {
       setClaudeUpdateBeforeStart(Boolean(getValue('claude.update_before_start')))
       setPreserveFilters(Boolean(getValue('ui.preserve_filters')))
       setSkipPermissions(Boolean(getValue('claude.skip_permissions')))
-      setDefaultModel(String(getValue('claude.default_model') || 'opus'))
-      setDefaultEffort(String(getValue('claude.default_effort') || 'high'))
+      setClaudeDefaultModel(String(getValue('claude.default_model') || 'opus'))
+      setClaudeDefaultEffort(String(getValue('claude.default_effort') || 'high'))
+      setCodexDefaultModel(String(getValue('codex.default_model') || 'gpt-5-codex'))
+      setCodexDefaultEffort(String(getValue('codex.default_effort') || 'high'))
       setWorkerDefaultProvider(String(getValue('worker.default_provider') || DEFAULT_PROVIDER_ID))
       setBrainDefaultProvider(String(getValue('brain.default_provider') || DEFAULT_PROVIDER_ID))
       setTheme((getValue('ui.theme') as ThemeMode) || 'dark')
@@ -182,14 +196,25 @@ export default function SettingsPage() {
     await save({ 'claude.skip_permissions': newValue })
   }
 
-  const handleDefaultModelChange = async (value: string) => {
-    setDefaultModel(value)
+  const handleClaudeDefaultModelChange = async (value: string) => {
+    setClaudeDefaultModel(value)
     await save({ 'claude.default_model': value })
   }
 
-  const handleDefaultEffortChange = async (value: string) => {
-    setDefaultEffort(value)
+  const handleClaudeDefaultEffortChange = async (value: string) => {
+    setClaudeDefaultEffort(value)
     await save({ 'claude.default_effort': value })
+  }
+
+  const handleCodexDefaultModelChange = async (value: string) => {
+    const trimmed = value.trim() || 'gpt-5-codex'
+    setCodexDefaultModel(trimmed)
+    await save({ 'codex.default_model': trimmed })
+  }
+
+  const handleCodexDefaultEffortChange = async (value: string) => {
+    setCodexDefaultEffort(value)
+    await save({ 'codex.default_effort': value })
   }
 
   const handleThemeChange = async (value: string) => {
@@ -296,12 +321,14 @@ export default function SettingsPage() {
     label: option.label,
   }))
   const {
-    updateBeforeStartDisabledReason,
-    skipPermissionsDisabledReason,
-    defaultModelDisabledReason,
-    defaultEffortDisabledReason,
+    claudeUpdateBeforeStartDisabledReason,
+    claudeSkipPermissionsDisabledReason,
+    claudeDefaultModelDisabledReason,
+    claudeDefaultEffortDisabledReason,
+    codexDefaultModelDisabledReason,
+    codexDefaultEffortDisabledReason,
     brainHeartbeatDisabledReason,
-  } = getSettingsCapabilityState(registry, workerDefaultProvider, brainDefaultProvider)
+  } = getSettingsCapabilityState(registry, brainDefaultProvider)
 
   // Pagination
   const totalPages = Math.max(1, Math.ceil(backups.length / BACKUPS_PER_PAGE))
@@ -557,7 +584,7 @@ export default function SettingsPage() {
             <h2>Claude Code</h2>
           </div>
           <div className="panel-body">
-            <div className="settings-toggle-row" title={updateBeforeStartDisabledReason || undefined}>
+            <div className="settings-toggle-row" title={claudeUpdateBeforeStartDisabledReason || undefined}>
               <div>
                 <div className="settings-toggle-label">Update before start</div>
                 <div className="settings-toggle-desc">
@@ -565,17 +592,17 @@ export default function SettingsPage() {
                 </div>
               </div>
               <div
-                className={`sd-toggle-switch ${claudeUpdateBeforeStart ? 'on' : ''}${updateBeforeStartDisabledReason ? ' disabled' : ''}`}
-                onClick={updateBeforeStartDisabledReason ? undefined : handleClaudeUpdateToggle}
+                className={`sd-toggle-switch ${claudeUpdateBeforeStart ? 'on' : ''}${claudeUpdateBeforeStartDisabledReason ? ' disabled' : ''}`}
+                onClick={claudeUpdateBeforeStartDisabledReason ? undefined : handleClaudeUpdateToggle}
                 role="switch"
                 aria-checked={claudeUpdateBeforeStart}
-                aria-disabled={!!updateBeforeStartDisabledReason}
+                aria-disabled={!!claudeUpdateBeforeStartDisabledReason}
               >
                 <div className="sd-toggle-knob" />
               </div>
             </div>
 
-            <div className="settings-toggle-row" title={skipPermissionsDisabledReason || undefined}>
+            <div className="settings-toggle-row" title={claudeSkipPermissionsDisabledReason || undefined}>
               <div>
                 <div className="settings-toggle-label">Skip permission prompts</div>
                 <div className="settings-toggle-desc">
@@ -584,16 +611,16 @@ export default function SettingsPage() {
                 </div>
               </div>
               <div
-                className={`sd-toggle-switch ${skipPermissions ? 'on' : ''}${skipPermissionsDisabledReason ? ' disabled' : ''}`}
-                onClick={skipPermissionsDisabledReason ? undefined : handleSkipPermissionsToggle}
+                className={`sd-toggle-switch ${skipPermissions ? 'on' : ''}${claudeSkipPermissionsDisabledReason ? ' disabled' : ''}`}
+                onClick={claudeSkipPermissionsDisabledReason ? undefined : handleSkipPermissionsToggle}
                 role="switch"
                 aria-checked={skipPermissions}
-                aria-disabled={!!skipPermissionsDisabledReason}
+                aria-disabled={!!claudeSkipPermissionsDisabledReason}
               >
                 <div className="sd-toggle-knob" />
               </div>
             </div>
-            {skipPermissions && !skipPermissionsDisabledReason && (
+            {skipPermissions && !claudeSkipPermissionsDisabledReason && (
               <div className="settings-warning-note">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
@@ -608,42 +635,96 @@ export default function SettingsPage() {
               </div>
             )}
 
-            <div className="settings-toggle-row" title={defaultModelDisabledReason || undefined}>
+            <div className="settings-toggle-row" title={claudeDefaultModelDisabledReason || undefined}>
               <div>
                 <div className="settings-toggle-label">Default model</div>
                 <div className="settings-toggle-desc">
                   Claude model used when launching new workers and brain
                 </div>
               </div>
-              <div className={defaultModelDisabledReason ? 'settings-tabs-disabled' : ''}>
+              <div className={claudeDefaultModelDisabledReason ? 'settings-tabs-disabled' : ''}>
                 <SlidingTabs
                   tabs={[
                     { value: 'opus' as const, label: 'Opus' },
                     { value: 'sonnet' as const, label: 'Sonnet' },
                     { value: 'haiku' as const, label: 'Haiku' },
                   ]}
-                  value={defaultModel}
-                  onChange={handleDefaultModelChange}
+                  value={claudeDefaultModel}
+                  onChange={handleClaudeDefaultModelChange}
                 />
               </div>
             </div>
 
-            <div className="settings-toggle-row" title={defaultEffortDisabledReason || undefined}>
+            <div className="settings-toggle-row" title={claudeDefaultEffortDisabledReason || undefined}>
               <div>
                 <div className="settings-toggle-label">Default effort</div>
                 <div className="settings-toggle-desc">
                   Reasoning effort level for new workers and brain
                 </div>
               </div>
-              <div className={defaultEffortDisabledReason ? 'settings-tabs-disabled' : ''}>
+              <div className={claudeDefaultEffortDisabledReason ? 'settings-tabs-disabled' : ''}>
                 <SlidingTabs
                   tabs={[
                     { value: 'high' as const, label: 'High' },
                     { value: 'medium' as const, label: 'Medium' },
                     { value: 'low' as const, label: 'Low' },
                   ]}
-                  value={defaultEffort}
-                  onChange={handleDefaultEffortChange}
+                  value={claudeDefaultEffort}
+                  onChange={handleClaudeDefaultEffortChange}
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="settings-content panel">
+          <div className="panel-header">
+            <h2>Codex</h2>
+          </div>
+          <div className="panel-body">
+            <div className="settings-toggle-row" title={codexDefaultModelDisabledReason || undefined}>
+              <div>
+                <div className="settings-toggle-label">Default model</div>
+                <div className="settings-toggle-desc">
+                  Codex model used when launching new workers and brain
+                </div>
+              </div>
+              <div className="settings-inline-control">
+                <input
+                  className="settings-text-input"
+                  type="text"
+                  value={codexDefaultModel}
+                  onChange={e => setCodexDefaultModel(e.target.value)}
+                  onBlur={() => handleCodexDefaultModelChange(codexDefaultModel)}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter') {
+                      void handleCodexDefaultModelChange(codexDefaultModel)
+                      ;(e.target as HTMLInputElement).blur()
+                    }
+                  }}
+                  placeholder="gpt-5-codex"
+                  spellCheck={false}
+                  disabled={!!codexDefaultModelDisabledReason}
+                />
+              </div>
+            </div>
+
+            <div className="settings-toggle-row" title={codexDefaultEffortDisabledReason || undefined}>
+              <div>
+                <div className="settings-toggle-label">Default effort</div>
+                <div className="settings-toggle-desc">
+                  Reasoning effort level for new Codex workers and brain
+                </div>
+              </div>
+              <div className={codexDefaultEffortDisabledReason ? 'settings-tabs-disabled' : ''}>
+                <SlidingTabs
+                  tabs={[
+                    { value: 'high' as const, label: 'High' },
+                    { value: 'medium' as const, label: 'Medium' },
+                    { value: 'low' as const, label: 'Low' },
+                  ]}
+                  value={codexDefaultEffort}
+                  onChange={handleCodexDefaultEffortChange}
                 />
               </div>
             </div>
