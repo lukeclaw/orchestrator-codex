@@ -4,10 +4,12 @@ import { api } from '../api/client'
 
 interface ContextFilters {
   scope?: string
+  provider?: string
   project_id?: string
   category?: string
   search?: string
   include_content?: boolean
+  include_shared?: boolean
   /** Client-side filter: hide items matching these scope+category pairs (e.g. brain memory/wisdom) */
   excludeScopeCategories?: Array<{ scope: string; category: string }>
 }
@@ -22,10 +24,12 @@ export function useContextItems(filters?: ContextFilters) {
       const params = new URLSearchParams()
       const active = f || filters
       if (active?.scope) params.set('scope', active.scope)
+      if (active?.provider) params.set('provider', active.provider)
       if (active?.project_id) params.set('project_id', active.project_id)
       if (active?.category) params.set('category', active.category)
       if (active?.search) params.set('search', active.search)
       if (active?.include_content) params.set('include_content', 'true')
+      if (active?.include_shared === false) params.set('include_shared', 'false')
       const qs = params.toString()
       let data = await api<ContextItem[]>(`/api/context${qs ? `?${qs}` : ''}`)
       const excludes = (f || filters)?.excludeScopeCategories
@@ -40,7 +44,7 @@ export function useContextItems(filters?: ContextFilters) {
     } finally {
       setLoading(false)
     }
-  }, [filters?.scope, filters?.project_id, filters?.category, filters?.search, filters?.include_content])
+  }, [filters?.scope, filters?.provider, filters?.project_id, filters?.category, filters?.search, filters?.include_content, filters?.include_shared])
 
   useEffect(() => { fetchItems() }, [fetchItems])
 
@@ -54,6 +58,7 @@ export function useContextItems(filters?: ContextFilters) {
     content: string
     description?: string
     scope?: string
+    provider?: string | null
     project_id?: string
     category?: string
     source?: string
@@ -66,7 +71,7 @@ export function useContextItems(filters?: ContextFilters) {
     return item
   }, [])
 
-  const update = useCallback(async (id: string, body: Partial<Pick<ContextItem, 'title' | 'content' | 'description' | 'scope' | 'project_id' | 'category' | 'source'>>) => {
+  const update = useCallback(async (id: string, body: Partial<Pick<ContextItem, 'title' | 'content' | 'description' | 'scope' | 'provider' | 'project_id' | 'category' | 'source'>>) => {
     const item = await api<ContextItem>(`/api/context/${id}`, {
       method: 'PATCH',
       body: JSON.stringify(body),

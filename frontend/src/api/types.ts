@@ -104,6 +104,7 @@ export interface Rdev {
 export interface ContextItem {
   id: string
   scope: 'global' | 'project' | 'brain'
+  provider: string | null
   project_id: string | null
   title: string
   description: string | null

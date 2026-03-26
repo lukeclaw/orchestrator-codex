@@ -4,6 +4,7 @@ import TagDropdown, { type TagOption } from '../common/TagDropdown'
 import Markdown from '../common/Markdown'
 import type { ContextItem, Project } from '../../api/types'
 import { parseDate } from '../common/TimeAgo'
+import { useProviderRegistry } from '../../hooks/useProviderRegistry'
 import './ContextModal.css'
 
 interface InitialContent {
@@ -34,10 +35,12 @@ const CATEGORY_OPTIONS = [
 ]
 
 export default function ContextModal({ context, projectId, projects = [], isNew, readOnly, initialContent, onClose, onSave, onDelete }: Props) {
+  const { providerOptions } = useProviderRegistry()
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
   const [content, setContent] = useState('')
   const [category, setCategory] = useState('')
+  const [provider, setProvider] = useState<'shared' | string>('shared')
   const [scope, setScope] = useState<'global' | 'project' | 'brain'>(projectId ? 'project' : 'global')
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null)
 
@@ -59,6 +62,14 @@ export default function ContextModal({ context, projectId, projects = [], isNew,
       },
     ]
   }, [projects])
+  const providerTagOptions: TagOption[] = useMemo(() => ([
+    { value: 'shared', label: 'Shared', className: 'cm-provider-shared' },
+    ...providerOptions.map(option => ({
+      value: option.value,
+      label: option.label,
+      className: `cm-provider-${option.value}`,
+    })),
+  ]), [providerOptions])
   const [saving, setSaving] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [viewMode, setViewMode] = useState<'edit' | 'preview'>('edit')
@@ -75,6 +86,7 @@ export default function ContextModal({ context, projectId, projects = [], isNew,
       setDescription(context.description || '')
       setContent(context.content || '')
       setCategory(context.category || '')
+      setProvider(context.provider || 'shared')
       setScope(context.scope as 'global' | 'project' | 'brain')
       setSelectedProjectId(context.project_id)
       setViewMode('preview')
@@ -86,6 +98,7 @@ export default function ContextModal({ context, projectId, projects = [], isNew,
       setDescription(initialContent?.description || '')
       setContent(initialContent?.content || '')
       setCategory(initialContent?.category || '')
+      setProvider('shared')
       setScope(projectId ? 'project' : 'global')
       setSelectedProjectId(projectId || null)
       setViewMode('preview')
@@ -118,6 +131,7 @@ export default function ContextModal({ context, projectId, projects = [], isNew,
     description: description.trim() || null,
     content: content.trim(),
     category: category || null,
+    provider: provider === 'shared' ? null : provider,
     scope: (scopeLocked ? 'project' : scope) as string,
     project_id: scopeLocked ? projectId : (scope === 'project' ? selectedProjectId : null),
     source: 'user' as const,
@@ -198,6 +212,18 @@ export default function ContextModal({ context, projectId, projects = [], isNew,
       setSaving(true)
       try {
         await onSave({ ...buildBody(), category: val || null } as Parameters<typeof onSave>[0])
+      } finally {
+        setSaving(false)
+      }
+    }
+  }
+
+  const handleProviderChange = async (val: string) => {
+    setProvider(val)
+    if (context) {
+      setSaving(true)
+      try {
+        await onSave({ ...buildBody(), provider: val === 'shared' ? null : val } as Parameters<typeof onSave>[0])
       } finally {
         setSaving(false)
       }
@@ -303,6 +329,15 @@ export default function ContextModal({ context, projectId, projects = [], isNew,
               value={category}
               options={CATEGORY_OPTIONS}
               onChange={handleCategoryChange}
+              disabled={readOnly}
+              renderTag={(opt) => (
+                <span className={`cm-badge ${opt.className}`}>{opt.label}</span>
+              )}
+            />
+            <TagDropdown
+              value={provider}
+              options={providerTagOptions}
+              onChange={handleProviderChange}
               disabled={readOnly}
               renderTag={(opt) => (
                 <span className={`cm-badge ${opt.className}`}>{opt.label}</span>

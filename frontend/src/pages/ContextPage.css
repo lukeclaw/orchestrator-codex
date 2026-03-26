@@ -331,6 +331,18 @@
   white-space: nowrap;
 }
 
+.ctx-title-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.ctx-provider-shared {
+  background: rgba(var(--text-muted-rgb, 148, 163, 184), 0.14);
+  color: var(--text-secondary);
+}
+
 /* Sort chevron */
 .sort-chevron {
   display: inline-block;

@@ -166,6 +166,21 @@
   color: var(--green);
 }
 
+.cm-provider-shared {
+  background: rgba(var(--text-muted-rgb, 148, 163, 184), 0.14);
+  color: var(--text-secondary);
+}
+
+.cm-provider-claude {
+  background: rgba(var(--purple-alt-rgb), 0.14);
+  color: var(--purple);
+}
+
+.cm-provider-codex {
+  background: rgba(var(--accent-rgb), 0.14);
+  color: var(--accent);
+}
+
 /* ─── Description ─── */
 .cm-header-desc {
   padding-left: 0;

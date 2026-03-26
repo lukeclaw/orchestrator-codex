@@ -7,10 +7,12 @@ import type { ContextItem } from '../api/types'
 import { timeAgo, parseDate } from '../components/common/TimeAgo'
 import { IconContext, IconFilter, IconSearch } from '../components/common/Icons'
 import ContextModal from '../components/context/ContextModal'
+import ProviderBadge from '../components/common/ProviderBadge'
 import './ContextPage.css'
 
 type SortKey = 'title' | 'scope' | 'category' | 'project' | 'updated'
 type SortDir = 'asc' | 'desc'
+type ProviderFilter = '' | 'shared' | 'claude' | 'codex'
 
 const SCOPE_ORDER: Record<string, number> = { global: 2, brain: 1, project: 0 }
 const SCOPE_COLORS: Record<string, string> = { global: 'var(--status-working)', brain: 'var(--purple)', project: 'var(--status-idle)' }
@@ -22,6 +24,7 @@ export default function ContextPage() {
   const location = useLocation()
   const isBrainMemoryPage = location.pathname === '/context/brain-memory'
   const [scopeFilter, setScopeFilter] = useState<string>('')
+  const [providerFilter, setProviderFilter] = useState<ProviderFilter>('')
   const [projectFilter, setProjectFilter] = useState<string>('')
   const [searchText, setSearchText] = useState('')
   const [selectedContext, setSelectedContext] = useState<ContextItem | null>(null)
@@ -71,6 +74,11 @@ export default function ContextPage() {
       return acc
     }, {})
   }, [items])
+  const providerCounts = useMemo(() => ({
+    shared: items.filter(item => !item.provider).length,
+    claude: items.filter(item => !item.provider || item.provider === 'claude').length,
+    codex: items.filter(item => !item.provider || item.provider === 'codex').length,
+  }), [items])
 
   function getSortValue(item: ContextItem, key: SortKey): string | number {
     switch (key) {
@@ -87,6 +95,11 @@ export default function ContextPage() {
   const sortedItems = useMemo(() => {
     let filtered = items
     if (scopeFilter) filtered = filtered.filter(i => i.scope === scopeFilter)
+    if (providerFilter === 'shared') {
+      filtered = filtered.filter(i => !i.provider)
+    } else if (providerFilter) {
+      filtered = filtered.filter(i => !i.provider || i.provider === providerFilter)
+    }
     if (searchText) {
       const q = searchText.toLowerCase()
       filtered = filtered.filter(i =>
@@ -100,7 +113,7 @@ export default function ContextPage() {
       const cmp = aVal < bVal ? -1 : aVal > bVal ? 1 : 0
       return sortDir === 'asc' ? cmp : -cmp
     })
-  }, [items, scopeFilter, searchText, sortKey, sortDir])
+  }, [items, providerFilter, scopeFilter, searchText, sortKey, sortDir])
 
   function handleSort(key: SortKey) {
     if (sortKey === key) {
@@ -217,10 +230,11 @@ export default function ContextPage() {
     setViewingMemoryItem(fullItem)
   }
 
-  const hasFilters = scopeFilter || projectFilter || searchText
+  const hasFilters = scopeFilter || providerFilter || projectFilter || searchText
 
   function clearAllFilters() {
     setScopeFilter('')
+    setProviderFilter('')
     setProjectFilter('')
     setSearchText('')
   }
@@ -359,6 +373,29 @@ export default function ContextPage() {
               <span className="ctx-scope-pill-label">{SCOPE_LABELS[scope]}</span>
             </button>
           ))}
+          <button
+            className={`ctx-scope-pill${providerFilter === 'shared' ? ' active' : ''}`}
+            onClick={() => setProviderFilter(providerFilter === 'shared' ? '' : 'shared')}
+            type="button"
+          >
+            <span className="ctx-scope-dot" style={{ background: 'var(--text-secondary)' }} />
+            <span className="ctx-scope-pill-count">{providerCounts.shared}</span>
+            <span className="ctx-scope-pill-label">Shared</span>
+          </button>
+          <button
+            className={`ctx-scope-pill${providerFilter === 'claude' ? ' active' : ''}`}
+            onClick={() => setProviderFilter(providerFilter === 'claude' ? '' : 'claude')}
+            type="button"
+          >
+            <span className="ctx-scope-pill-label">Claude + Shared</span>
+          </button>
+          <button
+            className={`ctx-scope-pill${providerFilter === 'codex' ? ' active' : ''}`}
+            onClick={() => setProviderFilter(providerFilter === 'codex' ? '' : 'codex')}
+            type="button"
+          >
+            <span className="ctx-scope-pill-label">Codex + Shared</span>
+          </button>
           <div className="ctx-search-inline">
             <IconSearch size={13} className="ctx-search-inline-icon" />
             <input
@@ -429,7 +466,14 @@ export default function ContextPage() {
                   >
                     <td className="pt-td ctx-title-cell">
                       <div className="ctx-title-inner">
-                        <span className="ctx-title">{item.title}</span>
+                        <div className="ctx-title-row">
+                          <span className="ctx-title">{item.title}</span>
+                          {item.provider ? (
+                            <ProviderBadge provider={item.provider} compact />
+                          ) : (
+                            <span className="cm-badge ctx-provider-shared">Shared</span>
+                          )}
+                        </div>
                         <span className={`ctx-desc${item.description ? '' : ' empty'}`}>
                           {item.description || 'No description'}
                         </span>
