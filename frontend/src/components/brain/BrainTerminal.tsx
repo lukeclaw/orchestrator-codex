@@ -5,6 +5,7 @@ interface BrainStatus {
   running: boolean
   session_id: string | null
   status: string | null
+  provider?: string | null
 }
 
 interface BrainTerminalProps {

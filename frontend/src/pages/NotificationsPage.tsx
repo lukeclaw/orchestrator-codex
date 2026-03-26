@@ -21,6 +21,7 @@ import { parseDate } from '../components/common/TimeAgo'
 import { linkifyText } from '../components/common/linkify'
 import ProviderBadge from '../components/common/ProviderBadge'
 import SlidingTabs from '../components/common/SlidingTabs'
+import { DEFAULT_PROVIDER_ID } from '../hooks/useProviderRegistry'
 import './NotificationsPage.css'
 
 type DateGroup = { label: string; notifications: Notification[] }
@@ -74,6 +75,7 @@ export default function NotificationsPage() {
     return map
   }, [workers])
   const [notifications, setNotifications] = useState<Notification[]>([])
+  const [brainProvider, setBrainProvider] = useState(DEFAULT_PROVIDER_ID)
   const [activeCount, setActiveCount] = useState(0)
   const [loading, setLoading] = useState(true)
   const [searchParams, setSearchParams] = useSearchParams()
@@ -102,6 +104,28 @@ export default function NotificationsPage() {
     fetchNotifications()
     // typeFilter is cleared via URL params in the tab change handler
   }, [filter])
+
+  useEffect(() => {
+    let cancelled = false
+
+    async function fetchBrainProvider() {
+      try {
+        const status = await api<{ provider?: string }>('/api/brain/status')
+        if (!cancelled) {
+          setBrainProvider(status.provider || DEFAULT_PROVIDER_ID)
+        }
+      } catch {
+        if (!cancelled) {
+          setBrainProvider(DEFAULT_PROVIDER_ID)
+        }
+      }
+    }
+
+    void fetchBrainProvider()
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   // Overflow detection: measure which messages are clamped
   const checkOverflows = useCallback(() => {
@@ -377,7 +401,13 @@ export default function NotificationsPage() {
                   return (
                     <>
                       <span className="np-meta-sep">·</span>
-                      <span className="pt-worker-tag brain">Brain</span>
+                      <span
+                        className="pt-worker-tag brain"
+                        style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', maxWidth: 'none' }}
+                      >
+                        Brain
+                        <ProviderBadge provider={brainProvider} compact />
+                      </span>
                     </>
                   )
                 }

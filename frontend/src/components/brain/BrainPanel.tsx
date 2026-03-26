@@ -66,22 +66,9 @@ export default function BrainPanel({
     try {
       const status = await api<BrainStatus>('/api/brain/status')
       setBrainStatus(status)
+      setBrainProvider(status.provider || DEFAULT_PROVIDER_ID)
     } catch {
-      setBrainStatus({ running: false, session_id: null, status: null })
-    }
-  }, [])
-
-  const fetchBrainProvider = useCallback(async (sessionId: string | null) => {
-    if (!sessionId) {
-      setBrainProvider(DEFAULT_PROVIDER_ID)
-      return
-    }
-
-    try {
-      const session = await api<{ provider?: string }>(`/api/sessions/${sessionId}`)
-      setBrainProvider(session.provider || DEFAULT_PROVIDER_ID)
-    } catch {
-      setBrainProvider(DEFAULT_PROVIDER_ID)
+      setBrainStatus({ running: false, session_id: null, status: null, provider: DEFAULT_PROVIDER_ID })
     }
   }, [])
 
@@ -90,10 +77,6 @@ export default function BrainPanel({
     const interval = setInterval(fetchStatus, 5000)
     return () => clearInterval(interval)
   }, [fetchStatus])
-
-  useEffect(() => {
-    fetchBrainProvider(brainStatus?.session_id ?? null)
-  }, [brainStatus?.session_id, fetchBrainProvider])
 
   useEffect(() => {
     if (!brainStatus?.session_id && !settingsLoading) {

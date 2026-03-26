@@ -72,12 +72,14 @@ def _translate_brain_command(provider: str, command: str) -> str:
 def brain_status(db=Depends(get_db)):
     """Get the orchestrator brain status."""
     session = _get_brain_session(db)
+    provider = _get_brain_provider(db)
     if session is None:
-        return {"running": False, "session_id": None, "status": None}
+        return {"running": False, "session_id": None, "status": None, "provider": provider}
     return {
         "running": session.status not in ("disconnected",),
         "session_id": session.id,
         "status": session.status,
+        "provider": session.provider or provider,
     }
 
 

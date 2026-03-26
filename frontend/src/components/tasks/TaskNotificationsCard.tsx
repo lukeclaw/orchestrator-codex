@@ -14,6 +14,7 @@ import {
 import { useNotify } from '../../context/NotificationContext'
 import { useApp } from '../../context/AppContext'
 import ProviderBadge from '../common/ProviderBadge'
+import { DEFAULT_PROVIDER_ID } from '../../hooks/useProviderRegistry'
 
 function formatNotificationTime(dateStr: string): string {
   const d = parseDate(dateStr)
@@ -56,6 +57,7 @@ export default function TaskNotificationsCard({ taskId }: TaskNotificationsCardP
     return map
   }, [workers])
   const [notifications, setNotifications] = useState<Notification[]>([])
+  const [brainProvider, setBrainProvider] = useState(DEFAULT_PROVIDER_ID)
   const [notificationsExpanded, setNotificationsExpanded] = useState(true)
   const [expandedNotifications, setExpandedNotifications] = useState<Set<string>>(new Set())
   const [dismissingNotifications, setDismissingNotifications] = useState<Set<string>>(new Set())
@@ -65,6 +67,26 @@ export default function TaskNotificationsCard({ taskId }: TaskNotificationsCardP
       .then(setNotifications)
       .catch(() => setNotifications([]))
   }, [taskId])
+
+  useEffect(() => {
+    let cancelled = false
+
+    api<{ provider?: string }>('/api/brain/status')
+      .then(status => {
+        if (!cancelled) {
+          setBrainProvider(status.provider || DEFAULT_PROVIDER_ID)
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setBrainProvider(DEFAULT_PROVIDER_ID)
+        }
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   const handleDismissNotification = async (notificationId: string) => {
     try {
@@ -154,7 +176,13 @@ export default function TaskNotificationsCard({ taskId }: TaskNotificationsCardP
                           return (
                             <>
                               <span className="np-meta-sep">·</span>
-                              <span className="pt-worker-tag brain">Brain</span>
+                              <span
+                                className="pt-worker-tag brain"
+                                style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', maxWidth: 'none' }}
+                              >
+                                Brain
+                                <ProviderBadge provider={brainProvider} compact />
+                              </span>
                             </>
                           )
                         }

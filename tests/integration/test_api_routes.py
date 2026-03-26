@@ -365,6 +365,7 @@ class TestBrain:
         assert data["running"] is False
         assert data["session_id"] is None
         assert data["status"] is None
+        assert data["provider"] == "claude"
 
     def test_brain_start_fresh(self, client):
         """Start brain when no brain session exists yet."""
@@ -386,6 +387,7 @@ class TestBrain:
         resp = client.get("/api/brain/status")
         assert resp.json()["running"] is True
         assert resp.json()["status"] == "working"
+        assert resp.json()["provider"] == "claude"
 
     def test_brain_start_already_running(self, client):
         """Starting brain when already running returns early with existing info."""
@@ -513,6 +515,7 @@ class TestBrain:
         assert resp.json()["status"] == "working"
 
         status = client.get("/api/brain/status")
+        assert status.json()["provider"] == "codex"
         session_id = status.json()["session_id"]
         session = client.get(f"/api/sessions/{session_id}")
         assert session.json()["provider"] == "codex"
