@@ -1,8 +1,31 @@
 # Orchestrator
 
-A meta-agent that manages multiple concurrent Claude Code sessions from a single dashboard.
+A meta-agent that manages multiple concurrent provider-backed coding sessions from a single dashboard.
 
 https://github.com/user-attachments/assets/ebb2bb47-c4e2-4e01-81e5-f0b1c8b1bede
+
+## Provider Support
+
+Current provider matrix:
+
+| Capability | Claude | Codex |
+|---|---|---|
+| Local workers | Yes | Yes |
+| Local brain | Yes | Yes |
+| Remote workers | Yes | No |
+| Model selection | Yes | Yes |
+| Effort selection | Yes | Yes |
+| Skip permission prompts | Yes | No |
+| Hook automation | Yes | No |
+| Skills deployment | Yes | No |
+| Brain heartbeat / auto-monitoring | Yes | No |
+| Quick clear | Yes | No |
+| Reconnect / auto-reconnect | Yes | No |
+
+Notes:
+- Claude is still the full-featured baseline path.
+- Codex currently targets strong local brain + local worker support.
+- Unsupported Codex features remain visible in the UI and are disabled with tooltips.
 
 
 ## Download
