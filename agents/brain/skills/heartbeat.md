@@ -100,7 +100,7 @@ If a relevant correction exists, factor it into your decision.
 | Stuck with visible error (idle 10m+) | Investigate, and also set status to blocked: `orch-workers update <id> --status blocked` |
 | At interactive prompt (y/n, menu) | Handle common prompts directly (see "Interactive prompts" below), otherwise notify |
 | Empty terminal / disconnected | Worker session may be broken. Try `orch-workers reconnect <id>`. If that fails, notify user. |
-| Worker claims task complete | Run verification checklist (see below). If all pass: mark done + stop. If concern: notify user. |
+| Worker claims task complete | Run verification checklist (see below). For PR-based tasks: if all pass, mark done + stop. For document deliverables: always notify user for confirmation. For recurring tasks: notify iteration complete, never mark done or stop worker. If concern: notify user. |
 | PR open, missing evidence | Nudge worker to add evidence to PR description (see evidence nudge below) |
 | Worker idle >2h, no visible progress | Notify: "Worker X may be stuck, needs human review" |
 | Blocked on auth/access/human decision | Notify with details of what's needed |
@@ -122,11 +122,19 @@ If the PR is not merged, don't mark done — check the `orch-prs` action field:
 - `review_pending` / `draft` → not actually complete, skip
 - `closed` → PR was closed without merging. Check PR comments (`gh api repos/ORG/REPO/pulls/N/comments --jq '.[-1].body'`) to understand why. If the fix was superseded or root cause was external, mark the subtask done with a note explaining. If closed in error, send worker to reopen or create a new PR.
 
-**Tasks without PRs** (docs, config, investigation): verify the deliverable exists (file committed, answer in task notes). Check for "## Verification" section. If unverifiable → notify user instead of marking done.
+**Tasks without PRs** (docs, config, investigation): **always notify the user for confirmation** instead of auto-marking done. Document deliverables (design docs, reports, analysis, config changes) require human judgment to verify completeness and correctness. Notify with a summary of what was produced and ask the user to confirm the task is done.
+
+**Recurring tasks** (monitoring, periodic reports, recurring syncs): Check the task description or notes for indicators that the task is recurring (e.g., "recurring", "periodic", "weekly", "daily", "ongoing", or implied by nature). For recurring tasks, **never mark done and never stop the worker** — the user will run the task again. Instead, notify the user that the current iteration is complete and leave the worker available.
 
 For large/critical PRs, use `/review` (Claude Code built-in) with task context for a deeper review.
 
-**Marking done + stopping** (always notify first):
+**Marking done + stopping** (only for PR-based, non-recurring tasks — always notify first):
+
+Before marking done, check:
+- **Document deliverable?** → Do NOT mark done. Notify user: "Task <key> deliverable ready: <summary>. Please confirm if this is done."
+- **Recurring task?** → Do NOT mark done or stop worker. Notify user: "Task <key> iteration complete: <summary>. Worker left available for next run."
+- **PR-based, non-recurring?** → Safe to mark done + stop:
+
 ```bash
 # 1. Notify with verification summary
 orch-notifications create --type "brain_heartbeat" \
@@ -278,4 +286,6 @@ test-worker: sent fix suggestion (ECONNREFUSED — missing DB env var) — notif
 - **Never guess org/repo** -- parse PR URLs from task links: `github.com/ORG/REPO/pull/N` → `--repo ORG/REPO N`. Multiproduct names ≠ GitHub org names
 - **Interactive prompts** -- use the playbook above. `orch-workers type <name> Enter` for confirmations, `$'\x1b[B'` (Down) / `$'\x1b[A'` (Up) for menus. Never type passwords.
 - **Staleness overrides PR-wait skip** -- a stale `updated_at` (>2h) means the worker should re-check, even if `last_status_changed_at` is under the PR-wait threshold
+- **Document deliverables need human confirmation** -- never auto-mark done for tasks whose deliverable is a document, report, or non-PR artifact. Always notify user and wait for them to confirm completion
+- **Recurring tasks stay alive** -- never mark done or stop workers on recurring tasks. Notify that the iteration is complete and leave the worker available for the next run
 - **Idle/paused workers are not your concern** -- skip them entirely, don't preview their terminals
