@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useEffect, useCallback, useRef, type ReactNode } from 'react'
+import { createContext, useContext, useState, useEffect, useCallback, useRef, useMemo, type ReactNode } from 'react'
 import { useLocation } from 'react-router-dom'
 import type { Session, Project, Task, Rdev, PrSearchItem, PrSearchResponse } from '../api/types'
 import { api, ApiError } from '../api/client'
@@ -15,6 +15,7 @@ interface AppState {
   workers: Session[]
   projects: Project[]
   tasks: Task[]
+  taskBySession: Map<string, Task>
   rdevs: Rdev[]
   notificationCount: number
   updateAvailable: boolean
@@ -45,6 +46,7 @@ const AppContext = createContext<AppState>({
   workers: [],
   projects: [],
   tasks: [],
+  taskBySession: new Map(),
   rdevs: [],
   notificationCount: 0,
   updateAvailable: false,
@@ -425,6 +427,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
   // sessions already filtered by session_type=worker from API
   const workers = sessions
 
+  // Centralized worker→task lookup (session ID → assigned task)
+  const taskBySession = useMemo(() =>
+    new Map(tasks.filter(t => t.assigned_session_id).map(t => [t.assigned_session_id!, t])),
+    [tasks]
+  )
+
   const removeSession = useCallback((id: string) => {
     setSessions(prev => prev.filter(s => s.id !== id))
   }, [])
@@ -458,7 +466,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   // Focus tracking now handled via WebSocket (see above)
 
   return (
-    <AppContext.Provider value={{ sessions, workers, projects, tasks, rdevs, notificationCount, updateAvailable, connected, loading, smartPastePayload, interactiveCliSessions, interactiveCliMinimized, browserViewSessions, browserViewMinimized, setSmartPastePayload, refresh: fetchAll, refreshRdevs, refreshNotificationCount, removeSession, closeInteractiveCli, closeBrowserView, setUpdateAvailable, prBadgeCount, prCache, prRefreshing, prErrors, fetchPrs }}>
+    <AppContext.Provider value={{ sessions, workers, projects, tasks, taskBySession, rdevs, notificationCount, updateAvailable, connected, loading, smartPastePayload, interactiveCliSessions, interactiveCliMinimized, browserViewSessions, browserViewMinimized, setSmartPastePayload, refresh: fetchAll, refreshRdevs, refreshNotificationCount, removeSession, closeInteractiveCli, closeBrowserView, setUpdateAvailable, prBadgeCount, prCache, prRefreshing, prErrors, fetchPrs }}>
       {children}
     </AppContext.Provider>
   )

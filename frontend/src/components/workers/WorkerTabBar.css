@@ -307,13 +307,30 @@
   white-space: nowrap;
 }
 .wt-picker-task {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 6px;
+  background: rgba(var(--accent-rgb), 0.1);
+  border-radius: 4px;
+  flex-shrink: 0;
+  max-width: 160px;
+  min-width: 0;
+}
+.wt-picker-task-key {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--accent);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.wt-picker-task-title {
   font-size: 11px;
   color: var(--text-muted);
-  flex-shrink: 0;
-  max-width: 140px;
+  white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  white-space: nowrap;
 }
 .wt-picker-empty {
   padding: 16px;

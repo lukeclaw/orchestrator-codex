@@ -47,9 +47,9 @@ const WorkerDetail = forwardRef<WorkerDetailHandle, WorkerDetailProps>(function 
   const notify = useNotify()
   
   // Use shared state from AppContext for session
-  const { sessions, tasks: allTasks, refresh, interactiveCliSessions, interactiveCliMinimized, closeInteractiveCli, browserViewSessions, browserViewMinimized, closeBrowserView } = useApp()
+  const { sessions, taskBySession, refresh, interactiveCliSessions, interactiveCliMinimized, closeInteractiveCli, browserViewSessions, browserViewMinimized, closeBrowserView } = useApp()
   const session = sessions.find(s => s.id === workerId) || null
-  const tasks = allTasks.filter(t => t.assigned_session_id === workerId)
+  const assignedTask = taskBySession.get(workerId) || null
   const isRdev = session?.host?.includes('/') ?? false
   const isSsh = !isRdev && (session?.host ? session.host !== 'localhost' : false)
   const isRemote = session?.host ? session.host !== 'localhost' : false
@@ -875,14 +875,14 @@ const WorkerDetail = forwardRef<WorkerDetailHandle, WorkerDetailProps>(function 
       {/* Footer with task link */}
       <div className="sd-footer">
         <div className="sd-footer-left">
-          {tasks.length > 0 ? (
+          {assignedTask ? (
             <Link
-              to={`/tasks/${tasks[0].id}`}
+              to={`/tasks/${assignedTask.id}`}
               className="sd-task-badge"
-              title={tasks[0].title}
+              title={assignedTask.title}
             >
-              <span className="sd-task-key">{tasks[0].task_key}</span>
-              <span className="sd-task-title">{tasks[0].title}</span>
+              <span className="sd-task-key">{assignedTask.task_key}</span>
+              <span className="sd-task-title">{assignedTask.title}</span>
             </Link>
           ) : (
             <button className="sd-assign-task-btn" onClick={() => setShowAssignTask(true)}>

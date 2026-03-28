@@ -11,9 +11,8 @@ interface WorkerPickerProps {
 }
 
 function WorkerPicker({ onClose, onSelect, excludeIds }: WorkerPickerProps) {
-  const { workers, tasks } = useApp()
+  const { workers, taskBySession } = useApp()
   const [query, setQuery] = useState('')
-  const taskBySession = new Map(tasks.filter(t => t.assigned_session_id).map(t => [t.assigned_session_id!, t]))
   const inputRef = useRef<HTMLInputElement>(null)
   const pickerRef = useRef<HTMLDivElement>(null)
 
@@ -79,7 +78,12 @@ function WorkerPicker({ onClose, onSelect, excludeIds }: WorkerPickerProps) {
                 style={{ background: WORKER_STATUS_COLORS[w.status as keyof typeof WORKER_STATUS_COLORS] || 'var(--text-muted)' }}
               />
               <span className="wt-picker-name">{w.name}</span>
-              {task && <span className="wt-picker-task">{task.task_key || task.title}</span>}
+              {task && (
+                <span className="wt-picker-task">
+                  {task.task_key && <span className="wt-picker-task-key">{task.task_key}</span>}
+                  <span className="wt-picker-task-title">{task.title}</span>
+                </span>
+              )}
             </button>
           )
         })}
