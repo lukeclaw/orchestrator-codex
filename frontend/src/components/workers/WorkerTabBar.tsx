@@ -263,8 +263,9 @@ export default function WorkerTabBar() {
   const tabbedIds = new Set(tabs.map(t => t.workerId))
 
   const handleTabClick = useCallback((e: React.MouseEvent, workerId: string) => {
-    if (isSplit) snapshotTabPositions()
+    // Normal click already handled by mousedown — only handle modifier clicks here
     if (e.altKey && isSplit) {
+      snapshotTabPositions()
       const otherPane = focusedPane === 'left' ? 'right' : 'left'
       activateTab(workerId, otherPane)
       return
@@ -273,7 +274,7 @@ export default function WorkerTabBar() {
       enterSplit(workerId)
       return
     }
-    activateTab(workerId)
+    // Non-modifier click: activation already done in mousedown
   }, [isSplit, focusedPane, activateTab, enterSplit, snapshotTabPositions])
 
   // Click on tab in the right group: activate it in the right pane + focus right
@@ -309,6 +310,14 @@ export default function WorkerTabBar() {
   // --- Drag-to-reorder + cross-pane drop ---
   const handleTabMouseDown = useCallback((e: React.MouseEvent, workerId: string) => {
     if (e.button !== 0 || e.altKey || e.ctrlKey || e.metaKey) return
+
+    // Always activate tab on mousedown for consistent behavior
+    if (isSplit) snapshotTabPositions()
+    activateTab(workerId)
+
+    // In split mode with right pane focused, the tab flips to the right group — no drag needed
+    if (isSplit && focusedPane === 'right') return
+
     const scrollEl = tabBarRef.current
     if (!scrollEl) return
 
@@ -420,7 +429,7 @@ export default function WorkerTabBar() {
 
     document.addEventListener('mousemove', onMove)
     document.addEventListener('mouseup', onUp)
-  }, [tabs, leftTabs, moveTab, isSplit, rightActiveId, activateTab, setFocusedPane, dropTarget])
+  }, [tabs, leftTabs, moveTab, isSplit, focusedPane, rightActiveId, activateTab, setFocusedPane, dropTarget, snapshotTabPositions])
 
   // Drag from right group back to left
   const handleRightTabMouseDown = useCallback((e: React.MouseEvent, workerId: string) => {
