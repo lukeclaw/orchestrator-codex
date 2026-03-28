@@ -28,16 +28,12 @@
 }
 /* In single-pane mode the pane fills the container; in split mode width is set inline */
 
-/* In split mode, tighten topbar spacing and truncate worker name */
+/* In split mode, tighten topbar spacing (compact mode handles name truncation) */
 .ww-pane-container:has(.ww-resize-handle) .sd-topbar {
   padding: 6px 12px;
   gap: 10px;
 }
 .ww-pane-container:has(.ww-resize-handle) .sd-title {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  min-width: 0;
   font-size: 14px;
 }
 

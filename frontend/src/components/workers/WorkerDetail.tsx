@@ -37,7 +37,8 @@ export interface WorkerDetailHandle {
 }
 
 // Width threshold below which control buttons collapse into kebab menu
-const COMPACT_THRESHOLD = 500
+// Inline buttons: 4 × 32px + 3 × 8px gaps = 152px, plus topbar gap (16px)
+const ACTIONS_OVERHEAD_INLINE = 152 + 16
 
 const WorkerDetail = forwardRef<WorkerDetailHandle, WorkerDetailProps>(function WorkerDetail(
   { workerId, isActive, isFocused, onDelete },
@@ -79,8 +80,11 @@ const WorkerDetail = forwardRef<WorkerDetailHandle, WorkerDetailProps>(function 
   useEffect(() => {
     const el = topbarRef.current
     if (!el) return
-    const observer = new ResizeObserver(([entry]) => {
-      setIsCompact(entry.contentRect.width < COMPACT_THRESHOLD)
+    const observer = new ResizeObserver(() => {
+      const leftEl = el.querySelector('.sd-topbar-left') as HTMLElement
+      if (!leftEl) return
+      // clientWidth includes padding; scrollWidth is content-only — add padding + gap + buttons
+      setIsCompact(leftEl.scrollWidth + ACTIONS_OVERHEAD_INLINE > el.clientWidth)
     })
     observer.observe(el)
     return () => observer.disconnect()
@@ -634,7 +638,7 @@ const WorkerDetail = forwardRef<WorkerDetailHandle, WorkerDetailProps>(function 
   return (
     <div className="session-detail">
       {/* Top bar with session info */}
-      <div className="sd-topbar" ref={topbarRef}>
+      <div className={`sd-topbar${isCompact ? ' sd-topbar--compact' : ''}`} ref={topbarRef}>
         <div className="sd-topbar-left">
           <h2
             className="sd-title"

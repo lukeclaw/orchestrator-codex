@@ -11,6 +11,13 @@
 .sd-title {
   font-size: 16px;
   font-weight: 600;
+  white-space: nowrap;
+}
+/* Truncate name only in compact mode — name takes priority over inline buttons */
+.sd-topbar--compact .sd-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
 }
 
 /* Top bar — recessed control bar */
@@ -22,7 +29,8 @@
   background: var(--surface);
   border-bottom: 1px solid var(--border-subtle);
   flex-shrink: 0;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
+  overflow: hidden;
   z-index: 1;
 }
 
@@ -30,6 +38,10 @@
   display: flex;
   align-items: center;
   gap: 10px;
+}
+/* Only allow name truncation in compact (kebab) mode — buttons collapse first */
+.sd-topbar--compact .sd-topbar-left {
+  min-width: 0;
 }
 
 /* Type tag (rdev/ssh label) — pill badge */
@@ -112,6 +124,7 @@
   display: flex;
   align-items: center;
   gap: 8px;
+  flex-shrink: 0;
 }
 
 .sd-topbar-divider {
