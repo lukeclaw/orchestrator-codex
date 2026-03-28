@@ -114,21 +114,23 @@ export default function WorkerWorkspace() {
   }, [isSplit]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // --- Window resize: auto-collapse split if too narrow ---
-  // Skip the first 500ms after split opens to avoid racing with brain panel collapse animation
+  // Skip the first 500ms after split opens to avoid racing with brain panel collapse animation.
+  // Also guard against unmount: ResizeObserver can fire with width=0 during teardown.
   useEffect(() => {
     if (!isSplit) return
     const workspace = workspaceRef.current
     if (!workspace) return
     let armed = false
+    let disposed = false
     const armTimer = setTimeout(() => { armed = true }, 500)
     const observer = new ResizeObserver(([entry]) => {
-      if (armed && entry.contentRect.width < MIN_PANE_WIDTH * 2) {
+      if (armed && !disposed && entry.contentRect.width > 0 && entry.contentRect.width < MIN_PANE_WIDTH * 2) {
         exitSplit()
         notify('Split view closed — not enough space', 'info')
       }
     })
     observer.observe(workspace)
-    return () => { clearTimeout(armTimer); observer.disconnect() }
+    return () => { disposed = true; clearTimeout(armTimer); observer.disconnect() }
   }, [isSplit, exitSplit, notify])
 
   // --- Keyboard shortcuts ---
