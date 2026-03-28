@@ -72,9 +72,11 @@ export default function WorkerWorkspace() {
   }, [leftActiveId, rightActiveId, focusedPane, isSplit]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // --- Navigate to /workers when all tabs are closed ---
-  // Guard: don't redirect if we have a urlWorkerId (tab is about to be opened by the URL sync effect)
+  // Skip on first render (URL sync effect hasn't opened the initial tab yet)
+  const mountedRef = useRef(false)
   useEffect(() => {
-    if (tabs.length === 0 && !urlWorkerId) {
+    if (!mountedRef.current) { mountedRef.current = true; return }
+    if (tabs.length === 0) {
       navigate('/workers', { replace: true })
     }
   }, [tabs.length]) // eslint-disable-line react-hooks/exhaustive-deps
