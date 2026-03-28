@@ -220,7 +220,7 @@
   right: 0;
   width: 280px;
   max-height: 320px;
-  background: var(--surface-overlay);
+  background: var(--bg);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-lg);
@@ -257,14 +257,15 @@
   background: none;
   border: none;
   border-radius: var(--radius);
-  color: var(--text-primary);
+  color: var(--text-secondary);
   font-size: 13px;
   cursor: pointer;
   text-align: left;
-  transition: background 0.15s;
+  transition: background 0.15s, color 0.15s;
 }
 .wt-picker-item:hover {
   background: var(--surface-hover);
+  color: var(--text-primary);
 }
 .wt-picker-name {
   flex: 1;

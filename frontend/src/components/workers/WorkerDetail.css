@@ -79,7 +79,7 @@
   top: calc(100% + 4px);
   right: 0;
   min-width: 180px;
-  background: var(--surface-overlay);
+  background: var(--bg);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-lg);
@@ -97,14 +97,15 @@
   background: none;
   border: none;
   border-radius: var(--radius);
-  color: var(--text-primary);
+  color: var(--text-secondary);
   font-size: 13px;
   cursor: pointer;
   text-align: left;
-  transition: background 0.15s;
+  transition: background 0.15s, color 0.15s;
 }
 .sd-kebab-item:hover:not(:disabled) {
   background: var(--surface-hover);
+  color: var(--text-primary);
 }
 .sd-kebab-item:disabled {
   opacity: 0.4;
