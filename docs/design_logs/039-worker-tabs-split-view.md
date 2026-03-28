@@ -33,6 +33,7 @@ The current worker detail page (`/workers/:id`) is a single-worker, full-page vi
 Think of the worker detail area as a Chrome window with split-tab support:
 
 - **Tabs** = browser tabs. Each tab is a worker. You open them, switch between them, close them. All tabs live in one shared tab bar.
+- **Preview tab** = VS Code's preview file. When you single-click a worker from the list, it opens in a transient "preview" slot that gets replaced the next time you click a different worker. This prevents casual browsing from cluttering the tab bar. The preview tab auto-promotes to a permanent tab when you engage with the worker (type in terminal, open file explorer, etc.).
 - **Split view** = Chrome split-screen. The content area divides into two panes. Each pane has one active tab. The tab bar shows two highlighted tabs simultaneously — one per pane, color-coded.
 - **Focused pane** = the pane that receives tab clicks and keyboard shortcuts. Click in a pane to focus it, then click any tab to show that worker there.
 
@@ -96,6 +97,12 @@ Two tabs are highlighted simultaneously. The colors match the focused-pane indic
   - Status dot (6px circle, colored per `WORKER_STATUS_COLORS` — same palette as worker cards).
   - Worker name — `font-size: 13px`, `font-weight: 500`, truncated with ellipsis at ~140px max-width.
   - Close button (x) — `12px`, appears on hover or when tab is active. Click stops propagation and closes the tab.
+- **Preview tab** (transient):
+  - Same layout as pinned tabs, but worker name is rendered in *italic* (`font-style: italic`) — a subtle "I'm temporary" signal, matching the VS Code convention.
+  - Always positioned as the **rightmost tab** in the bar, after all pinned tabs.
+  - Only one preview tab exists at a time.
+- **Pinned tab** (persistent):
+  - Normal (non-italic) worker name. Stays until explicitly closed via `x`.
 - **Active tab (single pane mode):**
   - Background: `var(--surface)` — lifted from the `--bg` tab bar, creating a "connected" feel with the content below.
   - Bottom: 2px accent underline (`var(--accent)`).
@@ -114,8 +121,36 @@ Two tabs are highlighted simultaneously. The colors match the focused-pane indic
   - Hover: `var(--surface-hover)` background, text shifts to `--text-primary`.
 - **Overflow:** Horizontal scroll with CSS `overflow-x: auto` and scroll-fade masks (same pattern as `.page-content`). No wrapping.
 - **Right-side controls** (pinned, never scroll):
-  - `[+]` button — opens a dropdown picker to add a worker tab (searchable, shows worker name + status, excludes already-open tabs).
+  - `[+]` button — opens a dropdown picker to add a worker tab (searchable, shows worker name + status, excludes already-open tabs). Workers opened via `[+]` are pinned immediately (explicit intent).
   - `[Split]` button — toggles split view on/off. Icon: vertical split bar. Highlighted with `var(--accent)` when split is active.
+
+#### Preview vs. Pinned Tabs
+
+The tab bar uses a two-tier system (inspired by VS Code) to prevent casual browsing from cluttering the tab bar:
+
+**Preview tab** (transient) — italic name, rightmost position:
+- Created when the user single-clicks a worker card on the `/workers` list page, a "View Worker" link from task detail, a dashboard widget, or any other navigation link.
+- Only **one preview tab** exists at a time. Clicking a different worker from the list **replaces** the current preview tab instead of adding a new one.
+- If the target worker already has a pinned tab, the pinned tab is focused instead — no preview tab created.
+
+**Pinned tab** (persistent) — normal name, stable position:
+- Created when the user explicitly intends to keep a worker open (double-click, `[+]` picker, engagement).
+- Stays in the tab bar until explicitly closed via `x`.
+
+**Auto-pin triggers** — a preview tab promotes to pinned when:
+
+| Action | Rationale |
+|---|---|
+| Double-click the worker card on the list | Explicit "I want to keep this open" |
+| Double-click the preview tab itself | Same |
+| Send any input to the terminal (keystrokes, paste) | Active interaction = intent to stay |
+| Open file explorer or toggle any panel | Customizing the view = intent to stay |
+| Assign a task to the worker | Deliberate action on this worker |
+| Open in split view (Option+click or split button) | Comparison implies monitoring intent |
+| Right-click tab -> "Keep Open" | Explicit pin |
+| Open via `[+]` picker | Explicit search = deliberate intent (pinned immediately) |
+
+When a preview tab is pinned, it stays in its current position (rightmost among pinned tabs). A new preview slot opens at the end if the user browses again.
 
 #### Tab Click Behavior
 
@@ -130,18 +165,20 @@ This is the core interaction: **focus a pane (click in it), then click tabs to c
 | Click a tab | Activates that worker | Activates that worker in the **focused** pane |
 | Click `x` on a tab | Closes tab; nearest tab activates | Closes tab; if it was active in a pane, nearest tab activates in that pane |
 | Middle-click a tab | Same as `x` | Same as `x` |
-| Option+click a tab | No effect (single pane) | Activates that worker in the **other** (unfocused) pane |
-| Right-click a tab | Context menu: Close / Close Others / Close All | Same + "Open in Left Pane" / "Open in Right Pane" |
-| Click `[+]` button | Opens picker; selected worker opens as new tab and activates | Opens picker; selected worker opens as new tab and activates in focused pane |
-| Click worker card on `/workers` list | Opens tab (or focuses existing) | Opens tab and activates in focused pane |
-| Navigate to `/workers/:id` (deep link) | Opens/focuses tab | Opens/focuses tab in focused pane |
-| Worker removed (via API) | Tab auto-closes | Tab auto-closes; if active in a pane, nearest tab takes over |
+| Option+click a tab | No effect (single pane) | Activates that worker in the **other** (unfocused) pane; auto-pins if preview |
+| Right-click a tab | Context menu: Close / Close Others / Close All / Keep Open | Same + "Open in Left Pane" / "Open in Right Pane" |
+| Click `[+]` button | Opens picker; selected worker opens as **pinned** tab and activates | Opens picker; selected worker opens as **pinned** tab and activates in focused pane |
+| Single-click worker card on `/workers` list | Opens as **preview** tab (replaces existing preview), or focuses existing pinned tab | Same, activates in focused pane |
+| Double-click worker card on `/workers` list | Opens as **pinned** tab, or focuses existing pinned tab | Same, activates in focused pane |
+| Navigate to `/workers/:id` (deep link, other page link) | Opens as **preview** tab (or focuses existing pinned tab) | Same, activates in focused pane |
+| Worker removed (via API) | Tab auto-closes (preview or pinned) | Tab auto-closes; if active in a pane, nearest tab takes over |
 | Worker disconnects | Tab stays, shows disconnected dot | Same — user may want to reconnect |
 
 #### Tab Ordering
 
-- New tabs append to the right end of the tab bar.
-- Tabs maintain insertion order (no auto-sorting). This gives users spatial memory — "worker A is the third tab from the left."
+- Pinned tabs maintain insertion order. This gives users spatial memory — "worker A is the third tab from the left."
+- The preview tab (if any) is always the **rightmost** tab, after all pinned tabs.
+- When a preview tab is pinned, it stays at the right end of the pinned tabs (its current position).
 - Tabs do NOT group by pane. A tab's position is stable regardless of which pane it's active in. The colored underlines are the only pane indicators.
 - V2 enhancement: drag-and-drop reordering.
 
@@ -197,81 +234,114 @@ This is the core interaction: **focus a pane (click in it), then click tabs to c
 
 Alice manages 16 workers. Here's her workflow:
 
-**1. Normal browsing (single pane)**
+**1. Morning scan — preview tab keeps it clean**
 
-Alice clicks "frontend-1" from the workers list. A tab opens:
+Alice opens the workers list, sees 16 cards. She clicks `frontend-1` to check on it:
 ```
 [● frontend-1]  [+] [⫽]
   ══════════════
+  (italic — preview tab)
 ```
-She checks several more workers over time. Tab bar grows:
+Looks fine. She goes back to the list, clicks `backend-3`:
 ```
-[● frontend-1] [● backend-3] [○ api-7] [● ml-train-2] [● data-sync] [● frontend-4]  [+] [⫽]
-                                          ═══════════════
-                                          active (viewing this one)
+[● backend-3]  [+] [⫽]
+  ════════════
+  (italic — preview tab, REPLACED frontend-1)
 ```
-Clicking any tab instantly switches — terminal stays alive in hidden DOM, no reload.
+She scans through 5 more workers this way. The tab bar only ever shows **one** preview tab — no accumulation. She's just browsing.
 
-**2. Entering split mode**
+**2. Found something — auto-pin via engagement**
 
-Alice wants to compare `ml-train-2` (currently active) with `backend-3`. She Option+clicks the `backend-3` tab.
+She clicks `ml-train-2` from the list (preview tab). She sees something odd in the terminal and starts typing a command. The preview tab auto-pins:
+```
+[● ml-train-2]  [+] [⫽]
+  ═════════════
+  (normal text — now pinned, she typed in the terminal)
+```
+She goes back to the list, clicks `data-sync` (new preview tab):
+```
+[● ml-train-2] [● data-sync]  [+] [⫽]
+                  ════════════
+  pinned          (italic — preview)
+```
+Clicking another worker from the list replaces `data-sync` (preview), not `ml-train-2` (pinned).
+
+**3. Building a working set**
+
+Over the next hour, she pins 4 workers through natural interaction (typing, opening file explorer, assigning tasks). She also double-clicks `frontend-4` from the list to pin it explicitly:
+```
+[● ml-train-2] [● frontend-1] [● backend-3] [● api-7] [● frontend-4] [○ data-sync]  [+] [⫽]
+                                                                          ════════════
+  pinned         pinned          pinned        pinned    pinned           (italic — preview)
+```
+5 pinned tabs + 1 preview. Clean and intentional.
+
+**4. Quick re-check — preview reuses the slot**
+
+Alice wants to peek at `infra-9`. She clicks it from the list. It replaces `data-sync` in the preview slot:
+```
+[● ml-train-2] [● frontend-1] [● backend-3] [● api-7] [● frontend-4] [● infra-9]  [+] [⫽]
+                                                                          ══════════
+  pinned tabs unchanged                                                   (italic — preview)
+```
+She glances at it, looks fine. Clicks `worker-12` from the list — preview replaces again. Zero tab accumulation from browsing.
+
+**5. Clicking a worker that's already pinned**
+
+Alice clicks `backend-3` from the workers list. Since `backend-3` already has a pinned tab, it simply **focuses the existing tab**. No new tab created, no preview tab involved:
+```
+[● ml-train-2] [● frontend-1] [● backend-3] [● api-7] [● frontend-4] [● worker-12]  [+] [⫽]
+                                  ═════════════
+                                  focused (existing pinned tab)           (italic — preview, unchanged)
+```
+
+**6. Entering split mode**
+
+Alice wants to compare `backend-3` (currently active) with `ml-train-2`. She Option+clicks the `ml-train-2` tab.
 
 The screen splits. The tab bar stays as **one row** with **two underlined tabs**:
 ```
-[● frontend-1] [● backend-3] [○ api-7] [● ml-train-2] [● data-sync] [● frontend-4]  [+] [⫽]
-                  ────────────            ══════════════
-                  Right (purple)          Left (accent)
+[● ml-train-2] [● frontend-1] [● backend-3] [● api-7] [● frontend-4] [● worker-12]  [+] [⫽]
+  ────────────                    ═════════════
+  Right (purple)                  Left (accent)                          (italic — preview, still there)
 ```
 
-**3. Switching workers within a pane**
+**7. Switching workers within a pane**
 
 Alice wants to check `api-7` in the right pane. She:
 1. Clicks anywhere in the right pane content area (focuses it).
 2. Clicks the `api-7` tab.
 3. The right pane now shows `api-7`. Underlines update:
 ```
-[● frontend-1] [● backend-3] [○ api-7] [● ml-train-2] [● data-sync] [● frontend-4]  [+] [⫽]
-                                ────────  ══════════════
-                                Right     Left
+... [● backend-3] [● api-7] [● frontend-4] ...
+       ═══════════   ────────
+       Left          Right
 ```
 
-**4. Switching focus between panes**
+**8. Opening new workers while split**
 
-Alice clicks in the left pane content area (focuses it). Now clicking `frontend-4` tab switches the left pane:
+Alice clicks `[+]`, selects `gpu-worker-5`. A new **pinned** tab appears (opened via picker = explicit intent) and activates in the focused pane:
 ```
-[● frontend-1] [● backend-3] [○ api-7] [● ml-train-2] [● data-sync] [● frontend-4]  [+] [⫽]
-                                ────────                                ══════════════
-                                Right                                   Left
-```
-
-Tabs never move position — only the colored underlines shift.
-
-**5. Opening new workers while split**
-
-Alice clicks `[+]`, selects `infra-9`. A new tab appears at the end and activates in the focused (left) pane:
-```
-... [● frontend-4] [● infra-9]  [+] [⫽]
-                      ═══════════
-                      Left
+... [● frontend-4] [● gpu-worker-5] [● worker-12]  [+] [⫽]
+                      ════════════════
+                      Right (focused)  (italic — preview)
 ```
 
-**6. Quick cross-pane action**
+**9. Quick cross-pane action with Option+click**
 
-Alice wants to quickly peek at `frontend-1` in the right pane without changing focus. She Option+clicks `frontend-1`:
+Alice Option+clicks `frontend-1` — it opens in the other (left) pane without changing focus:
 ```
-[● frontend-1] [● backend-3] [○ api-7] [● ml-train-2] [● data-sync] [● frontend-4] [● infra-9]  [+] [⫽]
-  ────────────                                                                          ═══════════
-  Right (moved from api-7)                                                              Left (unchanged)
+[● ml-train-2] [● frontend-1] [● backend-3] [● api-7] [● frontend-4] [● gpu-worker-5] [● worker-12]  [+] [⫽]
+                  ════════════                            ────────────────
+                  Left                                    Right (still focused)             (italic — preview)
 ```
 
-Left pane stays focused. Option+click is a "send to the other side" shortcut.
-
-**7. Exiting split**
+**10. Exiting split**
 
 Alice clicks `[⫽]` again. The right pane closes. Single pane returns with the left pane's active tab:
 ```
-[● frontend-1] [● backend-3] [○ api-7] [● ml-train-2] [● data-sync] [● frontend-4] [● infra-9]  [+] [⫽]
-                                                                                        ═══════════
+[● ml-train-2] [● frontend-1] [● backend-3] [● api-7] [● frontend-4] [● gpu-worker-5] [● worker-12]  [+] [⫽]
+                  ═════════════
 ```
 All tabs preserved. Nothing lost.
 
@@ -312,6 +382,7 @@ In split mode, each pane has its own topbar instance (controls are per-worker).
 ```typescript
 interface WorkerTab {
   workerId: string
+  isPreview: boolean    // true = transient preview tab, false = pinned
   openedAt: number      // timestamp, for insertion order tiebreaking
   lastActiveAt: number  // timestamp, for "most recently active" ordering
 }
@@ -323,14 +394,32 @@ interface WorkerTabsState {
   isSplit: boolean
   focusedPane: 'left' | 'right'
   splitRatio: number           // 0.0-1.0, default 0.5
+  recentlyClosed: string[]     // stack of recently closed worker IDs (max 5)
 }
+```
+
+Key operations:
+
+```typescript
+// Open a worker — handles preview/pin logic
+openTab(workerId: string, pin: boolean = false): void
+// If worker already has a pinned tab → focus it (no-op on tab list)
+// If pin=true → add as pinned tab (or pin existing preview)
+// If pin=false → replace existing preview tab with this worker
+
+// Promote preview to pinned
+pinTab(workerId: string): void
+
+// Close a tab
+closeTab(workerId: string): void
 ```
 
 - Stored in a React context (`WorkerTabsContext`) wrapping the worker detail routes.
 - Persisted to `localStorage` key `orchestrator-worker-tabs`.
 - Syncs focused pane's active tab to the URL via `useNavigate()` / `useParams()`.
+- On mount, prunes tabs for workers that no longer exist (stale tab cleanup).
 
-Note the simplification vs. the original design: tabs are a single flat list with two "cursor" pointers (`leftActiveId`, `rightActiveId`), not separate per-pane tab arrays.
+Note the simplification vs. per-pane tab arrays: tabs are a single flat list with two "cursor" pointers (`leftActiveId`, `rightActiveId`). The `isPreview` flag controls transient vs. persistent behavior.
 
 #### Terminal Instance Preservation
 
@@ -408,33 +497,43 @@ Shortcuts are registered at the `WorkerWorkspace` level and only active when a w
 
 ### Opening Tabs from Other Pages
 
-Tabs are opened from several entry points:
+Navigation from any page to `/workers/:id` is the universal entry point. The `WorkerWorkspace` decides whether to create a preview tab, focus an existing pinned tab, or pin immediately based on the source:
 
-| Entry Point | Behavior |
-|---|---|
-| Worker card click (`/workers` list) | `navigate('/workers/:id')` — opens/focuses tab |
-| Task detail -> "View Worker" link | Same navigation |
-| Dashboard worker widget click | Same navigation |
-| Notification click (worker-related) | Same navigation |
-| Direct URL entry / bookmark | Same — tab opened from URL param |
+| Entry Point | Tab Type | Behavior |
+|---|---|---|
+| Single-click worker card (`/workers` list) | **Preview** | Opens as preview (replaces existing preview). If worker already pinned, focuses existing tab instead. |
+| Double-click worker card (`/workers` list) | **Pinned** | Opens as pinned tab (or focuses existing pinned tab). |
+| Task detail -> "View Worker" link | **Preview** | Same as single-click from list. |
+| Dashboard worker widget click | **Preview** | Same as single-click from list. |
+| Notification click (worker-related) | **Preview** | Same as single-click from list. |
+| `[+]` picker in tab bar | **Pinned** | Explicit search = deliberate intent. Pinned immediately. |
+| Direct URL entry / bookmark | **Preview** | Treats as casual navigation. If already pinned, focuses existing tab. |
 
 The `WorkerWorkspace` component intercepts the route param on mount/update:
 ```
-if (urlWorkerId && !isTabOpen(urlWorkerId)) {
-  openTab(urlWorkerId)
+const existingPinned = tabs.find(t => t.workerId === urlWorkerId && !t.isPreview)
+if (existingPinned) {
+  activateTab(urlWorkerId, focusedPane)
+} else {
+  openTab(urlWorkerId, pin: isPinnedSource)  // replaces preview or creates pinned
+  activateTab(urlWorkerId, focusedPane)
 }
-activateTab(urlWorkerId, focusedPane)
 ```
+
+**Tab persistence across pages:** Tab state is preserved in `WorkerTabsContext` + localStorage when navigating away from the worker detail area (to workers list, tasks, dashboard, etc.). The tab bar is only visible on worker detail pages (`/workers/:id`), but the state survives navigation. Returning to any worker detail page restores the full tab bar.
 
 ---
 
 ### Edge Cases
 
 #### All tabs closed
-When the last tab is closed, navigate to `/workers` (the list page). The tab state resets to empty.
+When the last tab (preview or pinned) is closed, navigate to `/workers` (the list page). The tab state resets to empty.
+
+#### Preview tab is the only tab and gets replaced
+If the only tab is a preview and the user navigates to a different worker from the list, the preview is replaced in-place. The tab bar always shows at least one tab while on a worker detail page.
 
 #### Worker deleted while tab is open
-The `useEffect` watching `sessions` from AppContext detects that the worker no longer exists. The tab auto-closes. A toast notification confirms: "Worker 'name' was removed."
+The `useEffect` watching `sessions` from AppContext detects that the worker no longer exists. The tab auto-closes (preview or pinned). A toast notification confirms: "Worker 'name' was removed."
 
 #### Split mode with brain panel open
 The brain panel is an app-level right sidebar, outside the main content area. Split view operates within `app-main`. Both can coexist — the split panes share the horizontal space left after the brain panel takes its width. If the remaining width < 720px, split is auto-disabled with a toast: "Split view closed -- not enough space."
@@ -495,15 +594,16 @@ This creates a visual link: tab underline color = pane border color = "this is w
 
 #### Phase 1: Tab Bar (Single Pane)
 1. Create `WorkerTabsContext` and `useWorkerTabs` hook with localStorage persistence.
-2. Create `WorkerTabBar` component.
+2. Create `WorkerTabBar` component (with preview tab italic styling).
 3. Create `WorkerWorkspace` component that wraps `WorkerDetail`.
 4. Refactor `SessionDetailPage` -> extract `WorkerDetail` (accepts `workerId` prop).
 5. Implement hidden-DOM preservation for terminal instances.
-6. Update route in `App.tsx`: `/workers/:id` -> `<WorkerWorkspace />`.
-7. Wire up tab opening from workers list, dashboard, task detail links.
-8. Add keyboard shortcuts (`Cmd+Shift+[/]`, `Cmd+W`).
-9. Add `[+]` quick-picker dropdown.
-10. Handle edge cases (worker deletion, all-tabs-closed navigation).
+6. Implement preview/pinned tab logic: single-click = preview, double-click = pin, auto-pin on engagement.
+7. Update route in `App.tsx`: `/workers/:id` -> `<WorkerWorkspace />`.
+8. Wire up tab opening from workers list (single-click = preview, double-click = pin), dashboard, task detail links.
+9. Add keyboard shortcuts (`Cmd+Shift+[/]`, `Cmd+W`).
+10. Add `[+]` quick-picker dropdown (opens as pinned).
+11. Handle edge cases (worker deletion, all-tabs-closed navigation, stale tab pruning on mount).
 
 #### Phase 2: Split View
 1. Add split state to `WorkerTabsState` (`isSplit`, `rightActiveId`, `focusedPane`).
