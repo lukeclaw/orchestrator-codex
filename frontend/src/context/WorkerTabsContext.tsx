@@ -218,12 +218,8 @@ export function WorkerTabsProvider({ children }: { children: ReactNode }) {
         leftActiveId = findNearestTab(remaining, workerId)
       }
       if (rightActiveId === workerId) {
-        rightActiveId = findNearestTab(remaining, workerId)
-        if (!rightActiveId) isSplit = false
-      }
-      if (isSplit && leftActiveId === rightActiveId) {
-        isSplit = false
         rightActiveId = null
+        isSplit = false
       }
 
       const newState = { ...prev, tabs: remaining, leftActiveId, rightActiveId, isSplit, recentlyClosed, focusedPane: isSplit ? prev.focusedPane : 'left' as const }
