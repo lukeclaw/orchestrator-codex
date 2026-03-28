@@ -205,13 +205,33 @@ export default function WorkerTabBar() {
     updateTabNameFades()
   }, [tabs.length, isSplit, updateTabNameFades])
 
+  // Dynamic tab max-width: share space evenly when crowded, up to 240px
+  const updateTabMaxWidth = useCallback(() => {
+    const el = tabBarRef.current
+    if (!el) return
+    const tabCount = el.querySelectorAll('[role="tab"]').length
+    if (tabCount === 0) return
+    const available = el.clientWidth
+    const maxPerTab = Math.floor(available / tabCount)
+    // Clamp between 120px and 240px
+    const clamped = Math.max(120, Math.min(240, maxPerTab))
+    el.style.setProperty('--wt-tab-max-width', `${clamped}px`)
+  }, [])
+
+  useEffect(() => {
+    updateTabMaxWidth()
+  }, [tabs.length, isSplit, updateTabMaxWidth])
+
   useEffect(() => {
     const bar = barRef.current
     if (!bar) return
-    const observer = new ResizeObserver(updateTabNameFades)
+    const observer = new ResizeObserver(() => {
+      updateTabNameFades()
+      updateTabMaxWidth()
+    })
     observer.observe(bar)
     return () => observer.disconnect()
-  }, [updateTabNameFades])
+  }, [updateTabNameFades, updateTabMaxWidth])
 
   const sessionMap = new Map(sessions.map(s => [s.id, s]))
   const tabbedIds = new Set(tabs.map(t => t.workerId))
