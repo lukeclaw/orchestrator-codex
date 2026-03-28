@@ -87,12 +87,29 @@
   opacity: 1;
 }
 
-/* Active tab — raised background that blends into topbar below.
-   margin-bottom: -1px overlaps the bar's bottom border so it's seamless. */
+/* Active tab — raised background that blends into topbar below. */
 .wt-tab--active {
   background: var(--surface);
   color: var(--text-primary);
   border-radius: 8px 8px 0 0;
+}
+/* Chrome-style inverse rounded corners at the bottom of active tab */
+.wt-tab--active::before,
+.wt-tab--active::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  width: 8px;
+  height: 8px;
+  pointer-events: none;
+}
+.wt-tab--active::before {
+  left: -8px;
+  background: radial-gradient(circle at 0 0, transparent 8px, var(--surface) 8px);
+}
+.wt-tab--active::after {
+  right: -8px;
+  background: radial-gradient(circle at 100% 0, transparent 8px, var(--surface) 8px);
 }
 .wt-tab--active .wt-tab-close {
   opacity: 0.6;
