@@ -37,13 +37,13 @@
   mask-image: linear-gradient(to right, transparent, black 24px, black calc(100% - 24px), transparent);
 }
 
-/* Individual tab */
+/* Individual tab — shrinks to fit when many tabs are open, scrolls past min-width */
 .wt-tab {
   display: flex;
   align-items: center;
   gap: 6px;
   padding: 0 6px 0 12px;
-  min-width: 0;
+  min-width: 130px;
   max-width: 240px;
   height: 100%;
   background: transparent;
@@ -55,7 +55,7 @@
   transition: background 0.15s, color 0.15s, border-radius 0.15s;
   position: relative;
   white-space: nowrap;
-  flex-shrink: 0;
+  flex-shrink: 1;
 }
 .wt-tab:hover {
   background: var(--surface-hover);

@@ -169,8 +169,18 @@ export default function WorkerTabBar() {
     setScrollFade(fade)
   }, [])
 
-  // Update fade on mount and when tabs change
+  // Update fade on mount and when tabs change; auto-scroll to show new tabs
+  const prevTabCount = useRef(tabs.length)
   useEffect(() => {
+    if (tabs.length > prevTabCount.current) {
+      const el = tabBarRef.current
+      if (el) {
+        requestAnimationFrame(() => {
+          el.scrollTo({ left: el.scrollWidth, behavior: 'smooth' })
+        })
+      }
+    }
+    prevTabCount.current = tabs.length
     updateScrollFade()
   }, [tabs.length, updateScrollFade])
 
