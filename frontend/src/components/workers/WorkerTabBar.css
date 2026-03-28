@@ -110,11 +110,12 @@
   50% { opacity: 0.4; }
 }
 
-/* Tab name — fade instead of ellipsis */
+/* Tab name — overflow hidden, fade only when text is actually clipped */
 .wt-tab-name {
   overflow: hidden;
   white-space: nowrap;
-  max-width: 200px;
+}
+.wt-tab-name--faded {
   -webkit-mask-image: linear-gradient(to right, black calc(100% - 24px), transparent);
   mask-image: linear-gradient(to right, black calc(100% - 24px), transparent);
 }

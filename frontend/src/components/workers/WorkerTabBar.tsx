@@ -182,6 +182,27 @@ export default function WorkerTabBar() {
     return () => el.removeEventListener('scroll', updateScrollFade)
   }, [updateScrollFade])
 
+  // Toggle fade mask on tab names only when text is actually clipped
+  const updateTabNameFades = useCallback(() => {
+    const bar = barRef.current
+    if (!bar) return
+    bar.querySelectorAll<HTMLElement>('.wt-tab-name').forEach(el => {
+      el.classList.toggle('wt-tab-name--faded', el.scrollWidth > el.clientWidth + 1)
+    })
+  }, [])
+
+  useEffect(() => {
+    updateTabNameFades()
+  }, [tabs.length, isSplit, updateTabNameFades])
+
+  useEffect(() => {
+    const bar = barRef.current
+    if (!bar) return
+    const observer = new ResizeObserver(updateTabNameFades)
+    observer.observe(bar)
+    return () => observer.disconnect()
+  }, [updateTabNameFades])
+
   const sessionMap = new Map(sessions.map(s => [s.id, s]))
   const tabbedIds = new Set(tabs.map(t => t.workerId))
 
