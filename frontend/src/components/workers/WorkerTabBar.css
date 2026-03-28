@@ -49,13 +49,13 @@
 .wt-left-wrapper::after {
   right: 0;
 }
-/* Active tab hidden — accent-colored glow on the edge where active tab is */
+/* Active tab hidden — accent glow with dynamic intensity via --wt-hint-opacity */
 .wt-left-wrapper--active-left::before {
-  opacity: 1;
+  opacity: var(--wt-hint-opacity, 1);
   background: linear-gradient(to right, rgba(var(--accent-rgb), 0.3), transparent);
 }
 .wt-left-wrapper--active-right::after {
-  opacity: 1;
+  opacity: var(--wt-hint-opacity, 1);
   background: linear-gradient(to left, rgba(var(--accent-rgb), 0.3), transparent);
 }
 

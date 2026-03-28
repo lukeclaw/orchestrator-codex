@@ -93,7 +93,7 @@ export default function WorkerTabBar() {
 
   const [showPicker, setShowPicker] = useState(false)
   const [scrollFade, setScrollFade] = useState<'none' | 'left' | 'right' | 'both'>('none')
-  const [activeHidden, setActiveHidden] = useState<'none' | 'left' | 'right'>('none')
+  const [activeHidden, setActiveHidden] = useState<{ side: 'none' | 'left' | 'right'; opacity: number }>({ side: 'none', opacity: 0 })
   const leftActiveIdRef = useRef(leftActiveId)
   leftActiveIdRef.current = leftActiveId
   const [draggingId, setDraggingId] = useState<string | null>(null)
@@ -174,19 +174,23 @@ export default function WorkerTabBar() {
     // Check if active tab is scrolled out of view
     // Use ref to always read latest leftActiveId (avoids stale closure from scroll listener)
     const activeId = leftActiveIdRef.current
-    if (!activeId) { setActiveHidden('none'); return }
+    if (!activeId) { setActiveHidden({ side: 'none', opacity: 0 }); return }
     const activeTab = el.querySelector(`[data-worker-id="${activeId}"]`) as HTMLElement
-    if (!activeTab) { setActiveHidden('none'); return }
+    if (!activeTab) { setActiveHidden({ side: 'none', opacity: 0 }); return }
     const wrapperEl = el.parentElement
-    if (!wrapperEl) { setActiveHidden('none'); return }
+    if (!wrapperEl) { setActiveHidden({ side: 'none', opacity: 0 }); return }
     const wrapperRect = wrapperEl.getBoundingClientRect()
     const tabRect = activeTab.getBoundingClientRect()
-    if (tabRect.right <= wrapperRect.left) {
-      setActiveHidden('left')
-    } else if (tabRect.left >= wrapperRect.right) {
-      setActiveHidden('right')
+    const tabWidth = tabRect.width || 1
+    // How much of the tab is clipped on each side (0 = fully visible, 1 = fully hidden)
+    const clippedLeft = Math.max(0, wrapperRect.left - tabRect.left) / tabWidth
+    const clippedRight = Math.max(0, tabRect.right - wrapperRect.right) / tabWidth
+    if (clippedLeft > 0.1) {
+      setActiveHidden({ side: 'left', opacity: Math.min(1, clippedLeft) })
+    } else if (clippedRight > 0.1) {
+      setActiveHidden({ side: 'right', opacity: Math.min(1, clippedRight) })
     } else {
-      setActiveHidden('none')
+      setActiveHidden({ side: 'none', opacity: 0 })
     }
   }, [])
 
@@ -571,7 +575,10 @@ export default function WorkerTabBar() {
   return (
     <div ref={barRef} className={`wt-bar ${draggingId ? 'wt-bar--dragging' : ''} ${isSplit ? `wt-bar--focus-${focusedPane}` : ''}`} role="tablist" aria-label="Worker tabs">
       {/* Left tab group — wrapper holds fixed-position fade overlays */}
-      <div className={`wt-left-wrapper${activeHidden === 'left' ? ' wt-left-wrapper--active-left' : ''}${activeHidden === 'right' ? ' wt-left-wrapper--active-right' : ''}`}>
+      <div
+        className={`wt-left-wrapper${activeHidden.side === 'left' ? ' wt-left-wrapper--active-left' : ''}${activeHidden.side === 'right' ? ' wt-left-wrapper--active-right' : ''}`}
+        style={activeHidden.side !== 'none' ? { '--wt-hint-opacity': activeHidden.opacity } as React.CSSProperties : undefined}
+      >
         <div
           className={`wt-tabs-scroll${dropTarget === 'left' ? ' wt-drop-target' : ''}`}
           ref={tabBarRef}
