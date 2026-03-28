@@ -253,7 +253,13 @@ export function WorkerTabsProvider({ children }: { children: ReactNode }) {
         if (!rightActiveId) isSplit = false
       }
 
-      const newState = { ...prev, tabs: remaining, leftActiveId, rightActiveId, isSplit, recentlyClosed }
+      // Exit split if both panes would show the same worker (e.g., closing 1 of 2 tabs)
+      if (isSplit && leftActiveId === rightActiveId) {
+        isSplit = false
+        rightActiveId = null
+      }
+
+      const newState = { ...prev, tabs: remaining, leftActiveId, rightActiveId, isSplit, recentlyClosed, focusedPane: isSplit ? prev.focusedPane : 'left' as const }
       saveState(newState)
       return newState
     })
@@ -281,7 +287,7 @@ export function WorkerTabsProvider({ children }: { children: ReactNode }) {
       // In split mode, if this worker is already active in the other pane,
       // just focus that pane instead of showing the same worker in both.
       if (prev.isSplit && !pane) {
-        const otherPane = targetPane === 'left' ? 'right' : 'left'
+        const otherPane: 'left' | 'right' = targetPane === 'left' ? 'right' : 'left'
         const otherActiveId = otherPane === 'left' ? prev.leftActiveId : prev.rightActiveId
         if (workerId === otherActiveId) {
           const newState = { ...prev, focusedPane: otherPane }
