@@ -416,6 +416,40 @@
   border-color: var(--border);
 }
 
+/* Task badge — inline pill with key + title */
+.np-task-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 8px;
+  background: rgba(var(--accent-rgb), 0.12);
+  border-radius: 4px;
+  text-decoration: none;
+  max-width: 200px;
+  min-width: 0;
+  transition: background 0.15s;
+}
+.np-task-badge:hover {
+  background: rgba(var(--accent-rgb), 0.22);
+  text-decoration: none;
+}
+.np-task-key {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--accent);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.np-task-title {
+  font-size: 11px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
 .np-action-btn {
   display: flex;
   align-items: center;
@@ -442,14 +476,16 @@
   color: var(--red);
 }
 
-/* PR Comment Thread */
-.np-pr-title {
+/* PR title inline — shown at the start of content */
+.np-pr-title-inline {
+  display: block;
   font-size: 12px;
+  font-weight: 500;
   color: var(--text-secondary);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  max-width: 300px;
+  margin-bottom: 2px;
 }
 
 .np-pr-thread {
