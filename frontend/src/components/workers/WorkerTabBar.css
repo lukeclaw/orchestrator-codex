@@ -250,7 +250,7 @@
   position: absolute;
   top: calc(100% + 4px);
   right: 0;
-  width: 360px;
+  width: 440px;
   max-height: 320px;
   background: var(--bg);
   border: 1px solid var(--border);
@@ -303,8 +303,9 @@
   flex: 1;
   min-width: 0;
   overflow: hidden;
-  text-overflow: ellipsis;
   white-space: nowrap;
+  -webkit-mask-image: linear-gradient(to right, black calc(100% - 16px), transparent);
+  mask-image: linear-gradient(to right, black calc(100% - 16px), transparent);
 }
 .wt-picker-task {
   display: flex;
@@ -314,7 +315,7 @@
   background: rgba(var(--accent-rgb), 0.1);
   border-radius: 4px;
   flex-shrink: 0;
-  max-width: 160px;
+  max-width: 200px;
   min-width: 0;
 }
 .wt-picker-task-key {
@@ -330,7 +331,8 @@
   color: var(--text-muted);
   white-space: nowrap;
   overflow: hidden;
-  text-overflow: ellipsis;
+  -webkit-mask-image: linear-gradient(to right, black calc(100% - 12px), transparent);
+  mask-image: linear-gradient(to right, black calc(100% - 12px), transparent);
 }
 .wt-picker-empty {
   padding: 16px;
