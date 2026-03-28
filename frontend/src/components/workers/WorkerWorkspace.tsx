@@ -20,16 +20,15 @@ export default function WorkerWorkspace() {
   const brainPanel = useBrainPanel()
 
   const {
-    tabs, leftActiveId, rightActiveId, isSplit, focusedPane, splitRatio,
+    tabs, leftActiveId, rightActiveId, isSplit, focusedPane,
     openTab, closeTab, activateTab, setFocusedPane,
-    enterSplit, exitSplit, updateSplitRatio,
+    enterSplit, exitSplit,
     nextTab, prevTab, reopenLastClosed, restoreFromUrl,
   } = useWorkerTabs()
 
   // Refs for URL sync guard and resize
   const urlSyncRef = useRef(false)
   const workspaceRef = useRef<HTMLDivElement>(null)
-  const resizingRef = useRef(false)
   const workerRefs = useRef<Map<string, WorkerDetailHandle>>(new Map())
 
   // --- URL sync: incoming (URL → tab state) ---
@@ -187,34 +186,6 @@ export default function WorkerWorkspace() {
     return () => document.removeEventListener('keydown', handler)
   }, [focusedPane, leftActiveId, rightActiveId, isSplit, prevTab, nextTab, closeTab, enterSplit, exitSplit, setFocusedPane, reopenLastClosed])
 
-  // --- Split resize handle ---
-  const handleSplitResizeStart = useCallback((e: React.MouseEvent) => {
-    e.preventDefault()
-    const workspace = workspaceRef.current
-    if (!workspace) return
-    const startX = e.clientX
-    const containerWidth = workspace.getBoundingClientRect().width
-    const startRatio = splitRatio
-    resizingRef.current = true
-    workspace.classList.add('ww-resizing')
-
-    const onMove = (ev: MouseEvent) => {
-      const delta = ev.clientX - startX
-      const newRatio = startRatio + delta / containerWidth
-      const minRatio = MIN_PANE_WIDTH / containerWidth
-      const maxRatio = 1 - minRatio
-      updateSplitRatio(Math.max(minRatio, Math.min(maxRatio, newRatio)))
-    }
-    const onUp = () => {
-      resizingRef.current = false
-      workspace.classList.remove('ww-resizing')
-      document.removeEventListener('mousemove', onMove)
-      document.removeEventListener('mouseup', onUp)
-    }
-    document.addEventListener('mousemove', onMove)
-    document.addEventListener('mouseup', onUp)
-  }, [splitRatio, updateSplitRatio])
-
   // --- Grow-only mounted sets per pane (lazy mount on first activation) ---
   // Workers mount when first activated and stay mounted until their tab is closed.
   // The array never reorders — new workers append at the end. This prevents
@@ -308,7 +279,7 @@ export default function WorkerWorkspace() {
     return (
       <div
         className={`ww-pane ${isFocusedPane ? 'ww-pane--focused' : ''} ${isLeft ? 'ww-pane--left' : 'ww-pane--right'}`}
-        style={isSplit ? { width: `${(isLeft ? splitRatio : 1 - splitRatio) * 100}%` } : undefined}
+        style={isSplit ? { width: '50%' } : undefined}
         onClick={() => { if (isSplit) setFocusedPane(pane) }}
       >
         {mounted.map(workerId => {
@@ -340,10 +311,7 @@ export default function WorkerWorkspace() {
         {renderPane('left')}
         {isSplit && (
           <>
-            <div
-              className="ww-resize-handle"
-              onMouseDown={handleSplitResizeStart}
-            />
+            <div className="ww-split-divider" />
             {renderPane('right')}
           </>
         )}

@@ -29,24 +29,24 @@
 /* In single-pane mode the pane fills the container; in split mode width is set inline */
 
 /* In split mode, tighten topbar spacing (compact mode handles name truncation) */
-.ww-pane-container:has(.ww-resize-handle) .sd-topbar {
+.ww-pane-container:has(.ww-split-divider) .sd-topbar {
   padding: 6px 12px;
   gap: 10px;
 }
-.ww-pane-container:has(.ww-resize-handle) .sd-title {
+.ww-pane-container:has(.ww-split-divider) .sd-title {
   font-size: 14px;
 }
 
 /* Terminal focus border in split mode — recolor per-pane instead of always accent.
    Left pane: accent (blue). Right pane: purple.
    Non-focused terminal: top border only in matching color. */
-.ww-pane-container:has(.ww-resize-handle) .ww-pane--right .terminal-container.terminal-focused {
+.ww-pane-container:has(.ww-split-divider) .ww-pane--right .terminal-container.terminal-focused {
   border-color: rgba(var(--purple-alt-rgb), 0.7);
 }
-.ww-pane-container:has(.ww-resize-handle) .ww-pane--left .terminal-container:not(.terminal-focused) {
+.ww-pane-container:has(.ww-split-divider) .ww-pane--left .terminal-container:not(.terminal-focused) {
   border-top-color: rgba(var(--accent-rgb), 0.7);
 }
-.ww-pane-container:has(.ww-resize-handle) .ww-pane--right .terminal-container:not(.terminal-focused) {
+.ww-pane-container:has(.ww-split-divider) .ww-pane--right .terminal-container:not(.terminal-focused) {
   border-top-color: rgba(var(--purple-alt-rgb), 0.7);
 }
 
@@ -73,36 +73,9 @@
   overflow: hidden;
 }
 
-/* Split resize handle */
-.ww-resize-handle {
+/* Split divider — simple border between panes */
+.ww-split-divider {
   width: 1px;
-  cursor: col-resize;
   background: var(--border-subtle);
   flex-shrink: 0;
-  position: relative;
-  z-index: 3;
-}
-.ww-resize-handle::after {
-  content: '';
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  left: -2px;
-  width: 5px;
-}
-.ww-resize-handle:hover {
-  background: var(--accent);
-}
-
-/* Disable transitions during resize drag */
-.ww-resizing * {
-  transition: none !important;
-}
-
-/* Split animation */
-.ww-pane {
-  transition: width 200ms cubic-bezier(0.4, 0, 0.2, 1);
-}
-.ww-resizing .ww-pane {
-  transition: none;
 }
