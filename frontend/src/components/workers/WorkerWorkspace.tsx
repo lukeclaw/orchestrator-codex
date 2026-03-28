@@ -41,11 +41,16 @@ export default function WorkerWorkspace() {
       return
     }
     const pin = searchParams.get('pin') === 'true'
-    // Clear the ?pin param without triggering a re-navigation
-    if (pin) {
+    const splitWorkerId = searchParams.get('split')
+    // Clear one-shot params (outgoing sync will re-add ?split if needed)
+    if (pin || splitWorkerId) {
       setSearchParams({}, { replace: true })
     }
-    openTab(urlWorkerId, pin)
+    openTab(urlWorkerId, pin || !!splitWorkerId)
+    if (splitWorkerId) {
+      openTab(splitWorkerId, true)
+      enterSplit(splitWorkerId)
+    }
   }, [urlWorkerId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // --- URL sync: outgoing (tab state → URL) ---
@@ -53,11 +58,18 @@ export default function WorkerWorkspace() {
   useEffect(() => {
     if (tabs.length === 0) return
     const activeId = focusedPane === 'left' ? leftActiveId : rightActiveId
-    if (activeId && activeId !== urlWorkerId) {
-      urlSyncRef.current = true
-      window.history.replaceState(null, '', `/workers/${activeId}`)
+    if (!activeId) return
+    const otherActiveId = focusedPane === 'left' ? rightActiveId : leftActiveId
+    let url = `/workers/${activeId}`
+    if (isSplit && otherActiveId) {
+      url += `?split=${otherActiveId}`
     }
-  }, [leftActiveId, rightActiveId, focusedPane]) // eslint-disable-line react-hooks/exhaustive-deps
+    const currentUrl = window.location.pathname + window.location.search
+    if (url !== currentUrl) {
+      urlSyncRef.current = true
+      window.history.replaceState(null, '', url)
+    }
+  }, [leftActiveId, rightActiveId, focusedPane, isSplit]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // --- Navigate to /workers when all tabs are closed ---
   // Guard: don't redirect if we have a urlWorkerId (tab is about to be opened by the URL sync effect)
@@ -141,7 +153,7 @@ export default function WorkerWorkspace() {
         e.preventDefault()
         if (isSplit) {
           exitSplit()
-        } else {
+        } else if (tabs.length >= 2) {
           enterSplit()
         }
         return

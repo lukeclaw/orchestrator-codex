@@ -175,6 +175,10 @@
   color: var(--accent);
   background: rgba(var(--accent-rgb), 0.1);
 }
+.wt-split-btn:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
 
 /* Worker picker dropdown */
 .wt-picker {

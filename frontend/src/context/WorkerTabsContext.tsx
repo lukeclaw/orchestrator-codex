@@ -277,6 +277,19 @@ export function WorkerTabsProvider({ children }: { children: ReactNode }) {
       const tab = prev.tabs.find(t => t.workerId === workerId)
       if (!tab) return prev
       const targetPane = pane ?? prev.focusedPane
+
+      // In split mode, if this worker is already active in the other pane,
+      // just focus that pane instead of showing the same worker in both.
+      if (prev.isSplit && !pane) {
+        const otherPane = targetPane === 'left' ? 'right' : 'left'
+        const otherActiveId = otherPane === 'left' ? prev.leftActiveId : prev.rightActiveId
+        if (workerId === otherActiveId) {
+          const newState = { ...prev, focusedPane: otherPane }
+          saveState(newState)
+          return newState
+        }
+      }
+
       const now = Date.now()
       const tabs = prev.tabs.map(t =>
         t.workerId === workerId ? { ...t, lastActiveAt: now } : t
