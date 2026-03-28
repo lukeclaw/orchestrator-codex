@@ -195,6 +195,8 @@ This is the core interaction: **focus a pane (click in it), then click tabs to c
 | Option+click a tab | If not split: enters split mode with current tab in left pane and Option-clicked tab in right pane. If already split: opens that tab in the other pane. |
 | Right-click tab -> "Open in Right/Left Pane" | Same as Option+click, targeting the specified pane. |
 
+**Brain panel auto-collapse:** When entering split mode, if the available width of `app-main` (after subtracting the brain panel) would be below 720px, the brain panel is **automatically collapsed** before splitting. This prioritizes the split view — the user explicitly asked for two panes, so we make room. A non-intrusive toast confirms: "Brain panel collapsed to fit split view." The user can re-open the brain panel manually at any time (which may auto-disable split if width drops below threshold).
+
 #### Layout
 
 ```
@@ -536,7 +538,12 @@ If the only tab is a preview and the user navigates to a different worker from t
 The `useEffect` watching `sessions` from AppContext detects that the worker no longer exists. The tab auto-closes (preview or pinned). A toast notification confirms: "Worker 'name' was removed."
 
 #### Split mode with brain panel open
-The brain panel is an app-level right sidebar, outside the main content area. Split view operates within `app-main`. Both can coexist — the split panes share the horizontal space left after the brain panel takes its width. If the remaining width < 720px, split is auto-disabled with a toast: "Split view closed -- not enough space."
+The brain panel is an app-level right sidebar, outside the main content area. Split view operates within `app-main`. The interaction follows a priority hierarchy:
+
+1. **Entering split while brain panel is open:** If `app-main` width minus brain panel width < 720px, the brain panel is **auto-collapsed** to make room. Split view wins — the user explicitly asked for it. Toast: "Brain panel collapsed to fit split view."
+2. **Both fit:** If there's enough width (>= 720px after brain panel), both coexist. The split panes share the remaining horizontal space.
+3. **Re-opening brain panel while split:** If the user manually re-opens the brain panel and the remaining width drops below 720px, split view is **auto-disabled** (right pane tabs merge left). Toast: "Split view closed — not enough space."
+4. **Window resize while both are open:** Same as (3) — if width drops below threshold, split collapses first. Brain panel is never auto-collapsed by window resize (only by explicit split activation).
 
 #### Window resize
 If the window shrinks below 720px available width while in split mode, split auto-collapses. A non-intrusive toast explains why. When the window re-expands, split does not auto-restore (user must re-enable manually to avoid surprise).
