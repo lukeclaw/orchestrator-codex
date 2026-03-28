@@ -26,7 +26,8 @@ interface TunnelInfo {
 
 export interface WorkerDetailProps {
   workerId: string
-  isFocused: boolean
+  isActive: boolean   // true = this tab is visible in a pane (gates API calls)
+  isFocused: boolean  // true = visible + pane is focused (gates terminal focus)
   onEngagement?: () => void
   onDelete?: () => void
 }
@@ -40,7 +41,7 @@ export interface WorkerDetailHandle {
 const COMPACT_THRESHOLD = 500
 
 const WorkerDetail = forwardRef<WorkerDetailHandle, WorkerDetailProps>(function WorkerDetail(
-  { workerId, isFocused, onEngagement, onDelete },
+  { workerId, isActive, isFocused, onEngagement, onDelete },
   ref,
 ) {
   const notify = useNotify()

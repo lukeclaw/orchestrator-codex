@@ -49,12 +49,13 @@ export default function WorkerWorkspace() {
   }, [urlWorkerId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // --- URL sync: outgoing (tab state → URL) ---
+  // Use history.replaceState directly to avoid React Router re-render cycle
   useEffect(() => {
-    if (tabs.length === 0) return  // No tabs open, don't touch URL
+    if (tabs.length === 0) return
     const activeId = focusedPane === 'left' ? leftActiveId : rightActiveId
     if (activeId && activeId !== urlWorkerId) {
       urlSyncRef.current = true
-      navigate(`/workers/${activeId}`, { replace: true })
+      window.history.replaceState(null, '', `/workers/${activeId}`)
     }
   }, [leftActiveId, rightActiveId, focusedPane]) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -189,31 +190,30 @@ export default function WorkerWorkspace() {
   }, [splitRatio, updateSplitRatio])
 
   // --- Compute live tab IDs per pane (independent memos so left changes don't affect right) ---
+  // Stabilize: only recompute when the SET of tab IDs changes, not when timestamps update.
+  // This prevents tab switches from evicting/re-mounting hidden workers.
+  const tabWorkerIds = useMemo(() => tabs.map(t => t.workerId).join(','), [tabs])
+
   const leftLiveIds = useMemo(() => {
     const live = new Set<string>()
     if (leftActiveId) live.add(leftActiveId)
-    const sorted = [...tabs]
-      .filter(t => !live.has(t.workerId))
-      .sort((a, b) => b.lastActiveAt - a.lastActiveAt)
-    for (const t of sorted) {
+    // Fill remaining slots with other tab IDs (stable order — insertion order from tabs array)
+    for (const t of tabs) {
       if (live.size >= MAX_LIVE_INSTANCES) break
       live.add(t.workerId)
     }
     return live
-  }, [tabs, leftActiveId])
+  }, [tabWorkerIds, leftActiveId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const rightLiveIds = useMemo(() => {
     const live = new Set<string>()
     if (rightActiveId) live.add(rightActiveId)
-    const sorted = [...tabs]
-      .filter(t => !live.has(t.workerId))
-      .sort((a, b) => b.lastActiveAt - a.lastActiveAt)
-    for (const t of sorted) {
+    for (const t of tabs) {
       if (live.size >= MAX_LIVE_INSTANCES) break
       live.add(t.workerId)
     }
     return live
-  }, [tabs, rightActiveId])
+  }, [tabWorkerIds, rightActiveId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // --- Engagement callback (auto-pin preview tab) ---
   const handleEngagement = useCallback((workerId: string) => {
@@ -281,6 +281,7 @@ export default function WorkerWorkspace() {
               <WorkerDetail
                 ref={handle => setWorkerRef(refKey, handle)}
                 workerId={workerId}
+                isActive={isVisible}
                 isFocused={isVisible && isFocusedPane}
                 onEngagement={() => handleEngagement(workerId)}
                 onDelete={() => handleDelete(workerId)}

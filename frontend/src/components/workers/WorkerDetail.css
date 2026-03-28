@@ -152,7 +152,7 @@
   width: 32px;
   height: 32px;
   padding: 0;
-  background: var(--surface-raised);
+  background: transparent;
   border: 1px solid transparent;
   border-radius: var(--radius);
   color: var(--text-secondary);
