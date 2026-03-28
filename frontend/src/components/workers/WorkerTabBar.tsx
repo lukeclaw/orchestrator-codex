@@ -11,8 +11,9 @@ interface WorkerPickerProps {
 }
 
 function WorkerPicker({ onClose, onSelect, excludeIds }: WorkerPickerProps) {
-  const { workers } = useApp()
+  const { workers, tasks } = useApp()
   const [query, setQuery] = useState('')
+  const taskBySession = new Map(tasks.filter(t => t.assigned_session_id).map(t => [t.assigned_session_id!, t]))
   const inputRef = useRef<HTMLInputElement>(null)
   const pickerRef = useRef<HTMLDivElement>(null)
 
@@ -65,20 +66,23 @@ function WorkerPicker({ onClose, onSelect, excludeIds }: WorkerPickerProps) {
         {filtered.length === 0 && (
           <div className="wt-picker-empty">No workers available</div>
         )}
-        {filtered.map(w => (
-          <button
-            key={w.id}
-            className="wt-picker-item"
-            onClick={() => { onSelect(w.id); onClose() }}
-          >
-            <span
-              className="wt-status-dot"
-              style={{ background: WORKER_STATUS_COLORS[w.status as keyof typeof WORKER_STATUS_COLORS] || 'var(--text-muted)' }}
-            />
-            <span className="wt-picker-name">{w.name}</span>
-            <span className={`wt-picker-status status-badge ${w.status}`}>{w.status}</span>
-          </button>
-        ))}
+        {filtered.map(w => {
+          const task = taskBySession.get(w.id)
+          return (
+            <button
+              key={w.id}
+              className="wt-picker-item"
+              onClick={() => { onSelect(w.id); onClose() }}
+            >
+              <span
+                className="wt-status-dot"
+                style={{ background: WORKER_STATUS_COLORS[w.status as keyof typeof WORKER_STATUS_COLORS] || 'var(--text-muted)' }}
+              />
+              <span className="wt-picker-name">{w.name}</span>
+              {task && <span className="wt-picker-task">{task.task_key || task.title}</span>}
+            </button>
+          )
+        })}
       </div>
     </div>
   )

@@ -250,7 +250,7 @@
   position: absolute;
   top: calc(100% + 4px);
   right: 0;
-  width: 280px;
+  width: 360px;
   max-height: 320px;
   background: var(--bg);
   border: 1px solid var(--border);
@@ -306,9 +306,14 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.wt-picker-status {
+.wt-picker-task {
   font-size: 11px;
+  color: var(--text-muted);
   flex-shrink: 0;
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .wt-picker-empty {
   padding: 16px;
