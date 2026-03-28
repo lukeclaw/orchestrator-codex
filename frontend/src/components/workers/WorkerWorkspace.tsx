@@ -46,7 +46,7 @@ export default function WorkerWorkspace() {
     if (pin || splitWorkerId) {
       setSearchParams({}, { replace: true })
     }
-    openTab(urlWorkerId, pin || !!splitWorkerId)
+    openTab(urlWorkerId, pin)
     if (splitWorkerId) {
       openTab(splitWorkerId, true)
       enterSplit(splitWorkerId)
