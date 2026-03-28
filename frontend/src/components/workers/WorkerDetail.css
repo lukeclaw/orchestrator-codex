@@ -106,30 +106,6 @@
   background: rgba(var(--red-rgb), 0.08);
 }
 
-/* Check status button next to status badge */
-.sd-check-btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 22px;
-  height: 22px;
-  background: none;
-  border: none;
-  color: var(--text-muted);
-  border-radius: var(--radius);
-  cursor: pointer;
-  transition: color 0.15s, background 0.15s;
-}
-
-.sd-check-btn:hover:not(:disabled) {
-  color: var(--text-primary);
-  background: var(--surface-hover);
-}
-
-.sd-check-btn:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
-}
 
 .sd-topbar-actions {
   margin-left: auto;
@@ -299,6 +275,7 @@
   background: var(--bg);
   border-top: 1px solid var(--border-subtle);
   flex-shrink: 0;
+  container-type: inline-size;
 }
 
 .sd-footer-left {
@@ -618,6 +595,19 @@
   text-align: center;
   padding: 40px;
   color: var(--red);
+}
+
+/* Compact footer — hide button text labels when the footer is narrow (e.g., split view) */
+@container (max-width: 540px) {
+  .sd-auto-reconnect-label { display: none; }
+  .sd-panel-btn span { display: none; }
+  .sd-panel-btn { padding: 4px 8px; }
+  .sd-paste-btn span { display: none; }
+  .sd-paste-btn { padding: 3px 8px; }
+  .sd-assign-task-btn span { display: none; }
+  .sd-assign-task-btn { padding: 4px 8px; }
+  .sd-footer { padding: 8px 10px; gap: 6px; }
+  .sd-footer-right { gap: 6px; }
 }
 
 @media (max-width: 768px) {

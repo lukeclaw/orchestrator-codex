@@ -13,7 +13,7 @@ import InteractiveCLI from '../terminal/InteractiveCLI'
 import BrowserView from '../browser/BrowserView'
 import FileExplorerPanel from '../file-explorer/FileExplorerPanel'
 import FileViewer from '../file-explorer/FileViewer'
-import { IconPause, IconPlay, IconStop, IconRefresh, IconTrash, IconSync, IconBrain, IconKebab } from '../common/Icons'
+import { IconPause, IconPlay, IconStop, IconRefresh, IconTrash, IconBrain, IconKebab } from '../common/Icons'
 import ConfirmPopover from '../common/ConfirmPopover'
 import AssignTaskModal from '../tasks/AssignTaskModal'
 import './WorkerDetail.css'
@@ -382,26 +382,6 @@ const WorkerDetail = forwardRef<WorkerDetailHandle, WorkerDetailProps>(function 
     }
   }
 
-  async function handleHealthCheck() {
-    if (actionPending) return
-    setActionPending(true)
-    try {
-      const result = await api<{ alive: boolean; status: string; reason: string }>(
-        `/api/sessions/${workerId}/health-check`,
-        { method: 'POST' }
-      )
-      await refresh()  // Wait for data to refresh before showing notification
-      if (result.alive) {
-        notify(`Worker is alive: ${result.reason}`, 'success')
-      } else {
-        notify(`Worker disconnected: ${result.reason}`, 'warning')
-      }
-    } catch (e) {
-      notify(e instanceof Error ? e.message : 'Failed to check status', 'error')
-    } finally {
-      setActionPending(false)
-    }
-  }
 
   async function handleDelete() {
     try {
@@ -667,15 +647,6 @@ const WorkerDetail = forwardRef<WorkerDetailHandle, WorkerDetailProps>(function 
           {session.host.includes('/') && <span className="sd-type-tag rdev">rdev</span>}
           {isSsh && <span className="sd-type-tag ssh">ssh</span>}
           <span className={`status-badge ${session.status}`}>{session.status}</span>
-          {/* Check Status button next to status */}
-          <button
-            className="sd-check-btn"
-            onClick={handleHealthCheck}
-            disabled={actionPending}
-            title="Check if worker is alive"
-          >
-            <IconSync size={14} />
-          </button>
         </div>
         {isCompact ? (
           /* Compact mode: kebab dropdown for control buttons */
@@ -913,7 +884,7 @@ const WorkerDetail = forwardRef<WorkerDetailHandle, WorkerDetailProps>(function 
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="16" /><line x1="8" y1="12" x2="16" y2="12" />
               </svg>
-              Assign task
+              <span>Assign task</span>
             </button>
           )}
           {Object.keys(tunnels).length > 0 && (
