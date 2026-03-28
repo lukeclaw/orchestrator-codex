@@ -613,6 +613,8 @@ def _copy_configs_to_remote(host: str, tmp_dir: str, remote_tmp_dir: str, sessio
     """
     import subprocess
 
+    from orchestrator.terminal.ssh import is_rdev_host
+
     # Copy entire directory to remote via direct SSH
     if not _copy_dir_to_remote_ssh(tmp_dir, host, remote_tmp_dir):
         raise RuntimeError(f"Failed to copy configs to remote via SSH: {host}:{remote_tmp_dir}")
@@ -627,6 +629,39 @@ def _copy_configs_to_remote(host: str, tmp_dir: str, remote_tmp_dir: str, sessio
         capture_output=True,
         timeout=30,
     )
+
+    # Recreate node-bin symlinks on rdev (may be gone if /tmp was wiped).
+    # Uses the same resolve logic as session.py — bypass `volta which` and
+    # glob directly into volta's image directory.
+    if is_rdev_host(host):
+        from orchestrator.terminal.session import _VOLTA_NODE24_RESOLVE
+
+        node_cmd = (
+            "volta install node@24"
+            f" && {_VOLTA_NODE24_RESOLVE}"
+            f" && mkdir -p {remote_tmp_dir}/node-bin"
+            f' && ln -sf "$NODE24_DIR/node" {remote_tmp_dir}/node-bin/node'
+            f' && ln -sf "$NODE24_DIR/npx" {remote_tmp_dir}/node-bin/npx'
+            f' && ln -sf "$NODE24_DIR/npm" {remote_tmp_dir}/node-bin/npm'
+        )
+        node_result = subprocess.run(
+            _ssh_cmd(host, node_cmd),
+            capture_output=True,
+            timeout=60,
+        )
+        if node_result.returncode == 0:
+            logger.info(
+                "Reconnect %s: ensured Node 24 symlinks at %s/node-bin",
+                session_name,
+                remote_tmp_dir,
+            )
+        else:
+            logger.warning(
+                "Reconnect %s: failed to create Node 24 symlinks (rc=%d): %s",
+                session_name,
+                node_result.returncode,
+                node_result.stderr.decode("utf-8", errors="replace").strip()[:200],
+            )
 
     # Copy skills to ~/.claude/commands/ (global user skills directory)
     # NOTE: --add-dir flag doesn't work reliably in recent Claude Code versions,
