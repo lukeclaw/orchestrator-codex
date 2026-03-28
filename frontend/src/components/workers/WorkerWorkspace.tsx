@@ -1,5 +1,5 @@
 import { useEffect, useRef, useCallback, useMemo, useState } from 'react'
-import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
+import { useParams, useNavigate } from 'react-router-dom'
 import { useWorkerTabs } from '../../context/WorkerTabsContext'
 import { useBrainPanel } from '../../context/BrainPanelContext'
 import { useApp } from '../../context/AppContext'
@@ -14,7 +14,6 @@ const MIN_PANE_WIDTH = 360
 
 export default function WorkerWorkspace() {
   const { id: urlWorkerId } = useParams<{ id: string }>()
-  const [searchParams, setSearchParams] = useSearchParams()
   const navigate = useNavigate()
   const notify = useNotify()
   const { sessions } = useApp()
@@ -22,7 +21,7 @@ export default function WorkerWorkspace() {
 
   const {
     tabs, leftActiveId, rightActiveId, isSplit, focusedPane, splitRatio,
-    openTab, closeTab, pinTab, activateTab, setFocusedPane,
+    openTab, closeTab, activateTab, setFocusedPane,
     enterSplit, exitSplit, updateSplitRatio,
     nextTab, prevTab, reopenLastClosed,
   } = useWorkerTabs()
@@ -40,46 +39,46 @@ export default function WorkerWorkspace() {
       urlSyncRef.current = false
       return
     }
-    const pin = searchParams.get('pin') === 'true'
-    const splitWorkerId = searchParams.get('split')
-    // Clear one-shot params (outgoing sync will re-add ?split if needed)
-    if (pin || splitWorkerId) {
-      setSearchParams({}, { replace: true })
-    }
-    openTab(urlWorkerId, pin)
-    if (splitWorkerId) {
-      openTab(splitWorkerId, true)
-      enterSplit(splitWorkerId)
-    }
+    openTab(urlWorkerId)
   }, [urlWorkerId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // --- URL sync: outgoing (tab state → URL) ---
-  // Use history.replaceState directly to avoid React Router re-render cycle
+  // Use history.replaceState directly to avoid React Router re-render cycle.
+  // Only the active worker ID goes in the URL. Split state lives in context/sessionStorage
+  // (replaceState bypasses React Router, so query params would get stale and cause bugs).
   useEffect(() => {
     if (tabs.length === 0) return
     const activeId = focusedPane === 'left' ? leftActiveId : rightActiveId
     if (!activeId) return
-    const otherActiveId = focusedPane === 'left' ? rightActiveId : leftActiveId
-    let url = `/workers/${activeId}`
-    if (isSplit && otherActiveId) {
-      url += `?split=${otherActiveId}`
-    }
-    const currentUrl = window.location.pathname + window.location.search
-    if (url !== currentUrl) {
+    const targetPath = `/workers/${activeId}`
+    if (targetPath !== window.location.pathname) {
       urlSyncRef.current = true
-      window.history.replaceState(null, '', url)
+      window.history.replaceState(null, '', targetPath)
     }
-  }, [leftActiveId, rightActiveId, focusedPane, isSplit]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [leftActiveId, rightActiveId, focusedPane]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // --- Navigate to /workers when all tabs are closed ---
-  // Skip on first render (URL sync effect hasn't opened the initial tab yet)
-  const mountedRef = useRef(false)
+  // Debounce: wait 300ms before redirecting, in case a new tab is about to open.
+  // The timer is cleared if tabs.length changes (new tab added before timeout).
+  const tabsLengthRef = useRef(tabs.length)
+  tabsLengthRef.current = tabs.length
+  const redirectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   useEffect(() => {
-    if (!mountedRef.current) { mountedRef.current = true; return }
-    if (tabs.length === 0) {
-      navigate('/workers', { replace: true })
+    if (redirectTimerRef.current) {
+      clearTimeout(redirectTimerRef.current)
+      redirectTimerRef.current = null
     }
-  }, [tabs.length]) // eslint-disable-line react-hooks/exhaustive-deps
+    if (tabs.length === 0) {
+      redirectTimerRef.current = setTimeout(() => {
+        if (tabsLengthRef.current === 0) {
+          navigate('/workers', { replace: true })
+        }
+      }, 300)
+    }
+    return () => {
+      if (redirectTimerRef.current) clearTimeout(redirectTimerRef.current)
+    }
+  }, [tabs.length, navigate])
 
   // --- Auto-close tabs for deleted workers (silently) ---
   useEffect(() => {
@@ -244,11 +243,7 @@ export default function WorkerWorkspace() {
     setRightMounted(prev => { const next = prev.filter(id => ids.has(id)); return next.length === prev.length ? prev : next })
   }, [tabWorkerIds]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // --- Stable callbacks (no per-worker closures — WorkerDetail calls with its own workerId) ---
-  const handleEngagement = useCallback((workerId: string) => {
-    pinTab(workerId)
-  }, [pinTab])
-
+  // --- Stable callbacks ---
   const handleDelete = useCallback((workerId: string) => {
     closeTab(workerId)
   }, [closeTab])
@@ -316,7 +311,6 @@ export default function WorkerWorkspace() {
                 workerId={workerId}
                 isActive={isVisible}
                 isFocused={isVisible && isFocusedPane}
-                onEngagement={handleEngagement}
                 onDelete={handleDelete}
               />
             </div>

@@ -92,11 +92,6 @@
   color: var(--text-primary);
 }
 
-/* Preview tab — italic name */
-.wt-tab--preview .wt-tab-name {
-  font-style: italic;
-}
-
 /* Status dot */
 .wt-status-dot {
   width: 6px;

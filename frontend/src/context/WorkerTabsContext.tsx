@@ -5,7 +5,6 @@ import { useApp } from './AppContext'
 
 export interface WorkerTab {
   workerId: string
-  isPreview: boolean
   openedAt: number
   lastActiveAt: number
 }
@@ -21,9 +20,8 @@ interface WorkerTabsState {
 }
 
 interface WorkerTabsContextValue extends WorkerTabsState {
-  openTab: (workerId: string, pin?: boolean) => void
+  openTab: (workerId: string) => void
   closeTab: (workerId: string) => void
-  pinTab: (workerId: string) => void
   activateTab: (workerId: string, pane?: 'left' | 'right') => void
   setFocusedPane: (pane: 'left' | 'right') => void
   toggleSplit: () => void
@@ -90,7 +88,6 @@ function saveState(state: WorkerTabsState) {
 function findNearestTab(tabs: WorkerTab[], closedId: string): string | null {
   const idx = tabs.findIndex(t => t.workerId === closedId)
   if (idx === -1) return tabs.length > 0 ? tabs[0].workerId : null
-  // Prefer right neighbor, then left
   if (idx + 1 < tabs.length) return tabs[idx + 1].workerId
   if (idx - 1 >= 0) return tabs[idx - 1].workerId
   return null
@@ -133,9 +130,9 @@ export function WorkerTabsProvider({ children }: { children: ReactNode }) {
     })
   }, [sessions])
 
-  // Auto-close tabs for deleted workers (runtime, not just mount)
+  // Auto-close tabs for deleted workers (runtime)
   useEffect(() => {
-    if (!initialPruneRef.current) return // wait for initial prune
+    if (!initialPruneRef.current) return
     const sessionIds = new Set(sessions.map(s => s.id))
     setState(prev => {
       const removed = prev.tabs.filter(t => !sessionIds.has(t.workerId))
@@ -155,14 +152,14 @@ export function WorkerTabsProvider({ children }: { children: ReactNode }) {
 
   // --- Actions ---
 
-  const openTab = useCallback((workerId: string, pin = false) => {
+  const openTab = useCallback((workerId: string) => {
     setState(prev => {
       const now = Date.now()
       const existing = prev.tabs.find(t => t.workerId === workerId)
       const pane = prev.focusedPane
 
-      // Already has a pinned tab — just activate it
-      if (existing && !existing.isPreview) {
+      if (existing) {
+        // Already open — just activate it
         const tabs = prev.tabs.map(t =>
           t.workerId === workerId ? { ...t, lastActiveAt: now } : t
         )
@@ -175,54 +172,9 @@ export function WorkerTabsProvider({ children }: { children: ReactNode }) {
         return newState
       }
 
-      // Already the preview tab — maybe pin it
-      if (existing && existing.isPreview) {
-        if (pin) {
-          // Promote preview to pinned
-          const tabs = prev.tabs.map(t =>
-            t.workerId === workerId ? { ...t, isPreview: false, lastActiveAt: now } : t
-          )
-          const newState = {
-            ...prev,
-            tabs,
-            [pane === 'left' ? 'leftActiveId' : 'rightActiveId']: workerId,
-          }
-          saveState(newState)
-          return newState
-        }
-        // Already the preview for this worker, just activate
-        const tabs = prev.tabs.map(t =>
-          t.workerId === workerId ? { ...t, lastActiveAt: now } : t
-        )
-        const newState = {
-          ...prev,
-          tabs,
-          [pane === 'left' ? 'leftActiveId' : 'rightActiveId']: workerId,
-        }
-        saveState(newState)
-        return newState
-      }
-
-      // New tab
-      if (pin) {
-        // Add as pinned at end (before any preview)
-        const previewIdx = prev.tabs.findIndex(t => t.isPreview)
-        const insertIdx = previewIdx === -1 ? prev.tabs.length : previewIdx
-        const newTab: WorkerTab = { workerId, isPreview: false, openedAt: now, lastActiveAt: now }
-        const tabs = [...prev.tabs.slice(0, insertIdx), newTab, ...prev.tabs.slice(insertIdx)]
-        const newState = {
-          ...prev,
-          tabs,
-          [pane === 'left' ? 'leftActiveId' : 'rightActiveId']: workerId,
-        }
-        saveState(newState)
-        return newState
-      }
-
-      // Add as preview — replace existing preview if any
-      const filteredTabs = prev.tabs.filter(t => !t.isPreview)
-      const newTab: WorkerTab = { workerId, isPreview: true, openedAt: now, lastActiveAt: now }
-      const tabs = [...filteredTabs, newTab]
+      // New tab — append at end
+      const newTab: WorkerTab = { workerId, openedAt: now, lastActiveAt: now }
+      const tabs = [...prev.tabs, newTab]
       const newState = {
         ...prev,
         tabs,
@@ -244,7 +196,6 @@ export function WorkerTabsProvider({ children }: { children: ReactNode }) {
 
       let { leftActiveId, rightActiveId, isSplit } = prev
 
-      // If the closed tab was active in a pane, find nearest replacement
       if (leftActiveId === workerId) {
         leftActiveId = findNearestTab(remaining, workerId)
       }
@@ -252,8 +203,6 @@ export function WorkerTabsProvider({ children }: { children: ReactNode }) {
         rightActiveId = findNearestTab(remaining, workerId)
         if (!rightActiveId) isSplit = false
       }
-
-      // Exit split if both panes would show the same worker (e.g., closing 1 of 2 tabs)
       if (isSplit && leftActiveId === rightActiveId) {
         isSplit = false
         rightActiveId = null
@@ -265,27 +214,12 @@ export function WorkerTabsProvider({ children }: { children: ReactNode }) {
     })
   }, [])
 
-  const pinTab = useCallback((workerId: string) => {
-    setState(prev => {
-      const tab = prev.tabs.find(t => t.workerId === workerId)
-      if (!tab || !tab.isPreview) return prev
-      const tabs = prev.tabs.map(t =>
-        t.workerId === workerId ? { ...t, isPreview: false } : t
-      )
-      const newState = { ...prev, tabs }
-      saveState(newState)
-      return newState
-    })
-  }, [])
-
   const activateTab = useCallback((workerId: string, pane?: 'left' | 'right') => {
     setState(prev => {
       const tab = prev.tabs.find(t => t.workerId === workerId)
       if (!tab) return prev
       const targetPane = pane ?? prev.focusedPane
 
-      // In split mode, if this worker is already active in the other pane,
-      // just focus that pane instead of showing the same worker in both.
       if (prev.isSplit && !pane) {
         const otherPane: 'left' | 'right' = targetPane === 'left' ? 'right' : 'left'
         const otherActiveId = otherPane === 'left' ? prev.leftActiveId : prev.rightActiveId
@@ -323,12 +257,7 @@ export function WorkerTabsProvider({ children }: { children: ReactNode }) {
     setState(prev => {
       if (prev.isSplit) return prev
       const rightId = rightWorkerId ?? getMostRecentlyActive(prev.tabs, prev.leftActiveId ?? undefined)
-      const newState = {
-        ...prev,
-        isSplit: true,
-        rightActiveId: rightId,
-        focusedPane: 'left' as const,
-      }
+      const newState = { ...prev, isSplit: true, rightActiveId: rightId, focusedPane: 'left' as const }
       saveState(newState)
       return newState
     })
@@ -337,12 +266,7 @@ export function WorkerTabsProvider({ children }: { children: ReactNode }) {
   const exitSplit = useCallback(() => {
     setState(prev => {
       if (!prev.isSplit) return prev
-      const newState = {
-        ...prev,
-        isSplit: false,
-        rightActiveId: null,
-        focusedPane: 'left' as const,
-      }
+      const newState = { ...prev, isSplit: false, rightActiveId: null, focusedPane: 'left' as const }
       saveState(newState)
       return newState
     })
@@ -374,17 +298,14 @@ export function WorkerTabsProvider({ children }: { children: ReactNode }) {
   const reopenLastClosed = useCallback(() => {
     setState(prev => {
       if (prev.recentlyClosed.length === 0) return prev
-      // Find the first recently-closed worker that still exists
       const sessionIds = new Set(sessionsRef.current.map(s => s.id))
       const validIdx = prev.recentlyClosed.findIndex(id => sessionIds.has(id))
       if (validIdx === -1) return { ...prev, recentlyClosed: [] }
       const workerId = prev.recentlyClosed[validIdx]
       const rest = [...prev.recentlyClosed.slice(0, validIdx), ...prev.recentlyClosed.slice(validIdx + 1)]
       const now = Date.now()
-      const newTab: WorkerTab = { workerId, isPreview: false, openedAt: now, lastActiveAt: now }
-      const previewIdx = prev.tabs.findIndex(t => t.isPreview)
-      const insertIdx = previewIdx === -1 ? prev.tabs.length : previewIdx
-      const tabs = [...prev.tabs.slice(0, insertIdx), newTab, ...prev.tabs.slice(insertIdx)]
+      const newTab: WorkerTab = { workerId, openedAt: now, lastActiveAt: now }
+      const tabs = [...prev.tabs, newTab]
       const pane = prev.focusedPane
       const newState = {
         ...prev,
@@ -447,7 +368,6 @@ export function WorkerTabsProvider({ children }: { children: ReactNode }) {
     ...state,
     openTab,
     closeTab,
-    pinTab,
     activateTab,
     setFocusedPane,
     toggleSplit,

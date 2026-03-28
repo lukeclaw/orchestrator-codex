@@ -28,7 +28,6 @@ export interface WorkerDetailProps {
   workerId: string
   isActive: boolean   // true = this tab is visible in a pane (gates API calls)
   isFocused: boolean  // true = visible + pane is focused (gates terminal focus)
-  onEngagement?: (workerId: string) => void
   onDelete?: (workerId: string) => void
 }
 
@@ -41,7 +40,7 @@ export interface WorkerDetailHandle {
 const COMPACT_THRESHOLD = 500
 
 const WorkerDetail = forwardRef<WorkerDetailHandle, WorkerDetailProps>(function WorkerDetail(
-  { workerId, isActive, isFocused, onEngagement, onDelete },
+  { workerId, isActive, isFocused, onDelete },
   ref,
 ) {
   const notify = useNotify()
@@ -822,7 +821,6 @@ const WorkerDetail = forwardRef<WorkerDetailHandle, WorkerDetailProps>(function 
               reconnectStep={session.reconnect_step}
               onFocusRef={(fn) => { terminalFocusRef.current = fn; if (isFocused) requestAnimationFrame(() => fn()) }}
               onFitRef={(fn) => { terminalFitRef.current = fn }}
-              onTerminalInput={() => onEngagement?.(workerId)}
               onImagePaste={handleImagePaste}
               onTextPaste={handleTextPaste}
               onFileDrop={handleFileDrop}

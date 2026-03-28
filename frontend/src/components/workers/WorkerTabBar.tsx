@@ -87,7 +87,7 @@ function WorkerPicker({ onClose, onSelect, excludeIds }: WorkerPickerProps) {
 export default function WorkerTabBar() {
   const {
     tabs, leftActiveId, rightActiveId, isSplit, focusedPane,
-    activateTab, closeTab, pinTab, openTab, toggleSplit, enterSplit, setFocusedPane,
+    activateTab, closeTab, openTab, toggleSplit, enterSplit, setFocusedPane,
   } = useWorkerTabs()
   const { sessions } = useApp()
 
@@ -154,12 +154,8 @@ export default function WorkerTabBar() {
     }
   }, [closeTab])
 
-  const handleTabDoubleClick = useCallback((workerId: string) => {
-    pinTab(workerId)
-  }, [pinTab])
-
   const handlePickerSelect = useCallback((workerId: string) => {
-    openTab(workerId, true)  // Explicit picker = pinned
+    openTab(workerId)
   }, [openTab])
 
   // Determine underline type for each tab
@@ -184,12 +180,11 @@ export default function WorkerTabBar() {
           return (
             <button
               key={tab.workerId}
-              className={`wt-tab ${underlineClass} ${isActive ? 'wt-tab--active' : ''} ${tab.isPreview ? 'wt-tab--preview' : ''}`}
+              className={`wt-tab ${underlineClass} ${isActive ? 'wt-tab--active' : ''}`}
               role="tab"
               aria-selected={isActive}
               onClick={e => handleTabClick(e, tab.workerId)}
               onAuxClick={e => handleTabAuxClick(e, tab.workerId)}
-              onDoubleClick={() => handleTabDoubleClick(tab.workerId)}
             >
               <span
                 className={`wt-status-dot ${session.status === 'working' ? 'wt-status-dot--pulse' : ''}`}
