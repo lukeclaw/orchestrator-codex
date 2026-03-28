@@ -1,10 +1,10 @@
-/* Tab bar container — sits on a darker strip so active tabs "emerge" from it.
-   No bottom border; the accent underline + topbar border handle separation. */
+/* Tab bar container — dark strip; active tabs "emerge" with --bg background
+   that blends seamlessly into the topbar below (Chrome-style). */
 .wt-bar {
   display: flex;
   align-items: stretch;
   height: 36px;
-  background: var(--surface-inset, var(--bg));
+  background: var(--bg);
   flex-shrink: 0;
   z-index: 110;
   position: relative;
@@ -42,18 +42,17 @@
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 0 12px;
+  padding: 0 6px 0 12px;
   min-width: 0;
-  max-width: 180px;
+  max-width: 240px;
   height: 100%;
   background: transparent;
   border: none;
-  border-bottom: 2px solid transparent;
   color: var(--text-secondary);
   font-size: 13px;
   font-weight: 500;
   cursor: pointer;
-  transition: background 0.15s, color 0.15s;
+  transition: background 0.15s, color 0.15s, border-radius 0.15s;
   position: relative;
   white-space: nowrap;
   flex-shrink: 0;
@@ -61,15 +60,18 @@
 .wt-tab:hover {
   background: var(--surface-hover);
   color: var(--text-primary);
+  border-radius: 8px 8px 0 0;
 }
 .wt-tab:hover .wt-tab-close {
   opacity: 1;
 }
 
-/* Active tab states — background matches topbar (--bg) so the tab
-   visually "connects" to the content area below, like Chrome tabs */
+/* Active tab — raised background that blends into topbar below.
+   margin-bottom: -1px overlaps the bar's bottom border so it's seamless. */
 .wt-tab--active {
+  background: var(--surface);
   color: var(--text-primary);
+  border-radius: 8px 8px 0 0;
 }
 .wt-tab--active .wt-tab-close {
   opacity: 0.6;
@@ -77,19 +79,20 @@
 .wt-tab--active:hover .wt-tab-close {
   opacity: 1;
 }
+
+/* Split mode color hints — top border distinguishes left vs right pane */
 .wt-tab--active-left {
-  border-bottom-color: var(--accent);
-  color: var(--text-primary);
+  border-top: 1.5px solid var(--accent);
 }
 .wt-tab--active-right {
-  border-bottom-color: var(--purple);
-  color: var(--text-primary);
+  border-top: 1.5px solid var(--purple);
 }
-/* Same worker in both panes — split gradient underline */
-.wt-tab--active-both {
-  border-bottom-color: var(--accent);
-  border-image: linear-gradient(to right, var(--accent) 50%, var(--purple) 50%) 1;
-  color: var(--text-primary);
+/* Hover hint — matches focused pane color, not the group */
+.wt-bar--focus-left .wt-tab:not(.wt-tab--active):hover {
+  border-top: 1.5px solid rgba(var(--accent-rgb), 0.3);
+}
+.wt-bar--focus-right .wt-tab:not(.wt-tab--active):hover {
+  border-top: 1.5px solid rgba(var(--purple-alt-rgb), 0.3);
 }
 
 /* Status dot */
@@ -107,12 +110,13 @@
   50% { opacity: 0.4; }
 }
 
-/* Tab name */
+/* Tab name — fade instead of ellipsis */
 .wt-tab-name {
   overflow: hidden;
-  text-overflow: ellipsis;
   white-space: nowrap;
-  max-width: 140px;
+  max-width: 200px;
+  -webkit-mask-image: linear-gradient(to right, black calc(100% - 24px), transparent);
+  mask-image: linear-gradient(to right, black calc(100% - 24px), transparent);
 }
 
 /* Close button — hidden by default, visible on hover/active */
@@ -120,9 +124,9 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 16px;
-  height: 16px;
-  border-radius: 4px;
+  width: 20px;
+  height: 20px;
+  border-radius: 5px;
   color: var(--text-muted);
   opacity: 0;
   cursor: pointer;
@@ -147,6 +151,27 @@
   transition: transform 150ms ease;
 }
 
+/* Split mode — spacer between left and right tab groups */
+.wt-divider {
+  width: 1px;
+  flex-shrink: 0;
+  align-self: stretch;
+}
+
+/* Right tab group in split mode */
+.wt-right-group {
+  display: flex;
+  align-items: stretch;
+  flex-shrink: 0;
+  min-width: 0;
+}
+
+/* Drop zone highlight when dragging a tab over a group */
+.wt-drop-target {
+  background: rgba(var(--accent-rgb), 0.06);
+  transition: background 0.15s;
+}
+
 /* Right-side controls (pinned, never scroll) */
 .wt-controls {
   display: flex;
@@ -154,7 +179,6 @@
   gap: 2px;
   padding: 0 8px;
   flex-shrink: 0;
-  border-left: 1px solid var(--border-subtle);
 }
 .wt-control-wrapper {
   position: relative;
@@ -177,11 +201,11 @@
   color: var(--text-primary);
 }
 .wt-split-btn--active {
-  color: var(--accent);
+  color: var(--text-primary);
 }
 .wt-split-btn--active:hover {
-  color: var(--accent);
-  background: rgba(var(--accent-rgb), 0.1);
+  color: var(--text-primary);
+  background: var(--surface-hover);
 }
 .wt-split-btn:disabled {
   opacity: 0.3;

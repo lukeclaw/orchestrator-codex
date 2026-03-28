@@ -94,13 +94,15 @@ export default function WorkerTabBar() {
   const [showPicker, setShowPicker] = useState(false)
   const [scrollFade, setScrollFade] = useState<'none' | 'left' | 'right' | 'both'>('none')
   const [draggingId, setDraggingId] = useState<string | null>(null)
+  const [dropTarget, setDropTarget] = useState<'left' | 'right' | null>(null)
   const tabBarRef = useRef<HTMLDivElement>(null)
+  const rightGroupRef = useRef<HTMLDivElement>(null)
   const dragRef = useRef<{
     workerId: string
     startX: number
     fromIndex: number
     currentToIndex: number
-    isDragging: boolean  // true once 4px threshold crossed
+    isDragging: boolean
     tabEls: HTMLElement[]
     tabRects: { id: string; left: number; width: number; center: number }[]
   } | null>(null)
@@ -142,22 +144,30 @@ export default function WorkerTabBar() {
   const tabbedIds = new Set(tabs.map(t => t.workerId))
 
   const handleTabClick = useCallback((e: React.MouseEvent, workerId: string) => {
-    // Alt+click = activate in other pane
     if (e.altKey && isSplit) {
       const otherPane = focusedPane === 'left' ? 'right' : 'left'
       activateTab(workerId, otherPane)
       return
     }
     if (e.altKey && !isSplit) {
-      // Enter split with this tab in the other pane
       enterSplit(workerId)
       return
     }
     activateTab(workerId)
   }, [isSplit, focusedPane, activateTab, enterSplit])
 
+  // Click on tab in the right group: activate it in the right pane + focus right
+  const handleRightTabClick = useCallback((e: React.MouseEvent, workerId: string) => {
+    if (e.altKey) {
+      // Alt+click on right tab = move it to left pane
+      activateTab(workerId, 'left')
+      return
+    }
+    activateTab(workerId, 'right')
+    setFocusedPane('right')
+  }, [activateTab, setFocusedPane])
+
   const handleTabAuxClick = useCallback((e: React.MouseEvent, workerId: string) => {
-    // Middle-click = close
     if (e.button === 1) {
       e.preventDefault()
       closeTab(workerId)
@@ -168,9 +178,8 @@ export default function WorkerTabBar() {
     openTab(workerId)
   }, [openTab])
 
-  // --- Drag-to-reorder ---
+  // --- Drag-to-reorder + cross-pane drop ---
   const handleTabMouseDown = useCallback((e: React.MouseEvent, workerId: string) => {
-    // Only left button, ignore if modifier keys held
     if (e.button !== 0 || e.altKey || e.ctrlKey || e.metaKey) return
     const scrollEl = tabBarRef.current
     if (!scrollEl) return
@@ -192,18 +201,31 @@ export default function WorkerTabBar() {
       const drag = dragRef.current
       if (!drag) return
       const delta = ev.clientX - drag.startX
-      // 4px threshold to distinguish click from drag
       if (!drag.isDragging && Math.abs(delta) < 4) return
       if (!drag.isDragging) {
         drag.isDragging = true
         setDraggingId(workerId)
       }
 
-      // Move dragged tab via transform
       const draggedEl = drag.tabEls[drag.fromIndex]
       if (draggedEl) draggedEl.style.transform = `translateX(${delta}px)`
 
-      // Determine drop index from cursor position
+      // Check if dragging over the right group area (cross-pane drop)
+      if (isSplit && rightGroupRef.current) {
+        const rightRect = rightGroupRef.current.getBoundingClientRect()
+        if (ev.clientX >= rightRect.left && ev.clientX <= rightRect.right) {
+          setDropTarget('right')
+          // Clear shift transforms when over drop zone
+          for (let i = 0; i < drag.tabEls.length; i++) {
+            if (i !== drag.fromIndex) drag.tabEls[i].style.transform = ''
+          }
+          return
+        } else {
+          setDropTarget(null)
+        }
+      }
+
+      // Reorder within left group
       const cursorInContainer = ev.clientX - containerLeft + scrollEl.scrollLeft
       let toIndex = drag.fromIndex
       for (let i = 0; i < drag.tabRects.length; i++) {
@@ -214,7 +236,6 @@ export default function WorkerTabBar() {
       }
       drag.currentToIndex = toIndex
 
-      // Shift displaced tabs
       const draggedWidth = drag.tabRects[drag.fromIndex].width
       for (let i = 0; i < drag.tabEls.length; i++) {
         if (i === drag.fromIndex) continue
@@ -244,104 +265,197 @@ export default function WorkerTabBar() {
       const drag = dragRef.current
       if (!drag) return
 
-      // Clear all transforms
       for (const el of drag.tabEls) el.style.transform = ''
 
       if (drag.isDragging) {
-        if (drag.fromIndex !== drag.currentToIndex) {
+        if (dropTarget === 'right' && isSplit) {
+          // Drop onto right pane — activate this tab there (if not already shown)
+          if (workerId !== rightActiveId) {
+            activateTab(workerId, 'right')
+            setFocusedPane('right')
+          }
+        } else if (drag.fromIndex !== drag.currentToIndex) {
           moveTab(drag.fromIndex, drag.currentToIndex)
         }
         setDraggingId(null)
+        setDropTarget(null)
       }
       dragRef.current = null
     }
 
     document.addEventListener('mousemove', onMove)
     document.addEventListener('mouseup', onUp)
-  }, [tabs, moveTab])
+  }, [tabs, moveTab, isSplit, rightActiveId, activateTab, setFocusedPane, dropTarget])
 
-  // Determine underline type for each tab
-  const getUnderlineClass = (workerId: string): string => {
-    const isLeft = workerId === leftActiveId
-    const isRight = isSplit && workerId === rightActiveId
-    if (isLeft && isRight) return 'wt-tab--active-both'
-    if (isLeft) return 'wt-tab--active-left'
-    if (isRight) return 'wt-tab--active-right'
-    return ''
+  // Drag from right group back to left
+  const handleRightTabMouseDown = useCallback((e: React.MouseEvent, workerId: string) => {
+    if (e.button !== 0 || e.altKey || e.ctrlKey || e.metaKey) return
+    const startX = e.clientX
+    let isDragging = false
+
+    const onMove = (ev: MouseEvent) => {
+      const delta = ev.clientX - startX
+      if (!isDragging && Math.abs(delta) < 4) return
+      if (!isDragging) {
+        isDragging = true
+        setDraggingId(workerId)
+      }
+
+      // Check if dragging over the left group area
+      if (tabBarRef.current) {
+        const leftRect = tabBarRef.current.getBoundingClientRect()
+        if (ev.clientX >= leftRect.left && ev.clientX <= leftRect.right) {
+          setDropTarget('left')
+        } else {
+          setDropTarget(null)
+        }
+      }
+    }
+
+    const onUp = () => {
+      document.removeEventListener('mousemove', onMove)
+      document.removeEventListener('mouseup', onUp)
+      if (isDragging) {
+        if (dropTarget === 'left') {
+          // Drop onto left pane — activate this tab there
+          if (workerId !== leftActiveId) {
+            activateTab(workerId, 'left')
+            setFocusedPane('left')
+          }
+        }
+        setDraggingId(null)
+        setDropTarget(null)
+      }
+    }
+
+    document.addEventListener('mousemove', onMove)
+    document.addEventListener('mouseup', onUp)
+  }, [leftActiveId, activateTab, setFocusedPane, dropTarget])
+
+  // --- Split mode: separate left tabs from right-active tab ---
+  const leftTabs = isSplit
+    ? tabs.filter(t => t.workerId !== rightActiveId)
+    : tabs
+  const rightTab = isSplit
+    ? tabs.find(t => t.workerId === rightActiveId)
+    : null
+
+  // --- Render a single tab element ---
+  const renderTab = (
+    workerId: string,
+    isActive: boolean,
+    paneClass: string,
+    onClick: (e: React.MouseEvent, id: string) => void,
+    onMouseDown?: (e: React.MouseEvent, id: string) => void,
+  ) => {
+    const session = sessionMap.get(workerId)
+    if (!session) return null
+
+    return (
+      <button
+        key={workerId}
+        className={`wt-tab ${isActive ? `wt-tab--active ${paneClass}` : ''} ${draggingId === workerId ? 'wt-tab--dragging' : ''}`}
+        role="tab"
+        aria-selected={isActive}
+        onClick={e => { if (!draggingId) onClick(e, workerId) }}
+        onMouseDown={onMouseDown ? e => onMouseDown(e, workerId) : undefined}
+        onAuxClick={e => handleTabAuxClick(e, workerId)}
+      >
+        <span
+          className={`wt-status-dot ${session.status === 'working' ? 'wt-status-dot--pulse' : ''}`}
+          style={{ background: WORKER_STATUS_COLORS[session.status as keyof typeof WORKER_STATUS_COLORS] || 'var(--text-muted)' }}
+        />
+        <span className="wt-tab-name">{session.name}</span>
+        <span
+          className="wt-tab-close"
+          role="button"
+          aria-label={`Close ${session.name}`}
+          onMouseDown={e => e.stopPropagation()}
+          onClick={e => { e.stopPropagation(); closeTab(workerId) }}
+          onAuxClick={e => e.stopPropagation()}
+        >
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+            <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+          </svg>
+        </span>
+      </button>
+    )
   }
 
-  return (
-    <div className={`wt-bar ${draggingId ? 'wt-bar--dragging' : ''}`} role="tablist" aria-label="Worker tabs">
-      <div className={`wt-tabs-scroll wt-tabs-scroll--fade-${scrollFade}`} ref={tabBarRef} onWheel={handleWheel}>
-        {tabs.map(tab => {
-          const session = sessionMap.get(tab.workerId)
-          if (!session) return null
-          const isActive = tab.workerId === leftActiveId || (isSplit && tab.workerId === rightActiveId)
-          const underlineClass = getUnderlineClass(tab.workerId)
-
-          return (
-            <button
-              key={tab.workerId}
-              className={`wt-tab ${underlineClass} ${isActive ? 'wt-tab--active' : ''} ${draggingId === tab.workerId ? 'wt-tab--dragging' : ''}`}
-              role="tab"
-              aria-selected={isActive}
-              onClick={e => { if (!draggingId) handleTabClick(e, tab.workerId) }}
-              onMouseDown={e => handleTabMouseDown(e, tab.workerId)}
-              onAuxClick={e => handleTabAuxClick(e, tab.workerId)}
-            >
-              <span
-                className={`wt-status-dot ${session.status === 'working' ? 'wt-status-dot--pulse' : ''}`}
-                style={{ background: WORKER_STATUS_COLORS[session.status as keyof typeof WORKER_STATUS_COLORS] || 'var(--text-muted)' }}
-              />
-              <span className="wt-tab-name">{session.name}</span>
-              <span
-                className="wt-tab-close"
-                role="button"
-                aria-label={`Close ${session.name}`}
-                onMouseDown={e => e.stopPropagation()}
-                onClick={e => { e.stopPropagation(); closeTab(tab.workerId) }}
-                onAuxClick={e => e.stopPropagation()}
-              >
-                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
-                  <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
-                </svg>
-              </span>
-            </button>
-          )
-        })}
-      </div>
-      <div className="wt-controls">
-        <div className="wt-control-wrapper">
-          <button
-            className="wt-control-btn"
-            onClick={() => setShowPicker(!showPicker)}
-            aria-label="Open worker"
-            title="Open a worker tab"
-          >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-              <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
-            </svg>
-          </button>
-          {showPicker && (
-            <WorkerPicker
-              onClose={() => setShowPicker(false)}
-              onSelect={handlePickerSelect}
-              excludeIds={tabbedIds}
-            />
-          )}
-        </div>
+  const controls = (
+    <div className="wt-controls">
+      <div className="wt-control-wrapper">
         <button
-          className={`wt-control-btn wt-split-btn ${isSplit ? 'wt-split-btn--active' : ''}`}
-          onClick={toggleSplit}
-          disabled={!isSplit && tabs.length < 2}
-          aria-label={isSplit ? 'Exit split view' : 'Split view'}
-          title={isSplit ? 'Exit split view' : tabs.length < 2 ? 'Open another tab to split' : 'Split view'}
+          className="wt-control-btn"
+          onClick={() => setShowPicker(!showPicker)}
+          aria-label="Open worker"
+          title="Open a worker tab"
         >
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-            <rect x="3" y="3" width="18" height="18" rx="2" /><line x1="12" y1="3" x2="12" y2="21" />
+            <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
           </svg>
         </button>
+        {showPicker && (
+          <WorkerPicker
+            onClose={() => setShowPicker(false)}
+            onSelect={handlePickerSelect}
+            excludeIds={tabbedIds}
+          />
+        )}
       </div>
+      <button
+        className={`wt-control-btn wt-split-btn ${isSplit ? 'wt-split-btn--active' : ''}`}
+        onClick={toggleSplit}
+        disabled={!isSplit && tabs.length < 2}
+        aria-label={isSplit ? 'Exit split view' : 'Split view'}
+        title={isSplit ? 'Exit split view' : tabs.length < 2 ? 'Open another tab to split' : 'Split view'}
+      >
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+          <rect x="3" y="3" width="18" height="18" rx="2" /><line x1="12" y1="3" x2="12" y2="21" />
+        </svg>
+      </button>
+    </div>
+  )
+
+  return (
+    <div className={`wt-bar ${draggingId ? 'wt-bar--dragging' : ''} ${isSplit ? `wt-bar--focus-${focusedPane}` : ''}`} role="tablist" aria-label="Worker tabs">
+      {/* Left tab group */}
+      <div
+        className={`wt-tabs-scroll wt-left-group wt-tabs-scroll--fade-${scrollFade} ${dropTarget === 'left' ? 'wt-drop-target' : ''}`}
+        ref={tabBarRef}
+        onWheel={handleWheel}
+      >
+        {leftTabs.map(tab =>
+          renderTab(
+            tab.workerId,
+            tab.workerId === leftActiveId,
+            isSplit ? 'wt-tab--active-left' : '',
+            handleTabClick,
+            handleTabMouseDown,
+          )
+        )}
+      </div>
+
+      {/* Split mode: divider + right group */}
+      {isSplit && rightTab && (
+        <>
+          <div className="wt-divider" />
+          <div
+            className={`wt-right-group ${dropTarget === 'right' ? 'wt-drop-target' : ''}`}
+            ref={rightGroupRef}
+          >
+            {renderTab(
+              rightTab.workerId,
+              true,
+              'wt-tab--active-right',
+              handleRightTabClick,
+              handleRightTabMouseDown,
+            )}
+          </div>
+        </>
+      )}
+
+      {controls}
     </div>
   )
 }

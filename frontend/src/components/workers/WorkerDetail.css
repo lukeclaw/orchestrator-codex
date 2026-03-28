@@ -19,7 +19,7 @@
   align-items: center;
   gap: 16px;
   padding: 10px 16px;
-  background: var(--bg);
+  background: var(--surface);
   border-bottom: 1px solid var(--border-subtle);
   flex-shrink: 0;
   flex-wrap: wrap;
