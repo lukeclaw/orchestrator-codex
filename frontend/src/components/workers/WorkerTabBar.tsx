@@ -87,13 +87,23 @@ function WorkerPicker({ onClose, onSelect, excludeIds }: WorkerPickerProps) {
 export default function WorkerTabBar() {
   const {
     tabs, leftActiveId, rightActiveId, isSplit, focusedPane,
-    activateTab, closeTab, openTab, toggleSplit, enterSplit, setFocusedPane,
+    activateTab, closeTab, openTab, toggleSplit, enterSplit, setFocusedPane, moveTab,
   } = useWorkerTabs()
   const { sessions } = useApp()
 
   const [showPicker, setShowPicker] = useState(false)
   const [scrollFade, setScrollFade] = useState<'none' | 'left' | 'right' | 'both'>('none')
+  const [draggingId, setDraggingId] = useState<string | null>(null)
   const tabBarRef = useRef<HTMLDivElement>(null)
+  const dragRef = useRef<{
+    workerId: string
+    startX: number
+    fromIndex: number
+    currentToIndex: number
+    isDragging: boolean  // true once 4px threshold crossed
+    tabEls: HTMLElement[]
+    tabRects: { id: string; left: number; width: number; center: number }[]
+  } | null>(null)
 
   // Convert vertical wheel to horizontal scroll + update fade indicators
   const handleWheel = useCallback((e: React.WheelEvent<HTMLDivElement>) => {
@@ -158,6 +168,98 @@ export default function WorkerTabBar() {
     openTab(workerId)
   }, [openTab])
 
+  // --- Drag-to-reorder ---
+  const handleTabMouseDown = useCallback((e: React.MouseEvent, workerId: string) => {
+    // Only left button, ignore if modifier keys held
+    if (e.button !== 0 || e.altKey || e.ctrlKey || e.metaKey) return
+    const scrollEl = tabBarRef.current
+    if (!scrollEl) return
+
+    const tabEls = Array.from(scrollEl.querySelectorAll<HTMLElement>('[role="tab"]'))
+    const fromIndex = tabs.findIndex(t => t.workerId === workerId)
+    if (fromIndex === -1) return
+
+    const containerLeft = scrollEl.getBoundingClientRect().left
+    const tabRects = tabEls.map((el, i) => {
+      const r = el.getBoundingClientRect()
+      const sl = scrollEl.scrollLeft
+      return { id: tabs[i]?.workerId ?? '', left: r.left - containerLeft + sl, width: r.width, center: r.left - containerLeft + sl + r.width / 2 }
+    })
+
+    dragRef.current = { workerId, startX: e.clientX, fromIndex, currentToIndex: fromIndex, isDragging: false, tabEls, tabRects }
+
+    const onMove = (ev: MouseEvent) => {
+      const drag = dragRef.current
+      if (!drag) return
+      const delta = ev.clientX - drag.startX
+      // 4px threshold to distinguish click from drag
+      if (!drag.isDragging && Math.abs(delta) < 4) return
+      if (!drag.isDragging) {
+        drag.isDragging = true
+        setDraggingId(workerId)
+      }
+
+      // Move dragged tab via transform
+      const draggedEl = drag.tabEls[drag.fromIndex]
+      if (draggedEl) draggedEl.style.transform = `translateX(${delta}px)`
+
+      // Determine drop index from cursor position
+      const cursorInContainer = ev.clientX - containerLeft + scrollEl.scrollLeft
+      let toIndex = drag.fromIndex
+      for (let i = 0; i < drag.tabRects.length; i++) {
+        if (i === drag.fromIndex) continue
+        const r = drag.tabRects[i]
+        if (i < drag.fromIndex && cursorInContainer < r.center) { toIndex = i; break }
+        if (i > drag.fromIndex && cursorInContainer > r.center) { toIndex = i }
+      }
+      drag.currentToIndex = toIndex
+
+      // Shift displaced tabs
+      const draggedWidth = drag.tabRects[drag.fromIndex].width
+      for (let i = 0; i < drag.tabEls.length; i++) {
+        if (i === drag.fromIndex) continue
+        const el = drag.tabEls[i]
+        if (drag.fromIndex < toIndex && i > drag.fromIndex && i <= toIndex) {
+          el.style.transform = `translateX(${-draggedWidth}px)`
+        } else if (drag.fromIndex > toIndex && i >= toIndex && i < drag.fromIndex) {
+          el.style.transform = `translateX(${draggedWidth}px)`
+        } else {
+          el.style.transform = ''
+        }
+      }
+
+      // Auto-scroll near edges
+      const edgeZone = 40
+      const containerRect = scrollEl.getBoundingClientRect()
+      if (ev.clientX < containerRect.left + edgeZone) {
+        scrollEl.scrollLeft -= 8
+      } else if (ev.clientX > containerRect.right - edgeZone) {
+        scrollEl.scrollLeft += 8
+      }
+    }
+
+    const onUp = () => {
+      document.removeEventListener('mousemove', onMove)
+      document.removeEventListener('mouseup', onUp)
+      const drag = dragRef.current
+      if (!drag) return
+
+      // Clear all transforms
+      for (const el of drag.tabEls) el.style.transform = ''
+
+      if (drag.isDragging) {
+        if (drag.fromIndex !== drag.currentToIndex) {
+          moveTab(drag.fromIndex, drag.currentToIndex)
+        }
+        setDraggingId(null)
+      }
+      dragRef.current = null
+    }
+
+    document.addEventListener('mousemove', onMove)
+    document.addEventListener('mouseup', onUp)
+  }, [tabs, moveTab])
+
   // Determine underline type for each tab
   const getUnderlineClass = (workerId: string): string => {
     const isLeft = workerId === leftActiveId
@@ -169,7 +271,7 @@ export default function WorkerTabBar() {
   }
 
   return (
-    <div className="wt-bar" role="tablist" aria-label="Worker tabs">
+    <div className={`wt-bar ${draggingId ? 'wt-bar--dragging' : ''}`} role="tablist" aria-label="Worker tabs">
       <div className={`wt-tabs-scroll wt-tabs-scroll--fade-${scrollFade}`} ref={tabBarRef} onWheel={handleWheel}>
         {tabs.map(tab => {
           const session = sessionMap.get(tab.workerId)
@@ -180,10 +282,11 @@ export default function WorkerTabBar() {
           return (
             <button
               key={tab.workerId}
-              className={`wt-tab ${underlineClass} ${isActive ? 'wt-tab--active' : ''}`}
+              className={`wt-tab ${underlineClass} ${isActive ? 'wt-tab--active' : ''} ${draggingId === tab.workerId ? 'wt-tab--dragging' : ''}`}
               role="tab"
               aria-selected={isActive}
-              onClick={e => handleTabClick(e, tab.workerId)}
+              onClick={e => { if (!draggingId) handleTabClick(e, tab.workerId) }}
+              onMouseDown={e => handleTabMouseDown(e, tab.workerId)}
               onAuxClick={e => handleTabAuxClick(e, tab.workerId)}
             >
               <span
@@ -195,6 +298,7 @@ export default function WorkerTabBar() {
                 className="wt-tab-close"
                 role="button"
                 aria-label={`Close ${session.name}`}
+                onMouseDown={e => e.stopPropagation()}
                 onClick={e => { e.stopPropagation(); closeTab(tab.workerId) }}
                 onAuxClick={e => e.stopPropagation()}
               >

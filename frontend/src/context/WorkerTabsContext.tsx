@@ -29,6 +29,7 @@ interface WorkerTabsContextValue extends WorkerTabsState {
   exitSplit: () => void
   updateSplitRatio: (ratio: number) => void
   reopenLastClosed: () => void
+  moveTab: (fromIndex: number, toIndex: number) => void
   nextTab: () => void
   prevTab: () => void
 }
@@ -318,6 +319,20 @@ export function WorkerTabsProvider({ children }: { children: ReactNode }) {
     })
   }, [])
 
+  const moveTab = useCallback((fromIndex: number, toIndex: number) => {
+    setState(prev => {
+      if (fromIndex === toIndex) return prev
+      if (fromIndex < 0 || fromIndex >= prev.tabs.length) return prev
+      if (toIndex < 0 || toIndex >= prev.tabs.length) return prev
+      const tabs = [...prev.tabs]
+      const [moved] = tabs.splice(fromIndex, 1)
+      tabs.splice(toIndex, 0, moved)
+      const newState = { ...prev, tabs }
+      saveState(newState)
+      return newState
+    })
+  }, [])
+
   const nextTab = useCallback(() => {
     setState(prev => {
       if (prev.tabs.length <= 1) return prev
@@ -375,6 +390,7 @@ export function WorkerTabsProvider({ children }: { children: ReactNode }) {
     exitSplit,
     updateSplitRatio,
     reopenLastClosed,
+    moveTab,
     nextTab,
     prevTab,
   }

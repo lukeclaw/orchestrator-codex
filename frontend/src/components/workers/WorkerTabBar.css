@@ -134,6 +134,19 @@
   color: var(--text-primary);
 }
 
+/* Drag-to-reorder states */
+.wt-bar--dragging {
+  user-select: none;
+}
+.wt-tab--dragging {
+  z-index: 10;
+  opacity: 0.85;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+.wt-bar--dragging .wt-tab:not(.wt-tab--dragging) {
+  transition: transform 150ms ease;
+}
+
 /* Right-side controls (pinned, never scroll) */
 .wt-controls {
   display: flex;
