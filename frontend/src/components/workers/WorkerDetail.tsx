@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef, useImperativeHandle, forwardRef } from 'react'
+import { useState, useEffect, useCallback, useRef, useImperativeHandle, forwardRef, memo } from 'react'
 import { Link } from 'react-router-dom'
 import { api, ApiError } from '../../api/client'
 import Modal from '../common/Modal'
@@ -28,8 +28,8 @@ export interface WorkerDetailProps {
   workerId: string
   isActive: boolean   // true = this tab is visible in a pane (gates API calls)
   isFocused: boolean  // true = visible + pane is focused (gates terminal focus)
-  onEngagement?: () => void
-  onDelete?: () => void
+  onEngagement?: (workerId: string) => void
+  onDelete?: (workerId: string) => void
 }
 
 export interface WorkerDetailHandle {
@@ -161,8 +161,9 @@ const WorkerDetail = forwardRef<WorkerDetailHandle, WorkerDetailProps>(function 
     setIcliMinimized(interactiveCliMinimized.has(workerId))
   }, [workerId, interactiveCliMinimized])
 
-  // Check interactive CLI status on mount — restore previous state
+  // Check interactive CLI status — only when this tab is active
   useEffect(() => {
+    if (!isActive) return
     api<{ active: boolean }>(`/api/sessions/${workerId}/interactive-cli`)
       .then(r => {
         if (r.active) {
@@ -172,7 +173,7 @@ const WorkerDetail = forwardRef<WorkerDetailHandle, WorkerDetailProps>(function 
       })
       .catch(() => {})
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [workerId])
+  }, [workerId, isActive])
 
   // Auto-show browser view overlay when it becomes active (via WS event)
   useEffect(() => {
@@ -201,8 +202,9 @@ const WorkerDetail = forwardRef<WorkerDetailHandle, WorkerDetailProps>(function 
     setBvMinimized(browserViewMinimized.has(workerId))
   }, [workerId, browserViewMinimized])
 
-  // Check browser view status on mount — restore previous state
+  // Check browser view status — only when this tab is active
   useEffect(() => {
+    if (!isActive) return
     api<{ active: boolean }>(`/api/sessions/${workerId}/browser-view`)
       .then(r => {
         if (r.active) {
@@ -212,16 +214,17 @@ const WorkerDetail = forwardRef<WorkerDetailHandle, WorkerDetailProps>(function 
       })
       .catch(() => {})
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [workerId])
+  }, [workerId, isActive])
 
-  // Record that user viewed this session
+  // Record that user viewed this session — only when this tab is active
   useEffect(() => {
+    if (!isActive) return
     api(`/api/sessions/${workerId}/viewed`, { method: 'POST' }).catch(() => {})
-  }, [workerId])
+  }, [workerId, isActive])
 
-  // Fetch tunnels for remote workers (rdev and SSH)
+  // Fetch tunnels for remote workers — only when this tab is active
   useEffect(() => {
-    if (!isRemote) {
+    if (!isActive || !isRemote) {
       setTunnels({})
       return
     }
@@ -245,7 +248,7 @@ const WorkerDetail = forwardRef<WorkerDetailHandle, WorkerDetailProps>(function 
     return () => {
       clearInterval(tunnelIntervalRef.current)
     }
-  }, [workerId, isRemote])
+  }, [workerId, isRemote, isActive])
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -387,7 +390,7 @@ const WorkerDetail = forwardRef<WorkerDetailHandle, WorkerDetailProps>(function 
     try {
       await api(`/api/sessions/${workerId}`, { method: 'DELETE' })
       refresh()
-      onDelete?.()
+      onDelete?.(workerId)
     } catch (e) {
       notify(e instanceof Error ? e.message : 'Failed to delete', 'error')
     }
@@ -819,7 +822,7 @@ const WorkerDetail = forwardRef<WorkerDetailHandle, WorkerDetailProps>(function 
               reconnectStep={session.reconnect_step}
               onFocusRef={(fn) => { terminalFocusRef.current = fn; if (isFocused) requestAnimationFrame(() => fn()) }}
               onFitRef={(fn) => { terminalFitRef.current = fn }}
-              onTerminalInput={onEngagement}
+              onTerminalInput={() => onEngagement?.(workerId)}
               onImagePaste={handleImagePaste}
               onTextPaste={handleTextPaste}
               onFileDrop={handleFileDrop}
@@ -995,4 +998,4 @@ const WorkerDetail = forwardRef<WorkerDetailHandle, WorkerDetailProps>(function 
   )
 })
 
-export default WorkerDetail
+export default memo(WorkerDetail)

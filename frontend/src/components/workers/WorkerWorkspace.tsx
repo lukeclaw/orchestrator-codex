@@ -1,4 +1,4 @@
-import { useEffect, useRef, useCallback, useMemo } from 'react'
+import { useEffect, useRef, useCallback, useMemo, useState } from 'react'
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
 import { useWorkerTabs } from '../../context/WorkerTabsContext'
 import { useBrainPanel } from '../../context/BrainPanelContext'
@@ -189,49 +189,68 @@ export default function WorkerWorkspace() {
     document.addEventListener('mouseup', onUp)
   }, [splitRatio, updateSplitRatio])
 
-  // --- Compute live tab IDs per pane (independent memos so left changes don't affect right) ---
-  // Stabilize: only recompute when the SET of tab IDs changes, not when timestamps update.
-  // This prevents tab switches from evicting/re-mounting hidden workers.
+  // --- Grow-only mounted sets per pane (lazy mount on first activation) ---
+  // Workers mount when first activated and stay mounted until their tab is closed.
+  // The array never reorders — new workers append at the end. This prevents
+  // remounting on tab switch (stable keys, stable array reference).
   const tabWorkerIds = useMemo(() => tabs.map(t => t.workerId).join(','), [tabs])
+  const [leftMounted, setLeftMounted] = useState<string[]>([])
+  const [rightMounted, setRightMounted] = useState<string[]>([])
 
-  const leftLiveIds = useMemo(() => {
-    const live = new Set<string>()
-    if (leftActiveId) live.add(leftActiveId)
-    // Fill remaining slots with other tab IDs (stable order — insertion order from tabs array)
-    for (const t of tabs) {
-      if (live.size >= MAX_LIVE_INSTANCES) break
-      live.add(t.workerId)
-    }
-    return live
-  }, [tabWorkerIds, leftActiveId]) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (!leftActiveId) return
+    setLeftMounted(prev => {
+      if (prev.includes(leftActiveId)) return prev // same ref → no re-render
+      const next = [...prev, leftActiveId]
+      if (next.length > MAX_LIVE_INSTANCES) {
+        const evictIdx = next.findIndex(id => id !== leftActiveId)
+        if (evictIdx !== -1) next.splice(evictIdx, 1)
+      }
+      return next
+    })
+  }, [leftActiveId])
 
-  const rightLiveIds = useMemo(() => {
-    const live = new Set<string>()
-    if (rightActiveId) live.add(rightActiveId)
-    for (const t of tabs) {
-      if (live.size >= MAX_LIVE_INSTANCES) break
-      live.add(t.workerId)
-    }
-    return live
-  }, [tabWorkerIds, rightActiveId]) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (!rightActiveId) return
+    setRightMounted(prev => {
+      if (prev.includes(rightActiveId)) return prev
+      const next = [...prev, rightActiveId]
+      if (next.length > MAX_LIVE_INSTANCES) {
+        const evictIdx = next.findIndex(id => id !== rightActiveId)
+        if (evictIdx !== -1) next.splice(evictIdx, 1)
+      }
+      return next
+    })
+  }, [rightActiveId])
 
-  // --- Engagement callback (auto-pin preview tab) ---
+  // Prune when tabs are closed
+  useEffect(() => {
+    const ids = new Set(tabs.map(t => t.workerId))
+    setLeftMounted(prev => { const next = prev.filter(id => ids.has(id)); return next.length === prev.length ? prev : next })
+    setRightMounted(prev => { const next = prev.filter(id => ids.has(id)); return next.length === prev.length ? prev : next })
+  }, [tabWorkerIds]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // --- Stable callbacks (no per-worker closures — WorkerDetail calls with its own workerId) ---
   const handleEngagement = useCallback((workerId: string) => {
     pinTab(workerId)
   }, [pinTab])
 
-  // --- Delete callback ---
   const handleDelete = useCallback((workerId: string) => {
     closeTab(workerId)
   }, [closeTab])
 
-  // --- Ref setter for WorkerDetail handles ---
-  const setWorkerRef = useCallback((key: string, handle: WorkerDetailHandle | null) => {
-    if (handle) {
-      workerRefs.current.set(key, handle)
-    } else {
-      workerRefs.current.delete(key)
+  // --- Stable ref callbacks — cached per key to avoid React cycling refs ---
+  const refCallbacks = useRef(new Map<string, (h: WorkerDetailHandle | null) => void>())
+  const getRefCallback = useCallback((key: string) => {
+    let fn = refCallbacks.current.get(key)
+    if (!fn) {
+      fn = (handle: WorkerDetailHandle | null) => {
+        if (handle) workerRefs.current.set(key, handle)
+        else workerRefs.current.delete(key)
+      }
+      refCallbacks.current.set(key, fn)
     }
+    return fn
   }, [])
 
   // --- Refit terminal when tab becomes active ---
@@ -255,11 +274,11 @@ export default function WorkerWorkspace() {
   }, [rightActiveId])
 
   // --- Render pane content ---
-  // Both panes use hidden-DOM preservation with independent live ID sets
+  // Both panes use hidden-DOM preservation with grow-only mounted arrays
   const renderPane = (pane: 'left' | 'right') => {
     const isLeft = pane === 'left'
     const activeId = isLeft ? leftActiveId : rightActiveId
-    const liveIds = isLeft ? leftLiveIds : rightLiveIds
+    const mounted = isLeft ? leftMounted : rightMounted
     const isFocusedPane = focusedPane === pane
 
     if (!isLeft && !activeId) return null
@@ -270,7 +289,7 @@ export default function WorkerWorkspace() {
         style={isSplit ? { width: `${(isLeft ? splitRatio : 1 - splitRatio) * 100}%` } : undefined}
         onClick={() => { if (isSplit) setFocusedPane(pane) }}
       >
-        {Array.from(liveIds).map(workerId => {
+        {mounted.map(workerId => {
           const isVisible = workerId === activeId
           const refKey = `${pane}-${workerId}`
           return (
@@ -279,12 +298,12 @@ export default function WorkerWorkspace() {
               className={isVisible ? 'ww-pane-content ww-pane-content--visible' : 'ww-pane-content ww-pane-content--hidden'}
             >
               <WorkerDetail
-                ref={handle => setWorkerRef(refKey, handle)}
+                ref={getRefCallback(refKey)}
                 workerId={workerId}
                 isActive={isVisible}
                 isFocused={isVisible && isFocusedPane}
-                onEngagement={() => handleEngagement(workerId)}
-                onDelete={() => handleDelete(workerId)}
+                onEngagement={handleEngagement}
+                onDelete={handleDelete}
               />
             </div>
           )
