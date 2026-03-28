@@ -23,7 +23,7 @@ export default function WorkerWorkspace() {
     tabs, leftActiveId, rightActiveId, isSplit, focusedPane, splitRatio,
     openTab, closeTab, activateTab, setFocusedPane,
     enterSplit, exitSplit, updateSplitRatio,
-    nextTab, prevTab, reopenLastClosed,
+    nextTab, prevTab, reopenLastClosed, restoreFromUrl,
   } = useWorkerTabs()
 
   // Refs for URL sync guard and resize
@@ -33,29 +33,40 @@ export default function WorkerWorkspace() {
   const workerRefs = useRef<Map<string, WorkerDetailHandle>>(new Map())
 
   // --- URL sync: incoming (URL → tab state) ---
+  // Read right pane from query param (window.location, NOT useSearchParams, to avoid
+  // stale React Router state — outgoing sync uses replaceState which bypasses Router).
   useEffect(() => {
     if (!urlWorkerId) return
     if (urlSyncRef.current) {
       urlSyncRef.current = false
       return
     }
-    openTab(urlWorkerId)
+    const params = new URLSearchParams(window.location.search)
+    const rightId = params.get('right')
+    if (rightId && rightId !== urlWorkerId) {
+      restoreFromUrl(urlWorkerId, rightId)
+    } else {
+      openTab(urlWorkerId)
+    }
   }, [urlWorkerId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // --- URL sync: outgoing (tab state → URL) ---
   // Use history.replaceState directly to avoid React Router re-render cycle.
-  // Only the active worker ID goes in the URL. Split state lives in context/sessionStorage
-  // (replaceState bypasses React Router, so query params would get stale and cause bugs).
+  // Left pane always goes in the path; right pane in ?right= when split is on.
+  // Incoming sync reads from window.location (not useSearchParams) to stay in sync.
   useEffect(() => {
     if (tabs.length === 0) return
-    const activeId = focusedPane === 'left' ? leftActiveId : rightActiveId
-    if (!activeId) return
-    const targetPath = `/workers/${activeId}`
-    if (targetPath !== window.location.pathname) {
-      urlSyncRef.current = true
-      window.history.replaceState(null, '', targetPath)
+    if (!leftActiveId) return
+    let targetUrl = `/workers/${leftActiveId}`
+    if (isSplit && rightActiveId) {
+      targetUrl += `?right=${rightActiveId}`
     }
-  }, [leftActiveId, rightActiveId, focusedPane]) // eslint-disable-line react-hooks/exhaustive-deps
+    const currentUrl = window.location.pathname + window.location.search
+    if (targetUrl !== currentUrl) {
+      urlSyncRef.current = true
+      window.history.replaceState(null, '', targetUrl)
+    }
+  }, [leftActiveId, rightActiveId, isSplit]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // --- Navigate to /workers when all tabs are closed ---
   // Debounce: wait 300ms before redirecting, in case a new tab is about to open.

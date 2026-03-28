@@ -32,6 +32,8 @@ interface WorkerTabsContextValue extends WorkerTabsState {
   moveTab: (fromIndex: number, toIndex: number) => void
   nextTab: () => void
   prevTab: () => void
+  /** Atomically restore left + right tabs from URL (e.g. /workers/A?right=B) */
+  restoreFromUrl: (leftId: string, rightId: string) => void
 }
 
 // --- Constants ---
@@ -319,6 +321,38 @@ export function WorkerTabsProvider({ children }: { children: ReactNode }) {
     })
   }, [])
 
+  const restoreFromUrl = useCallback((leftId: string, rightId: string) => {
+    setState(prev => {
+      const now = Date.now()
+      let tabs = [...prev.tabs]
+
+      // Ensure left tab exists
+      if (!tabs.find(t => t.workerId === leftId)) {
+        tabs = [...tabs, { workerId: leftId, openedAt: now, lastActiveAt: now }]
+      } else {
+        tabs = tabs.map(t => t.workerId === leftId ? { ...t, lastActiveAt: now } : t)
+      }
+
+      // Ensure right tab exists
+      if (!tabs.find(t => t.workerId === rightId)) {
+        tabs = [...tabs, { workerId: rightId, openedAt: now, lastActiveAt: now }]
+      } else {
+        tabs = tabs.map(t => t.workerId === rightId ? { ...t, lastActiveAt: now } : t)
+      }
+
+      const newState = {
+        ...prev,
+        tabs,
+        leftActiveId: leftId,
+        rightActiveId: rightId,
+        isSplit: true,
+        focusedPane: 'left' as const,
+      }
+      saveState(newState)
+      return newState
+    })
+  }, [])
+
   const moveTab = useCallback((fromIndex: number, toIndex: number) => {
     setState(prev => {
       if (fromIndex === toIndex) return prev
@@ -393,6 +427,7 @@ export function WorkerTabsProvider({ children }: { children: ReactNode }) {
     moveTab,
     nextTab,
     prevTab,
+    restoreFromUrl,
   }
 
   return (
