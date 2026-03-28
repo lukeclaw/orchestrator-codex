@@ -1,0 +1,312 @@
+import { useEffect, useRef, useCallback, useMemo } from 'react'
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
+import { useWorkerTabs } from '../../context/WorkerTabsContext'
+import { useBrainPanel } from '../../context/BrainPanelContext'
+import { useApp } from '../../context/AppContext'
+import { useNotify } from '../../context/NotificationContext'
+import WorkerTabBar from './WorkerTabBar'
+import WorkerDetail from './WorkerDetail'
+import type { WorkerDetailHandle } from './WorkerDetail'
+import './WorkerWorkspace.css'
+
+const MAX_LIVE_INSTANCES = 8
+const MIN_PANE_WIDTH = 360
+
+export default function WorkerWorkspace() {
+  const { id: urlWorkerId } = useParams<{ id: string }>()
+  const [searchParams, setSearchParams] = useSearchParams()
+  const navigate = useNavigate()
+  const notify = useNotify()
+  const { sessions } = useApp()
+  const brainPanel = useBrainPanel()
+
+  const {
+    tabs, leftActiveId, rightActiveId, isSplit, focusedPane, splitRatio,
+    openTab, closeTab, pinTab, activateTab, setFocusedPane,
+    enterSplit, exitSplit, updateSplitRatio,
+    nextTab, prevTab, reopenLastClosed,
+  } = useWorkerTabs()
+
+  // Refs for URL sync guard and resize
+  const urlSyncRef = useRef(false)
+  const workspaceRef = useRef<HTMLDivElement>(null)
+  const resizingRef = useRef(false)
+  const workerRefs = useRef<Map<string, WorkerDetailHandle>>(new Map())
+
+  // --- URL sync: incoming (URL → tab state) ---
+  useEffect(() => {
+    if (!urlWorkerId) return
+    if (urlSyncRef.current) {
+      urlSyncRef.current = false
+      return
+    }
+    const pin = searchParams.get('pin') === 'true'
+    // Clear the ?pin param without triggering a re-navigation
+    if (pin) {
+      setSearchParams({}, { replace: true })
+    }
+    openTab(urlWorkerId, pin)
+  }, [urlWorkerId]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // --- URL sync: outgoing (tab state → URL) ---
+  useEffect(() => {
+    if (tabs.length === 0) return  // No tabs open, don't touch URL
+    const activeId = focusedPane === 'left' ? leftActiveId : rightActiveId
+    if (activeId && activeId !== urlWorkerId) {
+      urlSyncRef.current = true
+      navigate(`/workers/${activeId}`, { replace: true })
+    }
+  }, [leftActiveId, rightActiveId, focusedPane]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // --- Navigate to /workers when all tabs are closed ---
+  // Guard: don't redirect if we have a urlWorkerId (tab is about to be opened by the URL sync effect)
+  useEffect(() => {
+    if (tabs.length === 0 && !urlWorkerId) {
+      navigate('/workers', { replace: true })
+    }
+  }, [tabs.length]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // --- Auto-close tabs for deleted workers (silently) ---
+  useEffect(() => {
+    const sessionIds = new Set(sessions.map(s => s.id))
+    for (const tab of tabs) {
+      if (!sessionIds.has(tab.workerId)) {
+        closeTab(tab.workerId)
+      }
+    }
+  }, [sessions]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // --- Brain panel auto-collapse on split ---
+  useEffect(() => {
+    if (!isSplit) return
+    const workspace = workspaceRef.current
+    if (!workspace) return
+    const availableWidth = workspace.getBoundingClientRect().width
+    if (availableWidth < MIN_PANE_WIDTH * 2 && !brainPanel.collapsed) {
+      brainPanel.collapse()
+      notify('Brain panel collapsed to fit split view', 'info')
+    }
+  }, [isSplit]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // --- Window resize: auto-collapse split if too narrow ---
+  // Skip the first 500ms after split opens to avoid racing with brain panel collapse animation
+  useEffect(() => {
+    if (!isSplit) return
+    const workspace = workspaceRef.current
+    if (!workspace) return
+    let armed = false
+    const armTimer = setTimeout(() => { armed = true }, 500)
+    const observer = new ResizeObserver(([entry]) => {
+      if (armed && entry.contentRect.width < MIN_PANE_WIDTH * 2) {
+        exitSplit()
+        notify('Split view closed — not enough space', 'info')
+      }
+    })
+    observer.observe(workspace)
+    return () => { clearTimeout(armTimer); observer.disconnect() }
+  }, [isSplit, exitSplit, notify])
+
+  // --- Keyboard shortcuts ---
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      const meta = e.metaKey || e.ctrlKey
+
+      // Cmd+Shift+[ — previous tab
+      if (meta && e.shiftKey && e.key === '[') {
+        e.preventDefault()
+        prevTab()
+        return
+      }
+      // Cmd+Shift+] — next tab
+      if (meta && e.shiftKey && e.key === ']') {
+        e.preventDefault()
+        nextTab()
+        return
+      }
+      // Cmd+W — close tab (only if no open editor tabs in focused WorkerDetail)
+      if (meta && e.key === 'w' && !e.shiftKey) {
+        const activeId = focusedPane === 'left' ? leftActiveId : rightActiveId
+        if (activeId) {
+          const handle = workerRefs.current.get(`${focusedPane}-${activeId}`)
+          if (!handle?.hasEditorTabs()) {
+            e.preventDefault()
+            closeTab(activeId)
+          }
+        }
+        return
+      }
+      // Cmd+\ — toggle split
+      if (meta && e.key === '\\') {
+        e.preventDefault()
+        if (isSplit) {
+          exitSplit()
+        } else {
+          enterSplit()
+        }
+        return
+      }
+      // Ctrl+1/2 — focus left/right pane
+      if (e.ctrlKey && !e.metaKey && !e.shiftKey) {
+        if (e.key === '1') { e.preventDefault(); setFocusedPane('left'); return }
+        if (e.key === '2' && isSplit) { e.preventDefault(); setFocusedPane('right'); return }
+      }
+      // Cmd+Shift+T — reopen last closed
+      if (meta && e.shiftKey && e.key === 'T') {
+        e.preventDefault()
+        reopenLastClosed()
+      }
+    }
+    document.addEventListener('keydown', handler)
+    return () => document.removeEventListener('keydown', handler)
+  }, [focusedPane, leftActiveId, rightActiveId, isSplit, prevTab, nextTab, closeTab, enterSplit, exitSplit, setFocusedPane, reopenLastClosed])
+
+  // --- Split resize handle ---
+  const handleSplitResizeStart = useCallback((e: React.MouseEvent) => {
+    e.preventDefault()
+    const workspace = workspaceRef.current
+    if (!workspace) return
+    const startX = e.clientX
+    const containerWidth = workspace.getBoundingClientRect().width
+    const startRatio = splitRatio
+    resizingRef.current = true
+    workspace.classList.add('ww-resizing')
+
+    const onMove = (ev: MouseEvent) => {
+      const delta = ev.clientX - startX
+      const newRatio = startRatio + delta / containerWidth
+      const minRatio = MIN_PANE_WIDTH / containerWidth
+      const maxRatio = 1 - minRatio
+      updateSplitRatio(Math.max(minRatio, Math.min(maxRatio, newRatio)))
+    }
+    const onUp = () => {
+      resizingRef.current = false
+      workspace.classList.remove('ww-resizing')
+      document.removeEventListener('mousemove', onMove)
+      document.removeEventListener('mouseup', onUp)
+    }
+    document.addEventListener('mousemove', onMove)
+    document.addEventListener('mouseup', onUp)
+  }, [splitRatio, updateSplitRatio])
+
+  // --- Compute live tab IDs per pane (independent memos so left changes don't affect right) ---
+  const leftLiveIds = useMemo(() => {
+    const live = new Set<string>()
+    if (leftActiveId) live.add(leftActiveId)
+    const sorted = [...tabs]
+      .filter(t => !live.has(t.workerId))
+      .sort((a, b) => b.lastActiveAt - a.lastActiveAt)
+    for (const t of sorted) {
+      if (live.size >= MAX_LIVE_INSTANCES) break
+      live.add(t.workerId)
+    }
+    return live
+  }, [tabs, leftActiveId])
+
+  const rightLiveIds = useMemo(() => {
+    const live = new Set<string>()
+    if (rightActiveId) live.add(rightActiveId)
+    const sorted = [...tabs]
+      .filter(t => !live.has(t.workerId))
+      .sort((a, b) => b.lastActiveAt - a.lastActiveAt)
+    for (const t of sorted) {
+      if (live.size >= MAX_LIVE_INSTANCES) break
+      live.add(t.workerId)
+    }
+    return live
+  }, [tabs, rightActiveId])
+
+  // --- Engagement callback (auto-pin preview tab) ---
+  const handleEngagement = useCallback((workerId: string) => {
+    pinTab(workerId)
+  }, [pinTab])
+
+  // --- Delete callback ---
+  const handleDelete = useCallback((workerId: string) => {
+    closeTab(workerId)
+  }, [closeTab])
+
+  // --- Ref setter for WorkerDetail handles ---
+  const setWorkerRef = useCallback((key: string, handle: WorkerDetailHandle | null) => {
+    if (handle) {
+      workerRefs.current.set(key, handle)
+    } else {
+      workerRefs.current.delete(key)
+    }
+  }, [])
+
+  // --- Refit terminal when tab becomes active ---
+  const prevLeftRef = useRef(leftActiveId)
+  const prevRightRef = useRef(rightActiveId)
+  useEffect(() => {
+    if (leftActiveId && leftActiveId !== prevLeftRef.current) {
+      requestAnimationFrame(() => {
+        workerRefs.current.get(`left-${leftActiveId}`)?.refitTerminal()
+      })
+    }
+    prevLeftRef.current = leftActiveId
+  }, [leftActiveId])
+  useEffect(() => {
+    if (rightActiveId && rightActiveId !== prevRightRef.current) {
+      requestAnimationFrame(() => {
+        workerRefs.current.get(`right-${rightActiveId}`)?.refitTerminal()
+      })
+    }
+    prevRightRef.current = rightActiveId
+  }, [rightActiveId])
+
+  // --- Render pane content ---
+  // Both panes use hidden-DOM preservation with independent live ID sets
+  const renderPane = (pane: 'left' | 'right') => {
+    const isLeft = pane === 'left'
+    const activeId = isLeft ? leftActiveId : rightActiveId
+    const liveIds = isLeft ? leftLiveIds : rightLiveIds
+    const isFocusedPane = focusedPane === pane
+
+    if (!isLeft && !activeId) return null
+
+    return (
+      <div
+        className={`ww-pane ${isFocusedPane ? 'ww-pane--focused' : ''} ${isLeft ? 'ww-pane--left' : 'ww-pane--right'}`}
+        style={isSplit ? { width: `${(isLeft ? splitRatio : 1 - splitRatio) * 100}%` } : undefined}
+        onClick={() => { if (isSplit) setFocusedPane(pane) }}
+      >
+        {Array.from(liveIds).map(workerId => {
+          const isVisible = workerId === activeId
+          const refKey = `${pane}-${workerId}`
+          return (
+            <div
+              key={refKey}
+              className={isVisible ? 'ww-pane-content ww-pane-content--visible' : 'ww-pane-content ww-pane-content--hidden'}
+            >
+              <WorkerDetail
+                ref={handle => setWorkerRef(refKey, handle)}
+                workerId={workerId}
+                isFocused={isVisible && isFocusedPane}
+                onEngagement={() => handleEngagement(workerId)}
+                onDelete={() => handleDelete(workerId)}
+              />
+            </div>
+          )
+        })}
+      </div>
+    )
+  }
+
+  return (
+    <div className="worker-workspace" ref={workspaceRef}>
+      <WorkerTabBar />
+      <div className="ww-pane-container">
+        {renderPane('left')}
+        {isSplit && (
+          <>
+            <div
+              className="ww-resize-handle"
+              onMouseDown={handleSplitResizeStart}
+            />
+            {renderPane('right')}
+          </>
+        )}
+      </div>
+    </div>
+  )
+}

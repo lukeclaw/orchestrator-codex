@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { api } from '../../api/client'
 import { timeAgo } from '../common/TimeAgo'
@@ -75,10 +75,27 @@ export default function TaskWorkerPreview({ worker, onRefresh }: TaskWorkerPrevi
 
   const isDisconnected = worker.status === 'disconnected'
 
+  const clickTimerRef = useRef<number | null>(null)
+  const handleClick = useCallback(() => {
+    if (clickTimerRef.current) return
+    clickTimerRef.current = window.setTimeout(() => {
+      clickTimerRef.current = null
+      navigate(`/workers/${worker.id}`)
+    }, 200)
+  }, [navigate, worker.id])
+  const handleDoubleClick = useCallback(() => {
+    if (clickTimerRef.current) {
+      clearTimeout(clickTimerRef.current)
+      clickTimerRef.current = null
+    }
+    navigate(`/workers/${worker.id}?pin=true`)
+  }, [navigate, worker.id])
+
   return (
     <div
       className={`tdp-card tdp-worker-preview-card status-${worker.status}`}
-      onClick={() => navigate(`/workers/${worker.id}`)}
+      onClick={handleClick}
+      onDoubleClick={handleDoubleClick}
     >
       <div className="tdp-worker-preview-header">
         <div className="tdp-worker-preview-left">

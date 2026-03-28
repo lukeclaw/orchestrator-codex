@@ -8,7 +8,7 @@ import ErrorBoundary from './components/common/ErrorBoundary'
 import AppLayout from './layouts/AppLayout'
 import DashboardPage from './pages/DashboardPage'
 import WorkersPage from './pages/WorkersPage'
-import SessionDetailPage from './pages/SessionDetailPage'
+import WorkerWorkspace from './components/workers/WorkerWorkspace'
 import ProjectsPage from './pages/ProjectsPage'
 import ProjectDetailPage from './pages/ProjectDetailPage'
 import TasksPage from './pages/TasksPage'
@@ -41,7 +41,7 @@ export default function App() {
               <Route path="/prs" element={<PRsPage />} />
               <Route path="/workers" element={<WorkersPage />} />
               <Route path="/workers/rdevs" element={<WorkersPage />} />
-              <Route path="/workers/:id" element={<SessionDetailPage />} />
+              <Route path="/workers/:id" element={<WorkerWorkspace />} />
               <Route path="/context" element={<ContextPage />} />
               <Route path="/context/brain-memory" element={<ContextPage />} />
               <Route path="/skills" element={<SkillsPage />} />

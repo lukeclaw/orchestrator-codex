@@ -1,7 +1,8 @@
 import { useEffect } from 'react'
 import { Outlet, useSearchParams, useLocation } from 'react-router-dom'
 import { useSidebarState } from '../hooks/useSidebarState'
-import { useBrainPanelState } from '../hooks/useBrainPanelState'
+import { BrainPanelProvider, useBrainPanel } from '../context/BrainPanelContext'
+import { WorkerTabsProvider } from '../context/WorkerTabsContext'
 import { useNotifications } from '../context/NotificationContext'
 import { useApp } from '../context/AppContext'
 import { savePageFilters } from '../utils/filterPersistence'
@@ -22,9 +23,9 @@ function FilterSync() {
   return null
 }
 
-export default function AppLayout() {
+function AppLayoutInner() {
   const { collapsed, toggle } = useSidebarState()
-  const brainPanel = useBrainPanelState()
+  const brainPanel = useBrainPanel()
   const notifications = useNotifications()
   const { loading, projects, tasks, workers } = useApp()
 
@@ -37,7 +38,9 @@ export default function AppLayout() {
         <Header />
         <main className="app-main">
           <FilterSync />
-          <Outlet />
+          <WorkerTabsProvider>
+            <Outlet />
+          </WorkerTabsProvider>
         </main>
       </div>
       <BrainPanel
@@ -51,5 +54,13 @@ export default function AppLayout() {
       <NotificationToast notifications={notifications} />
       <GettingStartedModal show={showGettingStarted} />
     </div>
+  )
+}
+
+export default function AppLayout() {
+  return (
+    <BrainPanelProvider>
+      <AppLayoutInner />
+    </BrainPanelProvider>
   )
 }

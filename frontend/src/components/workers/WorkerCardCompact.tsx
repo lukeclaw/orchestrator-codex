@@ -1,3 +1,4 @@
+import { useRef, useCallback } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import type { Session, Task } from '../../api/types'
 import { timeAgo } from '../common/TimeAgo'
@@ -12,6 +13,23 @@ interface Props {
 
 export default function WorkerCardCompact({ session, assignedTask, allRdev }: Props) {
   const navigate = useNavigate()
+  const clickTimerRef = useRef<number | null>(null)
+
+  const handleClick = useCallback(() => {
+    if (clickTimerRef.current) return
+    clickTimerRef.current = window.setTimeout(() => {
+      clickTimerRef.current = null
+      navigate(`/workers/${session.id}`)
+    }, 200)
+  }, [navigate, session.id])
+
+  const handleDoubleClick = useCallback(() => {
+    if (clickTimerRef.current) {
+      clearTimeout(clickTimerRef.current)
+      clickTimerRef.current = null
+    }
+    navigate(`/workers/${session.id}?pin=true`)
+  }, [navigate, session.id])
 
   const previewLines = session.preview ? session.preview.split('\n').slice(-8).join('\n') : ''
 
@@ -26,7 +44,8 @@ export default function WorkerCardCompact({ session, assignedTask, allRdev }: Pr
       className={`wcc-card ${session.status}`}
       data-testid="worker-card"
       data-session-id={session.id}
-      onClick={() => navigate(`/workers/${session.id}`)}
+      onClick={handleClick}
+      onDoubleClick={handleDoubleClick}
     >
       <div className="wcc-header">
         <StatusDot status={session.status} />

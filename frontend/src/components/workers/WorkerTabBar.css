@@ -1,0 +1,248 @@
+/* Tab bar container — sits on a darker strip so active tabs "emerge" from it.
+   No bottom border; the accent underline + topbar border handle separation. */
+.wt-bar {
+  display: flex;
+  align-items: stretch;
+  height: 36px;
+  background: var(--surface-inset, var(--bg));
+  flex-shrink: 0;
+  z-index: 110;
+  position: relative;
+}
+
+/* Scrollable tab area */
+.wt-tabs-scroll {
+  display: flex;
+  align-items: stretch;
+  flex: 1;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.wt-tabs-scroll::-webkit-scrollbar {
+  display: none;
+}
+
+/* Dynamic fade masks — only show on the side(s) that have overflow */
+.wt-tabs-scroll--fade-left {
+  -webkit-mask-image: linear-gradient(to right, transparent, black 24px);
+  mask-image: linear-gradient(to right, transparent, black 24px);
+}
+.wt-tabs-scroll--fade-right {
+  -webkit-mask-image: linear-gradient(to left, transparent, black 24px);
+  mask-image: linear-gradient(to left, transparent, black 24px);
+}
+.wt-tabs-scroll--fade-both {
+  -webkit-mask-image: linear-gradient(to right, transparent, black 24px, black calc(100% - 24px), transparent);
+  mask-image: linear-gradient(to right, transparent, black 24px, black calc(100% - 24px), transparent);
+}
+
+/* Individual tab */
+.wt-tab {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 12px;
+  min-width: 0;
+  max-width: 180px;
+  height: 100%;
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+  position: relative;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.wt-tab:hover {
+  background: var(--surface-hover);
+  color: var(--text-primary);
+}
+.wt-tab:hover .wt-tab-close {
+  opacity: 1;
+}
+
+/* Active tab states — background matches topbar (--bg) so the tab
+   visually "connects" to the content area below, like Chrome tabs */
+.wt-tab--active {
+  color: var(--text-primary);
+}
+.wt-tab--active .wt-tab-close {
+  opacity: 0.6;
+}
+.wt-tab--active:hover .wt-tab-close {
+  opacity: 1;
+}
+.wt-tab--active-left {
+  border-bottom-color: var(--accent);
+  color: var(--text-primary);
+}
+.wt-tab--active-right {
+  border-bottom-color: var(--purple);
+  color: var(--text-primary);
+}
+/* Same worker in both panes — split gradient underline */
+.wt-tab--active-both {
+  border-bottom-color: var(--accent);
+  border-image: linear-gradient(to right, var(--accent) 50%, var(--purple) 50%) 1;
+  color: var(--text-primary);
+}
+
+/* Preview tab — italic name */
+.wt-tab--preview .wt-tab-name {
+  font-style: italic;
+}
+
+/* Status dot */
+.wt-status-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.wt-status-dot--pulse {
+  animation: wt-pulse 2s ease-in-out infinite;
+}
+@keyframes wt-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+/* Tab name */
+.wt-tab-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 140px;
+}
+
+/* Close button — hidden by default, visible on hover/active */
+.wt-tab-close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+  color: var(--text-muted);
+  opacity: 0;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background 0.15s, color 0.15s, opacity 0.15s;
+}
+.wt-tab-close:hover {
+  background: var(--surface-hover);
+  color: var(--text-primary);
+}
+
+/* Right-side controls (pinned, never scroll) */
+.wt-controls {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 0 8px;
+  flex-shrink: 0;
+  border-left: 1px solid var(--border-subtle);
+}
+.wt-control-wrapper {
+  position: relative;
+}
+.wt-control-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  border-radius: var(--radius);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.wt-control-btn:hover {
+  background: var(--surface-hover);
+  color: var(--text-primary);
+}
+.wt-split-btn--active {
+  color: var(--accent);
+}
+.wt-split-btn--active:hover {
+  color: var(--accent);
+  background: rgba(var(--accent-rgb), 0.1);
+}
+
+/* Worker picker dropdown */
+.wt-picker {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  width: 280px;
+  max-height: 320px;
+  background: var(--surface-overlay);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  z-index: 200;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.wt-picker-input {
+  width: 100%;
+  padding: 10px 12px;
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid var(--border-subtle);
+  color: var(--text-primary);
+  font-size: 13px;
+  outline: none;
+  box-sizing: border-box;
+}
+.wt-picker-input::placeholder {
+  color: var(--text-muted);
+}
+.wt-picker-list {
+  overflow-y: auto;
+  max-height: 260px;
+  padding: 4px;
+}
+.wt-picker-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px;
+  background: none;
+  border: none;
+  border-radius: var(--radius);
+  color: var(--text-primary);
+  font-size: 13px;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.15s;
+}
+.wt-picker-item:hover {
+  background: var(--surface-hover);
+}
+.wt-picker-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.wt-picker-status {
+  font-size: 11px;
+  flex-shrink: 0;
+}
+.wt-picker-empty {
+  padding: 16px;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 13px;
+}

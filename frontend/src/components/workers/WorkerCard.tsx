@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import type { Session, Task } from '../../api/types'
 import { api } from '../../api/client'
@@ -26,6 +26,24 @@ export default function WorkerCard({
   const [showOverflow, setShowOverflow] = useState(false)
   const [showAssignTask, setShowAssignTask] = useState(false)
   const overflowRef = useRef<HTMLDivElement>(null)
+  const clickTimerRef = useRef<number | null>(null)
+
+  // Single-click → preview tab (200ms delay); double-click → pinned tab
+  const handleCardClick = useCallback(() => {
+    if (clickTimerRef.current) return
+    clickTimerRef.current = window.setTimeout(() => {
+      clickTimerRef.current = null
+      navigate(`/workers/${session.id}`)
+    }, 200)
+  }, [navigate, session.id])
+
+  const handleCardDoubleClick = useCallback(() => {
+    if (clickTimerRef.current) {
+      clearTimeout(clickTimerRef.current)
+      clickTimerRef.current = null
+    }
+    navigate(`/workers/${session.id}?pin=true`)
+  }, [navigate, session.id])
 
   // Check if this is an rdev worker, SSH worker, or any remote worker
   const isRdev = session.host.includes('/')
@@ -159,7 +177,8 @@ export default function WorkerCard({
       className={`worker-card ${session.status}${removing ? ' removing' : ''}${alwaysShowActions ? ' show-actions' : ''}`}
       data-testid="worker-card"
       data-session-id={session.id}
-      onClick={() => navigate(`/workers/${session.id}`)}
+      onClick={handleCardClick}
+      onDoubleClick={handleCardDoubleClick}
     >
       <div className="wc-header">
         <div className="wc-header-left">

@@ -1,10 +1,16 @@
+/* WorkerDetail root — fills its pane-content parent, never overflows */
 .session-detail {
   display: flex;
   flex-direction: column;
+  flex: 1;
   min-height: 0;
-  /* Expand to fill parent by counteracting app-main padding */
-  margin: -20px -18px -20px -24px;
-  height: calc(100% + 40px);  /* Add back the 20px top + 20px bottom padding */
+  max-height: 100%;
+  overflow: hidden;
+}
+
+.sd-title {
+  font-size: 16px;
+  font-weight: 600;
 }
 
 /* Top bar — recessed control bar */
@@ -26,11 +32,6 @@
   gap: 10px;
 }
 
-.sd-title {
-  font-size: 16px;
-  font-weight: 600;
-}
-
 /* Type tag (rdev/ssh label) — pill badge */
 .sd-type-tag {
   font-size: 11px;
@@ -48,6 +49,61 @@
 .sd-type-tag.ssh {
   background: rgba(var(--purple-alt-rgb), 0.15);
   color: var(--purple);
+}
+
+/* Kebab overflow menu for compact mode (narrow topbar) */
+.sd-kebab-menu {
+  position: relative;
+}
+.sd-kebab-menu > .sd-control-btn {
+  background: transparent;
+  color: var(--text-secondary);
+}
+.sd-kebab-menu > .sd-control-btn:hover {
+  background: var(--surface-hover);
+  color: var(--text-primary);
+}
+.sd-kebab-dropdown {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  min-width: 180px;
+  background: var(--surface-overlay);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  z-index: 100;
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+}
+.sd-kebab-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 10px;
+  background: none;
+  border: none;
+  border-radius: var(--radius);
+  color: var(--text-primary);
+  font-size: 13px;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.15s;
+}
+.sd-kebab-item:hover:not(:disabled) {
+  background: var(--surface-hover);
+}
+.sd-kebab-item:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.sd-kebab-item.danger {
+  color: var(--red);
+}
+.sd-kebab-item.danger:hover:not(:disabled) {
+  background: rgba(var(--red-rgb), 0.08);
 }
 
 /* Check status button next to status badge */

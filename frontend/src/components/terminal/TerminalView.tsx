@@ -70,10 +70,12 @@ interface Props {
 
   onInputRef?: (fn: (text: string) => void) => void  // Expose function to inject text into terminal
   onFocusRef?: (fn: () => void) => void  // Expose function to focus the terminal
+  onFitRef?: (fn: () => void) => void  // Expose function to re-fit terminal to container (for tab switching)
   onImagePaste?: (file: File) => void  // Handle image paste from Cmd+V
   onTextPaste?: (text: string) => void  // Handle long text paste from Cmd+V
   onFileDrop?: (file: File) => void  // Handle non-image file drop from Finder
   onPastingChange?: (pasting: boolean) => void  // Notify parent when context-menu paste is in progress
+  onTerminalInput?: () => void  // Notify parent when user types in terminal (for auto-pin)
   onExit?: () => void  // Called when the underlying process exits (PTY closed)
   onReconnect?: () => void  // Trigger session-level reconnect (e.g. POST /api/sessions/{id}/reconnect)
 }
@@ -95,7 +97,7 @@ type ConnectionState = 'connecting' | 'connected' | 'disconnected' | 'reconnecti
 const RECONNECT_DELAYS = [1000, 2000, 5000, 10000, 10000]
 const MAX_RECONNECT_ATTEMPTS = 5
 
-export default function TerminalView({ sessionId, wsPath, sendPath, sessionStatus, reconnectStep, onInputRef, onFocusRef, onImagePaste, onTextPaste, onFileDrop, onPastingChange, onExit, onReconnect }: Props) {
+export default function TerminalView({ sessionId, wsPath, sendPath, sessionStatus, reconnectStep, onInputRef, onFocusRef, onFitRef, onImagePaste, onTextPaste, onFileDrop, onPastingChange, onTerminalInput, onExit, onReconnect }: Props) {
   const termRef = useRef<HTMLDivElement>(null)
   const terminalRef = useRef<Terminal | null>(null)
   const wsRef = useRef<WebSocket | null>(null)
@@ -477,6 +479,7 @@ export default function TerminalView({ sessionId, wsPath, sendPath, sessionStatu
         latencyRef.current.lastInputTime = performance.now()
         latencyRef.current.lastInputData = data
         ws.send(JSON.stringify({ type: 'input', data }))
+        onTerminalInput?.()
       }
     })
 
@@ -493,6 +496,11 @@ export default function TerminalView({ sessionId, wsPath, sendPath, sessionStatu
     // Expose function to focus the terminal
     if (onFocusRef) {
       onFocusRef(() => terminal.focus())
+    }
+
+    // Expose function to re-fit terminal to container (for tab switching)
+    if (onFitRef) {
+      onFitRef(() => fitAddon.fit())
     }
 
     // Track focus state
