@@ -223,11 +223,11 @@
   color: var(--text-primary);
 }
 .wt-split-btn--active {
-  color: var(--text-primary);
+  color: var(--accent);
 }
 .wt-split-btn--active:hover {
-  color: var(--text-primary);
-  background: var(--surface-hover);
+  color: var(--accent);
+  background: rgba(var(--accent-rgb), 0.1);
 }
 .wt-split-btn:disabled {
   opacity: 0.3;
