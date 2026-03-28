@@ -252,6 +252,14 @@ export default function WorkerTabBar() {
     openTab(workerId)
   }, [openTab])
 
+  // --- Split mode: separate left tabs from right-active tab ---
+  const leftTabs = isSplit
+    ? tabs.filter(t => t.workerId !== rightActiveId)
+    : tabs
+  const rightTab = isSplit
+    ? tabs.find(t => t.workerId === rightActiveId)
+    : null
+
   // --- Drag-to-reorder + cross-pane drop ---
   const handleTabMouseDown = useCallback((e: React.MouseEvent, workerId: string) => {
     if (e.button !== 0 || e.altKey || e.ctrlKey || e.metaKey) return
@@ -259,17 +267,18 @@ export default function WorkerTabBar() {
     if (!scrollEl) return
 
     const tabEls = Array.from(scrollEl.querySelectorAll<HTMLElement>('[role="tab"]'))
-    const fromIndex = tabs.findIndex(t => t.workerId === workerId)
-    if (fromIndex === -1) return
+    // Use leftTabs for index mapping — the scroll container only has left group tabs
+    const localIndex = leftTabs.findIndex(t => t.workerId === workerId)
+    if (localIndex === -1) return
 
     const containerLeft = scrollEl.getBoundingClientRect().left
     const tabRects = tabEls.map((el, i) => {
       const r = el.getBoundingClientRect()
       const sl = scrollEl.scrollLeft
-      return { id: tabs[i]?.workerId ?? '', left: r.left - containerLeft + sl, width: r.width, center: r.left - containerLeft + sl + r.width / 2 }
+      return { id: leftTabs[i]?.workerId ?? '', left: r.left - containerLeft + sl, width: r.width, center: r.left - containerLeft + sl + r.width / 2 }
     })
 
-    dragRef.current = { workerId, startX: e.clientX, fromIndex, currentToIndex: fromIndex, isDragging: false, tabEls, tabRects }
+    dragRef.current = { workerId, startX: e.clientX, fromIndex: localIndex, currentToIndex: localIndex, isDragging: false, tabEls, tabRects }
 
     const onMove = (ev: MouseEvent) => {
       const drag = dragRef.current
@@ -343,13 +352,19 @@ export default function WorkerTabBar() {
 
       if (drag.isDragging) {
         if (dropTarget === 'right' && isSplit) {
-          // Drop onto right pane — activate this tab there (if not already shown)
           if (workerId !== rightActiveId) {
             activateTab(workerId, 'right')
             setFocusedPane('right')
           }
         } else if (drag.fromIndex !== drag.currentToIndex) {
-          moveTab(drag.fromIndex, drag.currentToIndex)
+          // Map local leftTabs indices back to full tabs array indices
+          const fromId = leftTabs[drag.fromIndex]?.workerId
+          const toId = leftTabs[drag.currentToIndex]?.workerId
+          const fromFull = tabs.findIndex(t => t.workerId === fromId)
+          const toFull = tabs.findIndex(t => t.workerId === toId)
+          if (fromFull !== -1 && toFull !== -1) {
+            moveTab(fromFull, toFull)
+          }
         }
         setDraggingId(null)
         setDropTarget(null)
@@ -359,7 +374,7 @@ export default function WorkerTabBar() {
 
     document.addEventListener('mousemove', onMove)
     document.addEventListener('mouseup', onUp)
-  }, [tabs, moveTab, isSplit, rightActiveId, activateTab, setFocusedPane, dropTarget])
+  }, [tabs, leftTabs, moveTab, isSplit, rightActiveId, activateTab, setFocusedPane, dropTarget])
 
   // Drag from right group back to left
   const handleRightTabMouseDown = useCallback((e: React.MouseEvent, workerId: string) => {
@@ -405,14 +420,6 @@ export default function WorkerTabBar() {
     document.addEventListener('mousemove', onMove)
     document.addEventListener('mouseup', onUp)
   }, [leftActiveId, activateTab, setFocusedPane, dropTarget])
-
-  // --- Split mode: separate left tabs from right-active tab ---
-  const leftTabs = isSplit
-    ? tabs.filter(t => t.workerId !== rightActiveId)
-    : tabs
-  const rightTab = isSplit
-    ? tabs.find(t => t.workerId === rightActiveId)
-    : null
 
   // --- Render a single tab element ---
   const renderTab = (
