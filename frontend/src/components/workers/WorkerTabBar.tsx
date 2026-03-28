@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from 'react'
+import { useState, useRef, useEffect, useLayoutEffect, useCallback } from 'react'
 import { useWorkerTabs } from '../../context/WorkerTabsContext'
 import { useApp } from '../../context/AppContext'
 import { WORKER_STATUS_COLORS } from '../../utils/statusColors'
@@ -107,6 +107,48 @@ export default function WorkerTabBar() {
     tabRects: { id: string; left: number; width: number; center: number }[]
   } | null>(null)
 
+  // --- FLIP animation for tabs moving between groups ---
+  const flipRectsRef = useRef<Map<string, DOMRect>>(new Map())
+  const barRef = useRef<HTMLDivElement>(null)
+
+  // Snapshot tab positions before React commits DOM changes
+  const snapshotTabPositions = useCallback(() => {
+    const bar = barRef.current
+    if (!bar) return
+    const rects = new Map<string, DOMRect>()
+    bar.querySelectorAll<HTMLElement>('[data-worker-id]').forEach(el => {
+      const id = el.dataset.workerId!
+      rects.set(id, el.getBoundingClientRect())
+    })
+    flipRectsRef.current = rects
+  }, [])
+
+  // After render, animate tabs that moved
+  useLayoutEffect(() => {
+    const bar = barRef.current
+    const oldRects = flipRectsRef.current
+    if (!bar || oldRects.size === 0) return
+
+    bar.querySelectorAll<HTMLElement>('[data-worker-id]').forEach(el => {
+      const id = el.dataset.workerId!
+      const oldRect = oldRects.get(id)
+      if (!oldRect) return
+      const newRect = el.getBoundingClientRect()
+      const dx = oldRect.left - newRect.left
+      if (Math.abs(dx) < 2) return
+      el.style.transform = `translateX(${dx}px)`
+      el.style.transition = 'none'
+      // Force reflow then animate to final position
+      el.offsetHeight // eslint-disable-line @typescript-eslint/no-unused-expressions
+      el.style.transition = 'transform 250ms ease'
+      el.style.transform = ''
+      el.addEventListener('transitionend', () => {
+        el.style.transition = ''
+      }, { once: true })
+    })
+    flipRectsRef.current = new Map()
+  }, [leftActiveId, rightActiveId])
+
   // Convert vertical wheel to horizontal scroll + update fade indicators
   const handleWheel = useCallback((e: React.WheelEvent<HTMLDivElement>) => {
     const el = tabBarRef.current
@@ -144,6 +186,7 @@ export default function WorkerTabBar() {
   const tabbedIds = new Set(tabs.map(t => t.workerId))
 
   const handleTabClick = useCallback((e: React.MouseEvent, workerId: string) => {
+    if (isSplit) snapshotTabPositions()
     if (e.altKey && isSplit) {
       const otherPane = focusedPane === 'left' ? 'right' : 'left'
       activateTab(workerId, otherPane)
@@ -154,18 +197,18 @@ export default function WorkerTabBar() {
       return
     }
     activateTab(workerId)
-  }, [isSplit, focusedPane, activateTab, enterSplit])
+  }, [isSplit, focusedPane, activateTab, enterSplit, snapshotTabPositions])
 
   // Click on tab in the right group: activate it in the right pane + focus right
   const handleRightTabClick = useCallback((e: React.MouseEvent, workerId: string) => {
+    snapshotTabPositions()
     if (e.altKey) {
-      // Alt+click on right tab = move it to left pane
       activateTab(workerId, 'left')
       return
     }
     activateTab(workerId, 'right')
     setFocusedPane('right')
-  }, [activateTab, setFocusedPane])
+  }, [activateTab, setFocusedPane, snapshotTabPositions])
 
   const handleTabAuxClick = useCallback((e: React.MouseEvent, workerId: string) => {
     if (e.button === 1) {
@@ -354,6 +397,7 @@ export default function WorkerTabBar() {
     return (
       <button
         key={workerId}
+        data-worker-id={workerId}
         className={`wt-tab ${isActive ? `wt-tab--active ${paneClass}` : ''} ${draggingId === workerId ? 'wt-tab--dragging' : ''}`}
         role="tab"
         aria-selected={isActive}
@@ -418,7 +462,7 @@ export default function WorkerTabBar() {
   )
 
   return (
-    <div className={`wt-bar ${draggingId ? 'wt-bar--dragging' : ''} ${isSplit ? `wt-bar--focus-${focusedPane}` : ''}`} role="tablist" aria-label="Worker tabs">
+    <div ref={barRef} className={`wt-bar ${draggingId ? 'wt-bar--dragging' : ''} ${isSplit ? `wt-bar--focus-${focusedPane}` : ''}`} role="tablist" aria-label="Worker tabs">
       {/* Left tab group */}
       <div
         className={`wt-tabs-scroll wt-left-group wt-tabs-scroll--fade-${scrollFade} ${dropTarget === 'left' ? 'wt-drop-target' : ''}`}
