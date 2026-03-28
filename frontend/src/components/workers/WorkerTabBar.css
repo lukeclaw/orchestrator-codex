@@ -108,13 +108,7 @@
 .wt-tab--active-right {
   border-top: 1.5px solid var(--purple);
 }
-/* Hover hint — matches focused pane color, not the group */
-.wt-bar--focus-left .wt-tab:not(.wt-tab--active):hover {
-  border-top: 1.5px solid rgba(var(--accent-rgb), 0.3);
-}
-.wt-bar--focus-right .wt-tab:not(.wt-tab--active):hover {
-  border-top: 1.5px solid rgba(var(--purple-alt-rgb), 0.3);
-}
+
 
 /* Status dot */
 .wt-status-dot {

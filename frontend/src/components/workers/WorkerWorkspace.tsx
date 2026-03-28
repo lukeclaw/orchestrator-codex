@@ -116,9 +116,10 @@ export default function WorkerWorkspace() {
     return () => { clearTimeout(timer); container.classList.remove('ww-animating') }
   }, [isSplit])
 
-  // --- Brain panel auto-collapse on split ---
+  // --- Brain panel auto-collapse on split + one-time tip ---
   useEffect(() => {
     if (!isSplit) return
+    notify('Swap right pane:\n• Right-click a tab\n• ⌥+click a tab', 'info')
     const workspace = workspaceRef.current
     if (!workspace) return
     const availableWidth = workspace.getBoundingClientRect().width

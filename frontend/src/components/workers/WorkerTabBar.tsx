@@ -264,18 +264,18 @@ export default function WorkerTabBar() {
 
   const handleTabClick = useCallback((e: React.MouseEvent, workerId: string) => {
     // Normal click already handled by mousedown — only handle modifier clicks here
-    if (e.altKey && isSplit) {
+    // ⌥+click always opens in right pane (enters split if needed)
+    if (e.altKey) {
+      if (workerId === leftActiveId) return // don't move left active to right
       snapshotTabPositions()
-      const otherPane = focusedPane === 'left' ? 'right' : 'left'
-      activateTab(workerId, otherPane)
-      return
+      if (isSplit) {
+        activateTab(workerId, 'right')
+        setFocusedPane('right')
+      } else {
+        enterSplit(workerId)
+      }
     }
-    if (e.altKey && !isSplit) {
-      enterSplit(workerId)
-      return
-    }
-    // Non-modifier click: activation already done in mousedown
-  }, [isSplit, focusedPane, activateTab, enterSplit, snapshotTabPositions])
+  }, [isSplit, leftActiveId, activateTab, enterSplit, setFocusedPane, snapshotTabPositions])
 
   // Click on tab in the right group: activate it in the right pane + focus right
   const handleRightTabClick = useCallback((e: React.MouseEvent, workerId: string) => {
@@ -299,6 +299,21 @@ export default function WorkerTabBar() {
     openTab(workerId)
   }, [openTab])
 
+  // --- Right-click tab → open in right pane ---
+  const handleTabRightClick = useCallback((e: React.MouseEvent, workerId: string) => {
+    e.preventDefault()
+    e.stopPropagation()
+    // Don't move the left pane's active tab to the right
+    if (workerId === leftActiveId) return
+    snapshotTabPositions()
+    if (isSplit) {
+      activateTab(workerId, 'right')
+      setFocusedPane('right')
+    } else {
+      enterSplit(workerId)
+    }
+  }, [isSplit, leftActiveId, activateTab, setFocusedPane, enterSplit, snapshotTabPositions])
+
   // --- Split mode: separate left tabs from right-active tab ---
   const leftTabs = isSplit
     ? tabs.filter(t => t.workerId !== rightActiveId)
@@ -311,12 +326,10 @@ export default function WorkerTabBar() {
   const handleTabMouseDown = useCallback((e: React.MouseEvent, workerId: string) => {
     if (e.button !== 0 || e.altKey || e.ctrlKey || e.metaKey) return
 
-    // Always activate tab on mousedown for consistent behavior
+    // Left click always opens in left pane
     if (isSplit) snapshotTabPositions()
-    activateTab(workerId)
-
-    // In split mode with right pane focused, the tab flips to the right group — no drag needed
-    if (isSplit && focusedPane === 'right') return
+    activateTab(workerId, 'left')
+    if (isSplit) setFocusedPane('left')
 
     const scrollEl = tabBarRef.current
     if (!scrollEl) return
@@ -497,6 +510,7 @@ export default function WorkerTabBar() {
         onClick={e => { if (!draggingId) onClick(e, workerId) }}
         onMouseDown={onMouseDown ? e => onMouseDown(e, workerId) : undefined}
         onAuxClick={e => handleTabAuxClick(e, workerId)}
+        onContextMenu={e => handleTabRightClick(e, workerId)}
       >
         <span
           className={`wt-status-dot ${session.status === 'working' ? 'wt-status-dot--pulse' : ''}`}
