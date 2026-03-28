@@ -93,6 +93,7 @@ export default function WorkerTabBar() {
 
   const [showPicker, setShowPicker] = useState(false)
   const [scrollFade, setScrollFade] = useState<'none' | 'left' | 'right' | 'both'>('none')
+  const [activeHidden, setActiveHidden] = useState<'none' | 'left' | 'right'>('none')
   const [draggingId, setDraggingId] = useState<string | null>(null)
   const [dropTarget, setDropTarget] = useState<'left' | 'right' | null>(null)
   const tabBarRef = useRef<HTMLDivElement>(null)
@@ -167,7 +168,21 @@ export default function WorkerTabBar() {
     const hasRight = el.scrollLeft < el.scrollWidth - el.clientWidth - 2
     const fade = hasLeft && hasRight ? 'both' : hasLeft ? 'left' : hasRight ? 'right' : 'none'
     setScrollFade(fade)
-  }, [])
+
+    // Check if active tab is scrolled out of view
+    if (!leftActiveId) { setActiveHidden('none'); return }
+    const activeTab = el.querySelector(`[data-worker-id="${leftActiveId}"]`) as HTMLElement
+    if (!activeTab) { setActiveHidden('none'); return }
+    const containerRect = el.getBoundingClientRect()
+    const tabRect = activeTab.getBoundingClientRect()
+    if (tabRect.right < containerRect.left + 4) {
+      setActiveHidden('left')
+    } else if (tabRect.left > containerRect.right - 4) {
+      setActiveHidden('right')
+    } else {
+      setActiveHidden('none')
+    }
+  }, [leftActiveId])
 
   // Update fade on mount and when tabs change; auto-scroll to show new tabs
   const prevTabCount = useRef(tabs.length)
@@ -523,7 +538,7 @@ export default function WorkerTabBar() {
     <div ref={barRef} className={`wt-bar ${draggingId ? 'wt-bar--dragging' : ''} ${isSplit ? `wt-bar--focus-${focusedPane}` : ''}`} role="tablist" aria-label="Worker tabs">
       {/* Left tab group */}
       <div
-        className={`wt-tabs-scroll wt-left-group wt-tabs-scroll--fade-${scrollFade} ${dropTarget === 'left' ? 'wt-drop-target' : ''}`}
+        className={`wt-tabs-scroll wt-left-group${scrollFade === 'left' || scrollFade === 'both' ? ' wt-left-group--fade-left' : ''}${scrollFade === 'right' || scrollFade === 'both' ? ' wt-left-group--fade-right' : ''}${activeHidden === 'left' ? ' wt-left-group--active-left' : ''}${activeHidden === 'right' ? ' wt-left-group--active-right' : ''}${dropTarget === 'left' ? ' wt-drop-target' : ''}`}
         ref={tabBarRef}
         onWheel={handleWheel}
       >
@@ -531,7 +546,7 @@ export default function WorkerTabBar() {
           renderTab(
             tab.workerId,
             tab.workerId === leftActiveId,
-            isSplit ? 'wt-tab--active-left' : '',
+            'wt-tab--active-left',
             handleTabClick,
             handleTabMouseDown,
           )

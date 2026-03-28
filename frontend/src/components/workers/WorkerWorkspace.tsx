@@ -100,6 +100,22 @@ export default function WorkerWorkspace() {
     }
   }, [sessions]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  // --- Split animation: freeze terminal resize during transition, refit after ---
+  const prevSplitRef = useRef(isSplit)
+  useEffect(() => {
+    if (prevSplitRef.current === isSplit) return
+    prevSplitRef.current = isSplit
+    const container = workspaceRef.current?.querySelector('.ww-pane-container')
+    if (!container) return
+    container.classList.add('ww-animating')
+    const timer = setTimeout(() => {
+      container.classList.remove('ww-animating')
+      // Refit all visible terminals after animation settles
+      workerRefs.current.forEach(handle => handle.refitTerminal())
+    }, 280) // slightly longer than 250ms transition
+    return () => { clearTimeout(timer); container.classList.remove('ww-animating') }
+  }, [isSplit])
+
   // --- Brain panel auto-collapse on split ---
   useEffect(() => {
     if (!isSplit) return
@@ -268,53 +284,48 @@ export default function WorkerWorkspace() {
 
   // --- Render pane content ---
   // Both panes use hidden-DOM preservation with grow-only mounted arrays
-  const renderPane = (pane: 'left' | 'right') => {
-    const isLeft = pane === 'left'
-    const activeId = isLeft ? leftActiveId : rightActiveId
-    const mounted = isLeft ? leftMounted : rightMounted
+  const renderPaneContent = (pane: 'left' | 'right') => {
+    const mounted = pane === 'left' ? leftMounted : rightMounted
+    const activeId = pane === 'left' ? leftActiveId : rightActiveId
     const isFocusedPane = focusedPane === pane
 
-    if (!isLeft && !activeId) return null
-
-    return (
-      <div
-        className={`ww-pane ${isFocusedPane ? 'ww-pane--focused' : ''} ${isLeft ? 'ww-pane--left' : 'ww-pane--right'}`}
-        style={isSplit ? { width: '50%' } : undefined}
-        onClick={() => { if (isSplit) setFocusedPane(pane) }}
-      >
-        {mounted.map(workerId => {
-          const isVisible = workerId === activeId
-          const refKey = `${pane}-${workerId}`
-          return (
-            <div
-              key={refKey}
-              className={isVisible ? 'ww-pane-content ww-pane-content--visible' : 'ww-pane-content ww-pane-content--hidden'}
-            >
-              <WorkerDetail
-                ref={getRefCallback(refKey)}
-                workerId={workerId}
-                isActive={isVisible}
-                isFocused={isVisible && isFocusedPane}
-                onDelete={handleDelete}
-              />
-            </div>
-          )
-        })}
-      </div>
-    )
+    return mounted.map(workerId => {
+      const isVisible = workerId === activeId
+      const refKey = `${pane}-${workerId}`
+      return (
+        <div
+          key={refKey}
+          className={isVisible ? 'ww-pane-content ww-pane-content--visible' : 'ww-pane-content ww-pane-content--hidden'}
+        >
+          <WorkerDetail
+            ref={getRefCallback(refKey)}
+            workerId={workerId}
+            isActive={isVisible}
+            isFocused={isVisible && isFocusedPane}
+            onDelete={handleDelete}
+          />
+        </div>
+      )
+    })
   }
 
   return (
     <div className="worker-workspace" ref={workspaceRef}>
       <WorkerTabBar />
-      <div className="ww-pane-container">
-        {renderPane('left')}
-        {isSplit && (
-          <>
-            <div className="ww-split-divider" />
-            {renderPane('right')}
-          </>
-        )}
+      <div className={`ww-pane-container${isSplit ? ' ww-pane-container--split' : ''}`}>
+        <div
+          className={`ww-pane ww-pane--left${focusedPane === 'left' ? ' ww-pane--focused' : ''}`}
+          onClick={() => { if (isSplit) setFocusedPane('left') }}
+        >
+          {renderPaneContent('left')}
+        </div>
+        <div className="ww-split-divider" />
+        <div
+          className={`ww-pane ww-pane--right${focusedPane === 'right' ? ' ww-pane--focused' : ''}`}
+          onClick={() => { if (isSplit) setFocusedPane('right') }}
+        >
+          {renderPaneContent('right')}
+        </div>
       </div>
     </div>
   )

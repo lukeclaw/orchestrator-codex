@@ -16,44 +16,45 @@
   overflow: hidden;
 }
 
-/* Individual pane — must be position:relative so absolute hidden children anchor here */
+/* Individual pane */
 .ww-pane {
   display: flex;
   flex-direction: column;
-  flex: 1;
   min-width: 0;
   min-height: 0;
   position: relative;
   overflow: hidden;
+  transition: flex 250ms cubic-bezier(0.4, 0, 0.2, 1);
 }
-/* In single-pane mode the pane fills the container; in split mode width is set inline */
+/* Single pane: left fills, right collapses to 0 */
+.ww-pane--left { flex: 1; }
+.ww-pane--right { flex: 0; }
 
-/* In split mode, tighten topbar spacing (compact mode handles name truncation) */
-.ww-pane-container:has(.ww-split-divider) .sd-topbar {
+/* Split mode: both panes share space equally */
+.ww-pane-container--split .ww-pane--left,
+.ww-pane-container--split .ww-pane--right { flex: 1; }
+
+/* Unified topbar style — compact spacing in both single and split mode */
+.ww-pane .sd-topbar {
   padding: 6px 12px;
   gap: 10px;
 }
-.ww-pane-container:has(.ww-split-divider) .sd-title {
+.ww-pane .sd-title {
   font-size: 14px;
 }
 
-/* Terminal focus border in split mode — recolor per-pane instead of always accent.
-   Left pane: accent (blue). Right pane: purple.
-   Non-focused terminal: top border only in matching color. */
-.ww-pane-container:has(.ww-split-divider) .ww-pane--right .terminal-container.terminal-focused {
+/* Terminal focus border — recolor right pane to purple in split mode */
+.ww-pane-container--split .ww-pane--right .terminal-container.terminal-focused {
   border-color: rgba(var(--purple-alt-rgb), 0.7);
 }
-.ww-pane-container:has(.ww-split-divider) .ww-pane--left .terminal-container:not(.terminal-focused) {
+.ww-pane-container--split .ww-pane--left .terminal-container:not(.terminal-focused) {
   border-top-color: rgba(var(--accent-rgb), 0.7);
 }
-.ww-pane-container:has(.ww-split-divider) .ww-pane--right .terminal-container:not(.terminal-focused) {
+.ww-pane-container--split .ww-pane--right .terminal-container:not(.terminal-focused) {
   border-top-color: rgba(var(--purple-alt-rgb), 0.7);
 }
 
-/* Hidden/visible tab content within a pane.
-   Visible: fills the pane via flex:1, contains the full WorkerDetail.
-   Hidden: absolute-positioned to match pane dimensions (so xterm FitAddon
-   gets real sizes from getBoundingClientRect), but invisible and non-interactive. */
+/* Hidden/visible tab content within a pane */
 .ww-pane-content--visible {
   display: flex;
   flex-direction: column;
@@ -73,9 +74,18 @@
   overflow: hidden;
 }
 
-/* Split divider — simple border between panes */
+/* During split animation, freeze terminal so ResizeObserver doesn't fire */
+.ww-animating .terminal-container {
+  visibility: hidden;
+}
+
+/* Split divider — collapses when not split, animates with panes */
 .ww-split-divider {
-  width: 1px;
+  width: 0;
   background: var(--border-subtle);
   flex-shrink: 0;
+  transition: width 250ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+.ww-pane-container--split .ww-split-divider {
+  width: 1px;
 }

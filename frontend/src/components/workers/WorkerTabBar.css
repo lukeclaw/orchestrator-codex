@@ -23,18 +23,41 @@
   display: none;
 }
 
-/* Dynamic fade masks — only show on the side(s) that have overflow */
-.wt-tabs-scroll--fade-left {
-  -webkit-mask-image: linear-gradient(to right, transparent, black 24px);
-  mask-image: linear-gradient(to right, transparent, black 24px);
+/* Scroll edge overlays — pseudo-elements for colored fade indicators */
+.wt-left-group {
+  position: relative;
 }
-.wt-tabs-scroll--fade-right {
-  -webkit-mask-image: linear-gradient(to left, transparent, black 24px);
-  mask-image: linear-gradient(to left, transparent, black 24px);
+.wt-left-group::before,
+.wt-left-group::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 32px;
+  pointer-events: none;
+  z-index: 1;
+  opacity: 0;
+  transition: opacity 0.2s;
 }
-.wt-tabs-scroll--fade-both {
-  -webkit-mask-image: linear-gradient(to right, transparent, black 24px, black calc(100% - 24px), transparent);
-  mask-image: linear-gradient(to right, transparent, black 24px, black calc(100% - 24px), transparent);
+.wt-left-group::before {
+  left: 0;
+  background: linear-gradient(to right, var(--surface-inset), transparent);
+}
+.wt-left-group::after {
+  right: 0;
+  background: linear-gradient(to left, var(--surface-inset), transparent);
+}
+/* Generic scroll fade — subtle surface fade when tabs overflow */
+.wt-left-group--fade-left::before { opacity: 1; }
+.wt-left-group--fade-right::after { opacity: 1; }
+/* Active tab hidden — accent-colored glow overrides generic fade */
+.wt-left-group--active-left::before {
+  opacity: 1;
+  background: linear-gradient(to right, rgba(var(--accent-rgb), 0.3), transparent);
+}
+.wt-left-group--active-right::after {
+  opacity: 1;
+  background: linear-gradient(to left, rgba(var(--accent-rgb), 0.3), transparent);
 }
 
 /* Individual tab — shrinks to fit when many tabs are open, scrolls past min-width */
