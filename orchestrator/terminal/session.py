@@ -32,6 +32,18 @@ _PW_INSTALL_CMD = (
     "claude plugin list 2>/dev/null | grep -q 'playwright@' || claude plugin install playwright"
 )
 
+# Shell snippet: resolve actual Node 24 binary from volta's image directory.
+# `volta which node` is unreliable on rdev because the system wrapper at
+# /export/content/linkedin/bin/node force-resets volta's platform.json,
+# making `volta which` return Node 16 even after `volta install node@24`.
+# We bypass this by globbing directly into ~/.volta/tools/image/node/24.*/bin/.
+_VOLTA_NODE24_RESOLVE = (
+    "NODE24_BIN=$(ls -d ~/.volta/tools/image/node/24.*/bin/node 2>/dev/null"
+    " | sort -V | tail -1)"
+    ' && [ -n "$NODE24_BIN" ]'
+    ' && NODE24_DIR=$(dirname "$NODE24_BIN")'
+)
+
 
 def create_session(
     conn: sqlite3.Connection,
@@ -370,10 +382,11 @@ def ensure_rdev_node(tmux_session: str, window_name: str, remote_tmp_dir: str):
     node_bin_dir = f"{remote_tmp_dir}/node-bin"
     volta_cmd = (
         "volta install node@24"
+        f" && {_VOLTA_NODE24_RESOLVE}"
         f" && mkdir -p {node_bin_dir}"
-        f" && ln -sf $(volta which node) {node_bin_dir}/node"
-        f" && ln -sf $(volta which npx) {node_bin_dir}/npx"
-        f" && ln -sf $(volta which npm) {node_bin_dir}/npm"
+        f' && ln -sf "$NODE24_DIR/node" {node_bin_dir}/node'
+        f' && ln -sf "$NODE24_DIR/npx" {node_bin_dir}/npx'
+        f' && ln -sf "$NODE24_DIR/npm" {node_bin_dir}/npm'
     )
     tmux.send_keys(tmux_session, window_name, volta_cmd, enter=True)
     time.sleep(8)  # volta downloads + installs + creates symlinks
@@ -569,13 +582,16 @@ def setup_remote_worker(
 
         # 5. Install Node 24 via SSH subprocess (needed for Playwright)
         if is_rdev_host(host):
-            # On rdev, create node-bin symlinks for Node 24
+            # On rdev, create node-bin symlinks for Node 24.
+            # We resolve the binary directly from volta's image dir because
+            # `volta which` is unreliable on rdev (system wrapper overrides it).
             node_cmd = (
                 "volta install node@24"
+                f" && {_VOLTA_NODE24_RESOLVE}"
                 f" && mkdir -p {remote_tmp_dir}/node-bin"
-                f" && ln -sf $(volta which node) {remote_tmp_dir}/node-bin/node"
-                f" && ln -sf $(volta which npx) {remote_tmp_dir}/node-bin/npx"
-                f" && ln -sf $(volta which npm) {remote_tmp_dir}/node-bin/npm"
+                f' && ln -sf "$NODE24_DIR/node" {remote_tmp_dir}/node-bin/node'
+                f' && ln -sf "$NODE24_DIR/npx" {remote_tmp_dir}/node-bin/npx'
+                f' && ln -sf "$NODE24_DIR/npm" {remote_tmp_dir}/node-bin/npm'
             )
         else:
             node_cmd = "volta install node@24 2>/dev/null || true"

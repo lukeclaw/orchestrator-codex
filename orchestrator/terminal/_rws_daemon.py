@@ -436,7 +436,11 @@ def _find_npx():
         if os.path.isfile(npx_path) and os.access(npx_path, os.X_OK):
             return npx_path
 
-    # 2. Try to set up Node 24 via volta (rdev ships volta at ~/.volta)
+    # 2. Try to set up Node 24 via volta (rdev ships volta at ~/.volta).
+    #    `volta which` is unreliable on rdev because the system wrapper at
+    #    /export/content/linkedin/bin/node force-resets volta's platform.json,
+    #    making `volta which` return Node 16 even after `volta install node@24`.
+    #    We bypass this by globbing directly into ~/.volta/tools/image/node/24.*/bin/.
     volta = os.path.expanduser("~/.volta/bin/volta")
     if os.path.isfile(volta) and os.access(volta, os.X_OK):
         try:
@@ -448,17 +452,14 @@ def _find_npx():
             )
         except (subprocess.TimeoutExpired, OSError):
             pass
-        try:
-            result = subprocess.run(
-                [volta, "which", "npx"],
-                capture_output=True, text=True, timeout=10,
-            )
-            if result.returncode == 0 and result.stdout.strip():
-                npx_path = result.stdout.strip()
-                if os.path.isfile(npx_path) and os.access(npx_path, os.X_OK):
-                    return npx_path
-        except (subprocess.TimeoutExpired, OSError):
-            pass
+        # Resolve Node 24 directly from volta's image directory
+        node24_dirs = sorted(
+            _glob.glob(os.path.expanduser("~/.volta/tools/image/node/24.*/bin")),
+        )
+        if node24_dirs:
+            npx_path = os.path.join(node24_dirs[-1], "npx")
+            if os.path.isfile(npx_path) and os.access(npx_path, os.X_OK):
+                return npx_path
 
     # 3. Fallback: bare PATH lookup
     return shutil.which("npx")
