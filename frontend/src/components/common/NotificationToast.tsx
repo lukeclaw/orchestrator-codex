@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react'
 import './NotificationToast.css'
 
 // Re-use the context from NotificationContext
@@ -5,7 +6,7 @@ import type { NotificationType } from '../../context/NotificationContext'
 
 interface Notification {
   id: number
-  message: string
+  message: ReactNode
   type: NotificationType
 }
 

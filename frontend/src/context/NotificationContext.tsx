@@ -4,13 +4,13 @@ export type NotificationType = 'info' | 'success' | 'error' | 'warning'
 
 interface Notification {
   id: number
-  message: string
+  message: ReactNode
   type: NotificationType
 }
 
 interface NotificationContextValue {
   notifications: Notification[]
-  notify: (message: string, type?: NotificationType) => void
+  notify: (message: ReactNode, type?: NotificationType) => void
 }
 
 const NotificationContext = createContext<NotificationContextValue>({
@@ -31,7 +31,7 @@ let nextId = 0
 export function NotificationProvider({ children }: { children: ReactNode }) {
   const [notifications, setNotifications] = useState<Notification[]>([])
 
-  const notify = useCallback((message: string, type: NotificationType = 'info') => {
+  const notify = useCallback((message: ReactNode, type: NotificationType = 'info') => {
     const id = ++nextId
     setNotifications(prev => [...prev, { id, message, type }])
     const duration = type === 'error' ? 8000 : 4000

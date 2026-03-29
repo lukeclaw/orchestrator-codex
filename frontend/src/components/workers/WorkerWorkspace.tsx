@@ -26,8 +26,9 @@ export default function WorkerWorkspace() {
     nextTab, prevTab, reopenLastClosed, restoreFromUrl,
   } = useWorkerTabs()
 
-  // Refs for URL sync guard and resize
+  // Refs for URL sync guard, resize, and one-time tip
   const urlSyncRef = useRef(false)
+  const splitTipShown = useRef(false)
   const workspaceRef = useRef<HTMLDivElement>(null)
   const workerRefs = useRef<Map<string, WorkerDetailHandle>>(new Map())
 
@@ -119,7 +120,10 @@ export default function WorkerWorkspace() {
   // --- Brain panel auto-collapse on split + one-time tip ---
   useEffect(() => {
     if (!isSplit) return
-    notify('Swap right pane:\n• Right-click a tab\n• ⌥+click a tab', 'info')
+    if (!splitTipShown.current) {
+      splitTipShown.current = true
+      notify(<>Tip: <b>Right-click</b> or <b>⌥+click</b> a tab to swap right pane</>, 'info')
+    }
     const workspace = workspaceRef.current
     if (!workspace) return
     const availableWidth = workspace.getBoundingClientRect().width
