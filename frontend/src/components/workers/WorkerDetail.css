@@ -399,49 +399,30 @@
   background: var(--border-subtle);
 }
 
-/* Auto-reconnect toggle in footer */
-.sd-auto-reconnect-toggle {
+/* Auto-reconnect icon button in header */
+.sd-auto-reconnect-btn {
   display: flex;
   align-items: center;
-  gap: 6px;
-  cursor: pointer;
-}
-
-.sd-auto-reconnect-label {
-  font-size: 11px;
-  color: var(--text-muted);
-  white-space: nowrap;
-}
-
-.sd-toggle-switch {
-  position: relative;
-  width: 28px;
-  height: 16px;
-  background: var(--border);
+  justify-content: center;
+  width: 24px;
+  height: 24px;
   border: none;
-  border-radius: 8px;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--text-muted);
   cursor: pointer;
-  transition: background 0.2s;
-  padding: 0;
+  transition: background 0.15s, color 0.15s;
 }
-
-.sd-toggle-switch.on {
-  background: var(--accent);
+.sd-auto-reconnect-btn:hover {
+  background: var(--surface-hover);
+  color: var(--text-secondary);
 }
-
-.sd-toggle-knob {
-  position: absolute;
-  top: 2px;
-  left: 2px;
-  width: 12px;
-  height: 12px;
-  background: var(--text-primary);
-  border-radius: 50%;
-  transition: transform 0.2s;
+.sd-auto-reconnect-btn.active {
+  color: var(--accent);
+  background: rgba(var(--accent-rgb), 0.12);
 }
-
-.sd-toggle-switch.on .sd-toggle-knob {
-  transform: translateX(12px);
+.sd-auto-reconnect-btn.active:hover {
+  background: rgba(var(--accent-rgb), 0.22);
 }
 
 /* Footer panel toggle button group (Files + Terminal) */
@@ -612,7 +593,6 @@
 
 /* Compact footer — hide button text labels when the footer is narrow (e.g., split view) */
 @container (max-width: 540px) {
-  .sd-auto-reconnect-label { display: none; }
   .sd-panel-btn span { display: none; }
   .sd-panel-btn { padding: 4px 8px; }
   .sd-paste-btn span { display: none; }

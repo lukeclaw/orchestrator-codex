@@ -13,7 +13,7 @@ import InteractiveCLI from '../terminal/InteractiveCLI'
 import BrowserView from '../browser/BrowserView'
 import FileExplorerPanel from '../file-explorer/FileExplorerPanel'
 import FileViewer from '../file-explorer/FileViewer'
-import { IconPause, IconPlay, IconStop, IconRefresh, IconTrash, IconBrain, IconKebab } from '../common/Icons'
+import { IconPause, IconPlay, IconStop, IconRefresh, IconSync, IconTrash, IconBrain, IconKebab } from '../common/Icons'
 import ConfirmPopover from '../common/ConfirmPopover'
 import AssignTaskModal from '../tasks/AssignTaskModal'
 import './WorkerDetail.css'
@@ -653,6 +653,13 @@ const WorkerDetail = forwardRef<WorkerDetailHandle, WorkerDetailProps>(function 
           {session.host.includes('/') && <span className="sd-type-tag rdev">rdev</span>}
           {isSsh && <span className="sd-type-tag ssh">ssh</span>}
           <span className={`status-badge ${session.status}`}>{session.status}</span>
+          <button
+            className={`sd-auto-reconnect-btn${session.auto_reconnect ? ' active' : ''}`}
+            onClick={handleToggleAutoReconnect}
+            title={session.auto_reconnect ? 'Auto-reconnect enabled (click to disable)' : 'Auto-reconnect disabled (click to enable)'}
+          >
+            <IconSync size={13} />
+          </button>
         </div>
         {isCompact ? (
           /* Compact mode: kebab dropdown for control buttons */
@@ -909,17 +916,6 @@ const WorkerDetail = forwardRef<WorkerDetailHandle, WorkerDetailProps>(function 
           )}
         </div>
         <div className="sd-footer-right">
-          <label className="sd-auto-reconnect-toggle" title="When enabled, automatically reconnect this worker if it disconnects">
-            <span className="sd-auto-reconnect-label">Auto-reconnect</span>
-            <button
-              className={`sd-toggle-switch ${session.auto_reconnect ? 'on' : ''}`}
-              onClick={handleToggleAutoReconnect}
-              role="switch"
-              aria-checked={session.auto_reconnect}
-            >
-              <span className="sd-toggle-knob" />
-            </button>
-          </label>
           <div className="sd-panel-toggles">
             {(session.work_dir || isRemote) && (
               <button
