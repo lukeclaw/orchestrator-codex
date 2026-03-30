@@ -23,7 +23,7 @@
   right: 12px;
   bottom: 12px;
   width: max(70%, calc(100% - 24px));
-  max-width: calc(100% - 24px);
+  max-width: min(720px, calc(100% - 24px));
   height: auto;
   border-radius: 8px;
 }
