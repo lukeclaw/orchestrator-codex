@@ -43,9 +43,17 @@
   font-size: 14px;
 }
 
-/* Terminal focus border — recolor right pane to purple in split mode */
+/* Focus border — recolor right pane to purple in split mode (terminal, ICLI, BV) */
 .ww-pane-container--split .ww-pane--right .terminal-container.terminal-focused {
   border-color: rgba(var(--purple-alt-rgb), 0.7);
+}
+.ww-pane-container--split .ww-pane--right .icli-overlay.icli-focused:not(.icli-minimized) {
+  border-color: rgba(var(--purple-alt-rgb), 0.7);
+  box-shadow: 0 0 0 1px rgba(var(--purple-alt-rgb), 0.7), 0 8px 32px rgba(0, 0, 0, 0.4);
+}
+.ww-pane-container--split .ww-pane--right .bv-overlay.bv-focused:not(.bv-minimized) {
+  border-color: rgba(var(--purple-alt-rgb), 0.7);
+  box-shadow: 0 0 0 1px rgba(var(--purple-alt-rgb), 0.7), 0 8px 32px rgba(0, 0, 0, 0.4);
 }
 .ww-pane-container--split .ww-pane--left .terminal-container:not(.terminal-focused) {
   border-top-color: rgba(var(--accent-rgb), 0.7);

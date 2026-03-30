@@ -65,10 +65,18 @@ const WorkerDetail = forwardRef<WorkerDetailHandle, WorkerDetailProps>(function 
   }))
 
   // Re-focus terminal when this pane becomes focused (e.g., tab switch in hidden-DOM mode)
+  // BUT only if focus isn't already inside an overlay (ICLI/BV) — clicking a PiP
+  // in the unfocused pane should keep focus in that PiP, not steal it to main terminal.
   const prevFocusedRef = useRef(isFocused)
   useEffect(() => {
     if (isFocused && !prevFocusedRef.current) {
-      requestAnimationFrame(() => terminalFocusRef.current?.())
+      requestAnimationFrame(() => {
+        const active = document.activeElement
+        const inOverlay = active?.closest('.icli-overlay, .bv-overlay')
+        if (!inOverlay) {
+          terminalFocusRef.current?.()
+        }
+      })
     }
     prevFocusedRef.current = isFocused
   }, [isFocused])
