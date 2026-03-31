@@ -95,7 +95,7 @@ function WorkerPicker({ onClose, onSelect, excludeIds }: WorkerPickerProps) {
 export default function WorkerTabBar() {
   const {
     tabs, leftActiveId, rightActiveId, isSplit, focusedPane,
-    activateTab, closeTab, openTab, toggleSplit, enterSplit, setFocusedPane, moveTab, swapPanes,
+    activateTab, closeTab, openTab, toggleSplit, enterSplit, setFocusedPane, moveTab, swapToRight,
   } = useWorkerTabs()
   const { sessions } = useApp()
 
@@ -293,25 +293,16 @@ export default function WorkerTabBar() {
 
   const handleTabClick = useCallback((e: React.MouseEvent, workerId: string) => {
     // Normal click already handled by mousedown — only handle modifier clicks here
-    // ⌥+click always opens in right pane (enters split if needed)
+    // ⌥+click: swap clicked tab with right pane (or enter split if not split yet)
     if (e.altKey) {
-      if (workerId === leftActiveId) {
-        // ⌥+click on left active tab in split mode → swap panes
-        if (isSplit) {
-          snapshotTabPositions()
-          swapPanes()
-        }
-        return
-      }
       snapshotTabPositions()
       if (isSplit) {
-        activateTab(workerId, 'right')
-        setFocusedPane('right')
+        swapToRight(workerId)
       } else {
         enterSplit(workerId)
       }
     }
-  }, [isSplit, leftActiveId, activateTab, enterSplit, setFocusedPane, swapPanes, snapshotTabPositions])
+  }, [isSplit, enterSplit, swapToRight, snapshotTabPositions])
 
   // Click on tab in the right group: activate it in the right pane + focus right
   const handleRightTabClick = useCallback((e: React.MouseEvent, workerId: string) => {
@@ -335,26 +326,17 @@ export default function WorkerTabBar() {
     openTab(workerId)
   }, [openTab])
 
-  // --- Right-click tab → open in right pane (or swap if it's the left active tab) ---
+  // --- Right-click tab → swap with right pane (or enter split if not split yet) ---
   const handleTabRightClick = useCallback((e: React.MouseEvent, workerId: string) => {
     e.preventDefault()
     e.stopPropagation()
-    // Right-click the left active tab in split mode → swap left and right panes
-    if (workerId === leftActiveId) {
-      if (isSplit) {
-        snapshotTabPositions()
-        swapPanes()
-      }
-      return
-    }
     snapshotTabPositions()
     if (isSplit) {
-      activateTab(workerId, 'right')
-      setFocusedPane('right')
+      swapToRight(workerId)
     } else {
       enterSplit(workerId)
     }
-  }, [isSplit, leftActiveId, activateTab, setFocusedPane, enterSplit, swapPanes, snapshotTabPositions])
+  }, [isSplit, enterSplit, swapToRight, snapshotTabPositions])
 
   // --- Split mode: separate left tabs from right-active tab ---
   const leftTabs = isSplit

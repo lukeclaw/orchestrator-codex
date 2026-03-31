@@ -32,8 +32,8 @@ interface WorkerTabsContextValue extends WorkerTabsState {
   moveTab: (fromIndex: number, toIndex: number) => void
   nextTab: () => void
   prevTab: () => void
-  /** Swap left and right pane workers (only in split mode) */
-  swapPanes: () => void
+  /** Swap a left-group tab with the right pane (only in split mode) */
+  swapToRight: (workerId: string) => void
   /** Atomically restore left + right tabs from URL (e.g. /workers/A?right=B) */
   restoreFromUrl: (leftId: string, rightId: string) => void
 }
@@ -295,13 +295,25 @@ export function WorkerTabsProvider({ children }: { children: ReactNode }) {
     })
   }, [])
 
-  const swapPanes = useCallback(() => {
+  const swapToRight = useCallback((workerId: string) => {
     setState(prev => {
-      if (!prev.isSplit || !prev.leftActiveId || !prev.rightActiveId) return prev
+      if (!prev.isSplit || !prev.rightActiveId) return prev
+      // Swap positions in the tabs array so the returning right tab takes
+      // the exact slot of the departing tab — keeps other tabs stable.
+      const oldRightId = prev.rightActiveId
+      const idxA = prev.tabs.findIndex(t => t.workerId === workerId)
+      const idxB = prev.tabs.findIndex(t => t.workerId === oldRightId)
+      let tabs = prev.tabs
+      if (idxA !== -1 && idxB !== -1 && idxA !== idxB) {
+        tabs = [...prev.tabs]
+        tabs[idxA] = prev.tabs[idxB]
+        tabs[idxB] = prev.tabs[idxA]
+      }
       const newState = {
         ...prev,
-        leftActiveId: prev.rightActiveId,
-        rightActiveId: prev.leftActiveId,
+        tabs,
+        leftActiveId: workerId === prev.leftActiveId ? oldRightId : prev.leftActiveId,
+        rightActiveId: workerId,
       }
       saveState(newState)
       return newState
@@ -460,7 +472,7 @@ export function WorkerTabsProvider({ children }: { children: ReactNode }) {
     moveTab,
     nextTab,
     prevTab,
-    swapPanes,
+    swapToRight,
     restoreFromUrl,
   }
 
