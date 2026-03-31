@@ -32,6 +32,8 @@ interface WorkerTabsContextValue extends WorkerTabsState {
   moveTab: (fromIndex: number, toIndex: number) => void
   nextTab: () => void
   prevTab: () => void
+  /** Swap left and right pane workers (only in split mode) */
+  swapPanes: () => void
   /** Atomically restore left + right tabs from URL (e.g. /workers/A?right=B) */
   restoreFromUrl: (leftId: string, rightId: string) => void
 }
@@ -215,7 +217,14 @@ export function WorkerTabsProvider({ children }: { children: ReactNode }) {
       let { leftActiveId, rightActiveId, isSplit } = prev
 
       if (leftActiveId === workerId) {
-        leftActiveId = findNearestTab(remaining, workerId)
+        if (isSplit && rightActiveId) {
+          // Closing the left pane tab in split mode → exit split, promote right to left
+          leftActiveId = rightActiveId
+          rightActiveId = null
+          isSplit = false
+        } else {
+          leftActiveId = findNearestTab(remaining, workerId)
+        }
       }
       if (rightActiveId === workerId) {
         rightActiveId = null
@@ -281,6 +290,19 @@ export function WorkerTabsProvider({ children }: { children: ReactNode }) {
     setState(prev => {
       if (!prev.isSplit) return prev
       const newState = { ...prev, isSplit: false, rightActiveId: null, focusedPane: 'left' as const }
+      saveState(newState)
+      return newState
+    })
+  }, [])
+
+  const swapPanes = useCallback(() => {
+    setState(prev => {
+      if (!prev.isSplit || !prev.leftActiveId || !prev.rightActiveId) return prev
+      const newState = {
+        ...prev,
+        leftActiveId: prev.rightActiveId,
+        rightActiveId: prev.leftActiveId,
+      }
       saveState(newState)
       return newState
     })
@@ -438,6 +460,7 @@ export function WorkerTabsProvider({ children }: { children: ReactNode }) {
     moveTab,
     nextTab,
     prevTab,
+    swapPanes,
     restoreFromUrl,
   }
 

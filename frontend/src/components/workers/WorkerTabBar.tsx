@@ -95,7 +95,7 @@ function WorkerPicker({ onClose, onSelect, excludeIds }: WorkerPickerProps) {
 export default function WorkerTabBar() {
   const {
     tabs, leftActiveId, rightActiveId, isSplit, focusedPane,
-    activateTab, closeTab, openTab, toggleSplit, enterSplit, setFocusedPane, moveTab,
+    activateTab, closeTab, openTab, toggleSplit, enterSplit, setFocusedPane, moveTab, swapPanes,
   } = useWorkerTabs()
   const { sessions } = useApp()
 
@@ -120,21 +120,25 @@ export default function WorkerTabBar() {
 
   // --- FLIP animation for tabs moving between groups ---
   const flipRectsRef = useRef<Map<string, DOMRect>>(new Map())
+  const flipColorsRef = useRef<Map<string, string>>(new Map())
   const barRef = useRef<HTMLDivElement>(null)
 
-  // Snapshot tab positions before React commits DOM changes
+  // Snapshot tab positions + border colors before React commits DOM changes
   const snapshotTabPositions = useCallback(() => {
     const bar = barRef.current
     if (!bar) return
     const rects = new Map<string, DOMRect>()
+    const colors = new Map<string, string>()
     bar.querySelectorAll<HTMLElement>('[data-worker-id]').forEach(el => {
       const id = el.dataset.workerId!
       rects.set(id, el.getBoundingClientRect())
+      colors.set(id, getComputedStyle(el).borderTopColor)
     })
     flipRectsRef.current = rects
+    flipColorsRef.current = colors
   }, [])
 
-  // After render, animate tabs that moved
+  // After render, animate tabs that moved (position + border color cross-fade)
   useLayoutEffect(() => {
     const bar = barRef.current
     const oldRects = flipRectsRef.current
@@ -147,17 +151,25 @@ export default function WorkerTabBar() {
       const newRect = el.getBoundingClientRect()
       const dx = oldRect.left - newRect.left
       if (Math.abs(dx) < 2) return
+
+      // Set old border color inline so it can transition to the new CSS-defined color
+      const oldColor = flipColorsRef.current.get(id)
+      if (oldColor) el.style.borderTopColor = oldColor
+
       el.style.transform = `translateX(${dx}px)`
       el.style.transition = 'none'
       // Force reflow then animate to final position
       el.offsetHeight // eslint-disable-line @typescript-eslint/no-unused-expressions
-      el.style.transition = 'transform 250ms ease'
+      el.style.transition = 'transform 250ms ease, border-top-color 250ms ease'
       el.style.transform = ''
+      el.style.borderTopColor = '' // reverts to CSS → triggers color transition
       el.addEventListener('transitionend', () => {
         el.style.transition = ''
+        el.style.borderTopColor = ''
       }, { once: true })
     })
     flipRectsRef.current = new Map()
+    flipColorsRef.current = new Map()
   }, [leftActiveId, rightActiveId])
 
   // Convert vertical wheel to horizontal scroll + update fade indicators
@@ -217,9 +229,14 @@ export default function WorkerTabBar() {
     updateScrollFade()
   }, [tabs.length, updateScrollFade])
 
-  // Re-check when active tab changes (ref is always current, just need to trigger)
+  // Re-check when active tab changes. Defer the check so FLIP animations
+  // (which use translateX) have settled — during animation, getBoundingClientRect
+  // returns intermediate positions that make visible tabs look clipped.
   useEffect(() => {
-    updateScrollFade()
+    // Immediately clear stale hint (avoids flash of wrong indicator during FLIP)
+    setActiveHidden({ side: 'none', opacity: 0 })
+    const timer = setTimeout(updateScrollFade, 300)
+    return () => clearTimeout(timer)
   }, [leftActiveId, updateScrollFade])
 
   // Also update on native scroll (e.g. trackpad horizontal gesture)
@@ -278,7 +295,14 @@ export default function WorkerTabBar() {
     // Normal click already handled by mousedown — only handle modifier clicks here
     // ⌥+click always opens in right pane (enters split if needed)
     if (e.altKey) {
-      if (workerId === leftActiveId) return // don't move left active to right
+      if (workerId === leftActiveId) {
+        // ⌥+click on left active tab in split mode → swap panes
+        if (isSplit) {
+          snapshotTabPositions()
+          swapPanes()
+        }
+        return
+      }
       snapshotTabPositions()
       if (isSplit) {
         activateTab(workerId, 'right')
@@ -287,7 +311,7 @@ export default function WorkerTabBar() {
         enterSplit(workerId)
       }
     }
-  }, [isSplit, leftActiveId, activateTab, enterSplit, setFocusedPane, snapshotTabPositions])
+  }, [isSplit, leftActiveId, activateTab, enterSplit, setFocusedPane, swapPanes, snapshotTabPositions])
 
   // Click on tab in the right group: activate it in the right pane + focus right
   const handleRightTabClick = useCallback((e: React.MouseEvent, workerId: string) => {
@@ -311,12 +335,18 @@ export default function WorkerTabBar() {
     openTab(workerId)
   }, [openTab])
 
-  // --- Right-click tab → open in right pane ---
+  // --- Right-click tab → open in right pane (or swap if it's the left active tab) ---
   const handleTabRightClick = useCallback((e: React.MouseEvent, workerId: string) => {
     e.preventDefault()
     e.stopPropagation()
-    // Don't move the left pane's active tab to the right
-    if (workerId === leftActiveId) return
+    // Right-click the left active tab in split mode → swap left and right panes
+    if (workerId === leftActiveId) {
+      if (isSplit) {
+        snapshotTabPositions()
+        swapPanes()
+      }
+      return
+    }
     snapshotTabPositions()
     if (isSplit) {
       activateTab(workerId, 'right')
@@ -324,7 +354,7 @@ export default function WorkerTabBar() {
     } else {
       enterSplit(workerId)
     }
-  }, [isSplit, leftActiveId, activateTab, setFocusedPane, enterSplit, snapshotTabPositions])
+  }, [isSplit, leftActiveId, activateTab, setFocusedPane, enterSplit, swapPanes, snapshotTabPositions])
 
   // --- Split mode: separate left tabs from right-active tab ---
   const leftTabs = isSplit

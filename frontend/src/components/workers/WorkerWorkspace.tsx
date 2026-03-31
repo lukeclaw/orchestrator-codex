@@ -1,4 +1,4 @@
-import { useEffect, useRef, useCallback, useMemo, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useCallback, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useWorkerTabs } from '../../context/WorkerTabsContext'
 import { useBrainPanel } from '../../context/BrainPanelContext'
@@ -106,14 +106,13 @@ export default function WorkerWorkspace() {
   useEffect(() => {
     if (prevSplitRef.current === isSplit) return
     prevSplitRef.current = isSplit
-    const container = workspaceRef.current?.querySelector('.ww-pane-container')
+    const container = workspaceRef.current
     if (!container) return
     container.classList.add('ww-animating')
     const timer = setTimeout(() => {
       container.classList.remove('ww-animating')
-      // Refit all visible terminals after animation settles
       workerRefs.current.forEach(handle => handle.refitTerminal())
-    }, 280) // slightly longer than 250ms transition
+    }, 280)
     return () => { clearTimeout(timer); container.classList.remove('ww-animating') }
   }, [isSplit])
 
@@ -174,7 +173,7 @@ export default function WorkerWorkspace() {
       if (meta && e.key === 'w' && !e.shiftKey) {
         const activeId = focusedPane === 'left' ? leftActiveId : rightActiveId
         if (activeId) {
-          const handle = workerRefs.current.get(`${focusedPane}-${activeId}`)
+          const handle = workerRefs.current.get(activeId)
           if (!handle?.hasEditorTabs()) {
             e.preventDefault()
             closeTab(activeId)
@@ -207,46 +206,42 @@ export default function WorkerWorkspace() {
     return () => document.removeEventListener('keydown', handler)
   }, [focusedPane, leftActiveId, rightActiveId, isSplit, prevTab, nextTab, closeTab, enterSplit, exitSplit, setFocusedPane, reopenLastClosed])
 
-  // --- Grow-only mounted sets per pane (lazy mount on first activation) ---
+  // --- Grow-only mounted set (lazy mount on first activation) ---
   // Workers mount when first activated and stay mounted until their tab is closed.
   // The array never reorders — new workers append at the end. This prevents
   // remounting on tab switch (stable keys, stable array reference).
-  const tabWorkerIds = useMemo(() => tabs.map(t => t.workerId).join(','), [tabs])
-  const [leftMounted, setLeftMounted] = useState<string[]>([])
-  const [rightMounted, setRightMounted] = useState<string[]>([])
+  // All workers share a single parent element; CSS `order` + `data-pane` controls
+  // which side of the split they appear on. On swap, only data-pane changes — same
+  // parent, same key — so React never unmounts/remounts.
+  const [mounted, setMounted] = useState<string[]>([])
 
-  useEffect(() => {
-    if (!leftActiveId) return
-    setLeftMounted(prev => {
-      if (prev.includes(leftActiveId)) return prev // same ref → no re-render
-      const next = [...prev, leftActiveId]
-      if (next.length > MAX_LIVE_INSTANCES) {
-        const evictIdx = next.findIndex(id => id !== leftActiveId)
+  useLayoutEffect(() => {
+    setMounted(prev => {
+      const toMount = [leftActiveId, rightActiveId].filter((id): id is string => id != null)
+      let next = prev
+      for (const id of toMount) {
+        if (!next.includes(id)) {
+          if (next === prev) next = [...prev]
+          next.push(id)
+        }
+      }
+      if (next !== prev && next.length > MAX_LIVE_INSTANCES) {
+        const activeSet = new Set(toMount)
+        const evictIdx = next.findIndex(id => !activeSet.has(id))
         if (evictIdx !== -1) next.splice(evictIdx, 1)
       }
       return next
     })
-  }, [leftActiveId])
-
-  useEffect(() => {
-    if (!rightActiveId) return
-    setRightMounted(prev => {
-      if (prev.includes(rightActiveId)) return prev
-      const next = [...prev, rightActiveId]
-      if (next.length > MAX_LIVE_INSTANCES) {
-        const evictIdx = next.findIndex(id => id !== rightActiveId)
-        if (evictIdx !== -1) next.splice(evictIdx, 1)
-      }
-      return next
-    })
-  }, [rightActiveId])
+  }, [leftActiveId, rightActiveId])
 
   // Prune when tabs are closed
   useEffect(() => {
     const ids = new Set(tabs.map(t => t.workerId))
-    setLeftMounted(prev => { const next = prev.filter(id => ids.has(id)); return next.length === prev.length ? prev : next })
-    setRightMounted(prev => { const next = prev.filter(id => ids.has(id)); return next.length === prev.length ? prev : next })
-  }, [tabWorkerIds]) // eslint-disable-line react-hooks/exhaustive-deps
+    setMounted(prev => {
+      const next = prev.filter(id => ids.has(id))
+      return next.length === prev.length ? prev : next
+    })
+  }, [tabs])
 
   // --- Stable callbacks ---
   const handleDelete = useCallback((workerId: string) => {
@@ -273,7 +268,7 @@ export default function WorkerWorkspace() {
   useEffect(() => {
     if (leftActiveId && leftActiveId !== prevLeftRef.current) {
       requestAnimationFrame(() => {
-        workerRefs.current.get(`left-${leftActiveId}`)?.refitTerminal()
+        workerRefs.current.get(leftActiveId)?.refitTerminal()
       })
     }
     prevLeftRef.current = leftActiveId
@@ -281,56 +276,44 @@ export default function WorkerWorkspace() {
   useEffect(() => {
     if (rightActiveId && rightActiveId !== prevRightRef.current) {
       requestAnimationFrame(() => {
-        workerRefs.current.get(`right-${rightActiveId}`)?.refitTerminal()
+        workerRefs.current.get(rightActiveId)?.refitTerminal()
       })
     }
     prevRightRef.current = rightActiveId
   }, [rightActiveId])
 
-  // --- Render pane content ---
-  // Both panes use hidden-DOM preservation with grow-only mounted arrays
-  const renderPaneContent = (pane: 'left' | 'right') => {
-    const mounted = pane === 'left' ? leftMounted : rightMounted
-    const activeId = pane === 'left' ? leftActiveId : rightActiveId
-    const isFocusedPane = focusedPane === pane
-
-    return mounted.map(workerId => {
-      const isVisible = workerId === activeId
-      const refKey = `${pane}-${workerId}`
-      return (
-        <div
-          key={refKey}
-          className={isVisible ? 'ww-pane-content ww-pane-content--visible' : 'ww-pane-content ww-pane-content--hidden'}
-        >
-          <WorkerDetail
-            ref={getRefCallback(refKey)}
-            workerId={workerId}
-            isActive={isVisible}
-            isFocused={isVisible && isFocusedPane}
-            onDelete={handleDelete}
-          />
-        </div>
-      )
-    })
-  }
-
   return (
-    <div className="worker-workspace" ref={workspaceRef}>
+    <div className="worker-workspace">
       <WorkerTabBar />
-      <div className={`ww-pane-container${isSplit ? ' ww-pane-container--split' : ''}`}>
-        <div
-          className={`ww-pane ww-pane--left${focusedPane === 'left' ? ' ww-pane--focused' : ''}`}
-          onClick={() => { if (isSplit) setFocusedPane('left') }}
-        >
-          {renderPaneContent('left')}
-        </div>
+      <div
+        ref={workspaceRef}
+        className={`ww-pane-container${isSplit ? ' ww-pane-container--split' : ''}`}
+      >
         <div className="ww-split-divider" />
-        <div
-          className={`ww-pane ww-pane--right${focusedPane === 'right' ? ' ww-pane--focused' : ''}`}
-          onClick={() => { if (isSplit) setFocusedPane('right') }}
-        >
-          {renderPaneContent('right')}
-        </div>
+        {mounted.map(workerId => {
+          const pane: 'left' | 'right' | null =
+            workerId === leftActiveId ? 'left'
+            : (isSplit && workerId === rightActiveId) ? 'right'
+            : null
+          const isVisible = pane !== null
+          const isFocused = isVisible && focusedPane === pane
+          return (
+            <div
+              key={workerId}
+              data-pane={pane}
+              className={`ww-pane ${pane ? `ww-pane--${pane}` : 'ww-pane--hidden'}${isFocused ? ' ww-pane--focused' : ''}`}
+              onClick={pane && isSplit ? () => setFocusedPane(pane) : undefined}
+            >
+              <WorkerDetail
+                ref={getRefCallback(workerId)}
+                workerId={workerId}
+                isActive={isVisible}
+                isFocused={isFocused}
+                onDelete={handleDelete}
+              />
+            </div>
+          )
+        })}
       </div>
     </div>
   )
