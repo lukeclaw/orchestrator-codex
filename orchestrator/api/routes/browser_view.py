@@ -275,6 +275,18 @@ async def start_browser_view_endpoint(
     if not is_remote_host(s.host):
         cdp_port = _read_cdp_port_for_session(s.name) or body.cdp_port
 
+    # For local workers, ensure the per-worker CDP proxy is running.
+    # After a server restart the in-memory proxy state is lost but the worker
+    # still has the old PLAYWRIGHT_MCP_CDP_ENDPOINT in its shell.  The port is
+    # deterministic from session_id, so restarting yields the same port.
+    if not is_remote_host(s.host):
+        from orchestrator.browser.cdp_worker_proxy import start_cdp_proxy
+
+        try:
+            start_cdp_proxy(session_id, chrome_port=cdp_port)
+        except Exception as e:
+            logger.warning("CDP proxy start failed for %s: %s", session_id, e)
+
     existing = get_active_view(session_id)
     if existing:
         if is_view_alive(session_id):
