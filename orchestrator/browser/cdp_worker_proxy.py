@@ -338,10 +338,27 @@ def _build_ws_handler(info: CDPProxyInfo):
         path = ws.request.path if hasattr(ws, "request") and ws.request else ""
         chrome_url = f"ws://localhost:{info.chrome_port}{path}"
 
-        # Use filtering relay for browser-level connections when we have a
-        # target assigned.  This makes Playwright's connectOverCDP() see
-        # only this worker's page instead of all tabs.
+        # Use filtering relay for browser-level connections.  This makes
+        # Playwright's connectOverCDP() only discover this worker's tab.
         is_browser_ws = "/devtools/browser/" in path
+
+        # Ensure we have a target_id — Playwright may connect before
+        # orch-browser creates the tab.  Create one on demand, just
+        # like the /json handler does.
+        if is_browser_ws and not info.target_id:
+            from orchestrator.browser.cdp_proxy import create_browser_tab
+
+            try:
+                new_target = await create_browser_tab(info.chrome_port)
+                info.target_id = new_target.get("id", "")
+                logger.info(
+                    "CDP proxy created tab %s on browser-WS connect for %s",
+                    info.target_id,
+                    info.session_id,
+                )
+            except Exception as e:
+                logger.warning("CDP proxy tab creation failed for %s: %s", info.session_id, e)
+
         use_filter = is_browser_ws and bool(info.target_id)
 
         # Snapshot other workers' page IDs so we can hide them.
