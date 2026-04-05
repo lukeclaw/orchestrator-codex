@@ -10,7 +10,10 @@ from orchestrator.browser.cdp_worker_proxy import (
     PROXY_PORT_RANGE,
     CDPProxyInfo,
     _build_process_request,
+    _filter_get_targets_response,
+    _filtering_relay,
     _session_preferred_port,
+    _should_drop_target_event,
     _worker_proxies,
     get_proxy_port,
     start_cdp_proxy,
@@ -453,3 +456,287 @@ class TestProcessRequest:
         assert resp.status_code == 200
         mock_create.assert_called_once()
         assert info.target_id == "NEW_TAB"
+
+
+class TestShouldDropTargetEvent:
+    """Test the CDP target event filtering logic (exclusion-set based)."""
+
+    def test_drops_hidden_page_created(self):
+        msg = {
+            "method": "Target.targetCreated",
+            "params": {"targetInfo": {"type": "page", "targetId": "OTHER"}},
+        }
+        assert _should_drop_target_event(msg, {"OTHER", "ANOTHER"}) is True
+
+    def test_keeps_own_page_created(self):
+        msg = {
+            "method": "Target.targetCreated",
+            "params": {"targetInfo": {"type": "page", "targetId": "MINE"}},
+        }
+        assert _should_drop_target_event(msg, {"OTHER"}) is False
+
+    def test_keeps_new_page_not_in_hidden_set(self):
+        """Pages created by this worker (not in hidden set) pass through."""
+        msg = {
+            "method": "Target.targetCreated",
+            "params": {"targetInfo": {"type": "page", "targetId": "NEW_TAB"}},
+        }
+        assert _should_drop_target_event(msg, {"OTHER"}) is False
+
+    def test_keeps_non_page_target(self):
+        msg = {
+            "method": "Target.targetCreated",
+            "params": {"targetInfo": {"type": "service_worker", "targetId": "SW1"}},
+        }
+        assert _should_drop_target_event(msg, {"OTHER"}) is False
+
+    def test_drops_hidden_attached_to_target(self):
+        msg = {
+            "method": "Target.attachedToTarget",
+            "params": {"targetInfo": {"type": "page", "targetId": "OTHER"}},
+        }
+        assert _should_drop_target_event(msg, {"OTHER"}) is True
+
+    def test_drops_hidden_target_info_changed(self):
+        msg = {
+            "method": "Target.targetInfoChanged",
+            "params": {"targetInfo": {"type": "page", "targetId": "OTHER"}},
+        }
+        assert _should_drop_target_event(msg, {"OTHER"}) is True
+
+    def test_drops_hidden_target_destroyed_and_removes_from_set(self):
+        hidden = {"OTHER", "ANOTHER"}
+        msg = {
+            "method": "Target.targetDestroyed",
+            "params": {"targetId": "OTHER"},
+        }
+        assert _should_drop_target_event(msg, hidden) is True
+        assert "OTHER" not in hidden  # Removed after destruction
+
+    def test_keeps_own_target_destroyed(self):
+        msg = {
+            "method": "Target.targetDestroyed",
+            "params": {"targetId": "MINE"},
+        }
+        assert _should_drop_target_event(msg, {"OTHER"}) is False
+
+    def test_keeps_unrelated_method(self):
+        msg = {"method": "Page.frameNavigated", "params": {}}
+        assert _should_drop_target_event(msg, {"OTHER"}) is False
+
+    def test_no_op_with_empty_hidden_set(self):
+        msg = {
+            "method": "Target.targetCreated",
+            "params": {"targetInfo": {"type": "page", "targetId": "ANY"}},
+        }
+        assert _should_drop_target_event(msg, set()) is False
+
+
+class TestFilterGetTargetsResponse:
+    """Test filtering of Target.getTargets responses."""
+
+    def test_filters_hidden_pages(self):
+        msg = {
+            "id": 1,
+            "result": {
+                "targetInfos": [
+                    {"type": "page", "targetId": "MINE"},
+                    {"type": "page", "targetId": "OTHER"},
+                    {"type": "service_worker", "targetId": "SW1"},
+                ]
+            },
+        }
+        result = _filter_get_targets_response(msg, {"OTHER"})
+        infos = result["result"]["targetInfos"]
+        assert len(infos) == 2
+        assert infos[0]["targetId"] == "MINE"
+        assert infos[1]["targetId"] == "SW1"
+
+    def test_no_op_without_target_infos(self):
+        msg = {"id": 1, "result": {"something": "else"}}
+        result = _filter_get_targets_response(msg, {"OTHER"})
+        assert result == msg
+
+    def test_no_op_with_empty_hidden_set(self):
+        msg = {
+            "id": 1,
+            "result": {
+                "targetInfos": [
+                    {"type": "page", "targetId": "A"},
+                    {"type": "page", "targetId": "B"},
+                ]
+            },
+        }
+        result = _filter_get_targets_response(msg, set())
+        assert len(result["result"]["targetInfos"]) == 2
+
+    def test_preserves_original_msg(self):
+        """Filtering should not mutate the original message dict."""
+        original_infos = [
+            {"type": "page", "targetId": "MINE"},
+            {"type": "page", "targetId": "OTHER"},
+        ]
+        msg = {"id": 1, "result": {"targetInfos": original_infos}}
+        _filter_get_targets_response(msg, {"OTHER"})
+        assert len(original_infos) == 2
+
+
+class TestFilteringRelay:
+    """Test the full filtering relay coroutine."""
+
+    @pytest.mark.asyncio
+    async def test_drops_hidden_page_events(self):
+        """Messages about hidden (other workers') pages are dropped."""
+        hidden = {"OTHER", "ANOTHER"}
+        messages = [
+            json.dumps(
+                {
+                    "method": "Target.targetCreated",
+                    "params": {"targetInfo": {"type": "page", "targetId": "MINE"}},
+                }
+            ),
+            json.dumps(
+                {
+                    "method": "Target.targetCreated",
+                    "params": {"targetInfo": {"type": "page", "targetId": "OTHER"}},
+                }
+            ),
+            json.dumps(
+                {
+                    "method": "Target.attachedToTarget",
+                    "params": {"targetInfo": {"type": "page", "targetId": "MINE"}},
+                }
+            ),
+            json.dumps(
+                {
+                    "method": "Target.attachedToTarget",
+                    "params": {"targetInfo": {"type": "page", "targetId": "ANOTHER"}},
+                }
+            ),
+        ]
+
+        src = AsyncIteratorMock(messages)
+        dst = AsyncMock()
+        await _filtering_relay(src, dst, hidden)
+
+        # Only the two "MINE" messages should be forwarded
+        assert dst.send.call_count == 2
+        sent = [call.args[0] for call in dst.send.call_args_list]
+        for s in sent:
+            assert "MINE" in s
+
+    @pytest.mark.asyncio
+    async def test_passes_new_pages_created_by_worker(self):
+        """Pages created by this worker (not in hidden set) pass through."""
+        hidden = {"OTHER"}
+        messages = [
+            json.dumps(
+                {
+                    "method": "Target.targetCreated",
+                    "params": {"targetInfo": {"type": "page", "targetId": "NEW_TAB"}},
+                }
+            ),
+            json.dumps(
+                {
+                    "method": "Target.attachedToTarget",
+                    "params": {"targetInfo": {"type": "page", "targetId": "NEW_TAB"}},
+                }
+            ),
+        ]
+
+        src = AsyncIteratorMock(messages)
+        dst = AsyncMock()
+        await _filtering_relay(src, dst, hidden)
+
+        assert dst.send.call_count == 2
+
+    @pytest.mark.asyncio
+    async def test_passes_non_page_targets(self):
+        """Service workers and other non-page targets are always forwarded."""
+        messages = [
+            json.dumps(
+                {
+                    "method": "Target.targetCreated",
+                    "params": {"targetInfo": {"type": "service_worker", "targetId": "SW1"}},
+                }
+            ),
+        ]
+
+        src = AsyncIteratorMock(messages)
+        dst = AsyncMock()
+        await _filtering_relay(src, dst, {"OTHER"})
+
+        assert dst.send.call_count == 1
+
+    @pytest.mark.asyncio
+    async def test_passes_non_target_messages(self):
+        """Regular CDP messages like Page.frameNavigated pass through."""
+        messages = [
+            json.dumps({"method": "Page.frameNavigated", "params": {"url": "https://example.com"}}),
+            json.dumps({"id": 42, "result": {"data": "ok"}}),
+        ]
+
+        src = AsyncIteratorMock(messages)
+        dst = AsyncMock()
+        await _filtering_relay(src, dst, {"OTHER"})
+
+        assert dst.send.call_count == 2
+
+    @pytest.mark.asyncio
+    async def test_filters_get_targets_response(self):
+        """Target.getTargets responses have their targetInfos filtered."""
+        messages = [
+            json.dumps(
+                {
+                    "id": 5,
+                    "result": {
+                        "targetInfos": [
+                            {"type": "page", "targetId": "MINE"},
+                            {"type": "page", "targetId": "OTHER"},
+                            {"type": "browser", "targetId": "BROWSER"},
+                        ]
+                    },
+                }
+            ),
+        ]
+
+        src = AsyncIteratorMock(messages)
+        dst = AsyncMock()
+        await _filtering_relay(src, dst, {"OTHER"})
+
+        assert dst.send.call_count == 1
+        sent = json.loads(dst.send.call_args[0][0])
+        infos = sent["result"]["targetInfos"]
+        assert len(infos) == 2
+        ids = {t["targetId"] for t in infos}
+        assert ids == {"MINE", "BROWSER"}
+
+    @pytest.mark.asyncio
+    async def test_passes_binary_messages(self):
+        """Binary WebSocket messages pass through untouched."""
+        messages = [b"\x00\x01\x02"]
+
+        src = AsyncIteratorMock(messages)
+        dst = AsyncMock()
+        await _filtering_relay(src, dst, {"OTHER"})
+
+        assert dst.send.call_count == 1
+        assert dst.send.call_args[0][0] == b"\x00\x01\x02"
+
+
+class AsyncIteratorMock:
+    """Mock async iterator for simulating a WebSocket source."""
+
+    def __init__(self, messages):
+        self._messages = list(messages)
+        self._index = 0
+
+    def __aiter__(self):
+        return self
+
+    async def __anext__(self):
+        if self._index >= len(self._messages):
+            raise StopAsyncIteration
+        msg = self._messages[self._index]
+        self._index += 1
+        return msg
