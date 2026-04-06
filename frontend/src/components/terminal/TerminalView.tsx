@@ -137,6 +137,12 @@ export default function TerminalView({ sessionId, wsPath, sendPath, sessionStatu
   // Prevents reconnection attempts — the process is gone, not just a network blip.
   const ptyExitedRef = useRef(false)
 
+  // Track whether the WS has ever connected.  The auto-reconnect effect should
+  // not fire before the first connection completes — otherwise it creates a
+  // duplicate WebSocket on every page visit (idle→working status transition
+  // races with the initial WS handshake).
+  const hasConnectedRef = useRef(false)
+
 
   // --- Typing latency tracker (component-level so both WS and onData can access) ---
   const latencyRef = useRef({
@@ -232,6 +238,7 @@ export default function TerminalView({ sessionId, wsPath, sendPath, sessionStatu
       if (wsRef.current !== ws) return // stale WS (React Strict Mode cleanup)
       setConnectionState('connected')
       setReady(true)
+      hasConnectedRef.current = true
       setReconnectCountdown(null)
       setWsReconnectStep(null)
       reconnectAttemptRef.current = 0
@@ -653,6 +660,7 @@ export default function TerminalView({ sessionId, wsPath, sendPath, sessionStatu
       // Clear reconnect timer on unmount
       cancelPendingReconnect()
       reconnectAttemptRef.current = MAX_RECONNECT_ATTEMPTS // Prevent reconnect on unmount
+      hasConnectedRef.current = false
       
       clearTimeout(resizeTimeout)
       observer.disconnect()
@@ -689,7 +697,7 @@ export default function TerminalView({ sessionId, wsPath, sendPath, sessionStatu
     prevStatusRef.current = sessionStatus
     const isActive = sessionStatus === 'working' || sessionStatus === 'waiting'
     const wasInactive = !prev || prev === 'disconnected' || prev === 'connecting' || prev === 'error' || prev === 'idle'
-    if (isActive && wasInactive && connectionState !== 'connected' && terminalRef.current) {
+    if (isActive && wasInactive && connectionState !== 'connected' && hasConnectedRef.current && terminalRef.current) {
       cancelPendingReconnect()
       ptyExitedRef.current = false
       reconnectAttemptRef.current = 0

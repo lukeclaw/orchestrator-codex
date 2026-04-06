@@ -187,6 +187,24 @@ def ensure_window(session_name: str, window_name: str, cwd: str | None = None) -
             # Rename the default window
             target = f"{session_name}:{windows[0].name}"
             _run_tmux("rename-window", "-t", target, window_name, check=False)
+            # Prevent the shell from reverting the name via automatic-rename
+            _run_tmux(
+                "set-option",
+                "-w",
+                "-t",
+                f"{session_name}:{window_name}",
+                "automatic-rename",
+                "off",
+                check=False,
+            )
+            # Verify rename actually succeeded — fall back to create if it didn't
+            if not window_exists(session_name, window_name):
+                logger.warning(
+                    "rename-window failed for %s:%s — falling back to create_window",
+                    session_name,
+                    window_name,
+                )
+                create_window(session_name, window_name, cwd=cwd)
         else:
             create_window(session_name, window_name, cwd=cwd)
 
