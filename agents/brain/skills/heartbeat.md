@@ -102,8 +102,9 @@ If a relevant correction exists, factor it into your decision.
 | Empty terminal / disconnected | Worker session may be broken. Try `orch-workers reconnect <id>`. If that fails, notify user. |
 | Worker claims task complete | Run verification checklist (see below). For PR-based tasks: if all pass, mark done + stop. For document deliverables: always notify user for confirmation. For recurring tasks: notify iteration complete, never mark done or stop worker. If concern: notify user. |
 | PR open, missing evidence | Nudge worker to add evidence to PR description (see evidence nudge below) |
-| Worker idle >2h, no visible progress | Notify: "Worker X may be stuck, needs human review" |
-| Blocked on auth/access/human decision | Notify with details of what's needed |
+| Worker idle >2h, no visible progress | Set status to `waiting`, notify: "Worker X idle 2h+, needs attention". **Do NOT stop.** |
+| Blocked on auth/access/human decision | Set status to `waiting`, notify with details of what's needed. **Do NOT stop** — the worker resumes once the human provides input. |
+| Worker partially done, needs human input | Set status to `waiting`, notify with specifics (what input, what's done so far, what remains). **Do NOT stop** — partial progress is valuable and restarting from scratch wastes all prior work. |
 
 **Resolving PR info**: Get the PR URL from task links (`orch-tasks show <task-id>` → `links` field with tag "PR") or from the worker's terminal output. Parse the URL: `github.com/ORG/REPO/pull/N` → `--repo ORG/REPO N`. Never guess the org name — multiproduct names are not GitHub org names.
 
@@ -127,6 +128,21 @@ If the PR is not merged, don't mark done — check the `orch-prs` action field:
 **Recurring tasks** (monitoring, periodic reports, recurring syncs): Check the task description or notes for indicators that the task is recurring (e.g., "recurring", "periodic", "weekly", "daily", "ongoing", or implied by nature). For recurring tasks, **never mark done and never stop the worker** — the user will run the task again. Instead, notify the user that the current iteration is complete and leave the worker available.
 
 For large/critical PRs, use `/review` (Claude Code built-in) with task context for a deeper review.
+
+**When stopping is allowed** — stopping a worker destroys its context and all partial progress. **Only stop a worker when the task is verified complete.** This means:
+
+- PR merged + checks pass + reviewed ✓ → stop
+- Document/investigation confirmed done by user ✓ → stop
+- Everything else → **do NOT stop**
+
+**Never stop a worker that has an incomplete task**, regardless of reason:
+- Blocked on human input? → Set to `waiting`, notify user. Worker stays alive.
+- Stuck on auth/RBAC/access? → Set to `waiting`, notify user. Worker stays alive.
+- Went off-track? → Notify user to course-correct. Worker stays alive.
+- Idle for days? → Notify user. Worker stays alive.
+- Needs laptop/local access? → Set to `waiting`, notify user. Worker stays alive.
+
+A blocked worker that stays alive can resume in seconds once the blocker is resolved. A stopped worker must restart from scratch, losing all accumulated context and partial work. The cost of keeping a waiting worker alive is near zero; the cost of restarting from 0% is enormous.
 
 **Marking done + stopping** (only for PR-based, non-recurring tasks — always notify first):
 
@@ -288,4 +304,5 @@ test-worker: sent fix suggestion (ECONNREFUSED — missing DB env var) — notif
 - **Staleness overrides PR-wait skip** -- a stale `updated_at` (>2h) means the worker should re-check, even if `last_status_changed_at` is under the PR-wait threshold
 - **Document deliverables need human confirmation** -- never auto-mark done for tasks whose deliverable is a document, report, or non-PR artifact. Always notify user and wait for them to confirm completion
 - **Recurring tasks stay alive** -- never mark done or stop workers on recurring tasks. Notify that the iteration is complete and leave the worker available for the next run
+- **NEVER stop a worker with an incomplete task** -- blocked, waiting, needs input, went off-track, idle for days — none of these are stop conditions. Set to `waiting`, notify user, move on. Only stop when the task is **verified done**. A stopped worker loses all context and must restart from scratch
 - **Idle/paused workers are not your concern** -- skip them entirely, don't preview their terminals
