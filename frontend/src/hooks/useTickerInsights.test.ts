@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { generateInsights } from './useTickerInsights'
-import type { TrendsData, PrMergeDay, Task } from '../api/types'
+import type { TrendsData, PrMergeDay, ThroughputDetailItem, Task, Project } from '../api/types'
 
 // Frozen time: Monday 2026-04-06 14:00 local
 // Week starts Monday 2026-04-06, month starts 2026-04-01
@@ -22,8 +22,45 @@ function makeTrends(
   }
 }
 
-function makePrDays(entries: { date: string; count: number }[]): PrMergeDay[] {
-  return entries.map(e => ({ date: e.date, count: e.count, prs: [] }))
+function makePrDays(entries: { date: string; count: number; prs?: { number: number; title: string }[] }[]): PrMergeDay[] {
+  return entries.map(e => ({
+    date: e.date,
+    count: e.count,
+    prs: (e.prs ?? []).map(p => ({ url: '', number: p.number, title: p.title, repo: 'test/repo', merged_at: e.date, additions: 0, deletions: 0 })),
+  }))
+}
+
+function makeProject(name: string, tasksDone: number, tasksTotal: number): Project {
+  return {
+    id: `proj-${name.toLowerCase().replace(/\s/g, '-')}`,
+    name,
+    description: null,
+    status: tasksDone === tasksTotal ? 'completed' : 'active',
+    target_date: null,
+    starred: false,
+    created_at: '2026-04-01T10:00:00',
+    updated_at: '2026-04-06T10:00:00',
+    stats: {
+      tasks: { total: tasksTotal, todo: 0, in_progress: 0, done: tasksDone, blocked: 0 },
+      subtasks: { total: 0, done: 0 },
+      workers: { total: 0, working: 0, idle: 0, waiting: 0, blocked: 0 },
+      context: { total: 0 },
+    },
+  }
+}
+
+function makeCompletion(taskKey: string, title: string, isSubtask = false): ThroughputDetailItem {
+  return {
+    entity_id: `task-${taskKey}`,
+    is_subtask: isSubtask,
+    timestamp: '2026-04-06T14:00:00Z',
+    title,
+    task_key: taskKey,
+    status: 'done',
+    parent_task_id: null,
+    parent_title: null,
+    parent_task_key: null,
+  }
 }
 
 function makeTask(projectId: string, status: string, subtasksDone = 0): Task {
@@ -242,6 +279,105 @@ describe('generateInsights', () => {
   it('skips total-subtasks when < 20', () => {
     const tasks = [makeTask('a', 'done', 10)]
     expect(generateInsights(null, [], tasks, []).find(m => m.id === 'total-subtasks')).toBeUndefined()
+  })
+
+  // --- specific celebrations ---
+
+  it('celebrates completed projects', () => {
+    const projects = [makeProject('Lix Cleanups', 5, 5)]
+    const m = generateInsights(null, [], [], projects).find(m => m.id.startsWith('project-done'))!
+    expect(m.text).toContain('Lix Cleanups')
+    expect(m.text).toContain('all done')
+  })
+
+  it('skips projects where not all tasks are done', () => {
+    const projects = [makeProject('In Progress', 3, 5)]
+    expect(generateInsights(null, [], [], projects).find(m => m.id.startsWith('project-done'))).toBeUndefined()
+  })
+
+  it('skips projects with zero tasks', () => {
+    const projects = [makeProject('Empty', 0, 0)]
+    expect(generateInsights(null, [], [], projects).find(m => m.id.startsWith('project-done'))).toBeUndefined()
+  })
+
+  it('limits completed projects to 2', () => {
+    const projects = [makeProject('A', 1, 1), makeProject('B', 2, 2), makeProject('C', 3, 3)]
+    const msgs = generateInsights(null, [], [], projects).filter(m => m.id.startsWith('project-done'))
+    expect(msgs).toHaveLength(2)
+  })
+
+  it('celebrates recently completed top-level tasks', () => {
+    const completions = [makeCompletion('RRO-13', 'Implement payment flow')]
+    const m = generateInsights(null, [], [], [], completions).find(m => m.id.startsWith('task-done'))!
+    expect(m.text).toContain('RRO-13')
+    expect(m.text).toContain('Implement payment flow')
+  })
+
+  it('skips subtask completions', () => {
+    const completions = [makeCompletion('RRO-13-1', 'Write tests', true)]
+    expect(generateInsights(null, [], [], [], completions).find(m => m.id.startsWith('task-done'))).toBeUndefined()
+  })
+
+  it('limits completed tasks to 3', () => {
+    const completions = [
+      makeCompletion('T-1', 'A'), makeCompletion('T-2', 'B'),
+      makeCompletion('T-3', 'C'), makeCompletion('T-4', 'D'),
+    ]
+    const msgs = generateInsights(null, [], [], [], completions).filter(m => m.id.startsWith('task-done'))
+    expect(msgs).toHaveLength(3)
+  })
+
+  it('truncates long task titles', () => {
+    const completions = [makeCompletion('T-1', 'This is a very long task title that should be truncated at word boundary')]
+    const m = generateInsights(null, [], [], [], completions).find(m => m.id.startsWith('task-done'))!
+    expect(m.text).toContain('...')
+    expect(m.text.length).toBeLessThan(80)
+  })
+
+  it('celebrates merged PRs with titles', () => {
+    const prs = makePrDays([{
+      date: TODAY, count: 1,
+      prs: [{ number: 456, title: 'Fix authentication bug' }],
+    }])
+    const m = generateInsights(null, prs, [], []).find(m => m.id.startsWith('pr-merged'))!
+    expect(m.text).toContain('#456')
+    expect(m.text).toContain('Fix authentication bug')
+  })
+
+  it('limits merged PR celebrations to 2', () => {
+    const prs = makePrDays([{
+      date: TODAY, count: 3,
+      prs: [{ number: 1, title: 'A' }, { number: 2, title: 'B' }, { number: 3, title: 'C' }],
+    }])
+    const msgs = generateInsights(null, prs, [], []).filter(m => m.id.startsWith('pr-merged'))
+    expect(msgs).toHaveLength(2)
+  })
+
+  it('celebrates when all subtasks of a parent task are done', () => {
+    const tasks = [{
+      ...makeTask('proj-a', 'done', 5),
+      task_key: 'PAY-5' as string | null,
+    }]
+    const m = generateInsights(null, [], tasks, []).find(m => m.id.startsWith('subtasks-complete'))!
+    expect(m.text).toContain('PAY-5')
+    expect(m.text).toContain('All subtasks')
+  })
+
+  it('skips subtask celebration when not all subtasks done', () => {
+    const tasks = [{
+      ...makeTask('proj-a', 'in_progress'),
+      subtask_stats: { total: 5, done: 3, in_progress: 2 },
+    }]
+    expect(generateInsights(null, [], tasks, []).find(m => m.id.startsWith('subtasks-complete'))).toBeUndefined()
+  })
+
+  it('celebrations appear before numeric messages', () => {
+    const trends = makeTrends([{ date: TODAY, tasks: 5 }])
+    const completions = [makeCompletion('T-1', 'Finished task')]
+    const msgs = generateInsights(trends, [], [], [], completions)
+    const celebIdx = msgs.findIndex(m => m.id.startsWith('task-done'))
+    const numericIdx = msgs.findIndex(m => m.id === 'tasks-today')
+    expect(celebIdx).toBeLessThan(numericIdx)
   })
 
   // --- rest reminder ---

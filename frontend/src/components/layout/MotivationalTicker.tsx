@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useTickerInsights, type InsightMessage } from '../../hooks/useTickerInsights'
+import { IconChevronRight } from '../common/Icons'
 import './MotivationalTicker.css'
 
 /** Render message text with the stat portion highlighted */
@@ -57,11 +58,21 @@ export default function MotivationalTicker() {
     })
   }, [messages])
 
+  // Track interval so skip can reset it
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
+
   useEffect(() => {
     if (messages.length < 2) return
-    const timer = setInterval(advance, ROTATE_INTERVAL)
-    return () => clearInterval(timer)
+    intervalRef.current = setInterval(advance, ROTATE_INTERVAL)
+    return () => { if (intervalRef.current) clearInterval(intervalRef.current) }
   }, [advance, messages.length])
+
+  const skip = useCallback(() => {
+    advance()
+    // Reset the timer so next auto-rotation is a full interval from now
+    if (intervalRef.current) clearInterval(intervalRef.current)
+    intervalRef.current = setInterval(advance, ROTATE_INTERVAL)
+  }, [advance])
 
   if (loading || messages.length === 0) return null
 
@@ -96,6 +107,9 @@ export default function MotivationalTicker() {
       <span className={`ticker-slot ${activeSlot === 'b' ? 'ticker-slot--active' : 'ticker-slot--inactive'}`}>
         {slotB && <MessageContent message={slotB} />}
       </span>
+      <button className="ticker-skip" onClick={skip} title="Next message" aria-label="Next message">
+        <IconChevronRight size={12} />
+      </button>
     </div>
   )
 }

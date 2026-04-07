@@ -49,8 +49,45 @@
   font-weight: 600;
 }
 
+/* Skip button: appears on hover at right edge */
+.ticker-skip {
+  position: absolute;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--text-muted);
+  border-radius: var(--radius);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s, color 0.15s, background 0.15s;
+}
+
+.ticker:hover .ticker-skip {
+  opacity: 1;
+}
+
+.ticker-skip:hover {
+  color: var(--text-secondary);
+  background: var(--surface-hover);
+}
+
+[data-theme="light"] .ticker-skip:hover {
+  background: var(--surface-raised);
+}
+
 @media (prefers-reduced-motion: reduce) {
   .ticker-slot {
+    transition: none;
+  }
+  .ticker-skip {
     transition: none;
   }
 }

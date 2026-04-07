@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
 import { api } from '../api/client'
-import type { TrendsData, PrMergeDay, Task, Project } from '../api/types'
+import type { TrendsData, PrMergeDay, ThroughputDetailItem, Task, Project } from '../api/types'
 import { useApp } from '../context/AppContext'
 
 export interface InsightMessage {
@@ -33,6 +33,13 @@ function sumDays<T extends { date: string }>(days: T[], since: string, until: st
   return days.filter(d => d.date >= since && d.date <= until).reduce((s, d) => s + field(d), 0)
 }
 
+/** Truncate text at word boundary, adding "..." if cut */
+function truncate(text: string, max: number): string {
+  if (text.length <= max) return text
+  const cut = text.lastIndexOf(' ', max)
+  return (cut > 0 ? text.slice(0, cut) : text.slice(0, max)) + '...'
+}
+
 /**
  * Pure function: generate positive insight messages from trends data.
  * Exported for testing.
@@ -42,7 +49,9 @@ export function generateInsights(
   prMergeDays: PrMergeDay[],
   tasks: Task[],
   projects: Project[],
+  recentCompletions: ThroughputDetailItem[] = [],
 ): InsightMessage[] {
+  const celebrations: InsightMessage[] = []
   const messages: InsightMessage[] = []
   const restReminders: InsightMessage[] = []
 
@@ -173,6 +182,42 @@ export function generateInsights(
     messages.push(msg('total-subtasks', '', `${n} subtasks`, ' finished overall \u2014 all those small wins add up'))
   }
 
+  // --- Specific celebrations ---
+
+  // Completed projects (all tasks done)
+  const completedProjects = projects
+    .filter(p => p.stats && p.stats.tasks.total > 0 && p.stats.tasks.done === p.stats.tasks.total)
+    .sort((a, b) => (b.updated_at ?? '').localeCompare(a.updated_at ?? ''))
+    .slice(0, 2)
+  for (const p of completedProjects) {
+    celebrations.push(msg(`project-done-${p.id}`, '', p.name, ' is all done \u2014 another project wrapped up'))
+  }
+
+  // Recently completed top-level tasks (not subtasks)
+  const completedTasks = recentCompletions
+    .filter(item => !item.is_subtask && item.task_key)
+    .slice(0, 3)
+  for (const item of completedTasks) {
+    const key = item.task_key!
+    celebrations.push(msg(`task-done-${key}`, '', key, ` finished \u2014 ${truncate(item.title, 40)}`))
+  }
+
+  // Recently merged PRs (specific titles)
+  const todayMergedPrs = prMergeDays.find(d => d.date === today)?.prs ?? []
+  for (const pr of todayMergedPrs.slice(0, 2)) {
+    celebrations.push(msg(`pr-merged-${pr.number}`, 'PR ', `#${pr.number}`, ` merged \u2014 ${truncate(pr.title, 40)}`))
+  }
+
+  // All subtasks of a parent task done
+  const fullyDoneTasks = tasks
+    .filter(t => !t.parent_task_id && t.subtask_stats && t.subtask_stats.total > 0 && t.subtask_stats.done === t.subtask_stats.total)
+    .sort((a, b) => b.updated_at.localeCompare(a.updated_at))
+    .slice(0, 2)
+  for (const t of fullyDoneTasks) {
+    const key = t.task_key ?? t.title
+    celebrations.push(msg(`subtasks-complete-${t.id}`, 'All subtasks of ', key, ' are done \u2014 ready to wrap up'))
+  }
+
   // --- Rest reminder ---
 
   if (trends) {
@@ -189,18 +234,28 @@ export function generateInsights(
     }
   }
 
-  // Rest reminders first (most actionable)
-  return [...restReminders, ...messages]
+  // Rest reminders first, then specific celebrations, then numeric stats
+  return [...restReminders, ...celebrations, ...messages]
 }
 
 const CACHE_TTL = 5 * 60 * 1000 // 5 minutes
+
+interface ThroughputDetailResponse {
+  items: ThroughputDetailItem[]
+}
 
 export function useTickerInsights() {
   const { tasks, projects } = useApp()
   const [trends, setTrends] = useState<TrendsData | null>(null)
   const [prMergeDays, setPrMergeDays] = useState<PrMergeDay[]>([])
+  const [recentCompletions, setRecentCompletions] = useState<ThroughputDetailItem[]>([])
   const [loading, setLoading] = useState(true)
-  const cacheRef = useRef<{ trends: TrendsData | null; prs: PrMergeDay[]; fetchedAt: number } | null>(null)
+  const cacheRef = useRef<{
+    trends: TrendsData | null
+    prs: PrMergeDay[]
+    completions: ThroughputDetailItem[]
+    fetchedAt: number
+  } | null>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -210,24 +265,29 @@ export function useTickerInsights() {
       if (cacheRef.current && Date.now() - cacheRef.current.fetchedAt < CACHE_TTL) {
         setTrends(cacheRef.current.trends)
         setPrMergeDays(cacheRef.current.prs)
+        setRecentCompletions(cacheRef.current.completions)
         setLoading(false)
         return
       }
 
+      const today = toDateStr(new Date())
       try {
-        const [trendsResult, prsResult] = await Promise.allSettled([
+        const [trendsResult, prsResult, detailResult] = await Promise.allSettled([
           api<TrendsData>('/api/trends?range=30d'),
           api<PrMergeDay[]>('/api/trends/pr-merges?range=30d'),
+          api<ThroughputDetailResponse>(`/api/trends/detail?chart=throughput&date=${today}`),
         ])
 
         if (cancelled) return
 
         const t = trendsResult.status === 'fulfilled' ? trendsResult.value : null
         const p = prsResult.status === 'fulfilled' ? prsResult.value : []
+        const c = detailResult.status === 'fulfilled' ? detailResult.value.items : []
 
-        cacheRef.current = { trends: t, prs: p, fetchedAt: Date.now() }
+        cacheRef.current = { trends: t, prs: p, completions: c, fetchedAt: Date.now() }
         setTrends(t)
         setPrMergeDays(p)
+        setRecentCompletions(c)
       } catch {
         // Silently fail — ticker just won't show
       } finally {
@@ -245,8 +305,8 @@ export function useTickerInsights() {
   }, [])
 
   const messages = useMemo(
-    () => generateInsights(trends, prMergeDays, tasks, projects),
-    [trends, prMergeDays, tasks, projects],
+    () => generateInsights(trends, prMergeDays, tasks, projects, recentCompletions),
+    [trends, prMergeDays, tasks, projects, recentCompletions],
   )
 
   return { messages, loading }
