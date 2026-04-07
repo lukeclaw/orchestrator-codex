@@ -12,4 +12,5 @@ SETTING_DEFAULTS: dict[str, object] = {
     "brain.heartbeat": "off",
     "claude.default_model": "opus",
     "claude.default_effort": "high",
+    "ticker.speed": "1m",
 }

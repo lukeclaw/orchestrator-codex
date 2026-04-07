@@ -5,18 +5,16 @@
   position: relative;
   height: 20px;
   overflow: hidden;
-  display: flex;
-  align-items: center;
-  justify-content: center;
 }
 
 .ticker-slot {
   position: absolute;
-  width: 100%;
-  text-align: center;
+  inset: 0;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  text-align: center;
+  line-height: 20px;
   font-size: 11px;
   color: var(--text-muted);
   letter-spacing: 0.01em;
@@ -27,10 +25,12 @@
 
 .ticker-slot--active {
   opacity: 1;
+  z-index: 1;
 }
 
 .ticker-slot--inactive {
   opacity: 0;
+  pointer-events: none;
 }
 
 /* Stat highlight: one step brighter than muted */
@@ -49,17 +49,14 @@
   font-weight: 600;
 }
 
-/* Skip button: appears on hover at right edge */
+/* Skip button: inline after text inside each slot, appears on ticker hover */
 .ticker-skip {
-  position: absolute;
-  right: 0;
-  top: 50%;
-  transform: translateY(-50%);
-  display: flex;
+  display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 20px;
-  height: 20px;
+  width: 14px;
+  height: 14px;
+  margin-left: 6px;
   padding: 0;
   border: none;
   background: none;
@@ -67,14 +64,16 @@
   border-radius: var(--radius);
   cursor: pointer;
   opacity: 0;
+  vertical-align: middle;
   transition: opacity 0.15s, color 0.15s, background 0.15s;
 }
 
 .ticker:hover .ticker-skip {
-  opacity: 1;
+  opacity: 0.5;
 }
 
 .ticker-skip:hover {
+  opacity: 1 !important;
   color: var(--text-secondary);
   background: var(--surface-hover);
 }

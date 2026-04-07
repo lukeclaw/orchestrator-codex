@@ -79,6 +79,7 @@ export default function SettingsPage() {
   const [heartbeatInput, setHeartbeatInput] = useState('')
   const [heartbeatFocused, setHeartbeatFocused] = useState(false)
   const [heartbeatSaved, setHeartbeatSaved] = useState(false)
+  const [tickerSpeed, setTickerSpeed] = useState('1m')
 
   // Sync settings from DB
   useEffect(() => {
@@ -92,6 +93,7 @@ export default function SettingsPage() {
       const hb = String(getValue('brain.heartbeat') || 'off')
       setBrainHeartbeat(hb)
       setHeartbeatInput(hb === 'off' ? '' : hb)
+      setTickerSpeed(String(getValue('ticker.speed') || '1m'))
     }
   }, [loading, getValue])
 
@@ -127,6 +129,11 @@ export default function SettingsPage() {
     const v = value as ThemeMode
     setTheme(v)
     await save({ 'ui.theme': v })
+  }
+
+  const handleTickerSpeedChange = async (value: string) => {
+    setTickerSpeed(value)
+    await save({ 'ticker.speed': value })
   }
 
   const HEARTBEAT_PRESETS = [
@@ -634,6 +641,31 @@ export default function SettingsPage() {
               >
                 <div className="sd-toggle-knob" />
               </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="settings-content panel">
+          <div className="panel-header">
+            <h2>Motivational Ticker</h2>
+          </div>
+          <div className="panel-body">
+            <div className="settings-toggle-row">
+              <div>
+                <div className="settings-toggle-label">Rotation speed</div>
+                <div className="settings-toggle-desc">
+                  How often the header ticker cycles to the next message
+                </div>
+              </div>
+              <SlidingTabs
+                tabs={[
+                  { value: 'off' as const, label: 'Off' },
+                  { value: '10s' as const, label: '10s' },
+                  { value: '1m' as const, label: '1m' },
+                ]}
+                value={tickerSpeed}
+                onChange={handleTickerSpeedChange}
+              />
             </div>
           </div>
         </div>

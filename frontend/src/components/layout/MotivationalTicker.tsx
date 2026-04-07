@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useTickerInsights, type InsightMessage } from '../../hooks/useTickerInsights'
+import { useSettings } from '../../context/SettingsContext'
 import { IconChevronRight } from '../common/Icons'
 import './MotivationalTicker.css'
 
@@ -17,9 +18,12 @@ function MessageContent({ message }: { message: InsightMessage }) {
   )
 }
 
-const ROTATE_INTERVAL = 60000 // 1 minute per message
+const SPEED_MS: Record<string, number> = { '10s': 10000, '1m': 60000 }
 
 export default function MotivationalTicker() {
+  const { getValue } = useSettings()
+  const tickerSpeed = String(getValue('ticker.speed') || '1m')
+  const rotateMs = SPEED_MS[tickerSpeed] ?? 60000
   const { messages, loading } = useTickerInsights()
   const [index, setIndex] = useState(0)
   const [activeSlot, setActiveSlot] = useState<'a' | 'b'>('a')
@@ -63,21 +67,27 @@ export default function MotivationalTicker() {
 
   useEffect(() => {
     if (messages.length < 2) return
-    intervalRef.current = setInterval(advance, ROTATE_INTERVAL)
+    intervalRef.current = setInterval(advance, rotateMs)
     return () => { if (intervalRef.current) clearInterval(intervalRef.current) }
-  }, [advance, messages.length])
+  }, [advance, messages.length, rotateMs])
 
   const skip = useCallback(() => {
     advance()
     // Reset the timer so next auto-rotation is a full interval from now
     if (intervalRef.current) clearInterval(intervalRef.current)
-    intervalRef.current = setInterval(advance, ROTATE_INTERVAL)
-  }, [advance])
+    intervalRef.current = setInterval(advance, rotateMs)
+  }, [advance, rotateMs])
 
-  if (loading || messages.length === 0) return null
+  if (tickerSpeed === 'off' || loading || messages.length === 0) return null
 
   const currentMessage = activeSlot === 'a' ? slotA : slotB
   const isRest = currentMessage?.type === 'rest-reminder'
+
+  const skipBtn = messages.length >= 2 ? (
+    <button className="ticker-skip" onClick={skip} title="Next message" aria-label="Next message">
+      <IconChevronRight size={10} />
+    </button>
+  ) : null
 
   // Single message: static display
   if (messages.length === 1) {
@@ -102,14 +112,11 @@ export default function MotivationalTicker() {
       aria-atomic="true"
     >
       <span className={`ticker-slot ${activeSlot === 'a' ? 'ticker-slot--active' : 'ticker-slot--inactive'}`}>
-        {slotA && <MessageContent message={slotA} />}
+        {slotA && <><MessageContent message={slotA} />{skipBtn}</>}
       </span>
       <span className={`ticker-slot ${activeSlot === 'b' ? 'ticker-slot--active' : 'ticker-slot--inactive'}`}>
-        {slotB && <MessageContent message={slotB} />}
+        {slotB && <><MessageContent message={slotB} />{skipBtn}</>}
       </span>
-      <button className="ticker-skip" onClick={skip} title="Next message" aria-label="Next message">
-        <IconChevronRight size={12} />
-      </button>
     </div>
   )
 }
