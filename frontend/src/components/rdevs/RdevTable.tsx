@@ -61,6 +61,7 @@ export default function RdevTable({ rdevs, onDelete, onRestart, onStop, actionLo
         <tbody>
           {rdevs.map(rdev => {
             const isRunning = rdev.state === 'RUNNING'
+            const isCreating = rdev.state === 'CREATING'
             const isStopped = rdev.state === 'STOPPED'
             const isLoading = actionLoading === rdev.name
 
@@ -87,7 +88,7 @@ export default function RdevTable({ rdevs, onDelete, onRestart, onStop, actionLo
                 <td className="rt-time">{rdev.last_accessed || '—'}</td>
                 <td className="rt-time">{rdev.created || '—'}</td>
                 <td className="rt-actions">
-                  {isRunning && (
+                  {(isRunning || isCreating) && (
                     <button
                       className="rt-action-btn stop"
                       onClick={() => onStop(rdev.name)}
