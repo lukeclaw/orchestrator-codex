@@ -25,42 +25,45 @@ export default function MotivationalTicker() {
   const tickerSpeed = String(getValue('ticker.speed') || '1m')
   const rotateMs = SPEED_MS[tickerSpeed] ?? 60000
   const { messages, loading } = useTickerInsights()
-  const [index, setIndex] = useState(0)
   const [activeSlot, setActiveSlot] = useState<'a' | 'b'>('a')
   const [slotA, setSlotA] = useState<InsightMessage | null>(null)
   const [slotB, setSlotB] = useState<InsightMessage | null>(null)
-  const prevMessagesKey = useRef('')
+  const indexRef = useRef(0)
+  const initialized = useRef(false)
 
-  // Reset index when messages content changes
-  const messagesKey = messages.map(m => m.id).join(',')
-  if (messagesKey !== prevMessagesKey.current) {
-    prevMessagesKey.current = messagesKey
-    if (messages.length > 0) {
-      setIndex(0)
-      setSlotA(messages[0])
-      setSlotB(messages.length > 1 ? messages[1] : null)
-      setActiveSlot('a')
-    }
+  // Initialize on first non-empty messages; never reset after that.
+  // The advance function always reads the latest messages array,
+  // so new messages appear naturally as the ticker cycles.
+  if (!initialized.current && messages.length > 0) {
+    initialized.current = true
+    indexRef.current = 0
+    setSlotA(messages[0])
+    if (messages.length > 1) setSlotB(messages[1])
+    setActiveSlot('a')
   }
 
+  // Use a ref for messages so advance always sees the latest array
+  // without needing to be re-created (which would reset the interval)
+  const messagesRef = useRef(messages)
+  messagesRef.current = messages
+
   const advance = useCallback(() => {
-    if (messages.length < 2) return
-    setIndex(prev => {
-      const nextIdx = (prev + 1) % messages.length
-      const nextMessage = messages[nextIdx]
-      // Put the next message into the inactive slot, then swap
-      setActiveSlot(current => {
-        if (current === 'a') {
-          setSlotB(nextMessage)
-          return 'b'
-        } else {
-          setSlotA(nextMessage)
-          return 'a'
-        }
-      })
-      return nextIdx
+    const msgs = messagesRef.current
+    if (msgs.length < 2) return
+    const nextIdx = (indexRef.current + 1) % msgs.length
+    indexRef.current = nextIdx
+    const nextMessage = msgs[nextIdx]
+    // Put the next message into the inactive slot, then swap
+    setActiveSlot(current => {
+      if (current === 'a') {
+        setSlotB(nextMessage)
+        return 'b'
+      } else {
+        setSlotA(nextMessage)
+        return 'a'
+      }
     })
-  }, [messages])
+  }, []) // stable — reads from refs
 
   // Track interval so skip can reset it
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
@@ -69,7 +72,7 @@ export default function MotivationalTicker() {
     if (messages.length < 2) return
     intervalRef.current = setInterval(advance, rotateMs)
     return () => { if (intervalRef.current) clearInterval(intervalRef.current) }
-  }, [advance, messages.length, rotateMs])
+  }, [advance, rotateMs, messages.length])
 
   const skip = useCallback(() => {
     advance()
