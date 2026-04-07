@@ -1,0 +1,614 @@
+/* === Notebook Editor Container === */
+
+.nb-editor {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+  background: var(--bg);
+  outline: none;
+}
+
+.nb-editor:focus-visible {
+  outline: none;
+}
+
+/* === Header Bar === */
+
+.nb-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border-subtle);
+  font-size: 12px;
+  color: var(--text-secondary);
+  flex-shrink: 0;
+  user-select: none;
+}
+
+.nb-header__language {
+  font-weight: 500;
+  color: var(--text-primary);
+  text-transform: capitalize;
+}
+
+.nb-header__sep {
+  color: var(--text-muted);
+}
+
+.nb-header__count {
+  color: var(--text-muted);
+}
+
+.nb-header__spacer {
+  flex: 1;
+}
+
+.nb-header__btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: none;
+  background: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  border-radius: 4px;
+  transition: background 100ms, color 100ms;
+}
+
+.nb-header__btn:hover {
+  background: var(--surface-hover);
+  color: var(--text-primary);
+}
+
+.nb-header__btn--active {
+  color: var(--accent);
+}
+
+.nb-header__text-btn {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 8px;
+  border: none;
+  background: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  border-radius: 4px;
+  font-size: 11px;
+  font-family: var(--font-sans, system-ui, sans-serif);
+  transition: background 100ms, color 100ms;
+}
+
+.nb-header__text-btn:hover {
+  background: var(--surface-hover);
+  color: var(--text-primary);
+}
+
+.nb-header__text-btn svg {
+  flex-shrink: 0;
+}
+
+/* === Error Banner === */
+
+.nb-error-banner {
+  padding: 8px 12px;
+  background: rgba(var(--red-rgb, 248, 81, 73), 0.1);
+  border-bottom: 1px solid rgba(var(--red-rgb, 248, 81, 73), 0.3);
+  color: var(--red);
+  font-size: 12px;
+  flex-shrink: 0;
+}
+
+/* === Cell List === */
+
+.nb-editor__cells {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px 0;
+}
+
+.nb-editor__empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+/* === Cell Container === */
+
+.nb-cell {
+  position: relative;
+  margin: 0 8px 2px 8px;
+  border-radius: 4px;
+  background: var(--surface);
+  border: 1px solid transparent;
+  border-left: 3px solid transparent;
+  transition: border-color 100ms ease;
+}
+
+.nb-cell--selected {
+  border-left-color: var(--accent);
+}
+
+.nb-cell--editing {
+  border-left-color: var(--accent);
+}
+
+.nb-cell--editing .nb-cell__editor-slot {
+  outline: 1px solid var(--accent-muted);
+  border-radius: 4px;
+}
+
+/* === Cell Main Layout === */
+
+.nb-cell__main {
+  display: flex;
+}
+
+.nb-cell__gutter {
+  width: 48px;
+  flex-shrink: 0;
+  color: var(--text-muted);
+  font-family: var(--font-mono, 'SF Mono', 'Fira Code', monospace);
+  font-size: 12px;
+  text-align: right;
+  padding: 8px 8px 4px 0;
+  user-select: none;
+  cursor: pointer;
+}
+
+.nb-cell__gutter--md,
+.nb-cell__gutter--raw {
+  width: 16px;
+}
+
+.nb-cell__content {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+}
+
+/* === Code Cell Source (Static) === */
+
+.nb-cell__source {
+  display: flex;
+  cursor: text;
+}
+
+.nb-cell__source-static {
+  flex: 1;
+  font-family: var(--font-mono, 'SF Mono', 'Fira Code', monospace);
+  font-size: 12px;
+  line-height: 19px;
+  padding: 8px 12px 4px 0;
+  overflow-x: auto;
+  margin: 0;
+  white-space: pre;
+  tab-size: 4;
+  color: var(--text-primary);
+  background: transparent;
+}
+
+.nb-cell__source-static--raw {
+  color: var(--text-secondary);
+  cursor: text;
+  padding-left: 12px;
+}
+
+/* === Line Numbers === */
+
+.nb-cell__line-numbers {
+  flex-shrink: 0;
+  width: 32px;
+  padding: 8px 4px 4px 4px;
+  text-align: right;
+  user-select: none;
+}
+
+.nb-cell__line-number {
+  font-family: var(--font-mono, 'SF Mono', 'Fira Code', monospace);
+  font-size: 12px;
+  line-height: 19px;
+  color: var(--text-muted);
+}
+
+/* === Monaco Editor Slot === */
+
+.nb-cell__editor-slot {
+  min-height: 0;
+}
+
+.nb-editor__monaco-container {
+  min-height: 19px;
+}
+
+/* === Markdown Cell Preview === */
+
+.nb-cell--markdown .nb-cell__preview {
+  padding: 8px 12px;
+  border-left: 2px solid var(--border-subtle);
+  cursor: text;
+  min-height: 24px;
+}
+
+.nb-cell--markdown .nb-cell__preview .markdown-content {
+  font-size: 13px;
+  line-height: 20px;
+}
+
+.nb-cell__placeholder {
+  color: var(--text-muted);
+  font-style: italic;
+  font-size: 13px;
+}
+
+/* === Raw Cell === */
+
+.nb-cell--raw {
+  border-left-style: dashed;
+}
+
+/* === Outputs Area === */
+
+.nb-cell__outputs {
+  padding: 8px 12px 8px 60px;
+  border-top: 1px solid var(--border-subtle);
+  background: var(--bg);
+  border-radius: 0 0 4px 4px;
+}
+
+.nb-output {
+  margin-bottom: 4px;
+}
+
+.nb-output:last-child {
+  margin-bottom: 0;
+}
+
+.nb-output--stream .nb-ansi {
+  font-family: var(--font-mono, 'SF Mono', 'Fira Code', monospace);
+  font-size: 12px;
+  line-height: 18px;
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.nb-output--stderr {
+  background: rgba(var(--red-rgb, 248, 81, 73), 0.06);
+  border-radius: 4px;
+  padding: 4px 8px;
+}
+
+/* === HTML Output Isolation === */
+
+.nb-output__html {
+  all: initial;
+  display: block;
+  font-family: var(--font-sans, system-ui, sans-serif);
+  font-size: 13px;
+  color: var(--text-primary);
+  line-height: 1.5;
+  overflow-x: auto;
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.nb-output__html table {
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.nb-output__html th,
+.nb-output__html td {
+  padding: 4px 8px;
+  border: 1px solid var(--border-subtle);
+  text-align: left;
+}
+
+.nb-output__html th {
+  background: var(--surface);
+  font-weight: 600;
+}
+
+/* === Image Outputs === */
+
+.nb-output__image {
+  padding: 4px 0;
+}
+
+.nb-output__image img {
+  max-width: 100%;
+  max-height: 600px;
+  border-radius: 4px;
+}
+
+/* === Error Outputs === */
+
+.nb-output--error {
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.nb-output--error-header {
+  color: var(--red);
+  font-weight: 600;
+  font-family: var(--font-mono, 'SF Mono', 'Fira Code', monospace);
+  font-size: 12px;
+  padding: 4px 0;
+}
+
+.nb-output--error .nb-ansi {
+  font-family: var(--font-mono, 'SF Mono', 'Fira Code', monospace);
+  font-size: 12px;
+  line-height: 18px;
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* === Unsupported Output === */
+
+.nb-output--unsupported {
+  color: var(--text-muted);
+  font-size: 12px;
+  font-style: italic;
+  padding: 4px 0;
+}
+
+/* === Expand Button (Show more) === */
+
+.nb-output__expand-btn {
+  display: inline-block;
+  margin-top: 4px;
+  padding: 2px 8px;
+  font-size: 11px;
+  color: var(--accent);
+  background: none;
+  border: 1px solid var(--border-subtle);
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background 100ms;
+}
+
+.nb-output__expand-btn:hover {
+  background: var(--surface-hover);
+}
+
+/* === Collapsed Output Indicator === */
+
+.nb-output--collapsed-indicator {
+  color: var(--text-muted);
+  font-size: 12px;
+  cursor: pointer;
+  padding: 4px 12px 4px 60px;
+  border-top: 1px solid var(--border-subtle);
+  transition: background 100ms;
+}
+
+.nb-output--collapsed-indicator:hover {
+  background: var(--surface-hover);
+}
+
+/* === Syntax Highlighting (duplicated from Markdown.css, scoped to notebook) === */
+
+.nb-cell__source-static .hl-keyword { color: var(--hl-keyword); }
+.nb-cell__source-static .hl-comment { color: var(--hl-comment); font-style: italic; }
+.nb-cell__source-static .hl-string { color: var(--hl-string); }
+.nb-cell__source-static .hl-number { color: var(--hl-number); }
+.nb-cell__source-static .hl-builtin { color: var(--hl-builtin); }
+.nb-cell__source-static .hl-decorator { color: var(--hl-decorator); }
+
+/* === ANSI Color Classes === */
+
+/* Standard foreground */
+.ansi-fg-black { color: #1d1f21; }
+.ansi-fg-red { color: #cc6666; }
+.ansi-fg-green { color: #b5bd68; }
+.ansi-fg-yellow { color: #f0c674; }
+.ansi-fg-blue { color: #81a2be; }
+.ansi-fg-magenta { color: #b294bb; }
+.ansi-fg-cyan { color: #8abeb7; }
+.ansi-fg-white { color: #c5c8c6; }
+
+/* Bright foreground */
+.ansi-fg-bright-black { color: #969896; }
+.ansi-fg-bright-red { color: #de935f; }
+.ansi-fg-bright-green { color: #a3be8c; }
+.ansi-fg-bright-yellow { color: #ebcb8b; }
+.ansi-fg-bright-blue { color: #7cafc2; }
+.ansi-fg-bright-magenta { color: #ba8baf; }
+.ansi-fg-bright-cyan { color: #86c1b9; }
+.ansi-fg-bright-white { color: #ffffff; }
+
+/* Standard background */
+.ansi-bg-black { background-color: #1d1f21; }
+.ansi-bg-red { background-color: #cc6666; }
+.ansi-bg-green { background-color: #b5bd68; }
+.ansi-bg-yellow { background-color: #f0c674; }
+.ansi-bg-blue { background-color: #81a2be; }
+.ansi-bg-magenta { background-color: #b294bb; }
+.ansi-bg-cyan { background-color: #8abeb7; }
+.ansi-bg-white { background-color: #c5c8c6; }
+
+/* Bright background */
+.ansi-bg-bright-black { background-color: #969896; }
+.ansi-bg-bright-red { background-color: #de935f; }
+.ansi-bg-bright-green { background-color: #a3be8c; }
+.ansi-bg-bright-yellow { background-color: #ebcb8b; }
+.ansi-bg-bright-blue { background-color: #7cafc2; }
+.ansi-bg-bright-magenta { background-color: #ba8baf; }
+.ansi-bg-bright-cyan { background-color: #86c1b9; }
+.ansi-bg-bright-white { background-color: #ffffff; }
+
+/* Text decorations */
+.ansi-bold { font-weight: bold; }
+.ansi-italic { font-style: italic; }
+.ansi-underline { text-decoration: underline; }
+.ansi-strikethrough { text-decoration: line-through; }
+
+/* === Cell Wrapper (for toolbar positioning) === */
+
+.nb-cell-wrapper {
+  position: relative;
+}
+
+/* === Cell Toolbar (hover) === */
+
+.nb-cell__toolbar {
+  position: absolute;
+  top: 4px;
+  right: 16px;
+  display: flex;
+  gap: 2px;
+  opacity: 0;
+  transition: opacity 150ms ease;
+  z-index: 1;
+}
+
+.nb-cell-wrapper:hover .nb-cell__toolbar {
+  opacity: 1;
+}
+
+.nb-cell__toolbar-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border: 1px solid var(--border-subtle);
+  background: var(--surface);
+  color: var(--text-muted);
+  cursor: pointer;
+  border-radius: 4px;
+  font-size: 11px;
+  font-family: var(--font-mono, 'SF Mono', 'Fira Code', monospace);
+  transition: background 100ms, color 100ms;
+}
+
+.nb-cell__toolbar-btn:hover {
+  background: var(--surface-hover);
+  color: var(--text-primary);
+}
+
+.nb-cell__toolbar-btn--danger:hover {
+  color: var(--red);
+  border-color: var(--red);
+}
+
+/* === Placeholder Cell (lazy rendering) === */
+
+.nb-cell--placeholder {
+  margin: 0 8px 2px 8px;
+  border-radius: 4px;
+  background: var(--surface);
+  border: 1px solid transparent;
+  border-left: 3px solid transparent;
+}
+
+/* === Loading Skeleton === */
+
+.nb-editor__skeleton {
+  padding: 16px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.nb-skeleton-cell {
+  display: flex;
+  gap: 8px;
+  padding: 12px;
+  background: var(--surface);
+  border-radius: 4px;
+}
+
+.nb-skeleton-cell__gutter {
+  width: 36px;
+  height: 14px;
+  background: var(--surface-hover);
+  border-radius: 4px;
+  flex-shrink: 0;
+}
+
+.nb-skeleton-cell__source {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.nb-skeleton-line {
+  height: 12px;
+  background: var(--surface-hover);
+  border-radius: 4px;
+  animation: nb-shimmer 1.5s infinite ease-in-out;
+}
+
+@keyframes nb-shimmer {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 0.8; }
+}
+
+/* === Cell Insert Bar === */
+
+.nb-insert-bar {
+  position: relative;
+  height: 16px;
+  display: flex;
+  align-items: center;
+  margin: 0 8px;
+  opacity: 0;
+  transition: opacity 150ms ease;
+}
+
+.nb-insert-bar:hover {
+  opacity: 1;
+}
+
+.nb-insert-bar__line {
+  flex: 1;
+  height: 1px;
+  background: var(--accent-muted);
+}
+
+.nb-insert-bar__btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border: 1px solid var(--accent-muted);
+  background: var(--surface);
+  color: var(--accent);
+  cursor: pointer;
+  border-radius: 50%;
+  font-size: 14px;
+  line-height: 1;
+  padding: 0;
+  transition: background 100ms, border-color 100ms;
+}
+
+.nb-insert-bar__btn:hover {
+  background: var(--accent-muted);
+  border-color: var(--accent);
+}
+
+/* === Reduced Motion === */
+
+@media (prefers-reduced-motion: reduce) {
+  .nb-cell,
+  .nb-cell__toolbar,
+  .nb-output__expand-btn,
+  .nb-output--collapsed-indicator,
+  .nb-header__btn {
+    transition: none;
+  }
+}

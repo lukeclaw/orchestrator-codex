@@ -98,6 +98,7 @@ const EXT_LANGUAGE: Record<string, string> = {
   '.swift': 'swift', '.kt': 'kotlin',
   '.dockerfile': 'dockerfile', '.tf': 'hcl',
   '.ini': 'ini', '.cfg': 'ini', '.conf': 'ini', '.env': 'ini',
+  '.ipynb': 'jupyter',
 }
 
 function detectLanguage(path: string): string | null {
@@ -305,6 +306,17 @@ export function useEditorTabs(sessionId: string): EditorTabsAPI {
             : tab.originalContent !== tab.currentContent
 
           if (!dirty) {
+            // For .ipynb tabs, never silently reload — the NotebookEditor maintains
+            // parsed cell state in React state, and fetchTabContent would wipe it.
+            // Always show the external change banner instead.
+            if (tab.path.endsWith('.ipynb')) {
+              setTabs(prev => prev.map(t =>
+                t.path === tab.path
+                  ? { ...t, externallyChanged: true, modified: serverMtime }
+                  : t
+              ))
+              continue
+            }
             // Clean tab — silently reload content (bypass remote cache)
             fetchTabContent(tab.path, true)
           } else {

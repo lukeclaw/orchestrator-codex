@@ -13,6 +13,8 @@ document.addEventListener('keydown', (e) => {
   const target = e.target as HTMLElement
   const tag = target.tagName
   if (tag === 'INPUT' || tag === 'TEXTAREA' || target.isContentEditable) return
+  // Monaco editor uses <div role="textbox" class="native-edit-context"> for input
+  if (target.getAttribute('role') === 'textbox') return
   // xterm terminals handle Backspace themselves via the WebSocket stream
   if (target.classList.contains('xterm-helper-textarea')) return
   e.preventDefault()
