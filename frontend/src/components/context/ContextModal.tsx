@@ -25,13 +25,17 @@ interface Props {
   onDelete?: (id: string) => Promise<unknown>
 }
 
-const CATEGORY_OPTIONS = [
+// All categories for display (including brain-managed ones)
+const ALL_CATEGORY_OPTIONS = [
   { value: '', label: 'No category', className: 'cm-cat-none' },
   { value: 'instruction', label: 'Instruction', className: 'cm-cat-instruction' },
   { value: 'reference', label: 'Reference', className: 'cm-cat-reference' },
   { value: 'memory', label: 'Memory', className: 'cm-cat-memory' },
   { value: 'wisdom', label: 'Wisdom', className: 'cm-cat-wisdom' },
 ]
+
+// User-selectable categories (memory/wisdom are brain-managed)
+const CATEGORY_OPTIONS = ALL_CATEGORY_OPTIONS.filter(o => o.value !== 'memory' && o.value !== 'wisdom')
 
 export default function ContextModal({ context, projectId, projects = [], isNew, readOnly, initialContent, onClose, onSave, onDelete }: Props) {
   const [title, setTitle] = useState('')
@@ -301,7 +305,7 @@ export default function ContextModal({ context, projectId, projects = [], isNew,
             )}
             <TagDropdown
               value={category}
-              options={CATEGORY_OPTIONS}
+              options={readOnly ? ALL_CATEGORY_OPTIONS : CATEGORY_OPTIONS}
               onChange={handleCategoryChange}
               disabled={readOnly}
               renderTag={(opt) => (
