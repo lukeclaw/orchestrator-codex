@@ -1,0 +1,56 @@
+.ticker {
+  flex: 1;
+  min-width: 0;
+  margin: 0 16px;
+  position: relative;
+  height: 20px;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.ticker-slot {
+  position: absolute;
+  width: 100%;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 11px;
+  color: var(--text-muted);
+  letter-spacing: 0.01em;
+  transition: opacity 1s cubic-bezier(0.4, 0, 0.2, 1);
+  will-change: opacity;
+  padding: 0 8px;
+}
+
+.ticker-slot--active {
+  opacity: 1;
+}
+
+.ticker-slot--inactive {
+  opacity: 0;
+}
+
+/* Stat highlight: one step brighter than muted */
+.ticker-stat {
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+
+/* Rest reminder: warm yellow accent */
+.ticker--rest .ticker-slot {
+  color: color-mix(in srgb, var(--yellow) 60%, var(--text-muted));
+}
+
+.ticker--rest .ticker-stat {
+  color: var(--yellow);
+  font-weight: 600;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ticker-slot {
+    transition: none;
+  }
+}

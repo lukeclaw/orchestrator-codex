@@ -1,6 +1,7 @@
 import { useApp } from '../../context/AppContext'
 import { useNavigationHistory } from '../../hooks/useNavigationHistory'
 import { IconArrowLeft, IconArrowRight } from '../common/Icons'
+import MotivationalTicker from './MotivationalTicker'
 import './Header.css'
 
 export default function Header() {
@@ -19,6 +20,7 @@ export default function Header() {
           </button>
         </nav>
       </div>
+      <MotivationalTicker />
       <div className="header-right">
         <span
           className={`connection-dot ${connected ? 'connected' : 'disconnected'}`}
