@@ -378,6 +378,29 @@ def create_app(
             logger.error("Failed to open URL %s: %s", url, e)
             return {"status": "error", "message": str(e)}
 
+    # Reveal the server log file in Finder / file manager
+    @app.post("/api/reveal-log", tags=["util"])
+    async def reveal_log():
+        import platform
+        import subprocess
+
+        from orchestrator.paths import log_path
+
+        path = log_path()
+        if not path.exists():
+            return {"status": "error", "message": "Log file not found"}
+        try:
+            if platform.system() == "Darwin":
+                subprocess.Popen(["open", "-R", str(path)])
+            elif platform.system() == "Linux":
+                subprocess.Popen(["xdg-open", str(path.parent)])
+            else:
+                subprocess.Popen(["explorer", "/select,", str(path)])
+            return {"status": "ok", "path": str(path)}
+        except Exception as e:
+            logger.error("Failed to reveal log: %s", e)
+            return {"status": "error", "message": str(e)}
+
     # Open Terminal with `gh auth login` for GitHub re-authentication
     @app.post("/api/gh-auth", tags=["util"])
     async def gh_auth():
