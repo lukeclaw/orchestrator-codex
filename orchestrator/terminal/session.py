@@ -381,12 +381,14 @@ def ensure_rdev_node(tmux_session: str, window_name: str, remote_tmp_dir: str):
     """
     node_bin_dir = f"{remote_tmp_dir}/node-bin"
     volta_cmd = (
-        "volta install node@24"
+        "command -v volta >/dev/null 2>&1"
+        " && volta install node@24"
         f" && {_VOLTA_NODE24_RESOLVE}"
         f" && mkdir -p {node_bin_dir}"
         f' && ln -sf "$NODE24_DIR/node" {node_bin_dir}/node'
         f' && ln -sf "$NODE24_DIR/npx" {node_bin_dir}/npx'
         f' && ln -sf "$NODE24_DIR/npm" {node_bin_dir}/npm'
+        " || true"
     )
     tmux.send_keys(tmux_session, window_name, volta_cmd, enter=True)
     time.sleep(8)  # volta downloads + installs + creates symlinks
@@ -586,15 +588,19 @@ def setup_remote_worker(
             # We resolve the binary directly from volta's image dir because
             # `volta which` is unreliable on rdev (system wrapper overrides it).
             node_cmd = (
-                "volta install node@24"
+                "command -v volta >/dev/null 2>&1"
+                " && volta install node@24"
                 f" && {_VOLTA_NODE24_RESOLVE}"
                 f" && mkdir -p {remote_tmp_dir}/node-bin"
                 f' && ln -sf "$NODE24_DIR/node" {remote_tmp_dir}/node-bin/node'
                 f' && ln -sf "$NODE24_DIR/npx" {remote_tmp_dir}/node-bin/npx'
                 f' && ln -sf "$NODE24_DIR/npm" {remote_tmp_dir}/node-bin/npm'
+                " || true"
             )
         else:
-            node_cmd = "volta install node@24 2>/dev/null || true"
+            node_cmd = (
+                "command -v volta >/dev/null 2>&1 && volta install node@24 2>/dev/null || true"
+            )
         subprocess.run(
             _ssh_cmd(host, node_cmd),
             capture_output=True,
@@ -754,7 +760,8 @@ def setup_local_worker(
         if work_dir:
             cmd_parts.append(f"cd {work_dir}")
 
-        cmd_parts.append("volta install node@24")  # Ensure Node 24 for npx
+        # Ensure Node 24 for npx (skip if volta unavailable)
+        cmd_parts.append("command -v volta >/dev/null 2>&1 && volta install node@24 || true")
         cmd_parts.append(f"({_PW_INSTALL_CMD} || true)")  # Ensure Playwright plugin
 
         # Configure Playwright plugin to connect via per-worker CDP proxy.

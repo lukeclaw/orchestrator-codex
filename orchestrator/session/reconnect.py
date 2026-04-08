@@ -637,12 +637,14 @@ def _copy_configs_to_remote(host: str, tmp_dir: str, remote_tmp_dir: str, sessio
         from orchestrator.terminal.session import _VOLTA_NODE24_RESOLVE
 
         node_cmd = (
-            "volta install node@24"
+            "command -v volta >/dev/null 2>&1"
+            " && volta install node@24"
             f" && {_VOLTA_NODE24_RESOLVE}"
             f" && mkdir -p {remote_tmp_dir}/node-bin"
             f' && ln -sf "$NODE24_DIR/node" {remote_tmp_dir}/node-bin/node'
             f' && ln -sf "$NODE24_DIR/npx" {remote_tmp_dir}/node-bin/npx'
             f' && ln -sf "$NODE24_DIR/npm" {remote_tmp_dir}/node-bin/npm'
+            " || true"
         )
         node_result = subprocess.run(
             _ssh_cmd(host, node_cmd),
@@ -1340,8 +1342,10 @@ def reconnect_local_worker(
         api_base = f"http://127.0.0.1:{api_port}"
         _ensure_local_configs_exist(tmp_dir, session.id, api_base, conn=conn)
 
-        # Ensure Node 24 is the volta default (needed for Playwright plugin's npx)
-        safe_send_keys(tmux_sess, tmux_win, "volta install node@24", enter=True)
+        # Ensure Node 24 is the volta default (needed for Playwright plugin's npx).
+        # Skip gracefully if volta is not installed on this machine.
+        volta_cmd = "command -v volta >/dev/null 2>&1 && volta install node@24 || true"
+        safe_send_keys(tmux_sess, tmux_win, volta_cmd, enter=True)
         time.sleep(3)
 
         # Ensure the official Playwright plugin is installed (skip if already present)
