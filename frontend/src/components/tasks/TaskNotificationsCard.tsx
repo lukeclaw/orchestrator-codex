@@ -188,9 +188,6 @@ export default function TaskNotificationsCard({ taskId }: TaskNotificationsCardP
                         }
                         return null
                       })()}
-                      {n.metadata?.pr_title && (
-                        <span className="np-pr-title">{n.metadata.pr_title}</span>
-                      )}
                     </div>
                     <div className="np-card-actions" onClick={e => e.stopPropagation()}>
                       {n.link_url && (
@@ -208,6 +205,9 @@ export default function TaskNotificationsCard({ taskId }: TaskNotificationsCardP
                       </button>
                     </div>
                   </div>
+                  {n.metadata?.pr_title && (
+                    <span className="np-pr-title-inline">{n.metadata.pr_title}</span>
+                  )}
                   <div className="np-card-content">
                     {isExpanded && isPrComment && n.metadata ? (
                       <div className="np-pr-thread">
