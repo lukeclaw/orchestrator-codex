@@ -26,7 +26,7 @@ function FilterSync() {
 function AppLayoutInner() {
   const { collapsed, toggle } = useSidebarState()
   const brainPanel = useBrainPanel()
-  const notifications = useNotifications()
+  const { notifications, dismiss } = useNotifications()
   const { loading, projects, tasks, workers } = useApp()
 
   const showGettingStarted = !loading && projects.length === 0 && tasks.length === 0 && workers.length === 0
@@ -51,7 +51,7 @@ function AppLayoutInner() {
         minWidth={brainPanel.MIN_WIDTH}
         maxWidth={brainPanel.MAX_WIDTH}
       />
-      <NotificationToast notifications={notifications} />
+      <NotificationToast notifications={notifications} onDismiss={dismiss} />
       <GettingStartedModal show={showGettingStarted} />
     </div>
   )

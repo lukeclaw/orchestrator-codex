@@ -41,8 +41,11 @@ export async function requestNotificationPermission(): Promise<boolean> {
 
 /**
  * Send a system notification. Throttled to at most once per 5 seconds.
+ * In browser mode, onClick fires when the notification is clicked.
+ * In Tauri mode, macOS foregrounds the app on click; the caller handles
+ * navigation separately via visibilitychange.
  */
-export async function sendSystemNotification(title: string, body: string): Promise<void> {
+export async function sendSystemNotification(title: string, body: string, onClick?: () => void): Promise<void> {
   const now = Date.now()
   if (now - lastSent < THROTTLE_MS) return
   lastSent = now
@@ -56,6 +59,12 @@ export async function sendSystemNotification(title: string, body: string): Promi
       console.warn('Tauri notification failed:', e)
     }
   } else if ('Notification' in window && Notification.permission === 'granted') {
-    new Notification(title, { body })
+    const n = new Notification(title, { body })
+    if (onClick) {
+      n.onclick = () => {
+        window.focus()
+        onClick()
+      }
+    }
   }
 }

@@ -42,6 +42,16 @@
   border-top-color: var(--accent);
 }
 
+.notification-toast.clickable {
+  cursor: pointer;
+  transition: background 0.15s, transform 0.15s;
+}
+
+.notification-toast.clickable:hover {
+  background: var(--surface-hover);
+  transform: translateY(-1px);
+}
+
 .nt-icon {
   display: flex;
   align-items: center;

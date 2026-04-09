@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, useEffect, useCallback, useRef, useMemo, type ReactNode } from 'react'
-import { useLocation } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 import type { Session, Project, Task, Rdev, PrSearchItem, PrSearchResponse } from '../api/types'
 import { api, ApiError } from '../api/client'
 import { useNotify } from './NotificationContext'
@@ -8,6 +8,9 @@ import { sendSystemNotification } from '../utils/systemNotification'
 
 // Module-level dedup for notification toasts — survives StrictMode remounts and HMR
 const _seenNotifIds = new Set<string>()
+
+// Track when a system notification was last sent (for click-to-navigate in Tauri)
+let _lastSystemNotifAt = 0
 
 export interface SmartPastePayload {
   title?: string
@@ -104,12 +107,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [prErrors, setPrErrors] = useState<Record<string, string>>({})
   const prCacheRef = useRef<Record<string, { prs: PrSearchItem[]; fetchedAt: number }>>({})
   const location = useLocation()
+  const navigate = useNavigate()
   const notify = useNotify()
   const { getValue } = useSettings()
   const notifyRef = useRef(notify)
   notifyRef.current = notify
   const getValueRef = useRef(getValue)
   getValueRef.current = getValue
+  const navigateRef = useRef(navigate)
+  navigateRef.current = navigate
 
   const fetchAll = useCallback(async () => {
     // Cancel any in-flight fetchAll to free browser connections
@@ -339,10 +345,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
               setTimeout(() => _seenNotifIds.delete(nid), 10000)
             }
             const t = msg.data.notification_type === 'warning' ? 'warning' as const : 'info' as const
-            notifyRef.current(msg.data.message, t)
+            const goToNotifications = () => navigateRef.current('/notifications')
+            notifyRef.current(msg.data.message, t, goToNotifications)
             refreshNotificationCount()
             if (getValueRef.current('notifications.system')) {
-              sendSystemNotification('Orchestrator', msg.data.message)
+              _lastSystemNotifAt = Date.now()
+              sendSystemNotification('Orchestrator', msg.data.message, goToNotifications)
             }
           } else {
             // Other messages trigger data refresh
@@ -402,6 +410,20 @@ export function AppProvider({ children }: { children: ReactNode }) {
       window.removeEventListener('click', onActivity)
       window.removeEventListener('scroll', onActivity)
     }
+  }, [])
+
+  // Navigate to /notifications when app gains focus after a Tauri system notification click.
+  // Uses window 'focus' instead of visibilitychange because the Tauri webview may stay
+  // "visible" even when behind other windows — focus fires when it actually comes to front.
+  useEffect(() => {
+    const onFocus = () => {
+      if (!_lastSystemNotifAt) return
+      if (Date.now() - _lastSystemNotifAt > 30000) { _lastSystemNotifAt = 0; return }
+      _lastSystemNotifAt = 0
+      navigateRef.current('/notifications')
+    }
+    window.addEventListener('focus', onFocus)
+    return () => window.removeEventListener('focus', onFocus)
   }, [])
 
   // Initial fetch + polling
