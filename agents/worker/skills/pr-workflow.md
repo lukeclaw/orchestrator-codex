@@ -20,6 +20,14 @@ gh pr list --author @me --state closed --limit 5
 ```
 If `gh` fails with auth errors: **STOP and wait for help.**
 
+### Do NOT commit or push to other people's PRs
+
+**Never** checkout, commit to, or push to a branch belonging to someone else's PR unless the user **explicitly** instructs you to do so. Before pushing, verify the branch is yours:
+```bash
+git branch --show-current   # Should start with YOUR username prefix
+```
+If the branch belongs to another user (e.g., `asalajan/feature-xyz`), **STOP and ask the user for confirmation** before making any commits or pushes. Pushing to someone else's PR without permission can cause serious problems.
+
 **Batch-check:** Use `orch-prs 101 102 103` to check multiple PRs at once (auto-detects repo). Output includes an `action` field per PR (`merged`, `ci_failing`, `changes_requested`, `ready_to_merge`, `review_pending`).
 
 **Reconcile stale state:** For each `in_progress` subtask with a PR link, check if its PR is already merged. If so, mark subtask `done` immediately.
