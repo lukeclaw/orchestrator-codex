@@ -41,6 +41,7 @@ logger = logging.getLogger(__name__)
 try:
     from orchestrator.api.ws_terminal import record_user_input
 except ImportError:
+
     def record_user_input(session_id: str) -> None:  # type: ignore[misc]
         pass
 
@@ -93,12 +94,14 @@ async def ws_kernel(websocket: WebSocket, session_id: str) -> None:
                 work_dir = msg.get("work_dir", ".")
 
                 if not is_kernel_support_available():
-                    await websocket.send_json({
-                        "type": "specs",
-                        "available": False,
-                        "specs": [],
-                        "install_hint": "pip install jupyter_client ipykernel",
-                    })
+                    await websocket.send_json(
+                        {
+                            "type": "specs",
+                            "available": False,
+                            "specs": [],
+                            "install_hint": "pip install jupyter_client ipykernel",
+                        }
+                    )
                     continue
 
                 try:
@@ -106,35 +109,43 @@ async def ws_kernel(websocket: WebSocket, session_id: str) -> None:
                         session_id, notebook_path, kernel_name, work_dir
                     )
                     unsubscribe = kernel_session.subscribe(on_kernel_message)
-                    await websocket.send_json({
-                        "type": "status",
-                        "status": kernel_session.status,
-                    })
+                    await websocket.send_json(
+                        {
+                            "type": "status",
+                            "status": kernel_session.status,
+                        }
+                    )
                 except Exception as e:
-                    await websocket.send_json({
-                        "type": "error",
-                        "message": f"Failed to start kernel: {e}",
-                    })
+                    await websocket.send_json(
+                        {
+                            "type": "error",
+                            "message": f"Failed to start kernel: {e}",
+                        }
+                    )
 
             elif msg_type == "execute":
                 cell_id = msg.get("cell_id", "")
                 code = msg.get("code", "")
                 if not kernel_session:
-                    await websocket.send_json({
-                        "type": "error",
-                        "message": "No kernel running. Send 'start' first.",
-                    })
+                    await websocket.send_json(
+                        {
+                            "type": "error",
+                            "message": "No kernel running. Send 'start' first.",
+                        }
+                    )
                     continue
                 try:
                     kernel_session.execute(cell_id, code)
                 except Exception as e:
-                    await websocket.send_json({
-                        "type": "error",
-                        "cell_id": cell_id,
-                        "ename": "KernelError",
-                        "evalue": str(e),
-                        "traceback": [],
-                    })
+                    await websocket.send_json(
+                        {
+                            "type": "error",
+                            "cell_id": cell_id,
+                            "ename": "KernelError",
+                            "evalue": str(e),
+                            "traceback": [],
+                        }
+                    )
 
             elif msg_type == "interrupt":
                 if kernel_session:

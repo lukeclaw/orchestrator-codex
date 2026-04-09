@@ -46,8 +46,7 @@ class TestKernelSpecs:
         }
         avail = "orchestrator.api.routes.kernel.is_kernel_support_available"
         specs = "orchestrator.api.routes.kernel.list_kernelspecs"
-        with patch(avail, return_value=True), \
-             patch(specs, return_value=mock_specs):
+        with patch(avail, return_value=True), patch(specs, return_value=mock_specs):
             resp = client.get("/api/sessions/test-session/kernel/specs")
             assert resp.status_code == 200
             data = resp.json()
@@ -67,9 +66,7 @@ class TestKernelSpecs:
 
 class TestKernelStatus:
     def test_status_no_kernel(self, client: TestClient):
-        resp = client.get(
-            "/api/sessions/test-session/kernel/status?notebook_path=test.ipynb"
-        )
+        resp = client.get("/api/sessions/test-session/kernel/status?notebook_path=test.ipynb")
         assert resp.status_code == 200
         data = resp.json()
         assert data["status"] == "none"

@@ -38,8 +38,10 @@ class TestKernelSession:
     @pytest.mark.allow_subprocess
     @pytest.mark.allow_threading
     async def test_start_with_unknown_kernel_raises(self):
-        with patch("orchestrator.kernel.manager._jupyter_available", True), \
-             patch("orchestrator.kernel.manager.list_kernelspecs", return_value={"python3": {}}):
+        with (
+            patch("orchestrator.kernel.manager._jupyter_available", True),
+            patch("orchestrator.kernel.manager.list_kernelspecs", return_value={"python3": {}}),
+        ):
             ks = KernelSession("sess1", "notebook.ipynb", "nonexistent", "/tmp")
             with pytest.raises(ValueError, match="Unknown kernel"):
                 await ks.start()
