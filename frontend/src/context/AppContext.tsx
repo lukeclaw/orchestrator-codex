@@ -6,6 +6,9 @@ import { useNotify } from './NotificationContext'
 import { useSettings } from './SettingsContext'
 import { sendSystemNotification } from '../utils/systemNotification'
 
+// Module-level dedup for notification toasts — survives StrictMode remounts and HMR
+const _seenNotifIds = new Set<string>()
+
 export interface SmartPastePayload {
   title?: string
   content?: string
@@ -328,6 +331,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
                 : s
             ))
           } else if (msg.type === 'notification.created' && msg.data) {
+            // Deduplicate — StrictMode in dev creates two WebSocket connections briefly
+            const nid = msg.data.id
+            if (nid && _seenNotifIds.has(nid)) return
+            if (nid) {
+              _seenNotifIds.add(nid)
+              setTimeout(() => _seenNotifIds.delete(nid), 10000)
+            }
             const t = msg.data.notification_type === 'warning' ? 'warning' as const : 'info' as const
             notifyRef.current(msg.data.message, t)
             refreshNotificationCount()
@@ -348,7 +358,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
     return () => {
       intentionalClose = true
       clearTimeout(reconnectTimer)
-      wsRef.current?.close()
+      const ws = wsRef.current
+      if (ws) {
+        // Nullify handlers BEFORE close — prevents stale connections from
+        // processing broadcasts during the async close handshake.
+        // Critical for HMR and StrictMode where old connections linger.
+        ws.onmessage = null
+        ws.onclose = null
+        ws.onerror = null
+        ws.close()
+      }
       wsRef.current = null
     }
   }, [fetchAll])

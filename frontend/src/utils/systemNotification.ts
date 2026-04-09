@@ -21,8 +21,11 @@ const THROTTLE_MS = 5000
 export async function requestNotificationPermission(): Promise<boolean> {
   if (hasTauriIPC()) {
     try {
-      const granted = await tauriInvoke<boolean>('plugin:notification|is_permission_granted')
-      if (granted) return true
+      // Returns true | false | null (null = prompt needed)
+      const granted = await tauriInvoke<boolean | null>('plugin:notification|is_permission_granted')
+      if (granted === true) return true
+      if (granted === false) return false
+      // null = prompt state, request permission
       const result = await tauriInvoke<string>('plugin:notification|request_permission')
       return result === 'granted'
     } catch {
@@ -47,8 +50,7 @@ export async function sendSystemNotification(title: string, body: string): Promi
   if (hasTauriIPC()) {
     try {
       await tauriInvoke('plugin:notification|notify', {
-        title,
-        body,
+        options: { title, body },
       })
     } catch (e) {
       console.warn('Tauri notification failed:', e)
