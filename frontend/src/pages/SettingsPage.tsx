@@ -6,6 +6,7 @@ import { useUpdate } from '../hooks/useUpdate'
 import { useNotify } from '../context/NotificationContext'
 import { useApp } from '../context/AppContext'
 import { pickFolder } from '../api/pickFolder'
+import { requestNotificationPermission } from '../utils/systemNotification'
 import ConfirmPopover from '../components/common/ConfirmPopover'
 import SlidingTabs from '../components/common/SlidingTabs'
 import type { ThemeMode } from '../hooks/useTheme'
@@ -80,6 +81,7 @@ export default function SettingsPage() {
   const [heartbeatFocused, setHeartbeatFocused] = useState(false)
   const [heartbeatSaved, setHeartbeatSaved] = useState(false)
   const [tickerSpeed, setTickerSpeed] = useState('1m')
+  const [systemNotifications, setSystemNotifications] = useState(false)
 
   // Sync settings from DB
   useEffect(() => {
@@ -94,6 +96,7 @@ export default function SettingsPage() {
       setBrainHeartbeat(hb)
       setHeartbeatInput(hb === 'off' ? '' : hb)
       setTickerSpeed(String(getValue('ticker.speed') || '1m'))
+      setSystemNotifications(Boolean(getValue('notifications.system')))
     }
   }, [loading, getValue])
 
@@ -134,6 +137,19 @@ export default function SettingsPage() {
   const handleTickerSpeedChange = async (value: string) => {
     setTickerSpeed(value)
     await save({ 'ticker.speed': value })
+  }
+
+  const handleSystemNotificationsToggle = async () => {
+    const enabling = !systemNotifications
+    if (enabling) {
+      const granted = await requestNotificationPermission()
+      if (!granted) {
+        notify('Notifications blocked. Enable in System Preferences > Notifications.', 'error')
+        return
+      }
+    }
+    setSystemNotifications(enabling)
+    await save({ 'notifications.system': enabling })
   }
 
   const HEARTBEAT_PRESETS = [
@@ -651,6 +667,30 @@ export default function SettingsPage() {
                 onClick={handlePreserveFiltersToggle}
                 role="switch"
                 aria-checked={preserveFilters}
+              >
+                <div className="sd-toggle-knob" />
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="settings-content panel">
+          <div className="panel-header">
+            <h2>Notifications</h2>
+          </div>
+          <div className="panel-body">
+            <div className="settings-toggle-row">
+              <div>
+                <div className="settings-toggle-label">System notifications</div>
+                <div className="settings-toggle-desc">
+                  Show a macOS notification when workers send alerts
+                </div>
+              </div>
+              <div
+                className={`sd-toggle-switch ${systemNotifications ? 'on' : ''}`}
+                onClick={handleSystemNotificationsToggle}
+                role="switch"
+                aria-checked={systemNotifications}
               >
                 <div className="sd-toggle-knob" />
               </div>

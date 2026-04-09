@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from orchestrator.api.deps import get_db
+from orchestrator.core.events import Event, publish
 from orchestrator.state.repositories import notifications as repo
 
 router = APIRouter()
@@ -102,7 +103,9 @@ def create_notification(body: NotificationCreate, db=Depends(get_db)):
             link_url=body.link_url,
             metadata=json.dumps(body.metadata) if body.metadata else None,
         )
-        return _serialize(n)
+        result = _serialize(n)
+        publish(Event(type="notification.created", data=result))
+        return result
     except Exception as e:
         # Foreign key constraint failure - session_id or task_id doesn't exist
         if "FOREIGN KEY constraint failed" in str(e):

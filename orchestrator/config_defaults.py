@@ -13,4 +13,5 @@ SETTING_DEFAULTS: dict[str, object] = {
     "claude.default_model": "opus",
     "claude.default_effort": "high",
     "ticker.speed": "1m",
+    "notifications.system": False,
 }

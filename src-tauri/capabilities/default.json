@@ -21,6 +21,7 @@
     "shell:allow-stdin-write",
     "process:default",
     "opener:default",
-    "updater:default"
+    "updater:default",
+    "notification:default"
   ]
 }

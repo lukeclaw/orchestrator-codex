@@ -2,6 +2,9 @@ import { createContext, useContext, useState, useEffect, useCallback, useRef, us
 import { useLocation } from 'react-router-dom'
 import type { Session, Project, Task, Rdev, PrSearchItem, PrSearchResponse } from '../api/types'
 import { api, ApiError } from '../api/client'
+import { useNotify } from './NotificationContext'
+import { useSettings } from './SettingsContext'
+import { sendSystemNotification } from '../utils/systemNotification'
 
 export interface SmartPastePayload {
   title?: string
@@ -98,6 +101,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [prErrors, setPrErrors] = useState<Record<string, string>>({})
   const prCacheRef = useRef<Record<string, { prs: PrSearchItem[]; fetchedAt: number }>>({})
   const location = useLocation()
+  const notify = useNotify()
+  const { getValue } = useSettings()
+  const notifyRef = useRef(notify)
+  notifyRef.current = notify
+  const getValueRef = useRef(getValue)
+  getValueRef.current = getValue
 
   const fetchAll = useCallback(async () => {
     // Cancel any in-flight fetchAll to free browser connections
@@ -318,6 +327,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
                 ? { ...s, reconnect_step: msg.data.step }
                 : s
             ))
+          } else if (msg.type === 'notification.created' && msg.data) {
+            const t = msg.data.notification_type === 'warning' ? 'warning' as const : 'info' as const
+            notifyRef.current(msg.data.message, t)
+            refreshNotificationCount()
+            if (getValueRef.current('notifications.system')) {
+              sendSystemNotification('Orchestrator', msg.data.message)
+            }
           } else {
             // Other messages trigger data refresh
             fetchAll()
