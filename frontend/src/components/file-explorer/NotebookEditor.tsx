@@ -1,10 +1,11 @@
 import { useReducer, useCallback, useRef, useEffect, useState } from 'react'
 import { loader } from '@monaco-editor/react'
 import type { editor } from 'monaco-editor'
-import type { NotebookEditorState, NotebookAction, CellOperation } from './notebook/notebookTypes'
+import type { NotebookEditorState, NotebookAction, CellOperation, CellOutput, KernelStatus } from './notebook/notebookTypes'
 import { parseNotebook } from './notebook/notebookParser'
 import { serializeNotebook } from './notebook/notebookSerializer'
 import { NotebookUndoStack } from './notebook/notebookUndoStack'
+import { useKernel } from './notebook/useKernel'
 import NotebookCell from './notebook/NotebookCell'
 import NotebookToolbar from './notebook/NotebookToolbar'
 import CellInsertBar from './notebook/CellInsertBar'
@@ -120,6 +121,34 @@ function notebookReducer(state: NotebookEditorState, action: NotebookAction): No
       return { ...state, showRawJson: !state.showRawJson }
     case 'MARK_CLEAN':
       return { ...state, dirty: false }
+    case 'EXECUTE_CELL': {
+      const next = new Set(state.executingCellIds)
+      next.add(action.cellId)
+      const cells = state.notebook.cells.map(c =>
+        c.id === action.cellId ? { ...c, executionCount: null, outputs: [], _raw: undefined } : c
+      )
+      return { ...state, notebook: { ...state.notebook, cells }, executingCellIds: next, dirty: true }
+    }
+    case 'EXECUTE_COMPLETE': {
+      const next = new Set(state.executingCellIds)
+      next.delete(action.cellId)
+      const cells = state.notebook.cells.map(c =>
+        c.id === action.cellId ? { ...c, executionCount: action.executionCount, _raw: undefined } : c
+      )
+      return { ...state, notebook: { ...state.notebook, cells }, executingCellIds: next, dirty: true }
+    }
+    case 'CLEAR_CELL_OUTPUTS': {
+      const cells = state.notebook.cells.map(c =>
+        c.id === action.cellId ? { ...c, outputs: [], _raw: undefined } : c
+      )
+      return { ...state, notebook: { ...state.notebook, cells }, dirty: true }
+    }
+    case 'APPEND_CELL_OUTPUT': {
+      const cells = state.notebook.cells.map(c =>
+        c.id === action.cellId ? { ...c, outputs: [...c.outputs, action.output], _raw: undefined } : c
+      )
+      return { ...state, notebook: { ...state.notebook, cells }, dirty: true }
+    }
     case 'UNDO':
     case 'REDO':
       // Handled by the component wrapper — should not reach here
@@ -140,18 +169,28 @@ function createInitialState(content: string): NotebookEditorState {
     showRawJson: false,
     showLineNumbers: true,
     dirty: false,
+    executingCellIds: new Set(),
   }
 }
 
 // ── Component ────────────────────────────────────────────────────────────
 
-export default function NotebookEditor({ content, onContentChange, sessionId: __ }: NotebookEditorProps) {
+export default function NotebookEditor({ content, onContentChange, sessionId }: NotebookEditorProps) {
   const [state, rawDispatch] = useReducer(notebookReducer, content, createInitialState)
   const containerRef = useRef<HTMLDivElement>(null)
   const undoStackRef = useRef(new NotebookUndoStack())
   // Use a ref to read current cells inside dispatch without adding it as a dependency
   const cellsForUndoRef = useRef(state.notebook.cells)
   cellsForUndoRef.current = state.notebook.cells
+
+  // Monaco editor refs (declared early — kernel runCell references monacoRef)
+  const monacoRef = useRef<editor.IStandaloneCodeEditor | null>(null)
+  const editorContainerRef = useRef<HTMLDivElement>(null)
+  const monacoApiRef = useRef<typeof import('monaco-editor') | null>(null)
+  const isSettingValueRef = useRef(false)
+  const updateTimerRef = useRef<number | null>(null)
+  const editingCellIdRef = useRef<string | null>(null)
+  const [monacoReady, setMonacoReady] = useState(false)
 
   // Applies the inverse of an operation (for undo)
   const applyInverse = useCallback((op: CellOperation) => {
@@ -245,15 +284,41 @@ export default function NotebookEditor({ content, onContentChange, sessionId: __
     rawDispatch(action)
   }, [applyInverse, applyForward])
 
-  // Monaco editor refs
-  const monacoRef = useRef<editor.IStandaloneCodeEditor | null>(null)
-  const editorContainerRef = useRef<HTMLDivElement>(null)
-  const monacoApiRef = useRef<typeof import('monaco-editor') | null>(null)
-  const isSettingValueRef = useRef(false)
-  const updateTimerRef = useRef<number | null>(null)
-  const editingCellIdRef = useRef<string | null>(null)
-  // State (not ref) so the cell focus transition effect re-runs after async init
-  const [monacoReady, setMonacoReady] = useState(false)
+  // ── Kernel ──────────────────────────────────────────────────────────────
+
+  const activeTabPath = state.notebook.cells.length > 0 ? 'notebook' : null
+  const kernel = useKernel({
+    sessionId,
+    notebookPath: activeTabPath,
+    workDir: '.',
+    defaultKernel: state.notebook.metadata.raw?.kernelspec
+      ? (state.notebook.metadata.raw.kernelspec as Record<string, string>).name ?? 'python3'
+      : 'python3',
+    onOutput: useCallback((cellId: string, output: CellOutput) => {
+      rawDispatch({ type: 'APPEND_CELL_OUTPUT', cellId, output })
+    }, []),
+    onExecuteComplete: useCallback((cellId: string, executionCount: number) => {
+      rawDispatch({ type: 'EXECUTE_COMPLETE', cellId, executionCount })
+    }, []),
+    onStatusChange: useCallback((_status: KernelStatus) => {
+      // Status is tracked in the hook itself, no reducer action needed
+    }, []),
+    onClearOutputs: useCallback((cellId: string) => {
+      rawDispatch({ type: 'CLEAR_CELL_OUTPUTS', cellId })
+    }, []),
+  })
+
+  const runCell = useCallback((cellId: string) => {
+    const cell = cellsForUndoRef.current.find(c => c.id === cellId)
+    if (!cell || cell.type !== 'code') return
+    // If in edit mode, flush the Monaco content first
+    if (state.editingCellId === cellId && monacoRef.current) {
+      const value = monacoRef.current.getModel()?.getValue() ?? ''
+      rawDispatch({ type: 'UPDATE_CELL_SOURCE', cellId, source: value })
+    }
+    rawDispatch({ type: 'EXECUTE_CELL', cellId })
+    kernel.executeCell(cellId, cell.source)
+  }, [kernel, state.editingCellId])
 
   // Keep ref in sync so the onChange handler can read current editingCellId
   editingCellIdRef.current = state.editingCellId
@@ -438,8 +503,36 @@ export default function NotebookEditor({ content, onContentChange, sessionId: __
 
   const dTimerRef = useRef<number | null>(null)
 
+  const iTimerRef = useRef<number | null>(null)
+  const zeroTimerRef = useRef<number | null>(null)
+
   const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLDivElement>) => {
-    // In edit mode, only intercept Escape
+    // Execution shortcuts work in BOTH edit and command modes
+    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey) {
+      // Ctrl+Enter / Cmd+Enter → run selected cell, stay on cell
+      e.preventDefault()
+      e.stopPropagation()
+      if (state.selectedCellId) runCell(state.selectedCellId)
+      return
+    }
+    if (e.key === 'Enter' && e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      // Shift+Enter → run selected cell, advance to next
+      e.preventDefault()
+      e.stopPropagation()
+      if (state.selectedCellId) {
+        runCell(state.selectedCellId)
+        // Advance to next cell (or insert new if last)
+        const idx = cells.findIndex(c => c.id === state.selectedCellId)
+        if (idx < cells.length - 1) {
+          dispatch({ type: 'SELECT_CELL', cellId: cells[idx + 1].id })
+        } else {
+          dispatch({ type: 'INSERT_CELL', index: cells.length, cellType: 'code' })
+        }
+      }
+      return
+    }
+
+    // In edit mode, only intercept Escape (other keys go to Monaco)
     if (state.editingCellId) {
       if (e.key === 'Escape') {
         e.preventDefault()
@@ -532,8 +625,33 @@ export default function NotebookEditor({ content, onContentChange, sessionId: __
         e.stopPropagation()
         dispatch({ type: 'TOGGLE_LINE_NUMBERS' })
         break
+      case 'i':
+      case 'I':
+        // I,I double-tap → interrupt kernel
+        e.preventDefault()
+        e.stopPropagation()
+        if (iTimerRef.current !== null) {
+          clearTimeout(iTimerRef.current)
+          iTimerRef.current = null
+          kernel.interrupt()
+        } else {
+          iTimerRef.current = window.setTimeout(() => { iTimerRef.current = null }, 500)
+        }
+        break
+      case '0':
+        // 0,0 double-tap → restart kernel
+        e.preventDefault()
+        e.stopPropagation()
+        if (zeroTimerRef.current !== null) {
+          clearTimeout(zeroTimerRef.current)
+          zeroTimerRef.current = null
+          kernel.restart()
+        } else {
+          zeroTimerRef.current = window.setTimeout(() => { zeroTimerRef.current = null }, 500)
+        }
+        break
     }
-  }, [state.editingCellId, state.selectedCellId, cells])
+  }, [state.editingCellId, state.selectedCellId, cells, runCell, kernel])
 
   // ── Helpers ───────────────────────────────────────────────────────────
 
@@ -647,7 +765,43 @@ export default function NotebookEditor({ content, onContentChange, sessionId: __
             </button>
           </>
         )}
+
+        {/* Kernel status pill */}
+        <div className={`nb-kernel-pill nb-kernel-pill--${kernel.isAvailable ? kernel.kernelStatus : 'unavailable'}`}>
+          <span className="nb-kernel-pill__dot" />
+          {kernel.kernelStatus === 'none' && kernel.isAvailable && 'Connecting...'}
+          {kernel.kernelStatus === 'none' && !kernel.isAvailable && 'Not installed'}
+          {kernel.kernelStatus === 'starting' && 'Starting...'}
+          {kernel.kernelStatus === 'idle' && 'Idle'}
+          {kernel.kernelStatus === 'busy' && 'Busy'}
+          {kernel.kernelStatus === 'dead' && (
+            <>Kernel died <button className="nb-kernel-pill__link" onClick={() => kernel.restart()}>Restart</button></>
+          )}
+          {kernel.kernelStatus === 'unavailable' && 'Not installed'}
+        </div>
       </div>
+
+      {/* Install banner */}
+      {kernel.isAvailable === false && (
+        <div className="nb-install-banner">
+          {kernel.installing ? (
+            <>
+              <svg className="nb-install-banner__spinner" width="14" height="14" viewBox="0 0 14 14"><circle cx="7" cy="7" r="5.5" fill="none" stroke="currentColor" strokeWidth="2" strokeDasharray="20 14" /></svg>
+              <span className="nb-install-banner__progress">{kernel.installProgress || 'Setting up...'}</span>
+            </>
+          ) : (
+            <>
+              <span>No Python kernel{kernel.isRemote && kernel.remoteHost ? ` on ${kernel.remoteHost}` : ''}.</span>
+              <button
+                className="nb-install-banner__btn"
+                onClick={kernel.installKernel}
+              >
+                Set up Python kernel
+              </button>
+            </>
+          )}
+        </div>
+      )}
 
       {/* Parse errors */}
       {parseErrors.length > 0 && (
@@ -670,11 +824,14 @@ export default function NotebookEditor({ content, onContentChange, sessionId: __
                   language={metadata.language}
                   isSelected={cell.id === state.selectedCellId}
                   isEditing={cell.id === state.editingCellId}
+                  isExecuting={state.executingCellIds.has(cell.id)}
                   outputCollapsed={state.collapsedOutputs.has(cell.id)}
                   showLineNumbers={state.showLineNumbers}
                   onSelect={() => dispatch({ type: 'SELECT_CELL', cellId: cell.id })}
                   onEnterEdit={() => dispatch({ type: 'ENTER_EDIT_MODE', cellId: cell.id })}
                   onToggleOutputCollapse={() => dispatch({ type: 'TOGGLE_OUTPUT_COLLAPSE', cellId: cell.id })}
+                  onRun={() => runCell(cell.id)}
+                  onInterrupt={() => kernel.interrupt()}
                 />
                 <NotebookToolbar
                   cellId={cell.id}

@@ -601,6 +601,204 @@
   border-color: var(--accent);
 }
 
+/* === Kernel Status Pill === */
+
+.nb-kernel-pill {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 11px;
+  color: var(--text-muted);
+  background: var(--bg);
+  border: 1px solid var(--border-subtle);
+  white-space: nowrap;
+}
+
+.nb-kernel-pill__dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: var(--text-muted);
+}
+
+.nb-kernel-pill--idle .nb-kernel-pill__dot { background: var(--green); }
+.nb-kernel-pill--busy .nb-kernel-pill__dot { background: var(--yellow); animation: nb-pulse 1s infinite; }
+.nb-kernel-pill--starting .nb-kernel-pill__dot { background: var(--orange); animation: nb-pulse 1s infinite; }
+.nb-kernel-pill--dead .nb-kernel-pill__dot { background: var(--red); }
+.nb-kernel-pill--none .nb-kernel-pill__dot,
+.nb-kernel-pill--unavailable .nb-kernel-pill__dot { background: var(--text-muted); }
+
+.nb-kernel-pill__start-btn {
+  padding: 1px 8px;
+  font-size: 11px;
+  font-weight: 500;
+  background: var(--accent);
+  border: none;
+  border-radius: 3px;
+  color: #fff;
+  cursor: pointer;
+  transition: opacity 150ms;
+}
+
+.nb-kernel-pill__start-btn:hover {
+  opacity: 0.85;
+}
+
+.nb-kernel-pill__link {
+  background: none;
+  border: none;
+  color: var(--accent);
+  cursor: pointer;
+  font-size: 11px;
+  padding: 0;
+  text-decoration: underline;
+}
+
+@keyframes nb-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+/* === Install Banner === */
+
+.nb-install-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  background: rgba(var(--yellow-rgb, 210, 153, 34), 0.08);
+  border-bottom: 1px solid rgba(var(--yellow-rgb, 210, 153, 34), 0.2);
+  font-size: 12px;
+  color: var(--text-secondary);
+  flex-shrink: 0;
+}
+
+.nb-install-banner__btn {
+  padding: 3px 12px;
+  font-size: 12px;
+  font-weight: 500;
+  background: var(--accent);
+  border: none;
+  border-radius: 4px;
+  color: #fff;
+  cursor: pointer;
+  transition: opacity 150ms;
+}
+
+.nb-install-banner__btn:hover {
+  opacity: 0.85;
+}
+
+.nb-install-banner__cmd {
+  font-family: var(--font-mono, 'SF Mono', 'Fira Code', monospace);
+  font-size: 11px;
+  padding: 2px 6px;
+  background: var(--surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: 4px;
+  color: var(--text-primary);
+  user-select: all;
+}
+
+.nb-install-banner__copy-btn {
+  padding: 2px 8px;
+  font-size: 11px;
+  background: var(--surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: 4px;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background 100ms, color 100ms;
+}
+
+.nb-install-banner__copy-btn:hover {
+  background: var(--surface-hover);
+  color: var(--text-primary);
+}
+
+.nb-install-banner__progress {
+  font-family: var(--font-mono, 'SF Mono', 'Fira Code', monospace);
+  font-size: 11px;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+  min-width: 0;
+}
+
+.nb-install-banner__spinner {
+  flex-shrink: 0;
+  animation: nb-spin 0.8s linear infinite;
+  color: var(--accent);
+}
+
+@keyframes nb-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+/* === Run Button (cell gutter) === */
+
+.nb-cell__run-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border: none;
+  background: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  border-radius: 4px;
+  padding: 0;
+  opacity: 0;
+  transition: opacity 150ms, color 100ms, background 100ms;
+}
+
+.nb-cell:hover .nb-cell__run-btn,
+.nb-cell--selected .nb-cell__run-btn,
+.nb-cell__run-btn--stop {
+  opacity: 1;
+}
+
+.nb-cell__run-btn:hover {
+  background: var(--surface-hover);
+  color: var(--green);
+}
+
+.nb-cell__run-btn--stop {
+  color: var(--red);
+}
+
+.nb-cell__run-btn--stop:hover {
+  color: var(--red);
+  background: rgba(var(--red-rgb, 248, 81, 73), 0.1);
+}
+
+/* === Execution Count Animation === */
+
+.nb-cell__exec-count--running {
+  animation: nb-pulse 1.2s infinite ease-in-out;
+  color: var(--yellow);
+}
+
+.nb-cell--executing {
+  border-left-color: var(--yellow);
+}
+
+/* === Cell Gutter (updated for run button) === */
+
+.nb-cell__gutter {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+
 /* === Reduced Motion === */
 
 @media (prefers-reduced-motion: reduce) {

@@ -52,6 +52,14 @@ export type CellOperation =
 
 // === Reducer State & Actions ===
 
+export type KernelStatus = 'none' | 'starting' | 'idle' | 'busy' | 'dead' | 'unavailable'
+
+export interface KernelSpec {
+  name: string
+  display_name: string
+  language: string
+}
+
 export interface NotebookEditorState {
   notebook: NotebookState
   selectedCellId: string | null
@@ -61,6 +69,7 @@ export interface NotebookEditorState {
   showRawJson: boolean
   showLineNumbers: boolean
   dirty: boolean
+  executingCellIds: Set<string>
 }
 
 export type NotebookAction =
@@ -84,3 +93,7 @@ export type NotebookAction =
   | { type: 'UNDO' }
   | { type: 'REDO' }
   | { type: 'MARK_CLEAN' }
+  | { type: 'EXECUTE_CELL'; cellId: string }
+  | { type: 'EXECUTE_COMPLETE'; cellId: string; executionCount: number }
+  | { type: 'CLEAR_CELL_OUTPUTS'; cellId: string }
+  | { type: 'APPEND_CELL_OUTPUT'; cellId: string; output: CellOutput }

@@ -193,6 +193,14 @@ async def lifespan(app: FastAPI):
     # Shutdown: stop monitor, state manager, tunnels
     logger.info("Orchestrator API shutting down")
 
+    # Shut down all Jupyter kernels
+    try:
+        from orchestrator.kernel.manager import KernelPool
+
+        await KernelPool.get_instance().shutdown_all()
+    except Exception:
+        logger.exception("KernelPool shutdown failed (non-fatal)")
+
     # Stop all PTY stream readers (pipe-pane cat processes)
     try:
         from orchestrator.terminal.pty_stream import PtyStreamPool
@@ -326,6 +334,7 @@ def create_app(
         trends,
         updates,
     )
+    from orchestrator.api.routes import kernel as kernel_routes
 
     app.include_router(backup.router, prefix="/api", tags=["backup"])
     app.include_router(files.router, prefix="/api", tags=["files"])
@@ -345,6 +354,7 @@ def create_app(
     app.include_router(browser_view.router, prefix="/api", tags=["browser_view"])
     app.include_router(pr_preview.router, prefix="/api", tags=["pr_preview"])
     app.include_router(prs.router, prefix="/api", tags=["prs"])
+    app.include_router(kernel_routes.router)
 
     # Health check (used by Tauri shell to know when the sidecar is ready)
     @app.get("/api/health", tags=["health"])
@@ -446,6 +456,10 @@ def create_app(
     from orchestrator.api.ws_browser_view import ws_browser_view
 
     app.add_api_websocket_route("/ws/browser-view/{session_id}", ws_browser_view)
+
+    from orchestrator.api.ws_kernel import ws_kernel
+
+    app.add_api_websocket_route("/ws/kernel/{session_id}", ws_kernel)
 
     # Static mount for saved images
     try:
