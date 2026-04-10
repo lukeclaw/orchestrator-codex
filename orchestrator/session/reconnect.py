@@ -234,6 +234,13 @@ def _ensure_rdev_running(session_id: str, host: str, timeout: int = 120) -> bool
             s = _get_rdev_state(host)
             if s == "RUNNING":
                 _invalidate_rdev_cache()
+                # Pod (re)started — SSH config may be stale, refresh proactively
+                try:
+                    from orchestrator.terminal.ssh import refresh_rdev_ssh_config
+
+                    refresh_rdev_ssh_config(host)
+                except Exception:
+                    pass
                 return True
             if s not in ("CREATING", "STARTING"):
                 break
@@ -269,6 +276,13 @@ def _ensure_rdev_running(session_id: str, host: str, timeout: int = 120) -> bool
             s = _get_rdev_state(host)
             if s == "RUNNING":
                 _invalidate_rdev_cache()
+                # Pod restarted — SSH config is stale (new port), refresh
+                try:
+                    from orchestrator.terminal.ssh import refresh_rdev_ssh_config
+
+                    refresh_rdev_ssh_config(host)
+                except Exception:
+                    pass
                 return True
         logger.error("_ensure_rdev_running: %s did not reach RUNNING after restart", host)
         return False
@@ -286,6 +300,45 @@ def _invalidate_rdev_cache():
         _rdev_cache["timestamp"] = 0
     except Exception:
         pass
+
+
+def _refresh_ssh_config_if_stale(session) -> None:
+    """Test SSH connectivity and refresh config if it appears stale.
+
+    Runs a quick ``ssh echo ok`` to detect stale SSH config (exit_code=255,
+    e.g. after rdev pod reschedule).  If stale, calls
+    ``refresh_rdev_ssh_config`` to regenerate the config entry with the
+    current HostName/Port.
+    """
+    from orchestrator.terminal.ssh import is_rdev_host, refresh_rdev_ssh_config
+
+    if not is_rdev_host(session.host):
+        return
+
+    _set_reconnect_step(session.id, "ssh_config")
+    try:
+        rc = None
+        try:
+            result = subprocess.run(
+                _ssh_cmd(session.host, "echo ok", timeout=5),
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            rc = result.returncode
+            if rc == 0:
+                return  # SSH works fine, config is current
+        except (subprocess.TimeoutExpired, OSError):
+            pass  # Treat timeout/error same as stale
+
+        logger.info(
+            "Reconnect %s: SSH config appears stale (rc=%s), refreshing",
+            session.name,
+            rc,
+        )
+        refresh_rdev_ssh_config(session.host)
+    except Exception:
+        logger.debug("SSH config staleness check failed for %s", session.host, exc_info=True)
 
 
 # =============================================================================
@@ -900,6 +953,9 @@ def _reconnect_rws_pty_worker(conn, session, repo, tunnel_manager):
 
     skip_permissions = bool(get_config_value(conn, "claude.skip_permissions", default=False))
 
+    # 0. Refresh SSH config if stale (rdev pod may have been rescheduled)
+    _refresh_ssh_config_if_stale(session)
+
     # 1. Ensure reverse tunnel alive
     _set_reconnect_step(session.id, "tunnel")
     if tunnel_manager and not tunnel_manager.is_alive(session.id):
@@ -1109,6 +1165,9 @@ def reconnect_remote_worker(
                 session.host,
             )
             return
+
+        # ── Refresh SSH config if stale (pod may have been rescheduled) ──
+        _refresh_ssh_config_if_stale(session)
 
         # ── If session already has rws_pty_id, use existing reconnect logic ──
         if session.rws_pty_id:
