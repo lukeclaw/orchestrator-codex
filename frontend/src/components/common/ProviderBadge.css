@@ -30,6 +30,12 @@
   border-color: rgba(var(--accent-rgb), 0.22);
 }
 
+.provider-badge--gemini {
+  background: rgba(66, 133, 244, 0.12);
+  color: #4285f4;
+  border-color: rgba(66, 133, 244, 0.22);
+}
+
 [data-theme="light"] .provider-badge--claude {
   background: rgba(var(--purple-alt-rgb), 0.16);
 }

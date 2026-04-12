@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { useSettings } from '../context/SettingsContext'
+import { api } from '../api/client'
 import { useBackup } from '../hooks/useBackup'
 import { useUpdate } from '../hooks/useUpdate'
 import { useNotify } from '../context/NotificationContext'
@@ -51,6 +52,46 @@ const BACKUPS_PER_PAGE = 10
 
 type SettingsTab = 'updates' | 'preferences' | 'backup'
 
+interface VoiceModelInfo {
+  id: string
+  label: string
+  summary: string
+  english_only: boolean
+  recommended: boolean
+  size: string
+}
+
+interface VoiceRuntimeInfo {
+  settings: {
+    enabled: boolean
+    model: string
+    language: string
+  }
+  runtime: {
+    available: boolean
+    source: 'user' | 'bundled' | 'external' | 'env' | 'missing'
+    bundled_available: boolean
+    user_available: boolean
+    external_available: boolean
+    default_device_id: string | null
+    default_batch_size: string | null
+  }
+  setup: {
+    status: 'idle' | 'installing' | 'installed' | 'error'
+    message: string | null
+    started_at: string | null
+    finished_at: string | null
+    can_install: boolean
+    cta: string | null
+    install_reason: string | null
+  }
+  selected_model: {
+    id: string
+    english_only: boolean
+  }
+  models: VoiceModelInfo[]
+}
+
 export interface SettingsCapabilityState {
   claudeUpdateBeforeStartDisabledReason: string | null
   claudeSkipPermissionsDisabledReason: string | null
@@ -58,6 +99,8 @@ export interface SettingsCapabilityState {
   claudeDefaultEffortDisabledReason: string | null
   codexDefaultModelDisabledReason: string | null
   codexDefaultEffortDisabledReason: string | null
+  geminiDefaultModelDisabledReason: string | null
+  geminiDefaultEffortDisabledReason: string | null
   brainHeartbeatDisabledReason: string | null
 }
 
@@ -94,6 +137,16 @@ export function getSettingsCapabilityState(
     codexDefaultEffortDisabledReason: getCapabilityDisabledReason(
       registry,
       'codex',
+      CAPABILITY_EFFORT_SELECTION,
+    ),
+    geminiDefaultModelDisabledReason: getCapabilityDisabledReason(
+      registry,
+      'gemini',
+      CAPABILITY_MODEL_SELECTION,
+    ),
+    geminiDefaultEffortDisabledReason: getCapabilityDisabledReason(
+      registry,
+      'gemini',
       CAPABILITY_EFFORT_SELECTION,
     ),
     brainHeartbeatDisabledReason: getCapabilityDisabledReason(
@@ -141,6 +194,8 @@ export default function SettingsPage() {
   const [claudeDefaultEffort, setClaudeDefaultEffort] = useState('high')
   const [codexDefaultModel, setCodexDefaultModel] = useState('gpt-5-codex')
   const [codexDefaultEffort, setCodexDefaultEffort] = useState('high')
+  const [geminiDefaultModel, setGeminiDefaultModel] = useState('gemini-2.0-pro')
+  const [geminiDefaultEffort, setGeminiDefaultEffort] = useState('high')
   const [workerDefaultProvider, setWorkerDefaultProvider] = useState(DEFAULT_PROVIDER_ID)
   const [brainDefaultProvider, setBrainDefaultProvider] = useState(DEFAULT_PROVIDER_ID)
   const [theme, setTheme] = useState<ThemeMode>('dark')
@@ -148,6 +203,19 @@ export default function SettingsPage() {
   const [heartbeatInput, setHeartbeatInput] = useState('')
   const [heartbeatFocused, setHeartbeatFocused] = useState(false)
   const [heartbeatSaved, setHeartbeatSaved] = useState(false)
+  const [voiceEnabled, setVoiceEnabled] = useState(true)
+  const [voiceModel, setVoiceModel] = useState('openai/whisper-large-v3-turbo')
+  const [voiceLanguage, setVoiceLanguage] = useState('auto')
+  const [voiceRuntimeInfo, setVoiceRuntimeInfo] = useState<VoiceRuntimeInfo | null>(null)
+
+  const refreshVoiceRuntime = async () => {
+    try {
+      const info = await api<VoiceRuntimeInfo>('/api/terminal/voice/runtime')
+      setVoiceRuntimeInfo(info)
+    } catch {
+      setVoiceRuntimeInfo(null)
+    }
+  }
 
   // Sync settings from DB
   useEffect(() => {
@@ -159,14 +227,29 @@ export default function SettingsPage() {
       setClaudeDefaultEffort(String(getValue('claude.default_effort') || 'high'))
       setCodexDefaultModel(String(getValue('codex.default_model') || 'gpt-5-codex'))
       setCodexDefaultEffort(String(getValue('codex.default_effort') || 'high'))
+      setGeminiDefaultModel(String(getValue('gemini.default_model') || 'gemini-2.0-pro'))
+      setGeminiDefaultEffort(String(getValue('gemini.default_effort') || 'high'))
       setWorkerDefaultProvider(String(getValue('worker.default_provider') || DEFAULT_PROVIDER_ID))
       setBrainDefaultProvider(String(getValue('brain.default_provider') || DEFAULT_PROVIDER_ID))
       setTheme((getValue('ui.theme') as ThemeMode) || 'dark')
       const hb = String(getValue('brain.heartbeat') || 'off')
       setBrainHeartbeat(hb)
       setHeartbeatInput(hb === 'off' ? '' : hb)
+      setVoiceEnabled(Boolean(getValue('terminal.voice.enabled') ?? true))
+      setVoiceModel(String(getValue('terminal.voice.model') || 'openai/whisper-large-v3-turbo'))
+      setVoiceLanguage(String(getValue('terminal.voice.language') || 'auto'))
     }
   }, [loading, getValue])
+
+  useEffect(() => {
+    void refreshVoiceRuntime()
+  }, [voiceEnabled, voiceModel, voiceLanguage])
+
+  useEffect(() => {
+    if (voiceRuntimeInfo?.setup.status !== 'installing') return
+    const intervalId = setInterval(() => { void refreshVoiceRuntime() }, 2000)
+    return () => clearInterval(intervalId)
+  }, [voiceRuntimeInfo?.setup.status])
 
   const handleClaudeUpdateToggle = async () => {
     const newValue = !claudeUpdateBeforeStart
@@ -217,10 +300,43 @@ export default function SettingsPage() {
     await save({ 'codex.default_effort': value })
   }
 
+  const handleGeminiDefaultModelChange = async (value: string) => {
+    const trimmed = value.trim() || 'gemini-2.0-pro'
+    setGeminiDefaultModel(trimmed)
+    await save({ 'gemini.default_model': trimmed })
+  }
+
+  const handleGeminiDefaultEffortChange = async (value: string) => {
+    setGeminiDefaultEffort(value)
+    await save({ 'gemini.default_effort': value })
+  }
+
   const handleThemeChange = async (value: string) => {
     const v = value as ThemeMode
     setTheme(v)
     await save({ 'ui.theme': v })
+  }
+
+  const handleVoiceEnabledToggle = async () => {
+    const newValue = !voiceEnabled
+    setVoiceEnabled(newValue)
+    await save({ 'terminal.voice.enabled': newValue })
+  }
+
+  const handleVoiceModelChange = async (value: string) => {
+    setVoiceModel(value)
+    await save({ 'terminal.voice.model': value })
+  }
+
+  const handleVoiceLanguageChange = async (value: string) => {
+    const trimmed = value.trim() || 'auto'
+    setVoiceLanguage(trimmed)
+    await save({ 'terminal.voice.language': trimmed })
+  }
+
+  const handleInstallVoiceRuntime = async () => {
+    await api('/api/terminal/voice/setup', { method: 'POST' })
+    await refreshVoiceRuntime()
   }
 
   const HEARTBEAT_PRESETS = [
@@ -229,6 +345,33 @@ export default function SettingsPage() {
     'Every 4 hours',
     'Weekdays at 9 AM',
   ]
+
+  const showVoiceRuntimeCard = voiceRuntimeInfo && (
+    !voiceRuntimeInfo.runtime.available ||
+    voiceRuntimeInfo.setup.status === 'installing' ||
+    voiceRuntimeInfo.setup.status === 'error' ||
+    voiceRuntimeInfo.setup.status === 'installed'
+  )
+
+  const voiceRuntimeCardTitle = !voiceRuntimeInfo
+    ? 'Voice runtime setup'
+    : voiceRuntimeInfo.setup.status === 'installing'
+      ? 'Installing voice runtime'
+      : voiceRuntimeInfo.setup.status === 'error'
+        ? 'Voice runtime install failed'
+        : voiceRuntimeInfo.setup.status === 'installed'
+          ? 'Voice runtime ready'
+          : voiceRuntimeInfo.runtime.source === 'external'
+            ? 'Managed voice runtime'
+            : 'Voice runtime setup'
+
+  const voiceRuntimeCardDescription = !voiceRuntimeInfo
+    ? 'Install the managed runtime to enable voice input.'
+    : voiceRuntimeInfo.setup.status === 'installing'
+      ? 'Keep this page open while Orchestrator installs the managed voice runtime.'
+      : voiceRuntimeInfo.setup.status === 'installed'
+        ? 'The managed voice runtime is installed. Voice input is ready to use in terminals.'
+        : voiceRuntimeInfo.setup.install_reason || 'Install the managed runtime to enable voice input.'
 
   const handleBrainHeartbeatToggle = async () => {
     const newValue = brainHeartbeat === 'off' ? 'Every hour' : 'off'
@@ -327,6 +470,8 @@ export default function SettingsPage() {
     claudeDefaultEffortDisabledReason,
     codexDefaultModelDisabledReason,
     codexDefaultEffortDisabledReason,
+    geminiDefaultModelDisabledReason,
+    geminiDefaultEffortDisabledReason,
     brainHeartbeatDisabledReason,
   } = getSettingsCapabilityState(registry, brainDefaultProvider)
 
@@ -336,6 +481,10 @@ export default function SettingsPage() {
     const start = backupPage * BACKUPS_PER_PAGE
     return backups.slice(start, start + BACKUPS_PER_PAGE)
   }, [backups, backupPage])
+
+  const selectedVoiceModel = useMemo(() => {
+    return voiceRuntimeInfo?.models.find(model => model.id === voiceModel) || null
+  }, [voiceModel, voiceRuntimeInfo])
 
   // Reset page if backups change
   useEffect(() => {
@@ -733,6 +882,60 @@ export default function SettingsPage() {
 
         <div className="settings-content panel">
           <div className="panel-header">
+            <h2>Gemini</h2>
+          </div>
+          <div className="panel-body">
+            <div className="settings-toggle-row" title={geminiDefaultModelDisabledReason || undefined}>
+              <div>
+                <div className="settings-toggle-label">Default model</div>
+                <div className="settings-toggle-desc">
+                  Gemini model used when launching new workers and brain
+                </div>
+              </div>
+              <div className="settings-inline-control">
+                <input
+                  className="settings-text-input"
+                  type="text"
+                  value={geminiDefaultModel}
+                  onChange={e => setGeminiDefaultModel(e.target.value)}
+                  onBlur={() => handleGeminiDefaultModelChange(geminiDefaultModel)}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter') {
+                      void handleGeminiDefaultModelChange(geminiDefaultModel)
+                      ;(e.target as HTMLInputElement).blur()
+                    }
+                  }}
+                  placeholder="gemini-2.0-pro"
+                  spellCheck={false}
+                  disabled={!!geminiDefaultModelDisabledReason}
+                />
+              </div>
+            </div>
+
+            <div className="settings-toggle-row" title={geminiDefaultEffortDisabledReason || undefined}>
+              <div>
+                <div className="settings-toggle-label">Default effort</div>
+                <div className="settings-toggle-desc">
+                  Reasoning effort level for new Gemini workers and brain
+                </div>
+              </div>
+              <div className={geminiDefaultEffortDisabledReason ? 'settings-tabs-disabled' : ''}>
+                <SlidingTabs
+                  tabs={[
+                    { value: 'high' as const, label: 'High' },
+                    { value: 'medium' as const, label: 'Medium' },
+                    { value: 'low' as const, label: 'Low' },
+                  ]}
+                  value={geminiDefaultEffort}
+                  onChange={handleGeminiDefaultEffortChange}
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="settings-content panel">
+          <div className="panel-header">
             <h2>Brain</h2>
           </div>
           <div className="panel-body">
@@ -841,6 +1044,134 @@ export default function SettingsPage() {
               >
                 <div className="sd-toggle-knob" />
               </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="settings-content panel">
+          <div className="panel-header">
+            <h2>Terminal Voice Input</h2>
+          </div>
+          <div className="panel-body">
+            {showVoiceRuntimeCard && voiceRuntimeInfo && (
+              <div className={`settings-runtime-card ${voiceRuntimeInfo.setup.status === 'error' ? 'error' : ''}`}>
+                <div className="settings-runtime-card-header">
+                  <div>
+                    <div className="settings-toggle-label">{voiceRuntimeCardTitle}</div>
+                    <div className="settings-toggle-desc">
+                      {voiceRuntimeCardDescription}
+                    </div>
+                  </div>
+                  {!voiceRuntimeInfo.runtime.available && voiceRuntimeInfo.setup.can_install && (
+                    <button
+                      className="btn btn-primary btn-sm"
+                      onClick={handleInstallVoiceRuntime}
+                      disabled={voiceRuntimeInfo.setup.status === 'installing'}
+                    >
+                      {voiceRuntimeInfo.setup.status === 'installing'
+                        ? 'Installing…'
+                        : voiceRuntimeInfo.setup.status === 'error'
+                          ? 'Retry install'
+                          : (voiceRuntimeInfo.setup.cta || 'Install runtime')}
+                    </button>
+                  )}
+                </div>
+                {voiceRuntimeInfo.setup.message && (
+                  <div className="settings-runtime-card-message">
+                    {voiceRuntimeInfo.setup.message}
+                  </div>
+                )}
+              </div>
+            )}
+
+            <div className="settings-toggle-row">
+              <div>
+                <div className="settings-toggle-label">Enable voice input</div>
+                <div className="settings-toggle-desc">
+                  Show the mic control in terminals and transcribe speech on-device
+                </div>
+              </div>
+              <div
+                className={`sd-toggle-switch ${voiceEnabled ? 'on' : ''}`}
+                onClick={handleVoiceEnabledToggle}
+                role="switch"
+                aria-checked={voiceEnabled}
+              >
+                <div className="sd-toggle-knob" />
+              </div>
+            </div>
+
+            <div className="settings-toggle-row">
+              <div>
+                <div className="settings-toggle-label">Model</div>
+                <div className="settings-toggle-desc">
+                  Curated checkpoints with clear speed and language tradeoffs
+                </div>
+                {selectedVoiceModel && (
+                  <div className="settings-toggle-hint">
+                    {selectedVoiceModel.summary}
+                    {selectedVoiceModel.english_only ? ' English only.' : ' Multilingual.'}
+                  </div>
+                )}
+              </div>
+              <div className="settings-inline-select-wrap">
+                <select
+                  className="settings-select"
+                  value={voiceModel}
+                  onChange={e => handleVoiceModelChange(e.target.value)}
+                >
+                  {(voiceRuntimeInfo?.models || []).map(model => (
+                    <option key={model.id} value={model.id}>
+                      {model.label}{model.recommended ? ' (Recommended)' : ''}{model.english_only ? ' [English only]' : ''}
+                    </option>
+                  ))}
+                  {voiceRuntimeInfo?.models.some(model => model.id === voiceModel) ? null : (
+                    <option value={voiceModel}>{voiceModel}</option>
+                  )}
+                </select>
+              </div>
+            </div>
+
+            <div className="settings-toggle-row">
+              <div>
+                <div className="settings-toggle-label">Language hint</div>
+                <div className="settings-toggle-desc">
+                  Use <code>auto</code> for detection, or a code like <code>en</code> when you know the speech language
+                </div>
+              </div>
+              <div className="settings-inline-control">
+                <input
+                  className="settings-text-input"
+                  type="text"
+                  value={voiceLanguage}
+                  onChange={e => setVoiceLanguage(e.target.value)}
+                  onBlur={() => handleVoiceLanguageChange(voiceLanguage)}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter') {
+                      void handleVoiceLanguageChange(voiceLanguage)
+                      ;(e.target as HTMLInputElement).blur()
+                    }
+                  }}
+                  placeholder="auto"
+                  spellCheck={false}
+                />
+              </div>
+            </div>
+
+            <div className="settings-warning-note">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
+                <line x1="12" y1="9" x2="12" y2="13" />
+                <line x1="12" y1="17" x2="12.01" y2="17" />
+              </svg>
+              <span>
+                {voiceRuntimeInfo?.runtime.available
+                  ? `Runtime detected via ${voiceRuntimeInfo.runtime.source}.`
+                  : 'No voice runtime detected yet.'}
+                {voiceRuntimeInfo?.runtime.default_device_id
+                  ? ` Default device on this host: ${voiceRuntimeInfo.runtime.default_device_id}.`
+                  : ''}
+              </span>
             </div>
           </div>
         </div>

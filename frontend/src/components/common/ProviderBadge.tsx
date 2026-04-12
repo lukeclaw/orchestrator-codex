@@ -3,6 +3,7 @@ import './ProviderBadge.css'
 const PROVIDER_LABELS: Record<string, string> = {
   claude: 'Claude',
   codex: 'Codex',
+  gemini: 'Gemini',
 }
 
 export function normalizeProviderId(provider: string | null | undefined): string {

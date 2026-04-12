@@ -110,6 +110,39 @@ export const FALLBACK_PROVIDER_REGISTRY: ProviderRegistryResponse = {
         },
       },
     },
+    {
+      id: 'gemini',
+      label: 'Gemini',
+      capabilities: {
+        [CAPABILITY_WORKER_SESSIONS]: { supported: true, disabled_reason: null },
+        [CAPABILITY_BRAIN_SESSIONS]: { supported: true, disabled_reason: null },
+        [CAPABILITY_LOCAL_SESSIONS]: { supported: true, disabled_reason: null },
+        [CAPABILITY_REMOTE_SESSIONS]: {
+          supported: false,
+          disabled_reason: 'Remote Gemini support is not available in MVP.',
+        },
+        [CAPABILITY_MODEL_SELECTION]: { supported: true, disabled_reason: null },
+        [CAPABILITY_EFFORT_SELECTION]: { supported: true, disabled_reason: null },
+        [CAPABILITY_SKIP_PERMISSIONS]: {
+          supported: false,
+          disabled_reason: 'Gemini skip-permissions support is not implemented yet.',
+        },
+        [CAPABILITY_HOOKS]: {
+          supported: false,
+          disabled_reason: 'Gemini hook automation is not implemented yet.',
+        },
+        [CAPABILITY_SKILLS_DEPLOYMENT]: {
+          supported: false,
+          disabled_reason: 'Gemini skills deployment is not implemented yet.',
+        },
+        [CAPABILITY_HEARTBEAT_LOOP]: { supported: true, disabled_reason: null },
+        [CAPABILITY_QUICK_CLEAR]: { supported: true, disabled_reason: null },
+        [CAPABILITY_RECONNECT]: {
+          supported: false,
+          disabled_reason: 'Gemini reconnect support is not implemented yet.',
+        },
+      },
+    },
   ],
   defaults: {
     worker: DEFAULT_PROVIDER_ID,

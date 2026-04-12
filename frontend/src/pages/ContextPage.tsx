@@ -12,7 +12,7 @@ import './ContextPage.css'
 
 type SortKey = 'title' | 'scope' | 'category' | 'project' | 'updated'
 type SortDir = 'asc' | 'desc'
-type ProviderFilter = '' | 'shared' | 'claude' | 'codex'
+type ProviderFilter = '' | 'shared' | 'claude' | 'codex' | 'gemini'
 
 const SCOPE_ORDER: Record<string, number> = { global: 2, brain: 1, project: 0 }
 const SCOPE_COLORS: Record<string, string> = { global: 'var(--status-working)', brain: 'var(--purple)', project: 'var(--status-idle)' }
@@ -78,6 +78,7 @@ export default function ContextPage() {
     shared: items.filter(item => !item.provider).length,
     claude: items.filter(item => !item.provider || item.provider === 'claude').length,
     codex: items.filter(item => !item.provider || item.provider === 'codex').length,
+    gemini: items.filter(item => !item.provider || item.provider === 'gemini').length,
   }), [items])
 
   function getSortValue(item: ContextItem, key: SortKey): string | number {
@@ -395,6 +396,13 @@ export default function ContextPage() {
             type="button"
           >
             <span className="ctx-scope-pill-label">Codex + Shared</span>
+          </button>
+          <button
+            className={`ctx-scope-pill${providerFilter === 'gemini' ? ' active' : ''}`}
+            onClick={() => setProviderFilter(providerFilter === 'gemini' ? '' : 'gemini')}
+            type="button"
+          >
+            <span className="ctx-scope-pill-label">Gemini + Shared</span>
           </button>
           <div className="ctx-search-inline">
             <IconSearch size={13} className="ctx-search-inline-icon" />
