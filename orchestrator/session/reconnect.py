@@ -1353,21 +1353,11 @@ def reconnect_local_worker(
     tmp_dir: str,
     conn=None,
 ) -> bool:
-    """Reconnect a local worker with TUI guard.
-
-    Local workers have no SSH/screen/tunnel.  The main concern is avoiding
-    sending commands into a running Claude TUI.
-
-    Args:
-        conn: Optional DB connection for reading skills during config regeneration.
-            When provided, custom skills and disabled overrides are read from DB.
-
-    Returns:
-        True if Claude was successfully (re)started, False otherwise.
-        Exceptions still propagate to the caller for unexpected errors.
-    """
-    from orchestrator.session.health import check_claude_running_local
+    """Reconnect a local worker with TUI guard."""
+    from orchestrator.providers.runtime import get_provider_runtime
     from orchestrator.terminal.manager import ensure_window
+
+    runtime = get_provider_runtime(session.provider)
 
     lock = get_reconnect_lock(session.id)
     if not lock.acquire(timeout=5):
@@ -1378,19 +1368,17 @@ def reconnect_local_worker(
         os.makedirs(tmp_dir, exist_ok=True)
         ensure_window(tmux_sess, tmux_win, cwd=tmp_dir)
 
-        # Check if Claude is still running — use process-tree detection
-        # (not alternate screen, since Claude Code doesn't use it locally).
-        alive, _ = check_claude_running_local(
-            session.id,
-            session.claude_session_id,
-            tmux_sess,
-            tmux_win,
-        )
+        # Check if provider process is still running via runtime
+        alive, _ = runtime.is_alive(tmux_sess, tmux_win, session.id)
         if alive:
-            logger.info("Reconnect local %s: Claude still running, nothing to do", session.name)
+            logger.info(
+                "Reconnect local %s: %s still running, nothing to do",
+                session.name,
+                session.provider or "claude",
+            )
             return True
 
-        # Claude not running — make sure the pane is at a shell prompt.
+        # Not running — make sure the pane is at a shell prompt.
         # If alternate screen is active (e.g. stale TUI), exit it first.
         if check_tui_running_in_pane(tmux_sess, tmux_win):
             send_keys(tmux_sess, tmux_win, "C-c", enter=False)
@@ -1400,17 +1388,30 @@ def reconnect_local_worker(
 
         # Now at shell prompt — safe to send commands via safe_send_keys
         api_base = f"http://127.0.0.1:{api_port}"
-        _ensure_local_configs_exist(tmp_dir, session.id, api_base, conn=conn)
 
+        # SOT check: ensure tmp dir is healthy (regenerates if needed)
+        from orchestrator.session.health import ensure_tmp_dir_health
+
+        ensure_tmp_dir_health(
+            tmp_dir,
+            session.id,
+            api_base=api_base,
+            browser_headless=False,
+            conn=conn,
+            provider=session.provider or "claude",
+        )
+
+        # Provider-agnostic node/env setup
         # Ensure Node 24 is the volta default (needed for Playwright plugin's npx).
         # Skip gracefully if volta is not installed on this machine.
         volta_cmd = "command -v volta >/dev/null 2>&1 && volta install node@24 || true"
         safe_send_keys(tmux_sess, tmux_win, volta_cmd, enter=True)
         time.sleep(3)
 
-        # Ensure the official Playwright plugin is installed (skip if already present)
-        safe_send_keys(tmux_sess, tmux_win, _PW_INSTALL_CMD, enter=True)
-        time.sleep(2)
+        # Ensure the official Playwright plugin is installed (only for Claude)
+        if (session.provider or "claude") == "claude":
+            safe_send_keys(tmux_sess, tmux_win, _PW_INSTALL_CMD, enter=True)
+            time.sleep(2)
 
         path_export = get_path_export_command(os.path.join(tmp_dir, "bin"))
         safe_send_keys(tmux_sess, tmux_win, path_export, enter=True)
@@ -1436,7 +1437,7 @@ def reconnect_local_worker(
         time.sleep(0.3)
 
         # Optionally update Claude Code before launching
-        if conn:
+        if conn and (session.provider or "claude") == "claude":
             from orchestrator.terminal.claude_update import (
                 run_claude_update,
                 should_update_before_start,
@@ -1457,47 +1458,29 @@ def reconnect_local_worker(
             safe_send_keys(tmux_sess, tmux_win, f"cd {shlex.quote(session.work_dir)}", enter=True)
             time.sleep(0.3)
 
-        # Use Claude's tracked session ID if available, otherwise orchestrator ID
-        target_id = session.claude_session_id or session.id
-        has_tracked_id = session.claude_session_id is not None
-
-        session_exists = _check_claude_session_exists_local(target_id)
-        session_arg = _get_claude_session_arg(target_id, session_exists, has_tracked_id)
-        logger.info(
-            "Reconnect local %s: Claude session exists=%s, using arg: %s",
-            session.name,
-            session_exists,
-            session_arg,
+        # Use runtime to get launch command
+        launch_cmd = runtime.get_launch_command(
+            session.id,
+            tmp_dir,
+            model=getattr(session, "model", None),
+            effort=getattr(session, "effort", None),
+            skip_permissions=skip_permissions,
         )
 
-        settings_file = os.path.join(tmp_dir, "configs", "settings.json")
-        claude_args = [
-            session_arg,
-            f"--settings {shlex.quote(settings_file)}",
-        ]
-        if skip_permissions:
-            claude_args.insert(1, "--dangerously-skip-permissions")
+        safe_send_keys(tmux_sess, tmux_win, launch_cmd, enter=True)
 
-        # Read prompt from SOT-deployed file (includes custom skills)
-        prompt_file = os.path.join(tmp_dir, "prompt.md")
-        if os.path.exists(prompt_file):
-            claude_args.append(f'--append-system-prompt "$(cat {shlex.quote(prompt_file)})"')
-
-        claude_cmd = f"claude {' '.join(claude_args)}"
-        safe_send_keys(tmux_sess, tmux_win, claude_cmd, enter=True)
-
-        # Dismiss any "trust this folder" prompt that may appear after launch
+        # Dismiss any "trust this folder" prompt
         dismiss_trust_prompt(tmux_sess, tmux_win, session_id=session.id)
 
-        # Verify Claude actually started — recover if -r failed
-        started, error_output = _verify_claude_started(tmux_sess, tmux_win)
+        # Verify started — recover if resume failed (Claude only)
+        # For non-Claude, we just check if it's alive.
+        # We can reuse _verify_claude_started by making it use runtime.is_alive
+        started, error_output = _verify_session_started(runtime, tmux_sess, tmux_win, session.id)
         if not started:
             logger.warning(
-                "Reconnect local %s: Claude failed to start (arg=%s, output=%s). "
-                "Retrying with --session-id to create a fresh session.",
+                "Reconnect local %s: %s failed to start. Retrying with fresh session.",
                 session.name,
-                session_arg,
-                error_output[:300],
+                session.provider or "claude",
             )
             # Clean up the failed command prompt
             send_keys(tmux_sess, tmux_win, "C-c", enter=False)
@@ -1505,44 +1488,26 @@ def reconnect_local_worker(
             send_keys(tmux_sess, tmux_win, "", enter=True)
             time.sleep(0.5)
 
-            # Clean up stale session file + orphaned processes.
-            # Without this, --session-id fails with "already in use".
-            _cleanup_stale_claude_session_local(target_id)
-            time.sleep(1)
+            # Provider-specific cleanup if needed (primarily for Claude conversation deadlocks)
+            if (session.provider or "claude") == "claude":
+                _cleanup_stale_claude_session_local(session.id)
+                time.sleep(1)
 
-            # Retry with --session-id (creates a new conversation)
-            fallback_arg = f"--session-id {target_id}"
-            claude_args_retry = [
-                fallback_arg,
-                f"--settings {shlex.quote(settings_file)}",
-            ]
-            if skip_permissions:
-                claude_args_retry.insert(1, "--dangerously-skip-permissions")
-            if os.path.exists(prompt_file):
-                claude_args_retry.append(
-                    f'--append-system-prompt "$(cat {shlex.quote(prompt_file)})"'
-                )
-
-            claude_cmd_retry = f"claude {' '.join(claude_args_retry)}"
-            logger.info("Reconnect local %s: retrying with: %s", session.name, fallback_arg)
-            safe_send_keys(tmux_sess, tmux_win, claude_cmd_retry, enter=True)
-
-            # Dismiss any "trust this folder" prompt that may appear after launch
+            # Retry launch
+            safe_send_keys(tmux_sess, tmux_win, launch_cmd, enter=True)
             dismiss_trust_prompt(tmux_sess, tmux_win, session_id=session.id)
 
-            # Check the retry — if this also fails, let the health check loop handle it
-            retry_started, retry_output = _verify_claude_started(tmux_sess, tmux_win)
+            retry_started, retry_output = _verify_session_started(
+                runtime, tmux_sess, tmux_win, session.id
+            )
             if not retry_started:
                 logger.error(
-                    "Reconnect local %s: retry also failed (output=%s). Giving up.",
+                    "Reconnect local %s: retry also failed. Giving up.",
                     session.name,
-                    retry_output[:300],
                 )
                 return False
 
-        logger.info(
-            "Launched Claude Code for local worker %s (session_id=%s)", session.name, session.id
-        )
+        logger.info("Launched %s for local worker %s", session.provider or "claude", session.name)
         return True
     finally:
         lock.release()

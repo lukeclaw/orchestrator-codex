@@ -467,92 +467,6 @@ def _has_process_in_tree(root_pid: int, process_substring: str) -> bool:
         return False
 
 
-def _has_claude_in_process_tree(root_pid: int) -> bool:
-    return _has_process_in_tree(root_pid, "claude")
-
-
-def _has_codex_in_process_tree(root_pid: int) -> bool:
-    return _has_process_in_tree(root_pid, "codex")
-
-
-def check_claude_process_local(session_id: str) -> tuple[bool, str]:
-    """Check if Claude Code with given session_id is running locally via ps.
-
-    Args:
-        session_id: The session ID to search for in Claude's -r flag
-
-    Returns:
-        (alive: bool, reason: str) - whether Claude is running and why
-    """
-    try:
-        result = subprocess.run(["ps", "aux"], capture_output=True, text=True, timeout=5)
-
-        # Look for claude process with our session_id
-        for line in result.stdout.split("\n"):
-            if "claude" in line.lower() and session_id in line and "grep" not in line:
-                logger.debug("Found Claude process for session %s: %s", session_id, line[:100])
-                return True, "Claude process running"
-
-        return False, f"No Claude process found for session {session_id}"
-    except subprocess.TimeoutExpired:
-        return True, "Health check timed out"
-    except Exception as e:
-        logger.warning("Health check ps command failed: %s", e)
-        return True, f"Health check error: {e}"
-
-
-def check_claude_running_local(
-    session_id: str,
-    claude_session_id: str | None,
-    tmux_sess: str,
-    tmux_win: str,
-) -> tuple[bool, str]:
-    """Check if Claude Code is running for a local worker.
-
-    Uses two complementary methods:
-    1. Process tree walk from the tmux pane PID — reliable and does not
-       depend on which session ID was passed at launch time.  This handles
-       the common case where ``claude_session_id`` diverges from the
-       command-line ``--session-id`` after ``/clear`` or ``/compact``.
-    2. ``ps aux`` scan for known session IDs — fallback when the pane PID
-       cannot be determined.
-
-    Args:
-        session_id: Orchestrator session ID (passed as ``--session-id`` at launch).
-        claude_session_id: Claude's internal session ID (may differ after /clear).
-        tmux_sess: tmux session name.
-        tmux_win: tmux window name.
-
-    Returns:
-        (alive, reason)
-    """
-    # Primary: walk the pane's process tree for a claude descendant.
-    pane_pid = _get_pane_pid(tmux_sess, tmux_win)
-    if pane_pid is not None and _has_claude_in_process_tree(pane_pid):
-        return True, "Claude process running in pane"
-
-    # Fallback: ps aux with orchestrator ID (always present on initial launch).
-    alive, reason = check_claude_process_local(session_id)
-    if alive:
-        return alive, reason
-
-    # Try Claude's tracked ID if different (may be in cmd after reconnect).
-    if claude_session_id and claude_session_id != session_id:
-        alive, reason = check_claude_process_local(claude_session_id)
-        if alive:
-            return alive, reason
-
-    return False, reason
-
-
-def check_codex_running_local(tmux_sess: str, tmux_win: str) -> tuple[bool, str]:
-    """Check if Codex is running for a local worker via the tmux pane process tree."""
-    pane_pid = _get_pane_pid(tmux_sess, tmux_win)
-    if pane_pid is not None and _has_codex_in_process_tree(pane_pid):
-        return True, "Codex process running in pane"
-    return False, "No Codex process found in pane"
-
-
 # =============================================================================
 # Tmp Directory Health — manifest-based verification and recovery
 # =============================================================================
@@ -588,27 +502,30 @@ def ensure_tmp_dir_health(
     from orchestrator.agents.deploy import (
         _read_manifest,
         deploy_codex_worker_tmp_contents,
+        deploy_gemini_worker_tmp_contents,
         deploy_worker_tmp_contents,
     )
 
     manifest = _read_manifest(tmp_dir)
 
     # Read model/effort from DB if available, so regenerated Claude settings match user prefs
-    model = "opus"
-    effort = "high"
-    if provider != "codex" and conn is not None:
-        from orchestrator.state.repositories.config import get_config_value
+    from orchestrator.providers.config import get_provider_default_effort, get_provider_default_model
 
-        model = str(get_config_value(conn, "claude.default_model", default="opus"))
-        effort = str(get_config_value(conn, "claude.default_effort", default="high"))
+    model = get_provider_default_model(conn, provider)
+    effort = get_provider_default_effort(conn, provider)
 
-    deploy = deploy_codex_worker_tmp_contents if provider == "codex" else deploy_worker_tmp_contents
+    def deploy_fn(*args, **kwargs):
+        if provider == "codex":
+            return deploy_codex_worker_tmp_contents(*args, **kwargs)
+        if provider == "gemini":
+            return deploy_gemini_worker_tmp_contents(*args, **kwargs)
+        return deploy_worker_tmp_contents(*args, **kwargs)
 
     if manifest is None:
         # Manifest missing — whole dir was likely wiped
         logger.warning("Tmp dir manifest missing: %s — regenerating", tmp_dir)
-        if provider == "codex":
-            deploy(
+        if provider in ("codex", "gemini"):
+            deploy_fn(
                 tmp_dir,
                 session_id,
                 api_base=api_base,
@@ -616,7 +533,7 @@ def ensure_tmp_dir_health(
                 browser_headless=browser_headless,
             )
         else:
-            deploy(
+            deploy_fn(
                 tmp_dir,
                 session_id,
                 api_base=api_base,
@@ -639,8 +556,8 @@ def ensure_tmp_dir_health(
         len(missing),
         ", ".join(missing[:5]),
     )
-    if provider == "codex":
-        deploy(
+    if provider in ("codex", "gemini"):
+        deploy_fn(
             tmp_dir,
             session_id,
             api_base=api_base,
@@ -648,7 +565,7 @@ def ensure_tmp_dir_health(
             browser_headless=browser_headless,
         )
     else:
-        deploy(
+        deploy_fn(
             tmp_dir,
             session_id,
             api_base=api_base,
@@ -683,26 +600,37 @@ def ensure_brain_tmp_health(
         _read_manifest,
         deploy_brain_tmp_contents,
         deploy_codex_brain_tmp_contents,
+        deploy_gemini_brain_tmp_contents,
     )
 
     # Read model/effort from DB if available
-    model = "opus"
-    effort = "high"
-    if provider != "codex" and conn is not None:
-        from orchestrator.state.repositories.config import get_config_value
+    from orchestrator.providers.config import get_provider_default_effort, get_provider_default_model
 
-        model = str(get_config_value(conn, "claude.default_model", default="opus"))
-        effort = str(get_config_value(conn, "claude.default_effort", default="high"))
+    model = get_provider_default_model(conn, provider)
+    effort = get_provider_default_effort(conn, provider)
 
     manifest = _read_manifest(brain_dir)
-    deploy = deploy_codex_brain_tmp_contents if provider == "codex" else deploy_brain_tmp_contents
+
+    def deploy_fn(*args, **kwargs):
+        if provider == "codex":
+            return deploy_codex_brain_tmp_contents(*args, **kwargs)
+        if provider == "gemini":
+            return deploy_gemini_brain_tmp_contents(*args, **kwargs)
+        return deploy_brain_tmp_contents(*args, **kwargs)
 
     if manifest is None:
         logger.warning("Brain tmp dir manifest missing: %s — regenerating", brain_dir)
-        if provider == "codex":
-            deploy(brain_dir, api_base=api_base, conn=conn, provider=provider)
+        if provider in ("codex", "gemini"):
+            deploy_fn(brain_dir, api_base=api_base, conn=conn, provider=provider)
         else:
-            deploy(brain_dir, api_base=api_base, conn=conn, provider=provider, model=model, effort=effort)
+            deploy_fn(
+                brain_dir,
+                api_base=api_base,
+                conn=conn,
+                provider=provider,
+                model=model,
+                effort=effort,
+            )
         return {"healthy": False, "regenerated": True, "missing": ["<manifest>"]}
 
     missing = [p for p in manifest if not os.path.exists(os.path.join(brain_dir, p))]
@@ -715,10 +643,17 @@ def ensure_brain_tmp_health(
         len(missing),
         ", ".join(missing[:5]),
     )
-    if provider == "codex":
-        deploy(brain_dir, api_base=api_base, conn=conn, provider=provider)
+    if provider in ("codex", "gemini"):
+        deploy_fn(brain_dir, api_base=api_base, conn=conn, provider=provider)
     else:
-        deploy(brain_dir, api_base=api_base, conn=conn, provider=provider, model=model, effort=effort)
+        deploy_fn(
+            brain_dir,
+            api_base=api_base,
+            conn=conn,
+            provider=provider,
+            model=model,
+            effort=effort,
+        )
     return {"healthy": False, "regenerated": True, "missing": missing}
 
 
@@ -1016,19 +951,12 @@ def check_and_update_worker_health(db, session, tunnel_manager=None) -> dict:
         }
 
     # Local worker: use pane-based process tree detection (primary)
-    # with ps aux fallback checking both orchestrator and Claude IDs.
-    # After /clear or /compact, Claude's internal session ID changes
-    # but the process command line retains the original --session-id,
-    # so relying solely on claude_session_id causes false disconnects.
-    if session.provider == "codex":
-        alive, reason = check_codex_running_local(tmux_sess, tmux_win)
-    else:
-        alive, reason = check_claude_running_local(
-            session.id,
-            session.claude_session_id,
-            tmux_sess,
-            tmux_win,
-        )
+    # with ps aux fallback via the provider runtime.
+    from orchestrator.providers.runtime import get_provider_runtime
+
+    runtime = get_provider_runtime(session.provider)
+    alive, reason = runtime.is_alive(tmux_sess, tmux_win, session.id)
+
     if not alive:
         _recycle_frozen_pane(pane_preexisted, tmux_sess, tmux_win, worker_tmp_dir, session.name)
 
