@@ -479,8 +479,10 @@ def create_session(body: SessionCreate, request: Request, db=Depends(get_db)):
     except Exception:
         logger.warning("Could not create tmux window for session %s", sanitized_name, exc_info=True)
 
-    # work_dir is where Claude runs - user-specified or defaults
-    work_dir = body.work_dir  # Can be None, will be set later based on host
+    # work_dir is where Claude runs - user-specified or defaults to tmp_dir for local workers
+    work_dir = body.work_dir
+    if not work_dir and not is_remote_host(body.host):
+        work_dir = tmp_dir
 
     s = repo.create_session(db, sanitized_name, body.host, work_dir, provider=provider)
     runtime = get_provider_runtime(provider)

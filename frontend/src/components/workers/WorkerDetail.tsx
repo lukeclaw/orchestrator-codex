@@ -1,28 +1,28 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
-import { useParams, useNavigate, Link } from 'react-router-dom'
-import { api, ApiError } from '../api/client'
-import Modal from '../components/common/Modal'
-import { isSupportedDropFile, LARGE_FILE_THRESHOLD, fileToBase64 } from '../utils/fileDropUtils'
-import { useNotify } from '../context/NotificationContext'
-import { useApp } from '../context/AppContext'
-import { useSmartPaste } from '../hooks/useSmartPaste'
-import { useFileExplorerState } from '../hooks/useFileExplorerState'
-import { useEditorTabs } from '../hooks/useEditorTabs'
+import { useState, useEffect, useCallback, useRef, useImperativeHandle, forwardRef, memo } from 'react'
+import { Link } from 'react-router-dom'
+import { api, ApiError } from '../../api/client'
+import Modal from '../common/Modal'
+import { isSupportedDropFile, LARGE_FILE_THRESHOLD, fileToBase64 } from '../../utils/fileDropUtils'
+import { useNotify } from '../../context/NotificationContext'
+import { useApp } from '../../context/AppContext'
+import { useSmartPaste } from '../../hooks/useSmartPaste'
+import { useFileExplorerState } from '../../hooks/useFileExplorerState'
+import { useEditorTabs } from '../../hooks/useEditorTabs'
 import {
   CAPABILITY_RECONNECT,
   FALLBACK_PROVIDER_REGISTRY,
   getCapabilityDisabledReason,
-} from '../hooks/useProviderRegistry'
-import TerminalView from '../components/terminal/TerminalView'
-import InteractiveCLI from '../components/terminal/InteractiveCLI'
-import BrowserView from '../components/browser/BrowserView'
-import FileExplorerPanel from '../components/file-explorer/FileExplorerPanel'
-import FileViewer from '../components/file-explorer/FileViewer'
-import ProviderBadge from '../components/common/ProviderBadge'
-import { IconPause, IconPlay, IconStop, IconRefresh, IconTrash, IconSync, IconBrain } from '../components/common/Icons'
-import ConfirmPopover from '../components/common/ConfirmPopover'
-import AssignTaskModal from '../components/tasks/AssignTaskModal'
-import './SessionDetailPage.css'
+} from '../../hooks/useProviderRegistry'
+import TerminalView from '../terminal/TerminalView'
+import InteractiveCLI from '../terminal/InteractiveCLI'
+import BrowserView from '../browser/BrowserView'
+import FileExplorerPanel from '../file-explorer/FileExplorerPanel'
+import FileViewer from '../file-explorer/FileViewer'
+import ProviderBadge from '../common/ProviderBadge'
+import { IconPause, IconPlay, IconStop, IconRefresh, IconSync, IconTrash, IconBrain, IconKebab } from '../common/Icons'
+import ConfirmPopover from '../common/ConfirmPopover'
+import AssignTaskModal from '../tasks/AssignTaskModal'
+import './WorkerDetail.css'
 
 interface TunnelInfo {
   remote_port: number
@@ -30,15 +30,32 @@ interface TunnelInfo {
   host: string
 }
 
-export default function SessionDetailPage() {
-  const { id } = useParams<{ id: string }>()
-  const navigate = useNavigate()
+export interface WorkerDetailProps {
+  workerId: string
+  isActive: boolean   // true = this tab is visible in a pane (gates API calls)
+  isFocused: boolean  // true = visible + pane is focused (gates terminal focus)
+  onDelete?: (workerId: string) => void
+}
+
+export interface WorkerDetailHandle {
+  refitTerminal: () => void
+  hasEditorTabs: () => boolean
+}
+
+// Width threshold below which control buttons collapse into kebab menu
+// Inline buttons: 4 × 32px + 3 × 8px gaps = 152px, plus topbar gap (16px)
+const ACTIONS_OVERHEAD_INLINE = 152 + 16
+
+const WorkerDetail = forwardRef<WorkerDetailHandle, WorkerDetailProps>(function WorkerDetail(
+  { workerId, isActive, isFocused, onDelete },
+  ref,
+) {
   const notify = useNotify()
   
   // Use shared state from AppContext for session
-  const { sessions, tasks: allTasks, refresh, interactiveCliSessions, interactiveCliMinimized, closeInteractiveCli, browserViewSessions, browserViewMinimized, closeBrowserView } = useApp()
-  const session = sessions.find(s => s.id === id) || null
-  const tasks = allTasks.filter(t => t.assigned_session_id === id)
+  const { sessions, taskBySession, refresh, interactiveCliSessions, interactiveCliMinimized, closeInteractiveCli, browserViewSessions, browserViewMinimized, closeBrowserView } = useApp()
+  const session = sessions.find(s => s.id === workerId) || null
+  const assignedTask = taskBySession.get(workerId) || null
   const isRdev = session?.host?.includes('/') ?? false
   const isSsh = !isRdev && (session?.host ? session.host !== 'localhost' : false)
   const isRemote = session?.host ? session.host !== 'localhost' : false
@@ -52,14 +69,68 @@ export default function SessionDetailPage() {
 
   const { readClipboard } = useSmartPaste()
   const terminalFocusRef = useRef<(() => void) | null>(null)
+  const terminalFitRef = useRef<(() => void) | null>(null)
+
+  // Expose imperative handle for parent (WorkerWorkspace)
+  useImperativeHandle(ref, () => ({
+    refitTerminal: () => terminalFitRef.current?.(),
+    hasEditorTabs: () => editorTabs.tabs.length > 0 && fe.open,
+  }))
+
+  // Re-focus terminal when this pane becomes focused (e.g., tab switch in hidden-DOM mode)
+  // BUT only if focus isn't already inside an overlay (ICLI/BV) — clicking a PiP
+  // in the unfocused pane should keep focus in that PiP, not steal it to main terminal.
+  const prevFocusedRef = useRef(isFocused)
+  useEffect(() => {
+    if (isFocused && !prevFocusedRef.current) {
+      requestAnimationFrame(() => {
+        const active = document.activeElement
+        const inOverlay = active?.closest('.icli-overlay, .bv-overlay')
+        if (!inOverlay) {
+          terminalFocusRef.current?.()
+        }
+      })
+    }
+    prevFocusedRef.current = isFocused
+  }, [isFocused])
+
+  // Dynamic compact mode — collapse control buttons into kebab when topbar is narrow
+  const [isCompact, setIsCompact] = useState(false)
+  const topbarRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    const el = topbarRef.current
+    if (!el) return
+    const observer = new ResizeObserver(() => {
+      const leftEl = el.querySelector('.sd-topbar-left') as HTMLElement
+      if (!leftEl) return
+      // clientWidth includes padding; scrollWidth is content-only — add padding + gap + buttons
+      setIsCompact(leftEl.scrollWidth + ACTIONS_OVERHEAD_INLINE > el.clientWidth)
+    })
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [])
+
+  // Kebab overflow menu for compact mode
+  const [showKebab, setShowKebab] = useState(false)
+  const kebabRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!showKebab) return
+    const handler = (e: MouseEvent) => {
+      if (kebabRef.current && !kebabRef.current.contains(e.target as Node)) setShowKebab(false)
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [showKebab])
 
   // Tunnel state for rdev workers
   const [tunnels, setTunnels] = useState<Record<string, TunnelInfo>>({})
   const tunnelIntervalRef = useRef<ReturnType<typeof setInterval> | undefined>(undefined)
 
   // File explorer state
-  const fe = useFileExplorerState(id)
-  const editorTabs = useEditorTabs(id!)
+  const fe = useFileExplorerState(workerId)
+  const editorTabs = useEditorTabs(workerId)
 
   // Local state for page-specific data
   const [error, setError] = useState('')
@@ -73,17 +144,17 @@ export default function SessionDetailPage() {
   const [feConnecting, setFeConnecting] = useState(false)
   const [icliActiveLocal, setIcliActiveLocal] = useState(false)
   const [icliStarting, setIcliStarting] = useState(false)
-  const [icliMinimized, setIcliMinimized] = useState(() => id ? interactiveCliMinimized.has(id) : false)
+  const [icliMinimized, setIcliMinimized] = useState(() => interactiveCliMinimized.has(workerId))
   const [bvActiveLocal, setBvActiveLocal] = useState(false)
   const [bvStarting, setBvStarting] = useState(false)
-  const [bvMinimized, setBvMinimized] = useState(() => id ? browserViewMinimized.has(id) : false)
+  const [bvMinimized, setBvMinimized] = useState(() => browserViewMinimized.has(workerId))
 
   // icliActive combines local state (from mount check) with AppContext WS events
-  const icliFromContext = id ? interactiveCliSessions.has(id) : false
+  const icliFromContext = interactiveCliSessions.has(workerId)
   const icliActive = icliActiveLocal || icliFromContext
 
   // Browser view state (same pattern as interactive CLI)
-  const bvFromContext = id ? browserViewSessions.has(id) : false
+  const bvFromContext = browserViewSessions.has(workerId)
   const bvActive = bvActiveLocal || bvFromContext
 
   // Auto-show overlay when interactive CLI becomes active (via WS event)
@@ -98,8 +169,7 @@ export default function SessionDetailPage() {
   useEffect(() => {
     if (!icliFromContext && icliActiveLocal) {
       // WS event says closed — re-check via API to confirm
-      if (!id) return
-      api<{ active: boolean }>(`/api/sessions/${id}/interactive-cli`)
+      api<{ active: boolean }>(`/api/sessions/${workerId}/interactive-cli`)
         .then(r => {
           if (!r.active) {
             setIcliActiveLocal(false)
@@ -108,29 +178,26 @@ export default function SessionDetailPage() {
         })
         .catch(() => {})
     }
-  }, [icliFromContext, icliActiveLocal, id])
+  }, [icliFromContext, icliActiveLocal, workerId])
 
   // Sync minimize state from WS events (agent triggered minimize/restore)
   useEffect(() => {
-    if (id) {
-      setIcliMinimized(interactiveCliMinimized.has(id))
-    }
-  }, [id, interactiveCliMinimized])
+    setIcliMinimized(interactiveCliMinimized.has(workerId))
+  }, [workerId, interactiveCliMinimized])
 
-  // Check interactive CLI status on mount — restore previous state
+  // Check interactive CLI status — only when this tab is active
   useEffect(() => {
-    if (!id) return
-    api<{ active: boolean }>(`/api/sessions/${id}/interactive-cli`)
+    if (!isActive) return
+    api<{ active: boolean }>(`/api/sessions/${workerId}/interactive-cli`)
       .then(r => {
         if (r.active) {
           setIcliActiveLocal(true)
-          // Preserve minimize state from WS context; default to open
-          setIcliMinimized(interactiveCliMinimized.has(id))
+          setIcliMinimized(interactiveCliMinimized.has(workerId))
         }
       })
       .catch(() => {})
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [id])
+  }, [workerId, isActive])
 
   // Auto-show browser view overlay when it becomes active (via WS event)
   useEffect(() => {
@@ -143,8 +210,7 @@ export default function SessionDetailPage() {
   // Auto-hide browser view when WS says closed
   useEffect(() => {
     if (!bvFromContext && bvActiveLocal) {
-      if (!id) return
-      api<{ active: boolean }>(`/api/sessions/${id}/browser-view`)
+      api<{ active: boolean }>(`/api/sessions/${workerId}/browser-view`)
         .then(r => {
           if (!r.active) {
             setBvActiveLocal(false)
@@ -153,45 +219,41 @@ export default function SessionDetailPage() {
         })
         .catch(() => {})
     }
-  }, [bvFromContext, bvActiveLocal, id])
+  }, [bvFromContext, bvActiveLocal, workerId])
 
   // Sync minimize state from WS events (agent triggered minimize/restore)
   useEffect(() => {
-    if (id) {
-      setBvMinimized(browserViewMinimized.has(id))
-    }
-  }, [id, browserViewMinimized])
+    setBvMinimized(browserViewMinimized.has(workerId))
+  }, [workerId, browserViewMinimized])
 
-  // Check browser view status on mount — restore previous state
+  // Check browser view status — only when this tab is active
   useEffect(() => {
-    if (!id) return
-    api<{ active: boolean }>(`/api/sessions/${id}/browser-view`)
+    if (!isActive) return
+    api<{ active: boolean }>(`/api/sessions/${workerId}/browser-view`)
       .then(r => {
         if (r.active) {
           setBvActiveLocal(true)
-          // Preserve minimize state from WS context; default to open
-          setBvMinimized(browserViewMinimized.has(id))
+          setBvMinimized(browserViewMinimized.has(workerId))
         }
       })
       .catch(() => {})
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [id])
+  }, [workerId, isActive])
 
-  // Record that user viewed this session
+  // Record that user viewed this session — only when this tab is active
   useEffect(() => {
-    if (id) {
-      api(`/api/sessions/${id}/viewed`, { method: 'POST' }).catch(() => {})
-    }
-  }, [id])
+    if (!isActive) return
+    api(`/api/sessions/${workerId}/viewed`, { method: 'POST' }).catch(() => {})
+  }, [workerId, isActive])
 
-  // Fetch tunnels for remote workers (rdev and SSH)
+  // Fetch tunnels for remote workers — only when this tab is active
   useEffect(() => {
-    if (!isRemote || !id) {
+    if (!isActive || !isRemote) {
       setTunnels({})
       return
     }
 
-    const targetSessionId = id
+    const targetSessionId = workerId
 
     async function fetchTunnels() {
       try {
@@ -210,7 +272,7 @@ export default function SessionDetailPage() {
     return () => {
       clearInterval(tunnelIntervalRef.current)
     }
-  }, [id, isRemote])
+  }, [workerId, isRemote, isActive])
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -291,11 +353,11 @@ export default function SessionDetailPage() {
   }, [fe.viewerHeightRatio, fe.updateViewerHeightRatio])
 
   async function handlePauseOrContinue() {
-    if (!id || actionPending) return
+    if (actionPending) return
     setActionPending(true)
     try {
       const endpoint = session?.status === 'paused' ? 'continue' : 'pause'
-      await api(`/api/sessions/${id}/${endpoint}`, { method: 'POST' })
+      await api(`/api/sessions/${workerId}/${endpoint}`, { method: 'POST' })
       refresh()
       notify(`Worker ${endpoint === 'pause' ? 'paused' : 'resumed'}`, 'success')
     } catch (e) {
@@ -306,10 +368,10 @@ export default function SessionDetailPage() {
   }
 
   async function handleStop() {
-    if (!id || actionPending) return
+    if (actionPending) return
     setActionPending(true)
     try {
-      await api(`/api/sessions/${id}/stop`, { method: 'POST' })
+      await api(`/api/sessions/${workerId}/stop`, { method: 'POST' })
       refresh()
       notify(`Worker stopped and cleared`, 'success')
     } catch (e) {
@@ -324,10 +386,10 @@ export default function SessionDetailPage() {
       notify(reconnectDisabledReason, 'error')
       return
     }
-    if (!id || actionPending) return
+    if (actionPending) return
     setActionPending(true)
     try {
-      await api(`/api/sessions/${id}/reconnect`, { method: 'POST' })
+      await api(`/api/sessions/${workerId}/reconnect`, { method: 'POST' })
       refresh()
       notify(`Reconnecting worker...`, 'info')
     } catch (e) {
@@ -342,10 +404,10 @@ export default function SessionDetailPage() {
       notify(reconnectDisabledReason, 'error')
       return
     }
-    if (!id) return
+    if (!workerId) return
     try {
       const result = await api<{ ok: boolean; auto_reconnect: boolean }>(
-        `/api/sessions/${id}/auto-reconnect`,
+        `/api/sessions/${workerId}/auto-reconnect`,
         { method: 'POST' }
       )
       refresh()
@@ -355,43 +417,22 @@ export default function SessionDetailPage() {
     }
   }
 
-  async function handleHealthCheck() {
-    if (!id || actionPending) return
-    setActionPending(true)
-    try {
-      const result = await api<{ alive: boolean; status: string; reason: string }>(
-        `/api/sessions/${id}/health-check`,
-        { method: 'POST' }
-      )
-      await refresh()  // Wait for data to refresh before showing notification
-      if (result.alive) {
-        notify(`Worker is alive: ${result.reason}`, 'success')
-      } else {
-        notify(`Worker disconnected: ${result.reason}`, 'warning')
-      }
-    } catch (e) {
-      notify(e instanceof Error ? e.message : 'Failed to check status', 'error')
-    } finally {
-      setActionPending(false)
-    }
-  }
 
   async function handleDelete() {
-    if (!id) return
     try {
-      await api(`/api/sessions/${id}`, { method: 'DELETE' })
+      await api(`/api/sessions/${workerId}`, { method: 'DELETE' })
       refresh()
-      navigate(-1)
+      onDelete?.(workerId)
     } catch (e) {
       notify(e instanceof Error ? e.message : 'Failed to delete', 'error')
     }
   }
 
   async function handleCheckProgress() {
-    if (!id || actionPending) return
+    if (actionPending) return
     // Validate ID is a UUID, not 'auto' or other keywords
-    if (!/^[0-9a-f-]{36}$/i.test(id)) {
-      notify(`Invalid worker ID: ${id}`, 'error')
+    if (!/^[0-9a-f-]{36}$/i.test(workerId)) {
+      notify(`Invalid worker ID: ${workerId}`, 'error')
       return
     }
     setActionPending(true)
@@ -415,7 +456,7 @@ export default function SessionDetailPage() {
       })
       await new Promise(resolve => setTimeout(resolve, 50))
       // Send check_worker command to brain for this specific worker
-      const message = `/check_worker ${id}`
+      const message = `/check_worker ${workerId}`
       await api(`/api/sessions/${brainStatus.session_id}/send`, {
         method: 'POST',
         body: JSON.stringify({ message }),
@@ -429,7 +470,7 @@ export default function SessionDetailPage() {
 
   // Open or toggle interactive CLI
   const handleInteractiveCli = useCallback(async () => {
-    if (!id || icliStarting) return
+    if (icliStarting) return
     if (icliActive) {
       // Already active — toggle minimize/restore
       setIcliMinimized(prev => !prev)
@@ -439,7 +480,7 @@ export default function SessionDetailPage() {
     try {
       for (let attempt = 0; ; attempt++) {
         try {
-          await api(`/api/sessions/${id}/interactive-cli`, {
+          await api(`/api/sessions/${workerId}/interactive-cli`, {
             method: 'POST',
             body: JSON.stringify({}),
           })
@@ -459,11 +500,11 @@ export default function SessionDetailPage() {
     } finally {
       setIcliStarting(false)
     }
-  }, [id, icliActive, icliStarting, notify])
+  }, [workerId, icliActive, icliStarting, notify])
 
   // Open or toggle browser view
   const handleBrowserView = useCallback(async () => {
-    if (!id || bvStarting) return
+    if (bvStarting) return
     if (bvActive) {
       // Already active — toggle minimize/restore
       setBvMinimized(prev => !prev)
@@ -471,7 +512,7 @@ export default function SessionDetailPage() {
     }
     setBvStarting(true)
     try {
-      await api(`/api/sessions/${id}/browser-view`, {
+      await api(`/api/sessions/${workerId}/browser-view`, {
         method: 'POST',
         body: JSON.stringify({ cdp_port: 9222 }),
       })
@@ -482,25 +523,23 @@ export default function SessionDetailPage() {
     } finally {
       setBvStarting(false)
     }
-  }, [id, bvActive, bvStarting, notify])
+  }, [workerId, bvActive, bvStarting, notify])
 
   // Handle long text paste from Cmd+V in terminal — uses bracketed paste so
   // Claude Code shows the compact "[xx lines of text]" indicator.
   const handleTextPaste = useCallback(async (text: string) => {
-    if (!id) return
     try {
-      await api(`/api/sessions/${id}/paste-to-pane`, {
+      await api(`/api/sessions/${workerId}/paste-to-pane`, {
         method: 'POST',
         body: JSON.stringify({ text }),
       })
     } catch (e) {
       notify(e instanceof Error ? e.message : 'Failed to paste text', 'error')
     }
-  }, [id, notify])
+  }, [workerId, notify])
 
   // Handle image paste from Cmd+V in terminal (no permission popup)
   const handleImagePaste = useCallback(async (file: File) => {
-    if (!id) return
     const base64 = await new Promise<string>((resolve, reject) => {
       const reader = new FileReader()
       reader.onload = () => resolve((reader.result as string).split(',')[1])
@@ -509,11 +548,11 @@ export default function SessionDetailPage() {
     })
     try {
       const res = await api<{ ok: boolean; file_path: string; filename: string }>(
-        `/api/sessions/${id}/paste-image`,
+        `/api/sessions/${workerId}/paste-image`,
         { method: 'POST', body: JSON.stringify({ image_data: base64 }) },
       )
       if (res.ok) {
-        await api(`/api/sessions/${id}/type`, {
+        await api(`/api/sessions/${workerId}/type`, {
           method: 'POST',
           body: JSON.stringify({ text: res.file_path }),
         })
@@ -521,20 +560,20 @@ export default function SessionDetailPage() {
     } catch (e) {
       notify(e instanceof Error ? e.message : 'Failed to paste image', 'error')
     }
-  }, [id, notify])
+  }, [workerId, notify])
 
   // Upload a dropped file to the worker's tmp dir, then type the path into the terminal
   const uploadDroppedFile = useCallback(async (file: File) => {
-    if (!id || dropUploading) return
+    if (dropUploading) return
     setDropUploading(true)
     try {
       const data = await fileToBase64(file)
       const res = await api<{ ok: boolean; file_path: string; filename: string }>(
-        `/api/sessions/${id}/upload-file`,
+        `/api/sessions/${workerId}/upload-file`,
         { method: 'POST', body: JSON.stringify({ file_data: data, filename: file.name }) },
       )
       if (res.ok) {
-        await api(`/api/sessions/${id}/type`, {
+        await api(`/api/sessions/${workerId}/type`, {
           method: 'POST',
           body: JSON.stringify({ text: res.file_path }),
         })
@@ -552,7 +591,7 @@ export default function SessionDetailPage() {
       setShowLargeFileModal(false)
       setDropFile(null)
     }
-  }, [id, dropUploading, notify])
+  }, [workerId, dropUploading, notify])
 
   // Handle file drop from Finder (non-image files)
   const handleFileDrop = useCallback((file: File) => {
@@ -573,29 +612,29 @@ export default function SessionDetailPage() {
   }, [dropUploading, pasting, ctxPasting, notify, uploadDroppedFile])
 
   const handlePaste = useCallback(async () => {
-    if (!id || pasting) return
+    if (pasting) return
     setPasting(true)
     try {
       const result = await readClipboard()
       if (result.type === 'image') {
         const res = await api<{ ok: boolean; file_path: string; filename: string }>(
-          `/api/sessions/${id}/paste-image`,
+          `/api/sessions/${workerId}/paste-image`,
           { method: 'POST', body: JSON.stringify({ image_data: result.imageData }) },
         )
         if (res.ok) {
-          await api(`/api/sessions/${id}/type`, {
+          await api(`/api/sessions/${workerId}/type`, {
             method: 'POST',
             body: JSON.stringify({ text: res.file_path }),
           })
         }
       } else if (result.text && result.text.length > 1000) {
         // Long text: bracketed paste so Claude Code shows "[xx lines of text]"
-        await api(`/api/sessions/${id}/paste-to-pane`, {
+        await api(`/api/sessions/${workerId}/paste-to-pane`, {
           method: 'POST',
           body: JSON.stringify({ text: result.text }),
         })
       } else {
-        await api(`/api/sessions/${id}/send`, {
+        await api(`/api/sessions/${workerId}/send`, {
           method: 'POST',
           body: JSON.stringify({ message: result.text }),
         })
@@ -610,13 +649,13 @@ export default function SessionDetailPage() {
       setPasting(false)
       terminalFocusRef.current?.()
     }
-  }, [id, pasting, readClipboard, notify])
+  }, [workerId, pasting, readClipboard, notify])
 
   if (error) {
     return (
       <div className="error-page">
         <p>{error}</p>
-        <button className="btn btn-secondary" onClick={() => navigate('/')}>Back to Dashboard</button>
+        <Link to="/" className="btn btn-secondary">Back to Dashboard</Link>
       </div>
     )
   }
@@ -628,7 +667,7 @@ export default function SessionDetailPage() {
   return (
     <div className="session-detail">
       {/* Top bar with session info */}
-      <div className="sd-topbar">
+      <div className={`sd-topbar${isCompact ? ' sd-topbar--compact' : ''}`} ref={topbarRef}>
         <div className="sd-topbar-left">
           <h2
             className="sd-title"
@@ -644,96 +683,133 @@ export default function SessionDetailPage() {
           {session.host.includes('/') && <span className="sd-type-tag rdev">rdev</span>}
           {isSsh && <span className="sd-type-tag ssh">ssh</span>}
           <span className={`status-badge ${session.status}`}>{session.status}</span>
-          {/* Check Status button next to status */}
           <button
-            className="sd-check-btn"
-            onClick={handleHealthCheck}
-            disabled={actionPending}
-            title="Check if worker is alive"
+            className={`sd-auto-reconnect-btn${session.auto_reconnect ? ' active' : ''}`}
+            onClick={handleToggleAutoReconnect}
+            title={
+              reconnectDisabledReason
+                ? reconnectDisabledReason
+                : (session.auto_reconnect ? 'Auto-reconnect enabled (click to disable)' : 'Auto-reconnect disabled (click to enable)')
+            }
+            disabled={!!reconnectDisabledReason}
           >
-            <IconSync size={14} />
+            <IconSync size={13} />
           </button>
         </div>
-        <div className="sd-topbar-actions">
-
-          {/* Control buttons - icon only */}
-          {session.status === 'disconnected' ? (
-            /* Reconnect button for disconnected workers */
-            <button
-              className="sd-control-btn reconnect"
-              onClick={handleReconnect}
-              disabled={actionPending || !!reconnectDisabledReason}
-              title={reconnectDisabledReason || 'Reconnect'}
-            >
-              <IconRefresh size={16} />
-            </button>
-          ) : (
-            <>
-              {/* Check Progress button - always visible */}
+        {isCompact ? (
+          /* Compact mode: kebab dropdown for control buttons */
+          <div className="sd-topbar-actions">
+            <div className="sd-kebab-menu" ref={kebabRef}>
               <button
-                className="sd-control-btn check-progress"
-                onClick={handleCheckProgress}
-                disabled={actionPending || session.status === 'idle'}
-                title="Check Progress"
+                className="sd-control-btn"
+                onClick={() => setShowKebab(!showKebab)}
+                title="More actions"
               >
-                <IconBrain size={16} />
+                <IconKebab size={16} />
               </button>
-              <button
-                className={`sd-control-btn ${session.status === 'paused' ? 'continue' : 'pause'}`}
-                onClick={handlePauseOrContinue}
-                disabled={actionPending || session.status === 'idle'}
-                title={session.status === 'paused' ? 'Continue' : 'Pause'}
-              >
-                {session.status === 'paused' ? <IconPlay size={16} /> : <IconPause size={16} />}
-              </button>
-              <ConfirmPopover
-                message={`Stop worker "${session.name}" and clear context?`}
-                confirmLabel="Stop"
-                onConfirm={handleStop}
-                variant="danger"
-              >
-                {({ onClick }) => (
-                  <button
-                    className="sd-control-btn stop"
-                    onClick={onClick}
-                    disabled={actionPending || session.status === 'idle'}
-                    title="Stop and clear"
-                  >
-                    <IconStop size={16} />
+              {showKebab && (
+                <div className="sd-kebab-dropdown">
+                  {session.status === 'disconnected' ? (
+                    <button className="sd-kebab-item" onClick={() => { setShowKebab(false); handleReconnect() }} disabled={actionPending || !!reconnectDisabledReason} title={reconnectDisabledReason || undefined}>
+                      <IconRefresh size={14} /> Reconnect
+                    </button>
+                  ) : (
+                    <>
+                      <button className="sd-kebab-item" onClick={() => { setShowKebab(false); handleCheckProgress() }} disabled={actionPending || session.status === 'idle'}>
+                        <IconBrain size={14} /> Check Progress
+                      </button>
+                      <button className="sd-kebab-item" onClick={() => { setShowKebab(false); handlePauseOrContinue() }} disabled={actionPending || session.status === 'idle'}>
+                        {session.status === 'paused' ? <><IconPlay size={14} /> Continue</> : <><IconPause size={14} /> Pause</>}
+                      </button>
+                      <button className="sd-kebab-item danger" onClick={() => { setShowKebab(false); handleStop() }} disabled={actionPending || session.status === 'idle'}>
+                        <IconStop size={14} /> Stop &amp; Clear
+                      </button>
+                    </>
+                  )}
+                  <button className="sd-kebab-item danger" onClick={() => { setShowKebab(false); handleDelete() }} disabled={actionPending}>
+                    <IconTrash size={14} /> Remove
                   </button>
-                )}
-              </ConfirmPopover>
-            </>
-          )}
-
-          {/* Remove button */}
-          <ConfirmPopover
-            message={`Remove worker "${session.name}"?`}
-            confirmLabel="Remove"
-            onConfirm={handleDelete}
-            variant="danger"
-          >
-            {({ onClick }) => (
+                </div>
+              )}
+            </div>
+          </div>
+        ) : (
+          /* Normal mode: inline control buttons */
+          <div className="sd-topbar-actions">
+            {session.status === 'disconnected' ? (
               <button
-                className="sd-control-btn remove"
-                data-testid="delete-session-btn"
-                onClick={onClick}
-                disabled={actionPending}
-                title="Remove worker"
+                className="sd-control-btn reconnect"
+                onClick={handleReconnect}
+                disabled={actionPending || !!reconnectDisabledReason}
+                title={reconnectDisabledReason || 'Reconnect'}
               >
-                <IconTrash size={16} />
+                <IconRefresh size={16} />
               </button>
+            ) : (
+              <>
+                <button
+                  className="sd-control-btn check-progress"
+                  onClick={handleCheckProgress}
+                  disabled={actionPending || session.status === 'idle'}
+                  title="Check Progress"
+                >
+                  <IconBrain size={16} />
+                </button>
+                <button
+                  className={`sd-control-btn ${session.status === 'paused' ? 'continue' : 'pause'}`}
+                  onClick={handlePauseOrContinue}
+                  disabled={actionPending || session.status === 'idle'}
+                  title={session.status === 'paused' ? 'Continue' : 'Pause'}
+                >
+                  {session.status === 'paused' ? <IconPlay size={16} /> : <IconPause size={16} />}
+                </button>
+                <ConfirmPopover
+                  message={`Stop worker "${session.name}" and clear context?`}
+                  confirmLabel="Stop"
+                  onConfirm={handleStop}
+                  variant="danger"
+                >
+                  {({ onClick }) => (
+                    <button
+                      className="sd-control-btn stop"
+                      onClick={onClick}
+                      disabled={actionPending || session.status === 'idle'}
+                      title="Stop and clear"
+                    >
+                      <IconStop size={16} />
+                    </button>
+                  )}
+                </ConfirmPopover>
+              </>
             )}
-          </ConfirmPopover>
-        </div>
+            <ConfirmPopover
+              message={`Remove worker "${session.name}"?`}
+              confirmLabel="Remove"
+              onConfirm={handleDelete}
+              variant="danger"
+            >
+              {({ onClick }) => (
+                <button
+                  className="sd-control-btn remove"
+                  data-testid="delete-session-btn"
+                  onClick={onClick}
+                  disabled={actionPending}
+                  title="Remove worker"
+                >
+                  <IconTrash size={16} />
+                </button>
+              )}
+            </ConfirmPopover>
+          </div>
+        )}
       </div>
 
       {/* Main content area: file explorer + viewer + terminal */}
       <div className={`fe-content-area ${fe.open ? 'fe-content-area--open' : ''}`}>
         {/* File explorer panel (left) */}
-        {id && (
+        {workerId && (
           <FileExplorerPanel
-            sessionId={id}
+            sessionId={workerId}
             workDir={session.work_dir || null}
             isOpen={fe.open}
             width={fe.panelWidth}
@@ -754,11 +830,11 @@ export default function SessionDetailPage() {
         {/* Right pane: viewer (top) + terminal (bottom) */}
         <div className="fe-right-pane">
           {/* File viewer */}
-          {fe.open && editorTabs.tabs.length > 0 && id && (
+          {fe.open && editorTabs.tabs.length > 0 && workerId && (
             <>
               <div className="fe-viewer-area" style={{ height: `${fe.viewerHeightRatio * 100}%` }}>
                 <FileViewer
-                  sessionId={id}
+                  sessionId={workerId}
                   tabs={editorTabs.tabs}
                   activeTabPath={editorTabs.activeTabPath}
                   pendingClose={editorTabs.pendingClose}
@@ -785,13 +861,24 @@ export default function SessionDetailPage() {
             {fe.open && editorTabs.tabs.length > 0 && (
               <div className="sd-terminal-header">TERMINAL</div>
             )}
-            <TerminalView sessionId={session.id} sessionStatus={session.status} reconnectStep={session.reconnect_step} onFocusRef={(fn) => { terminalFocusRef.current = fn; requestAnimationFrame(() => fn()) }} onImagePaste={handleImagePaste} onTextPaste={handleTextPaste} onFileDrop={handleFileDrop} onPastingChange={setCtxPasting} onReconnect={handleReconnect} />
+            <TerminalView
+              sessionId={session.id}
+              sessionStatus={session.status}
+              reconnectStep={session.reconnect_step}
+              onFocusRef={(fn) => { terminalFocusRef.current = fn; if (isFocused) requestAnimationFrame(() => fn()) }}
+              onFitRef={(fn) => { terminalFitRef.current = fn }}
+              onImagePaste={handleImagePaste}
+              onTextPaste={handleTextPaste}
+              onFileDrop={handleFileDrop}
+              onPastingChange={setCtxPasting}
+              onReconnect={handleReconnect}
+            />
           </div>
 
           {/* Interactive CLI overlay — inside right pane so it follows terminal position */}
-          {icliActive && id && (
+          {icliActive && workerId && (
             <InteractiveCLI
-              sessionId={id}
+              sessionId={workerId}
               minimized={icliMinimized}
               onMinimizedChange={(min) => {
                 setIcliMinimized(min)
@@ -800,16 +887,16 @@ export default function SessionDetailPage() {
               onClose={() => {
                 setIcliActiveLocal(false)
                 setIcliMinimized(false)
-                if (id) closeInteractiveCli(id)
+                closeInteractiveCli(workerId)
                 terminalFocusRef.current?.()
               }}
             />
           )}
 
           {/* Browser View overlay — CDP screencast for remote browser */}
-          {bvActive && id && (
+          {bvActive && workerId && (
             <BrowserView
-              sessionId={id}
+              sessionId={workerId}
               minimized={bvMinimized}
               isRemote={isRemote}
               onMinimizedChange={(min) => {
@@ -819,7 +906,7 @@ export default function SessionDetailPage() {
               onClose={() => {
                 setBvActiveLocal(false)
                 setBvMinimized(false)
-                if (id) closeBrowserView(id)
+                closeBrowserView(workerId)
                 terminalFocusRef.current?.()
               }}
             />
@@ -830,21 +917,21 @@ export default function SessionDetailPage() {
       {/* Footer with task link */}
       <div className="sd-footer">
         <div className="sd-footer-left">
-          {tasks.length > 0 ? (
+          {assignedTask ? (
             <Link
-              to={`/tasks/${tasks[0].id}`}
+              to={`/tasks/${assignedTask.id}`}
               className="sd-task-badge"
-              title={tasks[0].title}
+              title={assignedTask.title}
             >
-              <span className="sd-task-key">{tasks[0].task_key}</span>
-              <span className="sd-task-title">{tasks[0].title}</span>
+              <span className="sd-task-key">{assignedTask.task_key}</span>
+              <span className="sd-task-title">{assignedTask.title}</span>
             </Link>
           ) : (
             <button className="sd-assign-task-btn" onClick={() => setShowAssignTask(true)}>
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="16" /><line x1="8" y1="12" x2="16" y2="12" />
               </svg>
-              Assign task
+              <span>Assign task</span>
             </button>
           )}
           {Object.keys(tunnels).length > 0 && (
@@ -864,25 +951,6 @@ export default function SessionDetailPage() {
           )}
         </div>
         <div className="sd-footer-right">
-          <label
-            className="sd-auto-reconnect-toggle"
-            title={
-              reconnectDisabledReason
-                ? reconnectDisabledReason
-                : 'When enabled, automatically reconnect this worker if it disconnects'
-            }
-          >
-            <span className="sd-auto-reconnect-label">Auto-reconnect</span>
-            <button
-              className={`sd-toggle-switch ${session.auto_reconnect ? 'on' : ''}`}
-              onClick={handleToggleAutoReconnect}
-              role="switch"
-              aria-checked={session.auto_reconnect}
-              disabled={!!reconnectDisabledReason}
-            >
-              <span className="sd-toggle-knob" />
-            </button>
-          </label>
           <div className="sd-panel-toggles">
             {(session.work_dir || isRemote) && (
               <button
@@ -933,11 +1001,11 @@ export default function SessionDetailPage() {
           </button>
         </div>
       </div>
-      {id && session && (
+      {session && (
         <AssignTaskModal
           open={showAssignTask}
           onClose={() => setShowAssignTask(false)}
-          sessionId={id}
+          sessionId={workerId}
           sessionName={session.name}
         />
       )}
@@ -961,4 +1029,6 @@ export default function SessionDetailPage() {
       </Modal>
     </div>
   )
-}
+})
+
+export default memo(WorkerDetail)

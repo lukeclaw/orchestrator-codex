@@ -17,7 +17,7 @@ export default function ProjectDetailPage() {
   const navigate = useNavigate()
   
   // Use shared state from AppContext for sessions, tasks, projects
-  const { sessions, tasks: allTasks, projects, refresh, removeSession, smartPastePayload, setSmartPastePayload } = useApp()
+  const { sessions, tasks: allTasks, taskBySession, projects, refresh, removeSession, smartPastePayload, setSmartPastePayload } = useApp()
   
   // Derive data from shared state
   const project = projects.find(p => p.id === id) || null
@@ -180,7 +180,7 @@ export default function ProjectDetailPage() {
               <WorkerCard
                 key={s.id}
                 session={s}
-                assignedTask={parentTasks.find(t => t.assigned_session_id === s.id) || null}
+                assignedTask={taskBySession.get(s.id) || null}
                 onRemove={handleWorkerRemove}
               />
             ))}

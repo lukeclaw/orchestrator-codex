@@ -497,8 +497,7 @@ def generate_worker_hooks(
     # Inject user-configured model and effort
     settings_data = json.loads(settings_content)
     settings_data["model"] = model
-    if effort != "high":
-        settings_data["reasoningEffort"] = effort
+    settings_data["effortLevel"] = effort
 
     with open(dst_settings_path, "w") as f:
         json.dump(settings_data, f, indent=2)
@@ -581,8 +580,7 @@ def generate_brain_hooks(
     # Inject user-configured model and effort
     settings_data = json.loads(settings_content)
     settings_data["model"] = model
-    if effort != "high":
-        settings_data["reasoningEffort"] = effort
+    settings_data["effortLevel"] = effort
 
     with open(settings_path, "w") as f:
         json.dump(settings_data, f, indent=2)

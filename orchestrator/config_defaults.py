@@ -23,7 +23,6 @@ SETTING_DEFAULTS: dict[str, object] = {
     "claude.default_effort": "high",
     "gemini.default_model": GEMINI_DEFAULT_MODEL,
     "gemini.default_effort": GEMINI_DEFAULT_REASONING_EFFORT,
-    "terminal.voice.enabled": True,
-    "terminal.voice.model": "openai/whisper-large-v3-turbo",
-    "terminal.voice.language": "auto",
+    "ticker.speed": "1m",
+    "notifications.system": False,
 }

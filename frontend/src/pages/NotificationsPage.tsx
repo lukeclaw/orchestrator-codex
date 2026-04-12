@@ -64,7 +64,7 @@ function groupByDate(notifications: Notification[]): DateGroup[] {
 export default function NotificationsPage() {
   const navigate = useNavigate()
   const notify = useNotify()
-  const { refreshNotificationCount, workers } = useApp()
+  const { refreshNotificationCount, workers, tasks } = useApp()
 
   // Build session lookup for sender badges
   const sessionMap = useMemo(() => {
@@ -74,6 +74,9 @@ export default function NotificationsPage() {
     }
     return map
   }, [workers])
+
+  // Build task lookup for task badges
+  const taskMap = useMemo(() => new Map(tasks.map(t => [t.id, t])), [tasks])
   const [notifications, setNotifications] = useState<Notification[]>([])
   const [brainProvider, setBrainProvider] = useState(DEFAULT_PROVIDER_ID)
   const [activeCount, setActiveCount] = useState(0)
@@ -413,9 +416,24 @@ export default function NotificationsPage() {
                 }
                 return null
               })()}
-              {n.metadata?.pr_title && (
-                <span className="np-pr-title">{n.metadata.pr_title}</span>
-              )}
+              {n.task_id && (() => {
+                const task = taskMap.get(n.task_id)
+                return task ? (
+                  <Link
+                    to={`/tasks/${task.id}`}
+                    className="np-task-badge"
+                    title={task.title}
+                    onClick={e => e.stopPropagation()}
+                  >
+                    <span className="np-task-key">{task.task_key}</span>
+                    <span className="np-task-title">{task.title}</span>
+                  </Link>
+                ) : (
+                  <Link to={`/tasks/${n.task_id}`} className="np-task-badge" onClick={e => e.stopPropagation()}>
+                    <span className="np-task-key">Task</span>
+                  </Link>
+                )
+              })()}
             </div>
             <div className="np-card-actions" onClick={e => e.stopPropagation()}>
               {n.link_url && (
@@ -425,14 +443,6 @@ export default function NotificationsPage() {
                 >
                   <IconExternalLink size={12} />
                   Link
-                </button>
-              )}
-              {n.task_id && (
-                <button
-                  className="np-link-btn"
-                  onClick={() => navigate(`/tasks/${n.task_id}`)}
-                >
-                  View Task
                 </button>
               )}
               {!n.dismissed && (
@@ -465,13 +475,11 @@ export default function NotificationsPage() {
             </div>
           </div>
           <div className="np-card-content">
+            {n.metadata?.pr_title && (
+              <span className="np-pr-title-inline">{n.metadata.pr_title}</span>
+            )}
             {expanded.has(n.id) && n.notification_type === 'pr_comment' && n.metadata ? (
               <div className="np-pr-thread">
-                {n.metadata.pr_title && n.link_url && (
-                  <a href={n.link_url} className="np-pr-thread-title" onClick={e => { e.stopPropagation() }}>
-                    {n.metadata.pr_title}
-                  </a>
-                )}
                 {n.metadata.reviewer_comment && (
                   <div className="np-comment-bubble reviewer">
                     <div className="np-comment-author reviewer">

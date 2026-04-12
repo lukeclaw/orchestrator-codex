@@ -115,6 +115,7 @@ _LANGUAGE_MAP: dict[str, str] = {
     ".env": "ini",
     ".gitignore": "gitignore",
     ".csv": "csv",
+    ".ipynb": "jupyter",
 }
 
 # Common gitignored dirs to hide by default

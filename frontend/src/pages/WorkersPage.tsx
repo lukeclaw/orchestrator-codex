@@ -20,18 +20,11 @@ const SORT_KEY = 'orchestrator-worker-sort'
 const STATUS_ORDER = ['working', 'idle', 'waiting', 'blocked', 'paused', 'disconnected', 'connecting'] as const
 
 export default function WorkersPage() {
-  const { workers, tasks, rdevs, refreshRdevs } = useApp()
+  const { workers, taskBySession, rdevs, refreshRdevs } = useApp()
   const location = useLocation()
 
   // Determine active tab from URL
   const isRdevsPage = location.pathname === '/workers/rdevs'
-
-  // Build a map of session_id -> assigned task for quick lookup
-  const taskBySession = new Map(
-    tasks
-      .filter(t => t.assigned_session_id)
-      .map(t => [t.assigned_session_id!, t])
-  )
   const [searchParams, setSearchParams] = useSearchParams()
   const statusFilter = searchParams.get('status') || ''
   const typeFilter = (searchParams.get('type') as '' | 'local' | 'ssh' | 'rdev') || ''

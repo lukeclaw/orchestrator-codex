@@ -7,6 +7,7 @@ import { useUpdate } from '../hooks/useUpdate'
 import { useNotify } from '../context/NotificationContext'
 import { useApp } from '../context/AppContext'
 import { pickFolder } from '../api/pickFolder'
+import { requestNotificationPermission } from '../utils/systemNotification'
 import ConfirmPopover from '../components/common/ConfirmPopover'
 import SlidingTabs from '../components/common/SlidingTabs'
 import type { ThemeMode } from '../hooks/useTheme'
@@ -50,47 +51,7 @@ const SCHEDULE_OPTIONS = [
 
 const BACKUPS_PER_PAGE = 10
 
-type SettingsTab = 'updates' | 'preferences' | 'backup'
-
-interface VoiceModelInfo {
-  id: string
-  label: string
-  summary: string
-  english_only: boolean
-  recommended: boolean
-  size: string
-}
-
-interface VoiceRuntimeInfo {
-  settings: {
-    enabled: boolean
-    model: string
-    language: string
-  }
-  runtime: {
-    available: boolean
-    source: 'user' | 'bundled' | 'external' | 'env' | 'missing'
-    bundled_available: boolean
-    user_available: boolean
-    external_available: boolean
-    default_device_id: string | null
-    default_batch_size: string | null
-  }
-  setup: {
-    status: 'idle' | 'installing' | 'installed' | 'error'
-    message: string | null
-    started_at: string | null
-    finished_at: string | null
-    can_install: boolean
-    cta: string | null
-    install_reason: string | null
-  }
-  selected_model: {
-    id: string
-    english_only: boolean
-  }
-  models: VoiceModelInfo[]
-}
+type SettingsTab = 'updates' | 'preferences' | 'backup' | 'diagnostics'
 
 export interface SettingsCapabilityState {
   claudeUpdateBeforeStartDisabledReason: string | null
@@ -203,19 +164,8 @@ export default function SettingsPage() {
   const [heartbeatInput, setHeartbeatInput] = useState('')
   const [heartbeatFocused, setHeartbeatFocused] = useState(false)
   const [heartbeatSaved, setHeartbeatSaved] = useState(false)
-  const [voiceEnabled, setVoiceEnabled] = useState(true)
-  const [voiceModel, setVoiceModel] = useState('openai/whisper-large-v3-turbo')
-  const [voiceLanguage, setVoiceLanguage] = useState('auto')
-  const [voiceRuntimeInfo, setVoiceRuntimeInfo] = useState<VoiceRuntimeInfo | null>(null)
-
-  const refreshVoiceRuntime = async () => {
-    try {
-      const info = await api<VoiceRuntimeInfo>('/api/terminal/voice/runtime')
-      setVoiceRuntimeInfo(info)
-    } catch {
-      setVoiceRuntimeInfo(null)
-    }
-  }
+  const [tickerSpeed, setTickerSpeed] = useState('1m')
+  const [systemNotifications, setSystemNotifications] = useState(false)
 
   // Sync settings from DB
   useEffect(() => {
@@ -235,21 +185,10 @@ export default function SettingsPage() {
       const hb = String(getValue('brain.heartbeat') || 'off')
       setBrainHeartbeat(hb)
       setHeartbeatInput(hb === 'off' ? '' : hb)
-      setVoiceEnabled(Boolean(getValue('terminal.voice.enabled') ?? true))
-      setVoiceModel(String(getValue('terminal.voice.model') || 'openai/whisper-large-v3-turbo'))
-      setVoiceLanguage(String(getValue('terminal.voice.language') || 'auto'))
+      setTickerSpeed(String(getValue('ticker.speed') || '1m'))
+      setSystemNotifications(Boolean(getValue('notifications.system')))
     }
   }, [loading, getValue])
-
-  useEffect(() => {
-    void refreshVoiceRuntime()
-  }, [voiceEnabled, voiceModel, voiceLanguage])
-
-  useEffect(() => {
-    if (voiceRuntimeInfo?.setup.status !== 'installing') return
-    const intervalId = setInterval(() => { void refreshVoiceRuntime() }, 2000)
-    return () => clearInterval(intervalId)
-  }, [voiceRuntimeInfo?.setup.status])
 
   const handleClaudeUpdateToggle = async () => {
     const newValue = !claudeUpdateBeforeStart
@@ -317,26 +256,22 @@ export default function SettingsPage() {
     await save({ 'ui.theme': v })
   }
 
-  const handleVoiceEnabledToggle = async () => {
-    const newValue = !voiceEnabled
-    setVoiceEnabled(newValue)
-    await save({ 'terminal.voice.enabled': newValue })
+  const handleTickerSpeedChange = async (value: string) => {
+    setTickerSpeed(value)
+    await save({ 'ticker.speed': value })
   }
 
-  const handleVoiceModelChange = async (value: string) => {
-    setVoiceModel(value)
-    await save({ 'terminal.voice.model': value })
-  }
-
-  const handleVoiceLanguageChange = async (value: string) => {
-    const trimmed = value.trim() || 'auto'
-    setVoiceLanguage(trimmed)
-    await save({ 'terminal.voice.language': trimmed })
-  }
-
-  const handleInstallVoiceRuntime = async () => {
-    await api('/api/terminal/voice/setup', { method: 'POST' })
-    await refreshVoiceRuntime()
+  const handleSystemNotificationsToggle = async () => {
+    const enabling = !systemNotifications
+    if (enabling) {
+      const granted = await requestNotificationPermission()
+      if (!granted) {
+        notify('Notifications blocked. Enable in System Preferences > Notifications.', 'error')
+        return
+      }
+    }
+    setSystemNotifications(enabling)
+    await save({ 'notifications.system': enabling })
   }
 
   const HEARTBEAT_PRESETS = [
@@ -345,33 +280,6 @@ export default function SettingsPage() {
     'Every 4 hours',
     'Weekdays at 9 AM',
   ]
-
-  const showVoiceRuntimeCard = voiceRuntimeInfo && (
-    !voiceRuntimeInfo.runtime.available ||
-    voiceRuntimeInfo.setup.status === 'installing' ||
-    voiceRuntimeInfo.setup.status === 'error' ||
-    voiceRuntimeInfo.setup.status === 'installed'
-  )
-
-  const voiceRuntimeCardTitle = !voiceRuntimeInfo
-    ? 'Voice runtime setup'
-    : voiceRuntimeInfo.setup.status === 'installing'
-      ? 'Installing voice runtime'
-      : voiceRuntimeInfo.setup.status === 'error'
-        ? 'Voice runtime install failed'
-        : voiceRuntimeInfo.setup.status === 'installed'
-          ? 'Voice runtime ready'
-          : voiceRuntimeInfo.runtime.source === 'external'
-            ? 'Managed voice runtime'
-            : 'Voice runtime setup'
-
-  const voiceRuntimeCardDescription = !voiceRuntimeInfo
-    ? 'Install the managed runtime to enable voice input.'
-    : voiceRuntimeInfo.setup.status === 'installing'
-      ? 'Keep this page open while Orchestrator installs the managed voice runtime.'
-      : voiceRuntimeInfo.setup.status === 'installed'
-        ? 'The managed voice runtime is installed. Voice input is ready to use in terminals.'
-        : voiceRuntimeInfo.setup.install_reason || 'Install the managed runtime to enable voice input.'
 
   const handleBrainHeartbeatToggle = async () => {
     const newValue = brainHeartbeat === 'off' ? 'Every hour' : 'off'
@@ -482,10 +390,6 @@ export default function SettingsPage() {
     return backups.slice(start, start + BACKUPS_PER_PAGE)
   }, [backups, backupPage])
 
-  const selectedVoiceModel = useMemo(() => {
-    return voiceRuntimeInfo?.models.find(model => model.id === voiceModel) || null
-  }, [voiceModel, voiceRuntimeInfo])
-
   // Reset page if backups change
   useEffect(() => {
     if (backupPage >= totalPages) setBackupPage(0)
@@ -531,6 +435,19 @@ export default function SettingsPage() {
                 <polyline points="7 3 7 8 15 8" />
               </svg>
               Backup
+            </>,
+          },
+          {
+            value: 'diagnostics' as const,
+            label: <>
+              <svg className="settings-tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                <polyline points="14 2 14 8 20 8" />
+                <line x1="16" y1="13" x2="8" y2="13" />
+                <line x1="16" y1="17" x2="8" y2="17" />
+                <polyline points="10 9 9 9 8 9" />
+              </svg>
+              Diagnostics
             </>,
           },
         ]}
@@ -1050,128 +967,49 @@ export default function SettingsPage() {
 
         <div className="settings-content panel">
           <div className="panel-header">
-            <h2>Terminal Voice Input</h2>
+            <h2>Notifications</h2>
           </div>
           <div className="panel-body">
-            {showVoiceRuntimeCard && voiceRuntimeInfo && (
-              <div className={`settings-runtime-card ${voiceRuntimeInfo.setup.status === 'error' ? 'error' : ''}`}>
-                <div className="settings-runtime-card-header">
-                  <div>
-                    <div className="settings-toggle-label">{voiceRuntimeCardTitle}</div>
-                    <div className="settings-toggle-desc">
-                      {voiceRuntimeCardDescription}
-                    </div>
-                  </div>
-                  {!voiceRuntimeInfo.runtime.available && voiceRuntimeInfo.setup.can_install && (
-                    <button
-                      className="btn btn-primary btn-sm"
-                      onClick={handleInstallVoiceRuntime}
-                      disabled={voiceRuntimeInfo.setup.status === 'installing'}
-                    >
-                      {voiceRuntimeInfo.setup.status === 'installing'
-                        ? 'Installing…'
-                        : voiceRuntimeInfo.setup.status === 'error'
-                          ? 'Retry install'
-                          : (voiceRuntimeInfo.setup.cta || 'Install runtime')}
-                    </button>
-                  )}
-                </div>
-                {voiceRuntimeInfo.setup.message && (
-                  <div className="settings-runtime-card-message">
-                    {voiceRuntimeInfo.setup.message}
-                  </div>
-                )}
-              </div>
-            )}
-
             <div className="settings-toggle-row">
               <div>
-                <div className="settings-toggle-label">Enable voice input</div>
+                <div className="settings-toggle-label">System notifications</div>
                 <div className="settings-toggle-desc">
-                  Show the mic control in terminals and transcribe speech on-device
+                  Show a macOS notification when workers send alerts
                 </div>
               </div>
               <div
-                className={`sd-toggle-switch ${voiceEnabled ? 'on' : ''}`}
-                onClick={handleVoiceEnabledToggle}
+                className={`sd-toggle-switch ${systemNotifications ? 'on' : ''}`}
+                onClick={handleSystemNotificationsToggle}
                 role="switch"
-                aria-checked={voiceEnabled}
+                aria-checked={systemNotifications}
               >
                 <div className="sd-toggle-knob" />
               </div>
             </div>
+          </div>
+        </div>
 
+        <div className="settings-content panel">
+          <div className="panel-header">
+            <h2>Motivational Ticker</h2>
+          </div>
+          <div className="panel-body">
             <div className="settings-toggle-row">
               <div>
-                <div className="settings-toggle-label">Model</div>
+                <div className="settings-toggle-label">Rotation speed</div>
                 <div className="settings-toggle-desc">
-                  Curated checkpoints with clear speed and language tradeoffs
-                </div>
-                {selectedVoiceModel && (
-                  <div className="settings-toggle-hint">
-                    {selectedVoiceModel.summary}
-                    {selectedVoiceModel.english_only ? ' English only.' : ' Multilingual.'}
-                  </div>
-                )}
-              </div>
-              <div className="settings-inline-select-wrap">
-                <select
-                  className="settings-select"
-                  value={voiceModel}
-                  onChange={e => handleVoiceModelChange(e.target.value)}
-                >
-                  {(voiceRuntimeInfo?.models || []).map(model => (
-                    <option key={model.id} value={model.id}>
-                      {model.label}{model.recommended ? ' (Recommended)' : ''}{model.english_only ? ' [English only]' : ''}
-                    </option>
-                  ))}
-                  {voiceRuntimeInfo?.models.some(model => model.id === voiceModel) ? null : (
-                    <option value={voiceModel}>{voiceModel}</option>
-                  )}
-                </select>
-              </div>
-            </div>
-
-            <div className="settings-toggle-row">
-              <div>
-                <div className="settings-toggle-label">Language hint</div>
-                <div className="settings-toggle-desc">
-                  Use <code>auto</code> for detection, or a code like <code>en</code> when you know the speech language
+                  How often the header ticker cycles to the next message
                 </div>
               </div>
-              <div className="settings-inline-control">
-                <input
-                  className="settings-text-input"
-                  type="text"
-                  value={voiceLanguage}
-                  onChange={e => setVoiceLanguage(e.target.value)}
-                  onBlur={() => handleVoiceLanguageChange(voiceLanguage)}
-                  onKeyDown={e => {
-                    if (e.key === 'Enter') {
-                      void handleVoiceLanguageChange(voiceLanguage)
-                      ;(e.target as HTMLInputElement).blur()
-                    }
-                  }}
-                  placeholder="auto"
-                  spellCheck={false}
-                />
-              </div>
-            </div>
-
-            <div className="settings-warning-note">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
-                <line x1="12" y1="9" x2="12" y2="13" />
-                <line x1="12" y1="17" x2="12.01" y2="17" />
-              </svg>
-              <span>
-                {voiceRuntimeInfo?.runtime.available
-                  ? `Runtime detected via ${voiceRuntimeInfo.runtime.source}.`
-                  : 'No voice runtime detected yet.'}
-                {voiceRuntimeInfo?.runtime.default_device_id
-                  ? ` Default device on this host: ${voiceRuntimeInfo.runtime.default_device_id}.`
-                  : ''}
-              </span>
+              <SlidingTabs
+                tabs={[
+                  { value: 'off' as const, label: 'Off' },
+                  { value: '10s' as const, label: '10s' },
+                  { value: '1m' as const, label: '1m' },
+                ]}
+                value={tickerSpeed}
+                onChange={handleTickerSpeedChange}
+              />
             </div>
           </div>
         </div>
@@ -1413,6 +1251,43 @@ export default function SettingsPage() {
           )}
         </div>
       )}
+
+      {/* ── Diagnostics Tab ── */}
+      {activeTab === 'diagnostics' && (<>
+        <div className="settings-content panel">
+          <div className="panel-header">
+            <h2>Server Log</h2>
+          </div>
+          <div className="panel-body">
+            <div className="settings-toggle-row">
+              <div>
+                <div className="settings-toggle-label">Log file</div>
+                <div className="settings-toggle-desc">
+                  View the backend log file for troubleshooting
+                </div>
+              </div>
+              <button
+                className="btn btn-secondary btn-sm"
+                onClick={() => {
+                  fetch('/api/reveal-log', { method: 'POST' })
+                    .then(r => r.json())
+                    .then(d => { if (d.status === 'error') notify(d.message, 'error') })
+                    .catch(() => notify('Failed to open log file', 'error'))
+                }}
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: 4, verticalAlign: -2 }}>
+                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                  <polyline points="14 2 14 8 20 8" />
+                  <line x1="16" y1="13" x2="8" y2="13" />
+                  <line x1="16" y1="17" x2="8" y2="17" />
+                  <polyline points="10 9 9 9 8 9" />
+                </svg>
+                Show in Finder
+              </button>
+            </div>
+          </div>
+        </div>
+      </>)}
       </div>
     </div>
   )

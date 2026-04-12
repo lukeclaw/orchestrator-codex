@@ -7,7 +7,6 @@
   "autoMemoryEnabled": false,
   "spinnerTipsEnabled": false,
   "terminalProgressBarEnabled": false,
-  "prefersReducedMotion": true,
   "permissions": {
     "allow": [
       "Bash(orch-task *)",
@@ -28,6 +27,7 @@
       {"matcher": "", "hooks": [{"type": "command", "command": "{{HOOK_SCRIPT_PATH}}"}]}
     ],
     "Stop": [{"matcher": "", "hooks": [{"type": "command", "command": "{{HOOK_SCRIPT_PATH}}"}]}],
+    "PostToolUseFailure": [{"matcher": "", "hooks": [{"type": "command", "command": "{{HOOK_SCRIPT_PATH}}"}]}],
     "Notification": [{"matcher": "", "hooks": [{"type": "command", "command": "{{HOOK_SCRIPT_PATH}}"}]}],
     "SessionEnd": [{"matcher": "", "hooks": [{"type": "command", "command": "{{HOOK_SCRIPT_PATH}}"}]}]
   }

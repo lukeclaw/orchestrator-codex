@@ -176,6 +176,20 @@ def update_task(task_id: str, body: TaskUpdate, request: Request, db=Depends(get
             f"Assign the worker to the parent task ({t.parent_task_id}) instead.",
         )
 
+    # Reject assignment if the session already has a different task assigned.
+    # The caller must stop the worker first (which unassigns the old task).
+    if assigned_session_explicitly_set and new_assigned and new_assigned != old_assigned:
+        existing = repo.list_tasks(db, assigned_session_id=new_assigned, has_parent=False)
+        conflict = [t2 for t2 in existing if t2.id != task_id]
+        if conflict:
+            sess = sessions_repo.get_session(db, new_assigned)
+            worker_name = sess.name if sess else new_assigned
+            raise HTTPException(
+                409,
+                f"Worker '{worker_name}' already has task '{conflict[0].title}' assigned. "
+                f"Stop the worker first, then assign the new task.",
+            )
+
     # Auto-transition: assigning a task moves it to in_progress
     effective_status = body.status
     if new_assigned and new_assigned != old_assigned and t.status == "todo" and not body.status:

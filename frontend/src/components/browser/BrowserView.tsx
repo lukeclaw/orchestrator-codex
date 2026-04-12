@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
+import { createPortal } from 'react-dom'
 import { api, ApiError } from '../../api/client'
 import './BrowserView.css'
 
@@ -468,11 +469,22 @@ export default function BrowserView({ sessionId, minimized = false, isRemote = f
 
   // Pass frame aspect ratio as CSS variable (not applied when minimized).
   // The canvas sizes itself via aspect-ratio; the overlay height is auto.
+  // When expanded+portaled, inline the centered position so the first paint
+  // is already centered (avoids a flash at the PiP position).
+  const isExpandedView = isExpanded && !minimized
   const overlayStyle: React.CSSProperties = minimized ? {} : {
     '--bv-aspect': `${aspectRatio}`,
+    ...(isExpandedView ? {
+      position: 'fixed' as const,
+      top: '50%',
+      left: '50%',
+      right: 'auto',
+      bottom: 'auto',
+      transform: 'translate(-50%, -50%)',
+    } : {}),
   } as React.CSSProperties
 
-  return (
+  const overlay = (
     <div
       className={classes}
       style={overlayStyle}
@@ -674,4 +686,10 @@ export default function BrowserView({ sessionId, minimized = false, isRemote = f
       </div>
     </div>
   )
+
+  // Portal to document.body when expanded so it paints above all stacking contexts (tab bar, etc.)
+  if (isExpanded && !minimized) {
+    return createPortal(overlay, document.body)
+  }
+  return overlay
 }

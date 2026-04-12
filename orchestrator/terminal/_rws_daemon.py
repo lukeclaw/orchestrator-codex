@@ -12,7 +12,7 @@ import base64, tempfile, re, uuid, threading
 LISTEN_HOST = "127.0.0.1"
 LISTEN_PORT = 9741
 INACTIVITY_TIMEOUT = 3600  # 60 min
-RINGBUFFER_MAX = 524288    # 512 KB per PTY
+RINGBUFFER_MAX = 262144    # 256 KB per PTY
 
 # Set by bootstrap; used for version-aware daemon replacement
 SCRIPT_VERSION = os.environ.get("_RWS_VERSION", "unknown")
@@ -436,7 +436,11 @@ def _find_npx():
         if os.path.isfile(npx_path) and os.access(npx_path, os.X_OK):
             return npx_path
 
-    # 2. Try to set up Node 24 via volta (rdev ships volta at ~/.volta)
+    # 2. Try to set up Node 24 via volta (rdev ships volta at ~/.volta).
+    #    `volta which` is unreliable on rdev because the system wrapper at
+    #    /export/content/linkedin/bin/node force-resets volta's platform.json,
+    #    making `volta which` return Node 16 even after `volta install node@24`.
+    #    We bypass this by globbing directly into ~/.volta/tools/image/node/24.*/bin/.
     volta = os.path.expanduser("~/.volta/bin/volta")
     if os.path.isfile(volta) and os.access(volta, os.X_OK):
         try:
@@ -448,17 +452,14 @@ def _find_npx():
             )
         except (subprocess.TimeoutExpired, OSError):
             pass
-        try:
-            result = subprocess.run(
-                [volta, "which", "npx"],
-                capture_output=True, text=True, timeout=10,
-            )
-            if result.returncode == 0 and result.stdout.strip():
-                npx_path = result.stdout.strip()
-                if os.path.isfile(npx_path) and os.access(npx_path, os.X_OK):
-                    return npx_path
-        except (subprocess.TimeoutExpired, OSError):
-            pass
+        # Resolve Node 24 directly from volta's image directory
+        node24_dirs = sorted(
+            _glob.glob(os.path.expanduser("~/.volta/tools/image/node/24.*/bin")),
+        )
+        if node24_dirs:
+            npx_path = os.path.join(node24_dirs[-1], "npx")
+            if os.path.isfile(npx_path) and os.access(npx_path, os.X_OK):
+                return npx_path
 
     # 3. Fallback: bare PATH lookup
     return shutil.which("npx")
@@ -951,6 +952,131 @@ def cleanup_pty(pty_id):
         except OSError:
             pass
 
+# ── Jupyter kernel installation ──────────────────────────────────────────
+
+_kernel_install_state = {"active": False, "result": None, "error": None}
+
+def _kernel_venv_dir():
+    """Return the path for the Jupyter kernel venv on this host."""
+    xdg = os.environ.get("XDG_DATA_HOME", os.path.join(os.path.expanduser("~"), ".local", "share"))
+    return os.path.join(xdg, "orchestrator", "jupyter-env")
+
+def _do_kernel_install():
+    """Create venv, install ipykernel, register kernel. Runs in background thread."""
+    venv_dir = _kernel_venv_dir()
+    venv_py = os.path.join(venv_dir, "bin", "python")
+    venv_pip = os.path.join(venv_dir, "bin", "pip")
+
+    # Find a python3 to create the venv
+    python3 = shutil.which("python3")
+    if not python3:
+        return "python3 not found on PATH"
+
+    # Create venv if needed
+    if not os.path.exists(venv_py):
+        os.makedirs(os.path.dirname(venv_dir), exist_ok=True)
+        try:
+            subprocess.run(
+                [python3, "-m", "venv", venv_dir],
+                stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=60,
+            )
+        except (subprocess.TimeoutExpired, OSError) as e:
+            return "venv creation failed: " + str(e)
+        if not os.path.exists(venv_py):
+            return "venv creation failed: python not found after venv create"
+
+    # Install ipykernel
+    try:
+        r = subprocess.run(
+            [venv_pip, "install", "-q", "ipykernel", "jupyter_client"],
+            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=300,
+        )
+        if r.returncode != 0:
+            return "pip install failed: " + r.stdout.decode("utf-8", errors="replace")[:500]
+    except (subprocess.TimeoutExpired, OSError) as e:
+        return "pip install failed: " + str(e)
+
+    # Register kernel spec
+    try:
+        r = subprocess.run(
+            [venv_py, "-m", "ipykernel", "install", "--user",
+             "--name", "orchestrator-python",
+             "--display-name", "Python 3 (orchestrator)"],
+            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=60,
+        )
+        if r.returncode != 0:
+            return "kernel registration failed: " + r.stdout.decode("utf-8", errors="replace")[:500]
+    except (subprocess.TimeoutExpired, OSError) as e:
+        return "kernel registration failed: " + str(e)
+
+    return None  # success
+
+def _bg_kernel_install():
+    """Run _do_kernel_install() in a background thread."""
+    try:
+        err = _do_kernel_install()
+        _kernel_install_state["result"] = "ok" if err is None else None
+        _kernel_install_state["error"] = err
+    except Exception as exc:
+        _kernel_install_state["result"] = None
+        _kernel_install_state["error"] = str(exc)
+    finally:
+        _kernel_install_state["active"] = False
+
+def handle_kernel_install(cmd):
+    """Install ipykernel in a dedicated venv on this host."""
+    # Check if already installed
+    venv_py = os.path.join(_kernel_venv_dir(), "bin", "python")
+    if os.path.exists(venv_py):
+        # Quick check: can we import ipykernel?
+        try:
+            r = subprocess.run(
+                [venv_py, "-c", "import ipykernel"],
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=10,
+            )
+            if r.returncode == 0:
+                return {"status": "ok", "message": "Already installed"}
+        except (subprocess.TimeoutExpired, OSError):
+            pass
+
+    # Check background install state
+    if _kernel_install_state["active"]:
+        return {"status": "installing"}
+    if _kernel_install_state["result"] == "ok":
+        _kernel_install_state["result"] = None
+        return {"status": "ok", "message": "Installation complete"}
+    if _kernel_install_state["error"]:
+        err = _kernel_install_state["error"]
+        _kernel_install_state["error"] = None
+        return {"error": err}
+
+    # Start background install
+    _kernel_install_state["active"] = True
+    _kernel_install_state["result"] = None
+    _kernel_install_state["error"] = None
+    t = threading.Thread(target=_bg_kernel_install, daemon=True)
+    t.start()
+    return {"status": "installing"}
+
+def handle_kernel_status(cmd):
+    """Check if kernel support is available on this host."""
+    venv_py = os.path.join(_kernel_venv_dir(), "bin", "python")
+    has_kernel = False
+    if os.path.exists(venv_py):
+        try:
+            r = subprocess.run(
+                [venv_py, "-c", "import ipykernel"],
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=10,
+            )
+            has_kernel = r.returncode == 0
+        except (subprocess.TimeoutExpired, OSError):
+            pass
+    return {
+        "available": has_kernel,
+        "venv_path": _kernel_venv_dir() if has_kernel else None,
+        "installing": _kernel_install_state["active"],
+    }
+
 COMMAND_HANDLERS = {
     "ping": handle_ping,
     "server_info": handle_server_info,
@@ -973,6 +1099,8 @@ COMMAND_HANDLERS = {
     "browser_stop": handle_browser_stop,
     "browser_status": handle_browser_status,
     "setup_env": handle_setup_env,
+    "kernel_install": handle_kernel_install,
+    "kernel_status": handle_kernel_status,
 }
 
 # ── Connection management ─────────────────────────────────────────────

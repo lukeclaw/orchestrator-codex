@@ -1,0 +1,95 @@
+/* Worker workspace — fills app-main (padding zeroed by global.css :has rule) */
+.worker-workspace {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* Pane container — holds 1 or 2 panes in a row.
+   Workers are direct flex children positioned via CSS order:
+   left=0, divider=1, right=2, hidden=3.
+   This keeps all workers in a single parent so swap only changes
+   data-pane / className — React never unmounts/remounts. */
+.ww-pane-container {
+  display: flex;
+  flex-direction: row;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  position: relative;
+}
+
+/* Individual pane (each mounted WorkerDetail wrapper) */
+.ww-pane {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  position: relative;
+  overflow: hidden;
+}
+/* Left pane fills, right collapses to 0 (single-pane default) */
+.ww-pane--left  { flex: 1; order: 0; }
+.ww-pane--right { flex: 0; order: 2; }
+
+/* Hidden workers — out of flow, invisible */
+.ww-pane--hidden {
+  visibility: hidden;
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: -1;
+  overflow: hidden;
+  order: 3;
+}
+
+/* Split mode: both panes share space equally */
+.ww-pane-container--split .ww-pane--left,
+.ww-pane-container--split .ww-pane--right { flex: 1; }
+
+/* Unified topbar style — compact spacing in both single and split mode */
+.ww-pane .sd-topbar {
+  padding: 6px 12px;
+  gap: 10px;
+}
+.ww-pane .sd-title {
+  font-size: 14px;
+}
+
+/* Focus border — recolor right pane to purple in split mode (terminal, ICLI, BV) */
+.ww-pane-container--split [data-pane="right"] .terminal-container.terminal-focused {
+  border-color: rgba(var(--purple-alt-rgb), 0.7);
+}
+.ww-pane-container--split [data-pane="right"] .icli-overlay.icli-focused:not(.icli-minimized) {
+  border-color: rgba(var(--purple-alt-rgb), 0.7);
+  box-shadow: 0 0 0 1px rgba(var(--purple-alt-rgb), 0.7), 0 8px 32px rgba(0, 0, 0, 0.4);
+}
+.ww-pane-container--split [data-pane="right"] .bv-overlay.bv-focused:not(.bv-minimized) {
+  border-color: rgba(var(--purple-alt-rgb), 0.7);
+  box-shadow: 0 0 0 1px rgba(var(--purple-alt-rgb), 0.7), 0 8px 32px rgba(0, 0, 0, 0.4);
+}
+.ww-pane-container--split [data-pane="left"] .terminal-container:not(.terminal-focused) {
+  border-top-color: rgba(var(--accent-rgb), 0.7);
+}
+.ww-pane-container--split [data-pane="right"] .terminal-container:not(.terminal-focused) {
+  border-top-color: rgba(var(--purple-alt-rgb), 0.7);
+}
+
+/* During split animation, freeze terminal so ResizeObserver doesn't fire */
+.ww-animating .terminal-container {
+  visibility: hidden;
+}
+
+/* Split divider — collapses when not split, animates with panes */
+.ww-split-divider {
+  width: 0;
+  background: var(--border-subtle);
+  flex-shrink: 0;
+  order: 1;
+  transition: width 250ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+.ww-pane-container--split .ww-split-divider {
+  width: 1px;
+}

@@ -14,18 +14,11 @@ import { IconSessions, IconProjects } from '../components/common/Icons'
 import './DashboardPage.css'
 
 export default function DashboardPage() {
-  const { projects, workers, tasks, loading, refresh: refreshApp } = useApp()
+  const { projects, workers, tasks, taskBySession, loading, refresh: refreshApp } = useApp()
   const { create: createProject } = useProjects()
   const [showAddWorker, setShowAddWorker] = useState(false)
   const [showAddProject, setShowAddProject] = useState(false)
   const activeProjects = projects.filter(p => p.status === 'active')
-
-  // Build session_id -> task lookup
-  const taskBySession = new Map(
-    tasks
-      .filter(t => t.assigned_session_id)
-      .map(t => [t.assigned_session_id!, t])
-  )
 
   // Sort workers by last_viewed_at (most recent first), fallback to created_at
   const sortedWorkers = [...workers].sort((a, b) => {

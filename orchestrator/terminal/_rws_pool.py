@@ -133,6 +133,16 @@ def get_remote_worker_server(host: str) -> RemoteWorkerServer:
                     host,
                     exc_info=True,
                 )
+                # Refresh SSH config before retrying — the rdev pod may have
+                # been rescheduled with a new port, leaving the config stale.
+                try:
+                    from orchestrator.terminal.ssh import is_rdev_host, refresh_rdev_ssh_config
+
+                    if is_rdev_host(host):
+                        refresh_rdev_ssh_config(host)
+                except Exception:
+                    pass
+
                 # Retry: deploy daemon (reuses if alive) + tunnel + socket.
                 # Do NOT kill the daemon — it may have active PTYs with
                 # running Claude sessions that we'd destroy.

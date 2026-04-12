@@ -27,6 +27,7 @@ Scan this list first. Follow the link for full context only when working in that
 | Never use text-contrast colors for full-opacity fills. RGB vars must diverge from hex vars in light mode. Audit by comparing computed styles of related elements, not screenshots. | [016](016-light-mode-color-consistency.md) |
 | Never assume orphaned processes have ppid=1. Use app-level identifiers (FIFO PID). Never override uvicorn's signal handlers with sys.exit(). | [017](017-orphan-cleanup-must-match-all-parents.md) |
 | O_RDWR on FIFO masks writer death. Re-issue pipe-pane to recover; skip capture-pane for idle panes (causes lag). | [018](018-o-rdwr-fifo-masks-writer-death.md) |
+| SSH config entries become stale after rdev pod reschedule. Refresh config and kill ControlMaster before retrying. | [019](019-stale-ssh-config-after-pod-reschedule.md) |
 
 ---
 
@@ -60,6 +61,7 @@ The largest cluster of learnings. Most originated from the March 2026 reconnect 
 |---|------|---------|
 | 11 | [011-daemon-path-non-interactive-ssh.md](011-daemon-path-non-interactive-ssh.md) | Daemon launched via SSH has no `.bashrc` PATH. Also: don't block the daemon event loop with long-running ops; wrap blocking I/O in `asyncio.to_thread()`. |
 | 13 | [013-nonblocking-sendall-and-rendering-strips-colors.md](013-nonblocking-sendall-and-rendering-strips-colors.md) | Non-blocking `sendall()` busy-loops on large data. VT renderers discard ANSI colors — send raw bytes as binary WebSocket frames for display. |
+| 19 | [019-stale-ssh-config-after-pod-reschedule.md](019-stale-ssh-config-after-pod-reschedule.md) | SSH config entries become stale after rdev pod reschedule (new port). Refresh config and kill ControlMaster sockets before retrying SSH connections. |
 
 ### Process Lifecycle & Cleanup
 

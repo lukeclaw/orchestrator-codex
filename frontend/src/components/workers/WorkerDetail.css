@@ -1,10 +1,23 @@
+/* WorkerDetail root — fills its pane-content parent, never overflows */
 .session-detail {
   display: flex;
   flex-direction: column;
+  flex: 1;
   min-height: 0;
-  /* Expand to fill parent by counteracting app-main padding */
-  margin: -20px -18px -20px -24px;
-  height: calc(100% + 40px);  /* Add back the 20px top + 20px bottom padding */
+  max-height: 100%;
+  overflow: hidden;
+}
+
+.sd-title {
+  font-size: 16px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+/* Truncate name only in compact mode — name takes priority over inline buttons */
+.sd-topbar--compact .sd-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
 }
 
 /* Top bar — recessed control bar */
@@ -13,10 +26,10 @@
   align-items: center;
   gap: 16px;
   padding: 10px 16px;
-  background: var(--bg);
+  background: var(--surface);
   border-bottom: 1px solid var(--border-subtle);
   flex-shrink: 0;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   z-index: 1;
 }
 
@@ -25,10 +38,9 @@
   align-items: center;
   gap: 10px;
 }
-
-.sd-title {
-  font-size: 16px;
-  font-weight: 600;
+/* Only allow name truncation in compact (kebab) mode — buttons collapse first */
+.sd-topbar--compact .sd-topbar-left {
+  min-width: 0;
 }
 
 /* Type tag (rdev/ssh label) — pill badge */
@@ -50,36 +62,69 @@
   color: var(--purple);
 }
 
-/* Check status button next to status badge */
-.sd-check-btn {
+/* Kebab overflow menu for compact mode (narrow topbar) */
+.sd-kebab-menu {
+  position: relative;
+}
+.sd-kebab-menu > .sd-control-btn {
+  background: transparent;
+  color: var(--text-secondary);
+}
+.sd-kebab-menu > .sd-control-btn:hover {
+  background: var(--surface-hover);
+  color: var(--text-primary);
+}
+.sd-kebab-dropdown {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  min-width: 180px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  z-index: 100;
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+}
+.sd-kebab-item {
   display: flex;
   align-items: center;
-  justify-content: center;
-  width: 22px;
-  height: 22px;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 10px;
   background: none;
   border: none;
-  color: var(--text-muted);
   border-radius: var(--radius);
+  color: var(--text-secondary);
+  font-size: 13px;
   cursor: pointer;
-  transition: color 0.15s, background 0.15s;
+  text-align: left;
+  transition: background 0.15s, color 0.15s;
 }
-
-.sd-check-btn:hover:not(:disabled) {
-  color: var(--text-primary);
+.sd-kebab-item:hover:not(:disabled) {
   background: var(--surface-hover);
+  color: var(--text-primary);
 }
-
-.sd-check-btn:disabled {
+.sd-kebab-item:disabled {
   opacity: 0.4;
   cursor: not-allowed;
 }
+.sd-kebab-item.danger {
+  color: var(--red);
+}
+.sd-kebab-item.danger:hover:not(:disabled) {
+  background: rgba(var(--red-rgb), 0.08);
+}
+
 
 .sd-topbar-actions {
   margin-left: auto;
   display: flex;
   align-items: center;
   gap: 8px;
+  flex-shrink: 0;
 }
 
 .sd-topbar-divider {
@@ -96,7 +141,7 @@
   width: 32px;
   height: 32px;
   padding: 0;
-  background: var(--surface-raised);
+  background: transparent;
   border: 1px solid transparent;
   border-radius: var(--radius);
   color: var(--text-secondary);
@@ -243,6 +288,7 @@
   background: var(--bg);
   border-top: 1px solid var(--border-subtle);
   flex-shrink: 0;
+  container-type: inline-size;
 }
 
 .sd-footer-left {
@@ -353,49 +399,30 @@
   background: var(--border-subtle);
 }
 
-/* Auto-reconnect toggle in footer */
-.sd-auto-reconnect-toggle {
+/* Auto-reconnect icon button in header */
+.sd-auto-reconnect-btn {
   display: flex;
   align-items: center;
-  gap: 6px;
-  cursor: pointer;
-}
-
-.sd-auto-reconnect-label {
-  font-size: 11px;
-  color: var(--text-muted);
-  white-space: nowrap;
-}
-
-.sd-toggle-switch {
-  position: relative;
-  width: 28px;
-  height: 16px;
-  background: var(--border);
+  justify-content: center;
+  width: 24px;
+  height: 24px;
   border: none;
-  border-radius: 8px;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--text-muted);
   cursor: pointer;
-  transition: background 0.2s;
-  padding: 0;
+  transition: background 0.15s, color 0.15s;
 }
-
-.sd-toggle-switch.on {
-  background: var(--accent);
+.sd-auto-reconnect-btn:hover {
+  background: var(--surface-hover);
+  color: var(--text-secondary);
 }
-
-.sd-toggle-knob {
-  position: absolute;
-  top: 2px;
-  left: 2px;
-  width: 12px;
-  height: 12px;
-  background: var(--text-primary);
-  border-radius: 50%;
-  transition: transform 0.2s;
+.sd-auto-reconnect-btn.active {
+  color: var(--accent);
+  background: rgba(var(--accent-rgb), 0.12);
 }
-
-.sd-toggle-switch.on .sd-toggle-knob {
-  transform: translateX(12px);
+.sd-auto-reconnect-btn.active:hover {
+  background: rgba(var(--accent-rgb), 0.22);
 }
 
 /* Footer panel toggle button group (Files + Terminal) */
@@ -562,6 +589,18 @@
   text-align: center;
   padding: 40px;
   color: var(--red);
+}
+
+/* Compact footer — hide button text labels when the footer is narrow (e.g., split view) */
+@container (max-width: 540px) {
+  .sd-panel-btn span { display: none; }
+  .sd-panel-btn { padding: 4px 8px; }
+  .sd-paste-btn span { display: none; }
+  .sd-paste-btn { padding: 3px 8px; }
+  .sd-assign-task-btn span { display: none; }
+  .sd-assign-task-btn { padding: 4px 8px; }
+  .sd-footer { padding: 8px 10px; gap: 6px; }
+  .sd-footer-right { gap: 6px; }
 }
 
 @media (max-width: 768px) {

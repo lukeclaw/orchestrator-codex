@@ -127,9 +127,11 @@ select:focus {
   padding: 20px 18px 20px 24px;
 }
 
-.app-main:has(> .session-detail) {
+.app-main:has(> .session-detail),
+.app-main:has(> .worker-workspace) {
   scrollbar-gutter: auto;
   overflow-y: hidden;
+  padding: 0;
 }
 
 /* Pages with fixed header + scrollable content */

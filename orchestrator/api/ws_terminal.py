@@ -25,6 +25,7 @@ resize) but no longer for output streaming.
 from __future__ import annotations
 
 import asyncio
+import functools
 import json
 import logging
 import os
@@ -291,7 +292,9 @@ async def stream_pane(
 
     # --- Drift correction (background sync) ------------------------------------
     async def drift_correction():
-        nonlocal sync_requested, pane_id, last_sync_hash
+        nonlocal sync_requested, pane_id, last_sync_hash, initial_sent
+
+        drift_start_time = asyncio.get_running_loop().time()
 
         # Early sync: correct any desync from the brief gap between
         # history capture and streaming start.
@@ -338,7 +341,20 @@ async def stream_pane(
             await asyncio.sleep(interval)
 
             if not initial_sent:
-                continue
+                # Safety: if 10s pass without the resize triggering initial
+                # history (client disconnected before sending resize, JS error,
+                # etc.), force-start syncing so the terminal isn't blank.
+                elapsed = asyncio.get_running_loop().time() - drift_start_time
+                if elapsed < 10.0:
+                    continue
+                logger.warning(
+                    "Drift correction: initial_sent still False after %.1fs "
+                    "for %s:%s — force-starting sync",
+                    elapsed,
+                    tmux_sess,
+                    tmux_win,
+                )
+                initial_sent = True
 
             # Re-check stream health after sleep (may have changed)
             now = asyncio.get_running_loop().time()
@@ -551,26 +567,36 @@ async def stream_pane(
                 await resize_async(tmux_sess, tmux_win, cols, rows)
 
                 if not initial_sent:
-                    await asyncio.sleep(0.05)
+                    try:
+                        await asyncio.sleep(0.05)
 
-                    alternate_on = await check_alternate_screen_async(tmux_sess, tmux_win)
+                        alternate_on = await check_alternate_screen_async(tmux_sess, tmux_win)
 
-                    result = await capture_pane_with_history_async(
-                        tmux_sess, tmux_win, scrollback_lines=2000
-                    )
-                    content, cursor_x, cursor_y, total_lines = result
-                    if content.endswith("\n"):
-                        content = content[:-1]
-                    await websocket.send_json(
-                        {
-                            "type": "history",
-                            "data": content,
-                            "cursorX": cursor_x,
-                            "cursorY": cursor_y,
-                            "totalLines": total_lines,
-                            "alternateScreen": alternate_on,
-                        }
-                    )
+                        result = await capture_pane_with_history_async(
+                            tmux_sess, tmux_win, scrollback_lines=2000
+                        )
+                        content, cursor_x, cursor_y, total_lines = result
+                        if content.endswith("\n"):
+                            content = content[:-1]
+                        await websocket.send_json(
+                            {
+                                "type": "history",
+                                "data": content,
+                                "cursorX": cursor_x,
+                                "cursorY": cursor_y,
+                                "totalLines": total_lines,
+                                "alternateScreen": alternate_on,
+                            }
+                        )
+                    except Exception as e:
+                        logger.error(
+                            "Failed to send initial history for %s:%s: %s",
+                            tmux_sess,
+                            tmux_win,
+                            e,
+                        )
+                    # Always mark initial_sent so drift correction can
+                    # take over as a fallback even if history failed.
                     initial_sent = True
 
                     # Start streaming NOW — after history is sent.
@@ -676,10 +702,16 @@ async def terminal_websocket(websocket: WebSocket, session_id: str):
     # Legacy: tmux-based streaming (local workers only)
     tmux_sess, tmux_win = tmux_target(session_name)
 
-    # Auto-create tmux session and window if they don't exist
+    # Auto-create tmux session and window if they don't exist.
+    # Run in executor — ensure_window() is synchronous (multiple subprocess
+    # calls) and must not block the event loop.
     try:
         worker_tmp_dir = os.path.join("/tmp/orchestrator/workers", session_name)
-        target = ensure_window(tmux_sess, tmux_win, cwd=worker_tmp_dir)
+        loop = asyncio.get_running_loop()
+        target = await loop.run_in_executor(
+            None,
+            functools.partial(ensure_window, tmux_sess, tmux_win, cwd=worker_tmp_dir),
+        )
         logger.info("Terminal ready: %s", target)
     except Exception as e:
         logger.exception("Failed to create tmux session/window")

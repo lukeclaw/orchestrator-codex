@@ -20,6 +20,14 @@ gh pr list --author @me --state closed --limit 5
 ```
 If `gh` fails with auth errors: **STOP and wait for help.**
 
+### Do NOT commit or push to other people's PRs
+
+**Never** checkout, commit to, or push to a branch belonging to someone else's PR unless the user **explicitly** instructs you to do so. Before pushing, verify the branch is yours:
+```bash
+git branch --show-current   # Should start with YOUR username prefix
+```
+If the branch belongs to another user (e.g., `asalajan/feature-xyz`), **STOP and ask the user for confirmation** before making any commits or pushes. Pushing to someone else's PR without permission can cause serious problems.
+
 **Batch-check:** Use `orch-prs 101 102 103` to check multiple PRs at once (auto-detects repo). Output includes an `action` field per PR (`merged`, `ci_failing`, `changes_requested`, `ready_to_merge`, `review_pending`).
 
 **Reconcile stale state:** For each `in_progress` subtask with a PR link, check if its PR is already merged. If so, mark subtask `done` immediately.
@@ -35,6 +43,11 @@ Check each open draft (`gh pr view`, `gh pr checks`, `gh pr view --json reviews,
 - **Clean (checks pass, no comments)** — Mark ready with `gh pr ready` but **only during working hours (8 AM–6 PM Mon–Fri)**. Otherwise leave as draft and note in subtask.
 - **Too stale / conflicts** — `git fetch origin master && git rebase origin/master && git push --force-with-lease`. If conflicts are unclear: **STOP and wait for help.**
 - **Chained PR (targets another PR's branch)** — Keep as draft. After upstream merges, GitHub retargets to `master`; then treat as clean.
+
+**After ANY push to an existing PR**, update the PR description and docs:
+1. **Re-read the current PR body** — `gh pr view --json body --jq .body`
+2. **Update the PR description** — Rewrite the Summary and Testing Done sections to reflect the current state of the code, not the original submission. Use `gh pr edit --body "$(cat <<'EOF' ... EOF)"`.
+3. **Update project docs** — If your changes affect behavior described in project docs (architecture, features, design logs, learnings, README), update those files in the same push. Don't leave docs describing old behavior.
 
 ---
 
@@ -89,7 +102,8 @@ Follow the MP's PR template checklist, plus:
    - **Human reviewers** (priority): Conversational — explain reasoning, invite follow-up.
    - **Bots** (`Copilot`, `github-actions[bot]`, `linkedin-svc`, etc.): Only act on clearly valid feedback. Keep short. Bots won't read replies.
 5. **Push fixes** — Commit and push (rebase pattern)
-6. **Notify immediately** — before moving to next PR. Include PR number/title, exact comment URL(s), and **full reply text** (not a summary):
+6. **Update PR description & docs** — Re-read the PR body (`gh pr view --json body --jq .body`). Rewrite Summary/Testing Done to match the current code. Update any project docs that describe changed behavior. Use `gh pr edit --body` to save.
+7. **Notify immediately** — before moving to next PR. Include PR number/title, exact comment URL(s), and **full reply text** (not a summary):
    ```bash
    orch-notify "Replied to review on PR #123 (Add rate limiting):\n\nComment by @reviewer on src/api.py:\n> Should we add a retry here?\n\nMy reply:\nGood point — added exponential backoff in commit abc1234." \
      --type pr_comment --link "https://github.com/OWNER/REPO/pull/123#discussion_r456"

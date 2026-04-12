@@ -1,0 +1,342 @@
+/* Tab bar container — dark strip; active tabs "emerge" with --bg background
+   that blends seamlessly into the topbar below (Chrome-style). */
+.wt-bar {
+  display: flex;
+  align-items: stretch;
+  height: 36px;
+  background: var(--bg);
+  flex-shrink: 0;
+  z-index: 110;
+  position: relative;
+}
+
+/* Scrollable tab area */
+.wt-tabs-scroll {
+  display: flex;
+  align-items: stretch;
+  flex: 1;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.wt-tabs-scroll::-webkit-scrollbar {
+  display: none;
+}
+
+/* Left wrapper — non-scrolling parent that holds fixed fade overlays */
+.wt-left-wrapper {
+  position: relative;
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+}
+.wt-left-wrapper::before,
+.wt-left-wrapper::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 32px;
+  pointer-events: none;
+  z-index: 1;
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+.wt-left-wrapper::before {
+  left: 0;
+}
+.wt-left-wrapper::after {
+  right: 0;
+}
+/* Active tab hidden — accent glow with dynamic intensity via --wt-hint-opacity */
+.wt-left-wrapper--active-left::before {
+  opacity: var(--wt-hint-opacity, 1);
+  background: linear-gradient(to right, rgba(var(--accent-rgb), 0.3), transparent);
+}
+.wt-left-wrapper--active-right::after {
+  opacity: var(--wt-hint-opacity, 1);
+  background: linear-gradient(to left, rgba(var(--accent-rgb), 0.3), transparent);
+}
+
+/* Individual tab — shrinks to fit when many tabs are open, scrolls past min-width */
+.wt-tab {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 6px 0 12px;
+  max-width: var(--wt-tab-max-width, 240px);
+  height: 100%;
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-radius 0.15s;
+  position: relative;
+  white-space: nowrap;
+  flex-shrink: 1;
+}
+.wt-tab:hover {
+  background: var(--surface-hover);
+  color: var(--text-primary);
+  border-radius: 8px 8px 0 0;
+}
+.wt-tab:hover .wt-tab-close {
+  opacity: 1;
+}
+
+/* Active tab — raised background that blends into topbar below. */
+.wt-tab--active {
+  background: var(--surface);
+  color: var(--text-primary);
+  border-radius: 8px 8px 0 0;
+}
+/* Chrome-style inverse rounded corners at the bottom of active tab */
+.wt-tab--active::before,
+.wt-tab--active::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  width: 8px;
+  height: 8px;
+  pointer-events: none;
+}
+.wt-tab--active::before {
+  left: -8px;
+  background: radial-gradient(circle at 0 0, transparent 8px, var(--surface) 8px);
+}
+.wt-tab--active::after {
+  right: -8px;
+  background: radial-gradient(circle at 100% 0, transparent 8px, var(--surface) 8px);
+}
+.wt-tab--active .wt-tab-close {
+  opacity: 0.6;
+}
+.wt-tab--active:hover .wt-tab-close {
+  opacity: 1;
+}
+
+/* Split mode color hints — top border distinguishes left vs right pane */
+.wt-tab--active-left {
+  border-top: 1.5px solid var(--accent);
+}
+.wt-tab--active-right {
+  border-top: 1.5px solid var(--purple);
+}
+
+
+/* Status dot */
+.wt-status-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.wt-status-dot--pulse {
+  animation: wt-pulse 2s ease-in-out infinite;
+}
+@keyframes wt-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+/* Tab name — overflow hidden, fade only when text is actually clipped */
+.wt-tab-name {
+  overflow: hidden;
+  white-space: nowrap;
+}
+.wt-tab-name--faded {
+  -webkit-mask-image: linear-gradient(to right, black calc(100% - 24px), transparent);
+  mask-image: linear-gradient(to right, black calc(100% - 24px), transparent);
+}
+
+/* Close button — hidden by default, visible on hover/active */
+.wt-tab-close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 5px;
+  color: var(--text-muted);
+  opacity: 0;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background 0.15s, color 0.15s, opacity 0.15s;
+}
+.wt-tab-close:hover {
+  background: var(--surface-hover);
+  color: var(--text-primary);
+}
+
+/* Drag-to-reorder states */
+.wt-bar--dragging {
+  user-select: none;
+}
+.wt-tab--dragging {
+  z-index: 10;
+  opacity: 0.85;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+.wt-bar--dragging .wt-tab:not(.wt-tab--dragging) {
+  transition: transform 150ms ease;
+}
+
+/* Split mode — spacer between left and right tab groups */
+.wt-divider {
+  width: 1px;
+  flex-shrink: 0;
+  align-self: stretch;
+}
+
+/* Right tab group in split mode */
+.wt-right-group {
+  display: flex;
+  align-items: stretch;
+  flex-shrink: 0;
+  min-width: 0;
+}
+
+/* Drop zone highlight when dragging a tab over a group */
+.wt-drop-target {
+  background: rgba(var(--accent-rgb), 0.06);
+  transition: background 0.15s;
+}
+
+/* Right-side controls (pinned, never scroll) */
+.wt-controls {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 0 8px;
+  flex-shrink: 0;
+}
+.wt-control-wrapper {
+  position: relative;
+}
+.wt-control-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  border-radius: var(--radius);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.wt-control-btn:hover {
+  background: var(--surface-hover);
+  color: var(--text-primary);
+}
+.wt-split-btn--active {
+  color: var(--accent);
+}
+.wt-split-btn--active:hover {
+  color: var(--accent);
+  background: rgba(var(--accent-rgb), 0.1);
+}
+.wt-split-btn:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+/* Worker picker dropdown */
+.wt-picker {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  width: 440px;
+  max-height: 320px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  z-index: 200;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.wt-picker-input {
+  width: 100%;
+  padding: 10px 12px;
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid var(--border-subtle);
+  color: var(--text-primary);
+  font-size: 13px;
+  outline: none;
+  box-sizing: border-box;
+}
+.wt-picker-input::placeholder {
+  color: var(--text-muted);
+}
+.wt-picker-list {
+  overflow-y: auto;
+  max-height: 260px;
+  padding: 4px;
+}
+.wt-picker-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px;
+  background: none;
+  border: none;
+  border-radius: var(--radius);
+  color: var(--text-secondary);
+  font-size: 13px;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.15s, color 0.15s;
+}
+.wt-picker-item:hover {
+  background: var(--surface-hover);
+  color: var(--text-primary);
+}
+.wt-picker-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  -webkit-mask-image: linear-gradient(to right, black calc(100% - 16px), transparent);
+  mask-image: linear-gradient(to right, black calc(100% - 16px), transparent);
+}
+.wt-picker-task {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 6px;
+  background: rgba(var(--accent-rgb), 0.1);
+  border-radius: 4px;
+  flex-shrink: 0;
+  max-width: 200px;
+  min-width: 0;
+}
+.wt-picker-task-key {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--accent);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.wt-picker-task-title {
+  font-size: 11px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  -webkit-mask-image: linear-gradient(to right, black calc(100% - 12px), transparent);
+  mask-image: linear-gradient(to right, black calc(100% - 12px), transparent);
+}
+.wt-picker-empty {
+  padding: 16px;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 13px;
+}

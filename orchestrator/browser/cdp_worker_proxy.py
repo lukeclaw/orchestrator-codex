@@ -241,6 +241,95 @@ async def _relay(src: Any, dst: Any) -> None:
         pass
 
 
+def _should_drop_target_event(msg: dict, hidden_ids: set[str]) -> bool:
+    """Check if a CDP Target.* event should be dropped.
+
+    Drops events for page targets whose ID is in ``hidden_ids`` (other
+    workers' pre-existing tabs).  New pages created by *this* worker
+    are not in the set and pass through.
+    """
+    if not hidden_ids:
+        return False
+    method = msg.get("method", "")
+    if method in ("Target.targetCreated", "Target.targetInfoChanged", "Target.attachedToTarget"):
+        target_info = msg.get("params", {}).get("targetInfo", {})
+        if target_info.get("type") == "page" and target_info.get("targetId") in hidden_ids:
+            return True
+    elif method == "Target.targetDestroyed":
+        tid = msg.get("params", {}).get("targetId", "")
+        if tid in hidden_ids:
+            hidden_ids.discard(tid)  # No longer exists; stop filtering
+            return True
+    return False
+
+
+def _filter_get_targets_response(msg: dict, hidden_ids: set[str]) -> dict:
+    """Filter a Target.getTargets response to hide other workers' page targets."""
+    if not hidden_ids:
+        return msg
+    result = msg.get("result", {})
+    target_infos = result.get("targetInfos")
+    if target_infos is None:
+        return msg
+    filtered = [
+        t for t in target_infos if not (t.get("type") == "page" and t.get("targetId") in hidden_ids)
+    ]
+    msg = {**msg, "result": {**result, "targetInfos": filtered}}
+    return msg
+
+
+async def _filtering_relay(src: Any, dst: Any, hidden_ids: set[str]) -> None:
+    """Relay Chrome → Client, hiding other workers' pre-existing page tabs.
+
+    ``hidden_ids`` is the set of page target IDs that belong to other workers
+    at the time the connection was established.  New pages created by *this*
+    worker are not in the set and pass through, so Playwright MCP can open
+    new tabs normally.
+    """
+    try:
+        async for msg in src:
+            if isinstance(msg, bytes):
+                await dst.send(msg)
+                continue
+            try:
+                parsed = json.loads(msg)
+            except (json.JSONDecodeError, TypeError):
+                await dst.send(msg)
+                continue
+
+            # Drop Target.* events for other workers' pages
+            if _should_drop_target_event(parsed, hidden_ids):
+                continue
+
+            # Filter Target.getTargets responses
+            if "result" in parsed and "targetInfos" in parsed.get("result", {}):
+                parsed = _filter_get_targets_response(parsed, hidden_ids)
+                msg = json.dumps(parsed)
+
+            await dst.send(msg)
+    except websockets.exceptions.ConnectionClosed:
+        pass
+
+
+async def _discover_hidden_page_ids(chrome_port: int, own_target_id: str) -> set[str]:
+    """Snapshot other workers' page target IDs from Chrome's /json endpoint.
+
+    Returns the set of page target IDs that are NOT this worker's tab.
+    Pages created after this snapshot (e.g. by this worker's Playwright)
+    will not be in the set and will pass through the filter.
+    """
+    try:
+        raw = await _proxy_http_to_chrome(chrome_port, "/json")
+        targets = json.loads(raw)
+        return {
+            t["id"]
+            for t in targets
+            if t.get("type") == "page" and t.get("id") and t["id"] != own_target_id
+        }
+    except Exception:
+        return set()
+
+
 def _build_ws_handler(info: CDPProxyInfo):
     """Build a WebSocket handler that relays to Chrome's CDP WebSocket."""
 
@@ -249,15 +338,48 @@ def _build_ws_handler(info: CDPProxyInfo):
         path = ws.request.path if hasattr(ws, "request") and ws.request else ""
         chrome_url = f"ws://localhost:{info.chrome_port}{path}"
 
+        # Use filtering relay for browser-level connections.  This makes
+        # Playwright's connectOverCDP() only discover this worker's tab.
+        is_browser_ws = "/devtools/browser/" in path
+
+        # Ensure we have a target_id — Playwright may connect before
+        # orch-browser creates the tab.  Create one on demand, just
+        # like the /json handler does.
+        if is_browser_ws and not info.target_id:
+            from orchestrator.browser.cdp_proxy import create_browser_tab
+
+            try:
+                new_target = await create_browser_tab(info.chrome_port)
+                info.target_id = new_target.get("id", "")
+                logger.info(
+                    "CDP proxy created tab %s on browser-WS connect for %s",
+                    info.target_id,
+                    info.session_id,
+                )
+            except Exception as e:
+                logger.warning("CDP proxy tab creation failed for %s: %s", info.session_id, e)
+
+        use_filter = is_browser_ws and bool(info.target_id)
+
+        # Snapshot other workers' page IDs so we can hide them.
+        # Pages created later (by this worker) are not in the set.
+        hidden_ids: set[str] = set()
+        if use_filter:
+            hidden_ids = await _discover_hidden_page_ids(info.chrome_port, info.target_id)
+
         try:
             async with websockets.asyncio.client.connect(
                 chrome_url,
                 max_size=16 * 1024 * 1024,
                 open_timeout=10,
             ) as chrome_ws:
-                # Bidirectional relay
+                # Client → Chrome: always plain relay
                 to_chrome = asyncio.create_task(_relay(ws, chrome_ws))
-                to_client = asyncio.create_task(_relay(chrome_ws, ws))
+                # Chrome → Client: filter on browser WS, plain on page WS
+                if use_filter and hidden_ids:
+                    to_client = asyncio.create_task(_filtering_relay(chrome_ws, ws, hidden_ids))
+                else:
+                    to_client = asyncio.create_task(_relay(chrome_ws, ws))
 
                 # Wait for either direction to finish
                 done, pending = await asyncio.wait(

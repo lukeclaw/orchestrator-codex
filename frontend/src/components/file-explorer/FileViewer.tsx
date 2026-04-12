@@ -1,5 +1,6 @@
 import { useState, useCallback, useRef, useEffect } from 'react'
 import Editor, { loader } from '@monaco-editor/react'
+import NotebookEditor from './NotebookEditor'
 
 // Define custom themes for Monaco editor
 loader.init().then(monaco => {
@@ -86,6 +87,10 @@ function monacoLanguage(lang: string | null): string {
 
 function isMarkdownFile(path: string): boolean {
   return path.endsWith('.md') || path.endsWith('.markdown')
+}
+
+function isNotebookFile(path: string): boolean {
+  return path.endsWith('.ipynb')
 }
 
 // ---------------------------------------------------------------------------
@@ -270,6 +275,12 @@ export default function FileViewer({
               <div className="fe-md-preview">
                 <Markdown>{activeTab.currentContent ?? ''}</Markdown>
               </div>
+            ) : isNotebookFile(activeTab.path) ? (
+              <NotebookEditor
+                content={activeTab.currentContent ?? ''}
+                onContentChange={(json) => onContentChange(activeTab.path, json)}
+                sessionId={sessionId}
+              />
             ) : (
               <div className="fe-viewer__monaco">
                 <Editor

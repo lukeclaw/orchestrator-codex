@@ -1,13 +1,17 @@
 """Tests for SSH helper functions."""
 
+import subprocess
 from unittest.mock import MagicMock, patch
 
 from orchestrator.terminal.ssh import (
+    _kill_control_sockets_for_host,
     _rdev_ssh_config_has_host,
+    _remove_rdev_ssh_config_host,
     _remove_stale_known_hosts_old,
     ensure_rdev_ssh_config,
     is_rdev_host,
     is_remote_host,
+    refresh_rdev_ssh_config,
     remote_connect,
 )
 
@@ -233,3 +237,229 @@ class TestEnsureRdevSshConfig:
         with patch("orchestrator.terminal.ssh._RDEV_SSH_CONFIG", str(tmp_path / "nope")):
             result = ensure_rdev_ssh_config("mp/session")
         assert result is False
+
+
+# =========================================================================
+# Tests for _remove_rdev_ssh_config_host
+# =========================================================================
+
+
+class TestRemoveRdevSshConfigHost:
+    def test_removes_host_block(self, tmp_path):
+        """Should remove the matching host block and keep others."""
+        config = tmp_path / "config.rdev"
+        config.write_text(
+            "Host mp/keep mp_keep\n"
+            "  HostName keep.example.com\n"
+            "  Port 1111\n"
+            "Host mp/remove mp_remove\n"
+            "  HostName remove.example.com\n"
+            "  Port 2222\n"
+            "Host mp/also-keep mp_also-keep\n"
+            "  HostName also.example.com\n"
+            "  Port 3333\n"
+        )
+        with patch("orchestrator.terminal.ssh._RDEV_SSH_CONFIG", str(config)):
+            result = _remove_rdev_ssh_config_host("mp/remove")
+
+        assert result is True
+        remaining = config.read_text()
+        assert "mp/keep" in remaining
+        assert "mp/also-keep" in remaining
+        assert "mp/remove" not in remaining
+        assert "remove.example.com" not in remaining
+        assert "Port 2222" not in remaining
+
+    def test_removes_last_host_block(self, tmp_path):
+        """Removing the only host should leave the file with no Host blocks."""
+        config = tmp_path / "config.rdev"
+        config.write_text("Host mp/only mp_only\n  HostName only.example.com\n  Port 4444\n")
+        with patch("orchestrator.terminal.ssh._RDEV_SSH_CONFIG", str(config)):
+            result = _remove_rdev_ssh_config_host("mp/only")
+
+        assert result is True
+        assert config.read_text().strip() == ""
+
+    def test_missing_host_returns_false(self, tmp_path):
+        """Removing a nonexistent host should return False."""
+        config = tmp_path / "config.rdev"
+        config.write_text("Host mp/other mp_other\n  HostName x.com\n")
+        with patch("orchestrator.terminal.ssh._RDEV_SSH_CONFIG", str(config)):
+            result = _remove_rdev_ssh_config_host("mp/nonexistent")
+
+        assert result is False
+        # Original content unchanged
+        assert "mp/other" in config.read_text()
+
+    def test_missing_file_returns_false(self, tmp_path):
+        """Missing config file should return False gracefully."""
+        with patch("orchestrator.terminal.ssh._RDEV_SSH_CONFIG", str(tmp_path / "nope")):
+            result = _remove_rdev_ssh_config_host("mp/session")
+
+        assert result is False
+
+
+# =========================================================================
+# Tests for _kill_control_sockets_for_host
+# =========================================================================
+
+
+class TestKillControlSocketsForHost:
+    @patch("orchestrator.terminal.ssh.subprocess.Popen")
+    def test_calls_ssh_exit(self, mock_popen):
+        """Should spawn ssh -O exit with the correct ControlPath."""
+        mock_proc = MagicMock()
+        mock_popen.return_value = mock_proc
+        _kill_control_sockets_for_host("mp/session")
+        mock_popen.assert_called_once()
+        cmd = mock_popen.call_args[0][0]
+        assert cmd[0] == "ssh"
+        assert "-O" in cmd
+        assert "exit" in cmd
+        assert "mp/session" in cmd
+        mock_proc.wait.assert_called_once_with(timeout=5)
+
+    @patch(
+        "orchestrator.terminal.ssh.subprocess.Popen",
+        side_effect=OSError("no socket"),
+    )
+    def test_failure_is_silent(self, mock_popen):
+        """Errors should not propagate."""
+        _kill_control_sockets_for_host("mp/session")  # should not raise
+
+    @patch("orchestrator.terminal.ssh.subprocess.Popen")
+    def test_timeout_is_silent(self, mock_popen):
+        """Timeout should not propagate."""
+        mock_proc = MagicMock()
+        mock_proc.wait.side_effect = subprocess.TimeoutExpired("ssh", 5)
+        mock_popen.return_value = mock_proc
+        _kill_control_sockets_for_host("mp/session")  # should not raise
+
+
+# =========================================================================
+# Tests for refresh_rdev_ssh_config
+# =========================================================================
+
+
+class TestRefreshRdevSshConfig:
+    def test_non_rdev_host_returns_true(self):
+        """Non-rdev hosts should skip entirely."""
+        assert refresh_rdev_ssh_config("plain-host.example.com") is True
+
+    @patch("orchestrator.terminal.ssh._kill_control_sockets_for_host")
+    @patch("orchestrator.terminal.ssh.subprocess.Popen")
+    def test_removes_old_and_creates_new(self, mock_popen, mock_kill_ctrl, tmp_path):
+        """Full flow: remove old entry, spawn rdev ssh, create new entry."""
+        config = tmp_path / "config.rdev"
+        config.write_text("Host mp/session mp_session\n  HostName old.example.com\n  Port 11111\n")
+
+        mock_proc = MagicMock()
+        call_count = 0
+
+        def poll_side_effect():
+            nonlocal call_count
+            call_count += 1
+            if call_count >= 2:
+                # Simulate rdev writing new config
+                config.write_text(
+                    "Host mp/session mp_session\n  HostName new.example.com\n  Port 22222\n"
+                )
+            return None
+
+        mock_proc.poll.side_effect = poll_side_effect
+        mock_popen.return_value = mock_proc
+
+        with (
+            patch("orchestrator.terminal.ssh._RDEV_SSH_CONFIG", str(config)),
+            patch("orchestrator.terminal.ssh._last_refresh", {}),
+        ):
+            result = refresh_rdev_ssh_config("mp/session", timeout=30)
+
+        assert result is True
+        mock_kill_ctrl.assert_called_once_with("mp/session")
+        mock_popen.assert_called_once()
+        mock_proc.terminate.assert_called_once()
+        # Verify new content
+        assert "new.example.com" in config.read_text()
+
+    def test_cooldown_prevents_rapid_refresh(self, tmp_path):
+        """Second call within cooldown period should skip subprocess."""
+        config = tmp_path / "config.rdev"
+        config.write_text("Host mp/cooldown-test mp_cooldown-test\n  HostName x.com\n")
+
+        import orchestrator.terminal.ssh as ssh_mod
+
+        # Use the module's (possibly virtual) time.monotonic — the conftest
+        # _VirtualClock replaces ssh_mod.time, so monotonic() returns a
+        # virtual-clock value, not the real one.
+        ssh_mod._last_refresh["mp/cooldown-test"] = ssh_mod.time.monotonic()
+        try:
+            with (
+                patch("orchestrator.terminal.ssh._RDEV_SSH_CONFIG", str(config)),
+                patch("orchestrator.terminal.ssh._kill_control_sockets_for_host") as mock_kill,
+                patch("orchestrator.terminal.ssh.subprocess.Popen") as mock_popen,
+            ):
+                result = refresh_rdev_ssh_config("mp/cooldown-test")
+        finally:
+            ssh_mod._last_refresh.pop("mp/cooldown-test", None)
+            ssh_mod._refresh_locks.pop("mp/cooldown-test", None)
+
+        assert result is True
+        mock_popen.assert_not_called()
+        mock_kill.assert_not_called()
+
+    @patch("orchestrator.terminal.ssh._kill_control_sockets_for_host")
+    @patch("orchestrator.terminal.ssh.subprocess.Popen")
+    def test_returns_false_on_timeout(self, mock_popen, mock_kill_ctrl, tmp_path):
+        """Should return False if rdev ssh fails to write config."""
+        config = tmp_path / "config.rdev"
+        # No initial config — and rdev ssh will also fail to create one
+
+        mock_proc = MagicMock()
+        mock_proc.poll.return_value = 1  # process already exited
+        mock_popen.return_value = mock_proc
+
+        with (
+            patch("orchestrator.terminal.ssh._RDEV_SSH_CONFIG", str(config)),
+            patch("orchestrator.terminal.ssh._last_refresh", {}),
+        ):
+            result = refresh_rdev_ssh_config("mp/session", timeout=5)
+
+        assert result is False
+
+    @patch("orchestrator.terminal.ssh.subprocess.Popen")
+    def test_kills_control_socket_before_removing_config(self, mock_popen, tmp_path):
+        """ControlMaster kill must happen before config removal."""
+        config = tmp_path / "config.rdev"
+        config.write_text("Host mp/session mp_session\n  HostName x.com\n")
+
+        operation_order = []
+
+        def track_popen(*args, **kwargs):
+            cmd = args[0] if args else kwargs.get("args", [])
+            if "-O" in cmd:
+                operation_order.append("ssh_exit")
+            mock_proc = MagicMock()
+            mock_proc.poll.return_value = 1
+            return mock_proc
+
+        mock_popen.side_effect = track_popen
+
+        def track_remove(host):
+            operation_order.append("remove_config")
+            config.write_text("")
+            return True
+
+        with (
+            patch("orchestrator.terminal.ssh._RDEV_SSH_CONFIG", str(config)),
+            patch("orchestrator.terminal.ssh._last_refresh", {}),
+            patch(
+                "orchestrator.terminal.ssh._remove_rdev_ssh_config_host",
+                side_effect=track_remove,
+            ),
+        ):
+            refresh_rdev_ssh_config("mp/session", timeout=5)
+
+        assert operation_order.index("ssh_exit") < operation_order.index("remove_config"), (
+            "ControlMaster kill must happen before config removal"
+        )

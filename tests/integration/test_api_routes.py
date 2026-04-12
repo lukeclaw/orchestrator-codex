@@ -324,6 +324,72 @@ class TestTasks:
         assert resp.status_code == 200
         assert resp.json()["assigned_session_id"] == worker["id"]
 
+    def test_assign_worker_already_has_task_rejected(self, client):
+        """Assigning a worker that already has a task should return 409."""
+        proj = client.post("/api/projects", json={"name": "ConflictP"}).json()
+        task_a = client.post(
+            "/api/tasks", json={"project_id": proj["id"], "title": "Task A"}
+        ).json()
+        task_b = client.post(
+            "/api/tasks", json={"project_id": proj["id"], "title": "Task B"}
+        ).json()
+
+        with patch(
+            "orchestrator.api.routes.sessions.ensure_window",
+            return_value="orchestrator:w-conflict",
+        ):
+            worker = client.post(
+                "/api/sessions", json={"name": "w-conflict", "host": "localhost"}
+            ).json()
+
+        # Assign task A to worker
+        with patch("orchestrator.api.routes.tasks._notify_worker_of_assignment"):
+            resp = client.patch(
+                f"/api/tasks/{task_a['id']}", json={"assigned_session_id": worker["id"]}
+            )
+        assert resp.status_code == 200
+
+        # Try to assign task B to the same worker — should fail
+        resp = client.patch(
+            f"/api/tasks/{task_b['id']}", json={"assigned_session_id": worker["id"]}
+        )
+        assert resp.status_code == 409
+        assert "Stop the worker first" in resp.json()["detail"]
+
+    def test_assign_worker_after_stop_succeeds(self, client):
+        """After stopping a worker (unassigning old task), new assignment succeeds."""
+        proj = client.post("/api/projects", json={"name": "StopP"}).json()
+        task_a = client.post(
+            "/api/tasks", json={"project_id": proj["id"], "title": "Old task"}
+        ).json()
+        task_b = client.post(
+            "/api/tasks", json={"project_id": proj["id"], "title": "New task"}
+        ).json()
+
+        with patch(
+            "orchestrator.api.routes.sessions.ensure_window",
+            return_value="orchestrator:w-stop",
+        ):
+            worker = client.post(
+                "/api/sessions", json={"name": "w-stop", "host": "localhost"}
+            ).json()
+
+        # Assign task A
+        with patch("orchestrator.api.routes.tasks._notify_worker_of_assignment"):
+            client.patch(f"/api/tasks/{task_a['id']}", json={"assigned_session_id": worker["id"]})
+
+        # Stop the worker — unassigns task A
+        with patch("orchestrator.api.routes.sessions._interrupt_and_send_command"):
+            client.post(f"/api/sessions/{worker['id']}/stop")
+
+        # Now assigning task B should succeed
+        with patch("orchestrator.api.routes.tasks._notify_worker_of_assignment"):
+            resp = client.patch(
+                f"/api/tasks/{task_b['id']}", json={"assigned_session_id": worker["id"]}
+            )
+        assert resp.status_code == 200
+        assert resp.json()["assigned_session_id"] == worker["id"]
+
     def test_agent_add_link_rejects_duplicate(self, client):
         """POST /tasks/{id}/links add action rejects duplicate URL."""
         proj = client.post("/api/projects", json={"name": "AgentLinkProj"}).json()

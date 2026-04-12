@@ -668,7 +668,10 @@ class TestReverseTunnelStartupVerification:
         result = mgr.start_tunnel("s1", "worker-1", "user/vm")
 
         assert result is None
-        mock_sleep.assert_called_once_with(3)
+        # First sleep(3) is the startup verification delay.  Additional
+        # sleep calls may come from best-effort SSH config refresh (polling
+        # for new config entry after rdev pod reschedule detection).
+        assert mock_sleep.call_args_list[0] == ((3,),)
 
     @patch("orchestrator.session.tunnel.time.sleep")
     @patch("orchestrator.session.tunnel.subprocess.Popen")

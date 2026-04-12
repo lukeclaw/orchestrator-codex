@@ -235,6 +235,13 @@ def _ensure_rdev_running(session_id: str, host: str, timeout: int = 120) -> bool
             s = _get_rdev_state(host)
             if s == "RUNNING":
                 _invalidate_rdev_cache()
+                # Pod (re)started — SSH config may be stale, refresh proactively
+                try:
+                    from orchestrator.terminal.ssh import refresh_rdev_ssh_config
+
+                    refresh_rdev_ssh_config(host)
+                except Exception:
+                    pass
                 return True
             if s not in ("CREATING", "STARTING"):
                 break
@@ -270,6 +277,13 @@ def _ensure_rdev_running(session_id: str, host: str, timeout: int = 120) -> bool
             s = _get_rdev_state(host)
             if s == "RUNNING":
                 _invalidate_rdev_cache()
+                # Pod restarted — SSH config is stale (new port), refresh
+                try:
+                    from orchestrator.terminal.ssh import refresh_rdev_ssh_config
+
+                    refresh_rdev_ssh_config(host)
+                except Exception:
+                    pass
                 return True
         logger.error("_ensure_rdev_running: %s did not reach RUNNING after restart", host)
         return False
@@ -287,6 +301,45 @@ def _invalidate_rdev_cache():
         _rdev_cache["timestamp"] = 0
     except Exception:
         pass
+
+
+def _refresh_ssh_config_if_stale(session) -> None:
+    """Test SSH connectivity and refresh config if it appears stale.
+
+    Runs a quick ``ssh echo ok`` to detect stale SSH config (exit_code=255,
+    e.g. after rdev pod reschedule).  If stale, calls
+    ``refresh_rdev_ssh_config`` to regenerate the config entry with the
+    current HostName/Port.
+    """
+    from orchestrator.terminal.ssh import is_rdev_host, refresh_rdev_ssh_config
+
+    if not is_rdev_host(session.host):
+        return
+
+    _set_reconnect_step(session.id, "ssh_config")
+    try:
+        rc = None
+        try:
+            result = subprocess.run(
+                _ssh_cmd(session.host, "echo ok", timeout=5),
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            rc = result.returncode
+            if rc == 0:
+                return  # SSH works fine, config is current
+        except (subprocess.TimeoutExpired, OSError):
+            pass  # Treat timeout/error same as stale
+
+        logger.info(
+            "Reconnect %s: SSH config appears stale (rc=%s), refreshing",
+            session.name,
+            rc,
+        )
+        refresh_rdev_ssh_config(session.host)
+    except Exception:
+        logger.debug("SSH config staleness check failed for %s", session.host, exc_info=True)
 
 
 # =============================================================================
@@ -614,6 +667,8 @@ def _copy_configs_to_remote(host: str, tmp_dir: str, remote_tmp_dir: str, sessio
     """
     import subprocess
 
+    from orchestrator.terminal.ssh import is_rdev_host
+
     # Copy entire directory to remote via direct SSH
     if not _copy_dir_to_remote_ssh(tmp_dir, host, remote_tmp_dir):
         raise RuntimeError(f"Failed to copy configs to remote via SSH: {host}:{remote_tmp_dir}")
@@ -628,6 +683,41 @@ def _copy_configs_to_remote(host: str, tmp_dir: str, remote_tmp_dir: str, sessio
         capture_output=True,
         timeout=30,
     )
+
+    # Recreate node-bin symlinks on rdev (may be gone if /tmp was wiped).
+    # Uses the same resolve logic as session.py — bypass `volta which` and
+    # glob directly into volta's image directory.
+    if is_rdev_host(host):
+        from orchestrator.terminal.session import _VOLTA_NODE24_RESOLVE
+
+        node_cmd = (
+            "command -v volta >/dev/null 2>&1"
+            " && volta install node@24"
+            f" && {_VOLTA_NODE24_RESOLVE}"
+            f" && mkdir -p {remote_tmp_dir}/node-bin"
+            f' && ln -sf "$NODE24_DIR/node" {remote_tmp_dir}/node-bin/node'
+            f' && ln -sf "$NODE24_DIR/npx" {remote_tmp_dir}/node-bin/npx'
+            f' && ln -sf "$NODE24_DIR/npm" {remote_tmp_dir}/node-bin/npm'
+            " || true"
+        )
+        node_result = subprocess.run(
+            _ssh_cmd(host, node_cmd),
+            capture_output=True,
+            timeout=60,
+        )
+        if node_result.returncode == 0:
+            logger.info(
+                "Reconnect %s: ensured Node 24 symlinks at %s/node-bin",
+                session_name,
+                remote_tmp_dir,
+            )
+        else:
+            logger.warning(
+                "Reconnect %s: failed to create Node 24 symlinks (rc=%d): %s",
+                session_name,
+                node_result.returncode,
+                node_result.stderr.decode("utf-8", errors="replace").strip()[:200],
+            )
 
     # Copy skills to ~/.claude/commands/ (global user skills directory)
     # NOTE: --add-dir flag doesn't work reliably in recent Claude Code versions,
@@ -864,6 +954,9 @@ def _reconnect_rws_pty_worker(conn, session, repo, tunnel_manager):
 
     skip_permissions = bool(get_config_value(conn, "claude.skip_permissions", default=False))
 
+    # 0. Refresh SSH config if stale (rdev pod may have been rescheduled)
+    _refresh_ssh_config_if_stale(session)
+
     # 1. Ensure reverse tunnel alive
     _set_reconnect_step(session.id, "tunnel")
     if tunnel_manager and not tunnel_manager.is_alive(session.id):
@@ -1073,6 +1166,9 @@ def reconnect_remote_worker(
                 session.host,
             )
             return
+
+        # ── Refresh SSH config if stale (pod may have been rescheduled) ──
+        _refresh_ssh_config_if_stale(session)
 
         # ── If session already has rws_pty_id, use existing reconnect logic ──
         if session.rws_pty_id:
@@ -1306,8 +1402,10 @@ def reconnect_local_worker(
         api_base = f"http://127.0.0.1:{api_port}"
         _ensure_local_configs_exist(tmp_dir, session.id, api_base, conn=conn)
 
-        # Ensure Node 24 is the volta default (needed for Playwright plugin's npx)
-        safe_send_keys(tmux_sess, tmux_win, "volta install node@24", enter=True)
+        # Ensure Node 24 is the volta default (needed for Playwright plugin's npx).
+        # Skip gracefully if volta is not installed on this machine.
+        volta_cmd = "command -v volta >/dev/null 2>&1 && volta install node@24 || true"
+        safe_send_keys(tmux_sess, tmux_win, volta_cmd, enter=True)
         time.sleep(3)
 
         # Ensure the official Playwright plugin is installed (skip if already present)

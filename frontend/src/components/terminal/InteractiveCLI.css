@@ -3,6 +3,7 @@
   top: 12px;
   right: 12px;
   width: 560px;
+  max-width: calc(100% - 24px);
   height: 360px;
   z-index: 100;
   border-radius: 8px;
@@ -18,12 +19,13 @@
 }
 
 .icli-overlay.icli-expanded {
-  top: 0;
-  right: 0;
-  bottom: 0;
-  width: 50%;
+  top: 12px;
+  right: 12px;
+  bottom: 12px;
+  width: max(70%, calc(100% - 24px));
+  max-width: min(720px, calc(100% - 24px));
   height: auto;
-  border-radius: 0;
+  border-radius: 8px;
 }
 
 .icli-overlay.icli-minimized {

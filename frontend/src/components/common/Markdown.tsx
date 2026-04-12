@@ -572,8 +572,8 @@ function renderTokens(tokens: Token[]): string {
   }).join('\n')
 }
 
-// Export for testing
-export { tokenize, renderTokens }
+// Export for testing and notebook editor
+export { tokenize, renderTokens, highlightCode, escapeHtml }
 
 export default function Markdown({ children, className, expandable }: Props) {
   const [copied, setCopied] = useState(false)

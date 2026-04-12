@@ -1,7 +1,8 @@
 import { useEffect } from 'react'
 import { Outlet, useSearchParams, useLocation } from 'react-router-dom'
 import { useSidebarState } from '../hooks/useSidebarState'
-import { useBrainPanelState } from '../hooks/useBrainPanelState'
+import { BrainPanelProvider, useBrainPanel } from '../context/BrainPanelContext'
+import { WorkerTabsProvider } from '../context/WorkerTabsContext'
 import { useNotifications } from '../context/NotificationContext'
 import { useApp } from '../context/AppContext'
 import { savePageFilters } from '../utils/filterPersistence'
@@ -22,10 +23,10 @@ function FilterSync() {
   return null
 }
 
-export default function AppLayout() {
+function AppLayoutInner() {
   const { collapsed, toggle } = useSidebarState()
-  const brainPanel = useBrainPanelState()
-  const notifications = useNotifications()
+  const brainPanel = useBrainPanel()
+  const { notifications, dismiss } = useNotifications()
   const { loading, projects, tasks, workers } = useApp()
 
   const showGettingStarted = !loading && projects.length === 0 && tasks.length === 0 && workers.length === 0
@@ -37,7 +38,9 @@ export default function AppLayout() {
         <Header />
         <main className="app-main">
           <FilterSync />
-          <Outlet />
+          <WorkerTabsProvider>
+            <Outlet />
+          </WorkerTabsProvider>
         </main>
       </div>
       <BrainPanel
@@ -48,8 +51,16 @@ export default function AppLayout() {
         minWidth={brainPanel.MIN_WIDTH}
         maxWidth={brainPanel.MAX_WIDTH}
       />
-      <NotificationToast notifications={notifications} />
+      <NotificationToast notifications={notifications} onDismiss={dismiss} />
       <GettingStartedModal show={showGettingStarted} />
     </div>
+  )
+}
+
+export default function AppLayout() {
+  return (
+    <BrainPanelProvider>
+      <AppLayoutInner />
+    </BrainPanelProvider>
   )
 }

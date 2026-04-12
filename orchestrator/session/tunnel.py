@@ -627,6 +627,33 @@ class ReverseTunnelManager:
         exit_code = proc.poll()
         if exit_code is not None:
             last_error = self._read_last_log_line(log_path)
+
+            # Stale SSH config: rdev pod rescheduled with new port.
+            # Refresh the config and retry once (piggyback on _is_retry flag).
+            if not _is_retry and exit_code == 255:
+                try:
+                    from orchestrator.terminal.ssh import is_rdev_host, refresh_rdev_ssh_config
+
+                    if is_rdev_host(host) and refresh_rdev_ssh_config(host):
+                        logger.info(
+                            "Tunnel %s: SSH exit 255, refreshed config, retrying",
+                            session_name,
+                        )
+                        if log_file:
+                            log_file.close()
+                        return self.start_tunnel(
+                            session_id,
+                            session_name,
+                            host,
+                            local_port,
+                            remote_port,
+                            _is_retry=True,
+                        )
+                except Exception:
+                    logger.debug(
+                        "Tunnel %s: SSH config refresh failed", session_name, exc_info=True
+                    )
+
             logger.error(
                 "Tunnel for %s exited during startup (exit_code=%d, error=%s)",
                 session_name,
