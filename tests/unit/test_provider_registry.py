@@ -17,10 +17,10 @@ def test_default_provider_is_claude():
 
 def test_provider_order_is_stable():
     providers = list_providers()
-    assert [provider.id for provider in providers] == ["claude", "codex"]
+    assert [provider.id for provider in providers] == ["claude", "codex", "gemini"]
 
 
-@pytest.mark.parametrize("provider_id", ["claude", "codex"])
+@pytest.mark.parametrize("provider_id", ["claude", "codex", "gemini"])
 def test_provider_definitions_are_complete(provider_id):
     provider = get_provider(provider_id)
     assert provider.id == provider_id

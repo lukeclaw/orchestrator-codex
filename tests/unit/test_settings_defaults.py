@@ -56,6 +56,18 @@ class TestSettingsDefaults:
         assert codex_model["category"] == "codex"
         assert codex_effort["category"] == "codex"
 
+    def test_gemini_defaults_are_present_for_empty_db(self, client):
+        """Gemini launch defaults should be exposed by GET /settings."""
+        resp = client.get("/api/settings")
+        assert resp.status_code == 200
+        entries = resp.json()
+        gemini_model = next(e for e in entries if e["key"] == "gemini.default_model")
+        gemini_effort = next(e for e in entries if e["key"] == "gemini.default_effort")
+        assert gemini_model["value"] == "gemini-2.0-pro"
+        assert gemini_effort["value"] == "high"
+        assert gemini_model["category"] == "gemini"
+        assert gemini_effort["category"] == "gemini"
+
     def test_db_override_takes_precedence(self, client):
         """Once a user sets a value, that overrides the default."""
         client.put("/api/settings", json={"settings": {"ui.preserve_filters": True}})
@@ -130,16 +142,20 @@ class TestSettingsDefaults:
         payload = resp.json()
         providers = payload["providers"]
         ids = [provider["id"] for provider in providers]
-        assert ids == ["claude", "codex"]
+        assert ids == ["claude", "codex", "gemini"]
         assert payload["defaults"] == {"worker": DEFAULT_PROVIDER_ID, "brain": DEFAULT_PROVIDER_ID}
 
         claude = providers[0]
         codex = providers[1]
+        gemini = providers[2]
         assert claude["label"] == "Claude"
         assert codex["label"] == "Codex"
+        assert gemini["label"] == "Gemini"
         assert claude["capabilities"]["worker_sessions"]["supported"] is True
         assert codex["capabilities"]["remote_sessions"]["supported"] is False
+        assert gemini["capabilities"]["remote_sessions"]["supported"] is False
         assert codex["capabilities"]["remote_sessions"]["disabled_reason"]
+        assert gemini["capabilities"]["remote_sessions"]["disabled_reason"]
 
     def test_provider_registry_defaults_reflect_saved_values(self, client):
         client.put(

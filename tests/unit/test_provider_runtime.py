@@ -148,3 +148,57 @@ def test_codex_runtime_rejects_remote_launch(db):
 
     assert result["ok"] is False
     assert "Remote Codex support" in result["error"]
+
+
+def test_gemini_runtime_is_selected():
+    runtime = get_provider_runtime("gemini")
+    assert runtime.provider_id == "gemini"
+
+
+def test_gemini_runtime_builds_local_launch_command(db, tmp_path):
+    runtime = get_provider_runtime("gemini")
+    request = WorkerLaunchRequest(
+        conn=db,
+        session_id="session-5",
+        name="worker-5",
+        host="localhost",
+        work_dir="/tmp/project",
+        tmp_dir=str(tmp_path / "worker-5"),
+        model="gemini-2.0-pro",
+        effort="high",
+    )
+
+    with (
+        patch(
+            "orchestrator.providers.runtimes.gemini.deploy_gemini_worker_tmp_contents"
+        ) as mock_deploy,
+        patch(
+            "orchestrator.providers.runtimes.gemini.start_cdp_proxy", return_value=9888
+        ) as mock_proxy,
+        patch("orchestrator.providers.runtimes.gemini.tmux.send_keys", return_value=True) as mock_send,
+    ):
+        result = runtime.launch_local_worker(request)
+
+    assert result == {"ok": True}
+    mock_deploy.assert_called_once()
+    mock_proxy.assert_called_once_with("session-5", chrome_port=9222)
+    command = mock_send.call_args.args[2]
+    assert "gemini" in command
+    assert "--model gemini-2.0-pro" in command
+    assert "--thinking-level high" in command
+
+
+def test_gemini_runtime_rejects_remote_launch(db):
+    runtime = get_provider_runtime("gemini")
+    request = WorkerLaunchRequest(
+        conn=db,
+        session_id="session-6",
+        name="worker-6",
+        host="user/rdev-vm",
+    )
+
+    result = runtime.launch_remote_worker(request)
+
+    assert result["ok"] is False
+    assert "Remote Gemini support" in result["error"]
+
