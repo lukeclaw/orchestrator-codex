@@ -489,7 +489,7 @@ def create_session(body: SessionCreate, request: Request, db=Depends(get_db)):
 
     if is_remote_host(body.host):
         # Remote worker — launch full setup in background thread
-        # (tunnel, SSH, Claude, prompt delivery takes ~30s)
+        # (tunnel, SSH, agent, prompt delivery takes ~30s)
         config = getattr(request.app.state, "config", {})
         api_port = config.get("server", {}).get("port", 8093)
         db_path = getattr(request.app.state, "db_path", None)
@@ -518,24 +518,24 @@ def create_session(body: SessionCreate, request: Request, db=Depends(get_db)):
 
             bg_conn = get_connection(db_path) if db_path else db
             try:
-                result = runtime.launch_remote_worker(
-                    WorkerLaunchRequest(
-                        conn=bg_conn,
-                        session_id=s.id,
-                        name=sanitized_name,
-                        host=body.host,
-                        tmux_session=tmux_session_name,
-                        api_port=api_port,
-                        work_dir=work_dir,
-                        tmp_dir=tmp_dir,
-                        tunnel_manager=tunnel_manager,
-                        custom_skills=remote_custom_skills_dicts,
-                        disabled_builtin_names=remote_disabled_builtins,
-                        update_before_start=bool(remote_launch_preferences["update_before_start"]),
-                        skip_permissions=bool(remote_launch_preferences["skip_permissions"]),
-                        model=str(remote_launch_preferences["model"]),
-                        effort=str(remote_launch_preferences["effort"]),
-                    )
+                # Use polymorphic setup_remote_worker from terminal.session
+                result = setup_remote_worker(
+                    bg_conn,
+                    s.id,
+                    sanitized_name,
+                    body.host,
+                    tmux_session=tmux_session_name,
+                    api_port=api_port,
+                    work_dir=work_dir,
+                    tmp_dir=tmp_dir,
+                    tunnel_manager=tunnel_manager,
+                    custom_skills=remote_custom_skills_dicts,
+                    disabled_builtin_names=remote_disabled_builtins,
+                    update_before_start=bool(remote_launch_preferences["update_before_start"]),
+                    skip_permissions=bool(remote_launch_preferences["skip_preferences"]),
+                    model=str(remote_launch_preferences["model"]),
+                    effort=str(remote_launch_preferences["effort"]),
+                    provider=provider,
                 )
                 if result["ok"]:
                     # Detect work_dir if not provided at creation
@@ -543,14 +543,14 @@ def create_session(body: SessionCreate, request: Request, db=Depends(get_db)):
                     if not detected_work_dir:
                         from orchestrator.api.routes.files import _detect_remote_work_dir
 
-                        time.sleep(3)  # Give Claude a moment to start
+                        time.sleep(3)  # Give agent a moment to start
                         detected = _detect_remote_work_dir(body.host, s.id)
                         if detected:
                             detected_work_dir = detected
                             logger.info("Detected work_dir for %s: %s", sanitized_name, detected)
 
                     # Start as idle — the hook will transition to "working"
-                    # once Claude actually begins executing.
+                    # once the agent actually begins executing.
                     repo.update_session(
                         bg_conn,
                         s.id,
@@ -586,11 +586,11 @@ def create_session(body: SessionCreate, request: Request, db=Depends(get_db)):
         return {"id": s.id, "name": s.name, "status": "connecting", "provider": s.provider}
 
     else:
-        # Local worker — deploy scripts and launch claude.
-        # The session record is already persisted, so deploy/launch errors are
-        # non-fatal: log them but still return success to the client.
+        # Local worker — deploy scripts and launch agent.
         try:
             from orchestrator.state.repositories import skills as skills_repo
+            from orchestrator.terminal.session import setup_local_worker
+
             config = getattr(request.app.state, "config", {})
             api_port = config.get("server", {}).get("port", 8093)
 
@@ -605,23 +605,22 @@ def create_session(body: SessionCreate, request: Request, db=Depends(get_db)):
 
             local_launch_preferences = _get_provider_launch_preferences(db, provider)
 
-            runtime.launch_local_worker(
-                WorkerLaunchRequest(
-                    conn=db,
-                    session_id=s.id,
-                    name=sanitized_name,
-                    host=body.host,
-                    tmux_session=tmux_session_name,
-                    api_port=api_port,
-                    work_dir=work_dir,
-                    tmp_dir=tmp_dir,
-                    custom_skills=custom_skills_dicts,
-                    disabled_builtin_names=disabled_builtins,
-                    update_before_start=bool(local_launch_preferences["update_before_start"]),
-                    skip_permissions=bool(local_launch_preferences["skip_permissions"]),
-                    model=str(local_launch_preferences["model"]),
-                    effort=str(local_launch_preferences["effort"]),
-                )
+            # Use polymorphic setup_local_worker from terminal.session
+            setup_local_worker(
+                db,
+                s.id,
+                sanitized_name,
+                tmux_session=tmux_session_name,
+                api_port=api_port,
+                work_dir=work_dir,
+                tmp_dir=tmp_dir,
+                custom_skills=custom_skills_dicts,
+                disabled_builtin_names=disabled_builtins,
+                update_before_start=bool(local_launch_preferences["update_before_start"]),
+                skip_permissions=bool(local_launch_preferences["skip_preferences"]),
+                model=str(local_launch_preferences["model"]),
+                effort=str(local_launch_preferences["effort"]),
+                provider=provider,
             )
             if body.task_id:
                 from orchestrator.state.repositories import tasks
