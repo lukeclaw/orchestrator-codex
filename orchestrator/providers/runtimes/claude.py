@@ -202,12 +202,64 @@ class ClaudeRuntime:
             loop_sent = send_to_session(
                 BRAIN_SESSION_NAME,
                 f"/loop {heartbeat_interval} /heartbeat",
-                tmux.TMUX_SESSION,
+                tmux_session=tmux.TMUX_SESSION,
             )
             if loop_sent:
                 logger.info("Brain heartbeat re-armed: /loop %s /heartbeat", heartbeat_interval)
 
         return {"ok": True, "redeployed": True, "heartbeat_rearmed": loop_sent}
+
+    def get_launch_command(
+        self,
+        session_id: str,
+        tmp_dir: str,
+        model: str | None = None,
+        effort: str | None = None,
+        skip_permissions: bool = False,
+    ) -> str:
+        settings_path = os.path.join(tmp_dir, ".claude", "settings.json")
+        # Claude uses -r for session ID and --settings for the settings file.
+        args = [f"--settings {shlex.quote(settings_path)}"]
+        if skip_permissions:
+            args.append("--dangerously-skip-permissions")
+        # We prefer tracked session IDs if available, but for new launch we use session_id
+        args.append(f"-r {shlex.quote(session_id)}")
+        return f"claude {' '.join(args)}"
+
+    def is_alive(self, tmux_sess: str, tmux_win: str, session_id: str) -> tuple[bool, str]:
+        """Check if Claude Code is running for a local worker."""
+        from orchestrator.session.health import _get_pane_pid, _has_process_in_tree
+
+        # Primary: walk the pane's process tree for a claude descendant.
+        pane_pid = _get_pane_pid(tmux_sess, tmux_win)
+        if pane_pid is not None and _has_process_in_tree(pane_pid, "claude"):
+            return True, "Claude process running in pane"
+
+        # Fallback: ps aux with session ID
+        try:
+            import subprocess
+
+            result = subprocess.run(["ps", "aux"], capture_output=True, text=True, timeout=5)
+            for line in result.stdout.split("\n"):
+                if "claude" in line.lower() and session_id in line and "grep" not in line:
+                    return True, "Claude process running (ps fallback)"
+        except Exception:
+            pass
+
+        return False, "No Claude process found"
+
+    def check_session_exists(self, host: str, session_id: str) -> bool:
+        from orchestrator.terminal.ssh import is_remote_host
+
+        if is_remote_host(host):
+            from orchestrator.session.reconnect import _check_claude_session_exists_remote
+
+            return _check_claude_session_exists_remote(host, session_id)
+        else:
+            from orchestrator.session.reconnect import _check_claude_session_exists_local
+
+            return _check_claude_session_exists_local(session_id)
+
 
 
 CLAUDE_RUNTIME = ClaudeRuntime()

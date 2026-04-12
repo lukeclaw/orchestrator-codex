@@ -376,5 +376,35 @@ class CodexRuntime:
         logger.info("Brain files re-deployed for Codex")
         return {"ok": True, "redeployed": True, "heartbeat_rearmed": heartbeat_rearmed}
 
+    def get_launch_command(
+        self,
+        session_id: str,
+        tmp_dir: str,
+        model: str | None = None,
+        effort: str | None = None,
+        skip_permissions: bool = False,
+    ) -> str:
+        prompt_path = os.path.join(tmp_dir, "prompt.md")
+        # Codex doesn't have a direct skip-permissions flag like Claude,
+        # but it uses -a on-request for a similar effect in our context.
+        return _build_codex_command(
+            workspace_dir=tmp_dir,
+            prompt_path=prompt_path,
+            model=model or _DEFAULT_CODEX_MODEL,
+            effort=effort or _DEFAULT_REASONING_EFFORT,
+        )
+
+    def is_alive(self, tmux_sess: str, tmux_win: str, session_id: str) -> tuple[bool, str]:
+        """Check if Codex is running for a local worker via the tmux pane process tree."""
+        from orchestrator.session.health import _get_pane_pid, _has_process_in_tree
+
+        pane_pid = _get_pane_pid(tmux_sess, tmux_win)
+        if pane_pid is not None and _has_process_in_tree(pane_pid, "codex"):
+            return True, "Codex process running in pane"
+        return False, "No Codex process found in pane"
+
+    def check_session_exists(self, host: str, session_id: str) -> bool:
+        return False  # Persistence not implemented for Codex yet
+
 
 CODEX_RUNTIME = CodexRuntime()
