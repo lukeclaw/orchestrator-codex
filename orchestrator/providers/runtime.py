@@ -65,6 +65,10 @@ def _load_runtime(provider_id: str) -> ProviderRuntime:
         from orchestrator.providers.runtimes.codex import CODEX_RUNTIME
 
         return CODEX_RUNTIME
+    if provider_id == "gemini":
+        from orchestrator.providers.runtimes.gemini import GEMINI_RUNTIME
+
+        return GEMINI_RUNTIME
     raise KeyError(f"Unknown provider runtime: {provider_id}")
 
 
