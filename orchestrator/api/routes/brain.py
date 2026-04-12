@@ -49,30 +49,29 @@ def _get_effective_brain_provider(db):
 
 
 def _translate_brain_command(provider: str, command: str) -> str:
-    if provider != "codex":
-        return command
-
-    stripped = command.strip()
-    if stripped == "/clear":
-        return (
-            "Reset your coordination context for a fresh turn. Drop prior task-specific "
-            "assumptions and wait for the next instruction."
-        )
-    if stripped == "/check_worker":
-        return (
-            "Review all active workers now. Use the orchestration CLI tools to identify completed, "
-            "blocked, or stalled work, take the necessary coordination actions, and summarize the result."
-        )
-    if stripped.startswith("/create"):
-        details = stripped[len("/create") :].strip()
-        if details:
-            return f"Create a new worker for this request: {details}"
-        return "Create a new worker for the next requested task."
+    if provider in ("codex", "gemini"):
+        stripped = command.strip()
+        if stripped == "/clear":
+            return (
+                "Reset your coordination context for a fresh turn. Drop prior task-specific "
+                "assumptions and wait for the next instruction."
+            )
+        if stripped == "/check_worker":
+            return (
+                "Review all active workers now. Use the orchestration CLI tools to identify completed, "
+                "blocked, or stalled work, take the necessary coordination actions, and summarize the result."
+            )
+        if stripped.startswith("/create"):
+            details = stripped[len("/create") :].strip()
+            if details:
+                return f"Create a new worker for this request: {details}"
+            return "Create a new worker for the next requested task."
     return command
 
 
-def _is_codex_quick_clear(provider: str, command: str) -> bool:
-    return provider == "codex" and command.strip() == "/clear"
+def _is_quick_clear_provider(provider: str, command: str) -> bool:
+    """Return True if the provider uses the quick-clear (redeploy) pattern for /clear."""
+    return provider in ("codex", "gemini") and command.strip() == "/clear"
 
 
 @router.get("/brain/status")
@@ -388,14 +387,14 @@ def brain_command(req: BrainCommandRequest, db=Depends(get_db)):
     provider = session.provider or DEFAULT_PROVIDER_ID
     translated_command = _translate_brain_command(provider, req.command)
 
-    if _is_codex_quick_clear(provider, req.command):
+    if _is_quick_clear_provider(provider, req.command):
         runtime = get_provider_runtime(provider)
         try:
             runtime.redeploy_brain(db)
         except ValueError as exc:
             raise HTTPException(400, str(exc)) from exc
         except Exception as exc:
-            logger.exception("Failed to redeploy Codex brain before quick-clear")
+            logger.exception("Failed to redeploy brain before quick-clear")
             raise HTTPException(500, f"Failed to prepare quick-clear: {exc}") from exc
 
     try:
