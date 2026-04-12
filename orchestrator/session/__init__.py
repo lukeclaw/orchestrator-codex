@@ -4,8 +4,6 @@ from orchestrator.session.health import (
     check_all_workers_health,
     check_all_workers_health_async,
     check_and_update_worker_health,
-    check_claude_process_local,
-    check_claude_running_local,
     check_tui_running_in_pane,
 )
 from orchestrator.session.reconnect import (
@@ -45,8 +43,6 @@ __all__ = [
     "get_status_value",
     # Health checks
     "check_tui_running_in_pane",
-    "check_claude_process_local",
-    "check_claude_running_local",
     "check_and_update_worker_health",
     "check_all_workers_health",
     "check_all_workers_health_async",

@@ -1,3 +1,4 @@
+import os
 from unittest.mock import patch
 
 from orchestrator.providers.runtime import WorkerLaunchRequest, get_provider_runtime
@@ -82,10 +83,13 @@ def test_codex_runtime_builds_local_launch_command(db, tmp_path):
         model="gpt-5.1-codex",
         effort="medium",
     )
+    os.makedirs(request.tmp_dir, exist_ok=True)
+    with open(os.path.join(request.tmp_dir, "prompt.md"), "w") as f:
+        f.write("test prompt")
 
     with (
         patch(
-            "orchestrator.providers.runtimes.codex.deploy_codex_worker_tmp_contents"
+            "orchestrator.providers.runtimes.codex.deploy_worker_tmp_contents"
         ) as mock_deploy,
         patch(
             "orchestrator.providers.runtimes.codex.start_cdp_proxy", return_value=9777
@@ -101,9 +105,9 @@ def test_codex_runtime_builds_local_launch_command(db, tmp_path):
     assert "codex" in command
     assert "--add-dir" in command
     assert "gpt-5.1-codex" in command
-    assert "model_reasoning_effort" in command
+    assert "--thinking-level" in command
     assert "medium" in command
-    assert "model_instructions_file" in command
+    assert "--instructions-file" in command
 
 
 def test_codex_runtime_redeploy_brain_rearms_heartbeat(db):
@@ -123,7 +127,7 @@ def test_codex_runtime_redeploy_brain_rearms_heartbeat(db):
     db.commit()
 
     with (
-        patch("orchestrator.providers.runtimes.codex.deploy_codex_brain_tmp_contents"),
+        patch("orchestrator.providers.runtimes.codex.deploy_brain_tmp_contents"),
         patch(
             "orchestrator.providers.runtimes.codex._CODEX_HEARTBEAT_LOOP.restart",
             return_value=True,
@@ -170,7 +174,7 @@ def test_gemini_runtime_builds_local_launch_command(db, tmp_path):
 
     with (
         patch(
-            "orchestrator.providers.runtimes.gemini.deploy_gemini_worker_tmp_contents"
+            "orchestrator.providers.runtimes.gemini.deploy_worker_tmp_contents"
         ) as mock_deploy,
         patch(
             "orchestrator.providers.runtimes.gemini.start_cdp_proxy", return_value=9888

@@ -24,6 +24,7 @@ class WorkerLaunchRequest:
     host: str
     tmux_session: str = "orchestrator"
     api_port: int = 8093
+    cdp_port: int = 9222
     work_dir: str | None = None
     tmp_dir: str | None = None
     tunnel_manager: Any = None
