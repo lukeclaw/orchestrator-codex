@@ -55,6 +55,22 @@ class ProviderRuntime(Protocol):
     def redeploy_brain(self, conn: sqlite3.Connection) -> dict:
         """Redeploy provider-managed brain assets."""
 
+    def get_launch_command(
+        self,
+        session_id: str,
+        tmp_dir: str,
+        model: str | None = None,
+        effort: str | None = None,
+        skip_permissions: bool = False,
+    ) -> str:
+        """Return the shell command to launch the provider's CLI."""
+
+    def is_alive(self, tmux_sess: str, tmux_win: str, session_id: str) -> tuple[bool, str]:
+        """Check if the provider session is still alive in the given tmux pane."""
+
+    def check_session_exists(self, host: str, session_id: str) -> bool:
+        """Check if a session with the given ID exists (locally or remotely)."""
+
 
 def _load_runtime(provider_id: str) -> ProviderRuntime:
     if provider_id == "claude":
