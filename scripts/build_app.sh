@@ -62,12 +62,7 @@ if [[ "$BUILD_DMG" == "true" ]]; then
     echo "--- [DMG] Step 1: Building sidecar ---"
     if [[ "$SKIP_FRONTEND" == "true" ]]; then
         echo "(Skipping frontend build)"
-        uv run --extra build python -m PyInstaller orchestrator.spec --clean --noconfirm
-        uv run --extra build python scripts/build_sidecar.py 2>/dev/null || {
-            TRIPLE=$(uv run python -c "from scripts.build_sidecar import get_target_triple; print(get_target_triple())")
-            cp dist/orchestrator-server "src-tauri/binaries/orchestrator-server-$TRIPLE"
-            chmod +x "src-tauri/binaries/orchestrator-server-$TRIPLE"
-        }
+        uv run --extra build python scripts/build_sidecar.py --skip-frontend
     else
         uv run --extra build python scripts/build_sidecar.py
     fi
