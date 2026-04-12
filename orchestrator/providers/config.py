@@ -7,21 +7,25 @@ from orchestrator.state.repositories.config import get_config_value
 MODEL_SETTING_KEY_BY_PROVIDER = {
     "claude": "claude.default_model",
     "codex": "codex.default_model",
+    "gemini": "gemini.default_model",
 }
 
 EFFORT_SETTING_KEY_BY_PROVIDER = {
     "claude": "claude.default_effort",
     "codex": "codex.default_effort",
+    "gemini": "gemini.default_effort",
 }
 
 MODEL_DEFAULT_BY_PROVIDER = {
     "claude": "opus",
     "codex": "gpt-5-codex",
+    "gemini": "gemini-2.0-pro",
 }
 
 EFFORT_DEFAULT_BY_PROVIDER = {
     "claude": "high",
     "codex": "high",
+    "gemini": "high",
 }
 
 

@@ -135,6 +135,30 @@ PROVIDERS: dict[str, ProviderDefinition] = {
             CAPABILITY_RECONNECT: _unsupported("Codex reconnect support is not implemented yet."),
         },
     ),
+    "gemini": ProviderDefinition(
+        id="gemini",
+        label="Gemini",
+        capabilities={
+            CAPABILITY_WORKER_SESSIONS: _supported(),
+            CAPABILITY_BRAIN_SESSIONS: _supported(),
+            CAPABILITY_LOCAL_SESSIONS: _supported(),
+            CAPABILITY_REMOTE_SESSIONS: _unsupported(
+                "Remote Gemini support is not available in MVP."
+            ),
+            CAPABILITY_MODEL_SELECTION: _supported(),
+            CAPABILITY_EFFORT_SELECTION: _supported(),
+            CAPABILITY_SKIP_PERMISSIONS: _unsupported(
+                "Gemini skip-permissions support is not implemented yet."
+            ),
+            CAPABILITY_HOOKS: _unsupported("Gemini hook automation is not implemented yet."),
+            CAPABILITY_SKILLS_DEPLOYMENT: _unsupported(
+                "Gemini skills deployment is not implemented yet."
+            ),
+            CAPABILITY_HEARTBEAT_LOOP: _supported(),
+            CAPABILITY_QUICK_CLEAR: _supported(),
+            CAPABILITY_RECONNECT: _unsupported("Gemini reconnect support is not implemented yet."),
+        },
+    ),
 }
 
 
@@ -148,4 +172,4 @@ def get_provider(provider_id: str) -> ProviderDefinition:
 
 def list_providers() -> list[ProviderDefinition]:
     """Return providers in canonical display order."""
-    return [PROVIDERS[provider_id] for provider_id in ("claude", "codex")]
+    return [PROVIDERS[provider_id] for provider_id in ("claude", "codex", "gemini")]
