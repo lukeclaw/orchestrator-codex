@@ -734,35 +734,9 @@ def deploy_worker_tmp_contents(
     disabled_builtin_names: set[str] | None = None,
     model: str = "opus",
     effort: str = "high",
+    provider: str = "claude",
 ) -> list[str]:
-    """Deploy all worker files to tmp_dir. SINGLE SOURCE OF TRUTH.
-
-    THIS IS THE SINGLE SOURCE OF TRUTH for what the worker tmp directory
-    should contain. All callers that need to create or regenerate the tmp
-    dir must use this function.
-
-    Called by:
-    - Initial worker launch (session.py — both local and remote)
-    - Reconnect regeneration (reconnect.py — replaces _ensure_local_configs_exist)
-    - Health-check recovery (health.py — via ensure_tmp_dir_health)
-
-    When ``conn`` is provided, skills and disabled overrides are read from
-    the DB (takes precedence over explicit ``custom_skills``/``disabled_builtin_names``).
-
-    Args:
-        tmp_dir: Worker's tmp directory (e.g., /tmp/orchestrator/workers/worker1)
-        session_id: Worker's session ID
-        api_base: API base URL
-        cdp_port: CDP port for browser debugging
-        browser_headless: Whether browser runs headless
-        conn: Optional DB connection for reading skills/overrides
-        custom_skills: Explicit custom skills (used when conn is None)
-        disabled_builtin_names: Explicit disabled builtins (used when conn is None)
-
-    Returns:
-        List of relative paths (from tmp_dir) of all files created.
-        Also writes .manifest.json for health-check verification.
-    """
+    """Deploy all worker files to tmp_dir. SINGLE SOURCE OF TRUTH."""
     created: list[str] = []
     os.makedirs(tmp_dir, exist_ok=True)
 
@@ -791,34 +765,35 @@ def deploy_worker_tmp_contents(
         resolved_disabled = disabled_builtin_names or set()
         resolved_custom = custom_skills or []
 
-    # 4. Built-in skills → .claude/commands/
+    # 4. Built-in skills → commands/
     skills_src = get_worker_skills_dir()
-    local_skills_dir = os.path.join(tmp_dir, ".claude", "commands")
+    # Use a generic 'commands' dir instead of .claude/commands
+    local_skills_dir = os.path.join(tmp_dir, "commands")
     copied_builtins = _deploy_builtin_skills(skills_src, local_skills_dir, resolved_disabled)
-    created += [f".claude/commands/{f}" for f in copied_builtins]
-    logger.info(
-        "Deployed %d built-in skills to %s",
-        len(copied_builtins),
-        local_skills_dir,
-    )
+    created += [f"commands/{f}" for f in copied_builtins]
 
-    # 5. Custom skills from DB → .claude/commands/
+    # 5. Custom skills from DB → commands/
     if resolved_custom:
         deploy_custom_skills(local_skills_dir, resolved_custom)
-        created += [f".claude/commands/{s['name']}.md" for s in resolved_custom]
-        logger.info("Deployed %d custom skills to %s", len(resolved_custom), local_skills_dir)
+        created += [f"commands/{s['name']}.md" for s in resolved_custom]
 
     # 6. prompt.md (worker system prompt)
-    custom_skills_section = format_custom_skills_for_prompt(resolved_custom)
-    prompt = get_worker_prompt(session_id, custom_skills_section=custom_skills_section)
+    if provider == "codex":
+        prompt = get_codex_worker_prompt()
+    elif provider == "gemini":
+        prompt = get_gemini_worker_prompt()
+    else:
+        custom_skills_section = format_custom_skills_for_prompt(resolved_custom)
+        prompt = get_worker_prompt(session_id, custom_skills_section=custom_skills_section)
+
     if prompt:
         with open(os.path.join(tmp_dir, "prompt.md"), "w") as f:
             f.write(prompt)
         created.append("prompt.md")
 
-    # Write manifest — the health check uses this to verify completeness
+    # Write manifest
     _write_manifest(tmp_dir, created)
-    logger.info("deploy_worker_tmp_contents: deployed %d files to %s", len(created), tmp_dir)
+    logger.info("deploy_worker_tmp_contents: deployed %d files to %s (provider=%s)", len(created), tmp_dir, provider)
 
     return created
 
@@ -887,36 +862,13 @@ def deploy_brain_tmp_contents(
     brain_dir: str,
     api_base: str = "http://127.0.0.1:8093",
     conn: sqlite3.Connection | None = None,
-    provider: str | None = None,
+    provider: str | None = "claude",
     custom_skills: list[dict] | None = None,
     disabled_builtin_names: set[str] | None = None,
     model: str = "opus",
     effort: str = "high",
 ) -> list[str]:
-    """Deploy all brain files to brain_dir. SINGLE SOURCE OF TRUTH.
-
-    THIS IS THE SINGLE SOURCE OF TRUTH for what the brain tmp directory
-    should contain. All callers that need to create or regenerate the brain
-    dir must use this function.
-
-    Called by:
-    - Brain start (brain.py)
-    - Health-check recovery (brain.py — via _ensure_brain_tmp_health)
-
-    When ``conn`` is provided, skills and disabled overrides are read from
-    the DB (takes precedence over explicit params).
-
-    Args:
-        brain_dir: Brain's working directory (e.g., /tmp/orchestrator/brain)
-        api_base: API base URL
-        conn: Optional DB connection for reading skills/overrides
-        custom_skills: Explicit custom skills (used when conn is None)
-        disabled_builtin_names: Explicit disabled builtins (used when conn is None)
-
-    Returns:
-        List of relative paths (from brain_dir) of all files created.
-        Also writes .manifest.json for health-check verification.
-    """
+    """Deploy all brain files to brain_dir. SINGLE SOURCE OF TRUTH."""
     created: list[str] = []
     os.makedirs(brain_dir, exist_ok=True)
 
@@ -928,21 +880,32 @@ def deploy_brain_tmp_contents(
         resolved_disabled = disabled_builtin_names or set()
         resolved_custom = custom_skills or []
 
-    # 2. CLAUDE.md (brain prompt)
-    custom_skills_section = format_custom_skills_for_prompt(resolved_custom)
+    # 2. prompt.md (brain system prompt)
     brain_memory_section = (
         get_brain_memory_section(conn, provider=provider) if conn is not None else ""
     )
-    brain_prompt = get_brain_prompt(
-        custom_skills_section=custom_skills_section,
-        brain_memory_section=brain_memory_section,
-    )
+
+    if provider == "codex":
+        brain_prompt = get_codex_brain_prompt(brain_memory_section=brain_memory_section)
+    elif provider == "gemini":
+        brain_prompt = get_gemini_brain_prompt(brain_memory_section=brain_memory_section)
+    else:
+        custom_skills_section = format_custom_skills_for_prompt(resolved_custom)
+        brain_prompt = get_brain_prompt(
+            custom_skills_section=custom_skills_section,
+            brain_memory_section=brain_memory_section,
+        )
+
     if brain_prompt:
-        with open(os.path.join(brain_dir, "CLAUDE.md"), "w") as f:
+        # Use a generic filename, or CLAUDE.md if it's Claude
+        prompt_filename = "CLAUDE.md" if provider == "claude" else "prompt.md"
+        with open(os.path.join(brain_dir, prompt_filename), "w") as f:
             f.write(brain_prompt)
-        created.append("CLAUDE.md")
+        created.append(prompt_filename)
 
     # 3. Hooks + settings
+    # Brain hooks currently assume Claude-style settings.json
+    # For non-Claude providers, these might be ignored but they don't hurt
     generate_brain_hooks(brain_dir, api_base, model=model, effort=effort)
     created += [
         "hooks/inject-focus.sh",
@@ -957,81 +920,19 @@ def deploy_brain_tmp_contents(
     created.append("bin/lib.sh")
     created += [f"bin/{name}" for name in BRAIN_SCRIPT_NAMES]
 
-    # 5. Built-in skills → .claude/commands/
+    # 5. Built-in skills → commands/
     skills_src = get_brain_skills_dir()
-    skills_dest = os.path.join(brain_dir, ".claude", "commands")
+    skills_dest = os.path.join(brain_dir, "commands")
     copied_builtins = _deploy_builtin_skills(skills_src, skills_dest, resolved_disabled)
-    created += [f".claude/commands/{f}" for f in copied_builtins]
-    logger.info("Deployed %d built-in brain skills to %s", len(copied_builtins), skills_dest)
+    created += [f"commands/{f}" for f in copied_builtins]
 
-    # 6. Custom skills from DB → .claude/commands/
+    # 6. Custom skills from DB → commands/
     if resolved_custom:
         deploy_custom_skills(skills_dest, resolved_custom)
-        created += [f".claude/commands/{s['name']}.md" for s in resolved_custom]
-        logger.info("Deployed %d custom brain skills to %s", len(resolved_custom), skills_dest)
+        created += [f"commands/{s['name']}.md" for s in resolved_custom]
 
     # Write manifest
     _write_manifest(brain_dir, created)
-    logger.info("deploy_brain_tmp_contents: deployed %d files to %s", len(created), brain_dir)
+    logger.info("deploy_brain_tmp_contents: deployed %d files to %s (provider=%s)", len(created), brain_dir, provider)
 
-    return created
-
-
-def deploy_codex_brain_tmp_contents(
-    brain_dir: str,
-    api_base: str = "http://127.0.0.1:8093",
-    conn: sqlite3.Connection | None = None,
-    provider: str | None = "codex",
-) -> list[str]:
-    """Deploy all Codex brain files to brain_dir."""
-    created: list[str] = []
-    os.makedirs(brain_dir, exist_ok=True)
-
-    brain_memory_section = (
-        get_brain_memory_section(conn, provider=provider) if conn is not None else ""
-    )
-    prompt = get_codex_brain_prompt(brain_memory_section=brain_memory_section)
-    if prompt:
-        with open(os.path.join(brain_dir, "prompt.md"), "w") as f:
-            f.write(prompt)
-        created.append("prompt.md")
-
-    deploy_brain_scripts(brain_dir, api_base)
-    created.append("bin/lib.sh")
-    created += [f"bin/{name}" for name in BRAIN_SCRIPT_NAMES]
-
-    _write_manifest(brain_dir, created)
-    logger.info(
-        "deploy_codex_brain_tmp_contents: deployed %d files to %s", len(created), brain_dir
-    )
-    return created
-
-
-def deploy_gemini_brain_tmp_contents(
-    brain_dir: str,
-    api_base: str = "http://127.0.0.1:8093",
-    conn: sqlite3.Connection | None = None,
-    provider: str | None = "gemini",
-) -> list[str]:
-    """Deploy all Gemini brain files to brain_dir."""
-    created: list[str] = []
-    os.makedirs(brain_dir, exist_ok=True)
-
-    brain_memory_section = (
-        get_brain_memory_section(conn, provider=provider) if conn is not None else ""
-    )
-    prompt = get_gemini_brain_prompt(brain_memory_section=brain_memory_section)
-    if prompt:
-        with open(os.path.join(brain_dir, "prompt.md"), "w") as f:
-            f.write(prompt)
-        created.append("prompt.md")
-
-    deploy_brain_scripts(brain_dir, api_base)
-    created.append("bin/lib.sh")
-    created += [f"bin/{name}" for name in BRAIN_SCRIPT_NAMES]
-
-    _write_manifest(brain_dir, created)
-    logger.info(
-        "deploy_gemini_brain_tmp_contents: deployed %d files to %s", len(created), brain_dir
-    )
     return created
