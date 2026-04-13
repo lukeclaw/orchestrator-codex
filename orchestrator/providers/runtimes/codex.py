@@ -225,7 +225,8 @@ class CodexRuntime:
 
         if not alive:
             cmd_parts = [
-                f"cd {shlex.quote(os.getcwd())}",
+                "cd /", # Break out of any dead directory
+                f"cd {shlex.quote(os.getcwd())}", # Go to project root
                 get_path_export_command(os.path.join(_BRAIN_DIR, "bin")),
                 _build_codex_command(
                     workspace_dir=os.getcwd(),
@@ -259,7 +260,15 @@ class CodexRuntime:
         tmux.send_keys(tmux.TMUX_SESSION, BRAIN_SESSION_NAME, "exit", enter=True)
 
         if os.path.exists(_BRAIN_DIR):
-            shutil.rmtree(_BRAIN_DIR)
+            for item in os.listdir(_BRAIN_DIR):
+                item_path = os.path.join(_BRAIN_DIR, item)
+                try:
+                    if os.path.isfile(item_path) or os.path.islink(item_path):
+                        os.unlink(item_path)
+                    elif os.path.isdir(item_path):
+                        shutil.rmtree(item_path)
+                except Exception as e:
+                    logger.warning("Could not delete %s: %s", item_path, e)
 
         return {"ok": True}
 

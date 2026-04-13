@@ -121,7 +121,8 @@ class ClaudeRuntime:
                 "message": "Brain already running (reconnected)",
             }
 
-        tmux.send_keys(tmux.TMUX_SESSION, BRAIN_SESSION_NAME, f"cd {shlex.quote(_BRAIN_DIR)}")
+        tmux.send_keys(tmux.TMUX_SESSION, BRAIN_SESSION_NAME, "cd /")
+        tmux.send_keys(tmux.TMUX_SESSION, BRAIN_SESSION_NAME, f"cd {shlex.quote(os.getcwd())}")
         tmux.send_keys(tmux.TMUX_SESSION, BRAIN_SESSION_NAME, path_export)
 
         if should_update_before_start(conn):
@@ -175,7 +176,15 @@ class ClaudeRuntime:
 
         try:
             if os.path.exists(_BRAIN_DIR):
-                shutil.rmtree(_BRAIN_DIR)
+                for item in os.listdir(_BRAIN_DIR):
+                    item_path = os.path.join(_BRAIN_DIR, item)
+                    try:
+                        if os.path.isfile(item_path) or os.path.islink(item_path):
+                            os.unlink(item_path)
+                        elif os.path.isdir(item_path):
+                            shutil.rmtree(item_path)
+                    except Exception as e:
+                        logger.warning("Could not delete %s: %s", item_path, e)
                 logger.info("Cleaned up brain directory: %s", _BRAIN_DIR)
         except Exception as exc:
             logger.warning("Could not clean up brain directory %s: %s", _BRAIN_DIR, exc)
