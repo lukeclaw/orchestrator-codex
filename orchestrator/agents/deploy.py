@@ -511,16 +511,9 @@ def generate_brain_hooks(
     api_base: str = "http://127.0.0.1:8093",
     model: str = "opus",
     effort: str = "high",
+    provider: str = "claude",
 ) -> str:
-    """Deploy brain hooks and settings.
-
-    Args:
-        brain_dir: Directory to deploy to (must be /tmp/orchestrator/brain)
-        api_base: API base URL
-
-    Returns:
-        Path to the settings.json file
-    """
+    """Deploy brain hooks and settings."""
     # Deploy hook scripts
     hooks_dir = os.path.join(brain_dir, "hooks")
     os.makedirs(hooks_dir, exist_ok=True)
@@ -561,11 +554,12 @@ def generate_brain_hooks(
     )
 
     # Copy settings.json template, substitute placeholders, and inject model/effort
-    claude_dir = os.path.join(brain_dir, ".claude")
-    os.makedirs(claude_dir, exist_ok=True)
+    # Use provider-specific subdirectory
+    provider_config_dir = os.path.join(brain_dir, f".{provider}")
+    os.makedirs(provider_config_dir, exist_ok=True)
 
     src_settings_path = os.path.join(_AGENTS_DIR, "brain", "settings.json")
-    settings_path = os.path.join(claude_dir, "settings.json")
+    settings_path = os.path.join(provider_config_dir, "settings.json")
 
     with open(src_settings_path) as f:
         settings_content = f.read()
@@ -904,15 +898,14 @@ def deploy_brain_tmp_contents(
         created.append(prompt_filename)
 
     # 3. Hooks + settings
-    # Brain hooks currently assume Claude-style settings.json
-    # For non-Claude providers, these might be ignored but they don't hurt
-    generate_brain_hooks(brain_dir, api_base, model=model, effort=effort)
+    # Use the provider-aware generate_brain_hooks
+    settings_path = generate_brain_hooks(brain_dir, api_base, model=model, effort=effort, provider=provider or "claude")
     created += [
         "hooks/inject-focus.sh",
         "hooks/check-command.sh",
         "hooks/pre-compact.sh",
         "hooks/on-session-start.sh",
-        ".claude/settings.json",
+        os.path.relpath(settings_path, brain_dir),
     ]
 
     # 4. Bin scripts

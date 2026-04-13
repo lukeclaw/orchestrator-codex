@@ -88,9 +88,12 @@ class ClaudeRuntime:
         )
         logger.info("Deployed brain tmp contents via provider runtime")
 
+        # Get settings_path via the same logic as deploy.py
+        from orchestrator.agents.deploy import generate_brain_hooks
+        settings_path = generate_brain_hooks(_BRAIN_DIR, provider=self.provider_id, model=brain_model, effort=brain_effort)
+
         bin_dir = os.path.join(_BRAIN_DIR, "bin")
         path_export = get_path_export_command(bin_dir)
-        settings_path = os.path.join(_BRAIN_DIR, ".claude", "settings.json")
 
         target = tmux.ensure_window(tmux.TMUX_SESSION, BRAIN_SESSION_NAME)
 
@@ -206,6 +209,7 @@ class ClaudeRuntime:
             )
             if loop_sent:
                 logger.info("Brain heartbeat re-armed: /loop %s /heartbeat", heartbeat_interval)
+
 
         return {"ok": True, "redeployed": True, "heartbeat_rearmed": loop_sent}
 

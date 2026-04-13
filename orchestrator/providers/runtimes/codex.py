@@ -192,11 +192,19 @@ class CodexRuntime:
     def start_brain(self, conn) -> dict:
         session = _get_brain_session(conn)
 
-        shells = {"bash", "zsh", "fish", "sh", "dash"}
-        pane_cmd = tmux.pane_foreground_command(tmux.TMUX_SESSION, BRAIN_SESSION_NAME)
-        codex_already_running = pane_cmd is not None and pane_cmd not in shells
+        # Use is_alive method for detection instead of simple command string
+        alive, _ = self.is_alive(tmux.TMUX_SESSION, BRAIN_SESSION_NAME, "brain")
 
-        deploy_brain_tmp_contents(_BRAIN_DIR, conn=conn, provider=self.provider_id)
+        brain_model = str(get_config_value(conn, "codex.default_model", default=_DEFAULT_CODEX_MODEL))
+        brain_effort = str(get_config_value(conn, "codex.default_effort", default=_DEFAULT_REASONING_EFFORT))
+
+        deploy_brain_tmp_contents(
+            _BRAIN_DIR,
+            conn=conn,
+            provider=self.provider_id,
+            model=brain_model,
+            effort=brain_effort,
+        )
         prompt_path = os.path.join(_BRAIN_DIR, "prompt.md")
         target = tmux.ensure_window(tmux.TMUX_SESSION, BRAIN_SESSION_NAME)
 
@@ -208,21 +216,22 @@ class CodexRuntime:
                 conn,
                 BRAIN_SESSION_NAME,
                 host="localhost",
-                work_dir=_BRAIN_DIR,
+                work_dir=os.getcwd(), # Project root
                 session_type="brain",
                 provider=self.provider_id,
             )
             session_id = session.id
+            sessions_repo.update_session(conn, session_id, status="working", provider=self.provider_id)
 
-        if not codex_already_running:
+        if not alive:
             cmd_parts = [
-                f"cd {shlex.quote(_BRAIN_DIR)}",
+                f"cd {shlex.quote(os.getcwd())}",
                 get_path_export_command(os.path.join(_BRAIN_DIR, "bin")),
                 _build_codex_command(
-                    workspace_dir=_BRAIN_DIR,
+                    workspace_dir=os.getcwd(),
                     prompt_path=prompt_path,
-                    model=str(get_config_value(conn, "codex.default_model", _DEFAULT_CODEX_MODEL)),
-                    effort=str(get_config_value(conn, "codex.default_effort", _DEFAULT_REASONING_EFFORT)),
+                    model=brain_model,
+                    effort=brain_effort,
                 ),
             ]
             tmux.send_keys(tmux.TMUX_SESSION, BRAIN_SESSION_NAME, " && ".join(cmd_parts), enter=True)
@@ -234,7 +243,7 @@ class CodexRuntime:
         return {
             "ok": True,
             "session_id": session_id,
-            "already_running": codex_already_running,
+            "already_running": alive,
             "heartbeat_rearmed": heartbeat_rearmed,
         }
 
